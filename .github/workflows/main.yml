@@ -26,6 +26,7 @@ jobs:
           **/application/config/config.php
           **/application/config/database.php
           **/.buildpath/**
+          **/uploads/**
           .git-ftp.log
           .project
           .htaccess

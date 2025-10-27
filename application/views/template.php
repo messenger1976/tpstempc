@@ -6,7 +6,7 @@
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-        <title>BMPC |  <?php echo (isset ($title) ? $title : $current_title); ?></title>
+        <title>TAPSTEMCO |  <?php echo (isset ($title) ? $title : $current_title); ?></title>
 
         <link href="<?php echo base_url(); ?>media/css/bootstrap.min.css" rel="stylesheet">
         <link href="<?php echo base_url(); ?>media/font-awesome/css/font-awesome.css" rel="stylesheet">

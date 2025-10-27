@@ -1,7 +1,7 @@
 on:
   push:
     branches:
-      - main
+      - livesite
 name: 🚀 Deploy TAPSTEMCO system on push
 jobs:
   web-deploy:

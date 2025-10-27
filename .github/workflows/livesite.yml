@@ -1,7 +1,7 @@
 on:
   push:
     branches:
-      - main
+      - livesite
 name: 🚀 Deploy TAPSTEMCO system on push
 jobs:
   web-deploy:
@@ -20,6 +20,7 @@ jobs:
         password: ${{ secrets.ftp_password1 }}
         server-dir: /
         exclude: |
+          .git/**
           **/application/cache/**
           **/application/controllers1/**
           **/application/helpers1/**

@@ -20,13 +20,21 @@ jobs:
         password: ${{ secrets.ftp_password }}
         server-dir: /
         exclude: |
-          **/.git*
-          **/.git*/**
+          .git/**
           **/application/cache/**
+          **/application/controllers1/**
+          **/application/helpers1/**
+          **/application/models1/**
+          **/application/views1/**
           **/application/config/config.php
           **/application/config/database.php
           **/.buildpath/**
-          **/uploads/**
+          **/uploads/memberphoto/**
+          **/uploads/document/**
+          **/uploads/purchaseinvoice/**
+          **/uploads/purchaseorder/**
+          **/uploads/salesinvoice/**
+          **/uploads/salesquote/**
           .git-ftp.log
           .project
           .htaccess

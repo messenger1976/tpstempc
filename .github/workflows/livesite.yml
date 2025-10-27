@@ -15,7 +15,7 @@ jobs:
     - name: 📂 Sync files
       uses: SamKirkland/FTP-Deploy-Action@4.3.0
       with:
-        server: ftps9.uk.cloudlogin.co
+        server: tapstemco.com
         username: ${{ secrets.ftp_username1 }}
         password: ${{ secrets.ftp_password1 }}
         server-dir: /

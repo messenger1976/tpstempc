@@ -1,0 +1,39 @@
+on:
+  push:
+    branches:
+      - main
+name: 🚀 Deploy TAPSTEMCO system on push
+jobs:
+  web-deploy:
+    name: 🎉 Deploy TAPSTEMCO Server
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+    - name: 🚚 Get latest code
+      uses: actions/checkout@v2
+    
+    - name: 📂 Sync files
+      uses: SamKirkland/FTP-Deploy-Action@4.3.0
+      with:
+        server: ftps9.uk.cloudlogin.co
+        username: ${{ secrets.ftp_username1 }}
+        password: ${{ secrets.ftp_password1 }}
+        server-dir: /
+        exclude: |
+          **/application/cache/**
+          **/application/controllers1/**
+          **/application/helpers1/**
+          **/application/models1/**
+          **/application/views1/**
+          **/application/config/config.php
+          **/application/config/database.php
+          **/.buildpath/**
+          **/uploads/memberphoto/**
+          **/uploads/document/**
+          **/uploads/purchaseinvoice/**
+          **/uploads/purchaseorder/**
+          **/uploads/salesinvoice/**
+          **/uploads/salesquote/**
+          .git-ftp.log
+          .project
+          .htaccess

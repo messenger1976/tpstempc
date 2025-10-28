@@ -29,7 +29,7 @@ $REQUEST_PROTOCOL = $isSecure ? 'https' : 'http';
 $config['base_url'] = $REQUEST_PROTOCOL.'://'.$_SERVER['HTTP_HOST'].'/';
 
 
-//$config['base_url']='http://localhost/tpstempc/';
+$config['base_url']='http://localhost/tapstemco/';
 
 
 date_default_timezone_set('Asia/Manila');

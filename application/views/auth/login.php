@@ -33,7 +33,7 @@
         <div>
             <div>
 
-                <h1 class="logo-name"><img src="<?php echo base_url() ?>logo/bmpc-login-logo.png" style="max-width:150px;"/></h1>
+                <!--<h1 class="logo-name"><img src="<?php echo base_url() ?>logo/bmpc-login-logo.png" style="max-width:150px;"/></h1>-->
                 
             </div>
             <h3>Welcome to Talibon Public School Teachers and Employees Multi-Purpose Cooperative</h3>

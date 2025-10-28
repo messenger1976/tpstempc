@@ -119,6 +119,9 @@ class Auth extends CI_Controller {
                 'type' => 'password',
             );
 
+            $this->data['logo'] = company_info_detail()->logo;
+            $this->data['name'] = company_info_detail()->name;
+
             $this->_render_page('auth/login', $this->data);
         }
     }

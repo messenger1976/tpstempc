@@ -200,6 +200,7 @@ class Member extends CI_Controller {
                         'member_id' => $member_id,
                         'firstname' => trim($this->input->post('firstname')),
                         'middlename' => trim($this->input->post('middlename')),
+                        'maidenname' => trim($this->input->post('maidenname')),
                         'lastname' => trim($this->input->post('lastname')),
                         'gender' => trim($this->input->post('gender')),
                         'maritalstatus' => trim($this->input->post('maritalstatus')),
@@ -302,6 +303,7 @@ class Member extends CI_Controller {
                         'member_id' => $member_id,
                         'firstname' => trim($this->input->post('firstname')),
                         'middlename' => trim($this->input->post('middlename')),
+                        'maidenname' => trim($this->input->post('maidenname')),
                         'lastname' => trim($this->input->post('lastname')),
                         'gender' => trim($this->input->post('gender')),
                         'maritalstatus' => trim($this->input->post('maritalstatus')),
@@ -399,6 +401,7 @@ class Member extends CI_Controller {
                 'member_id' => $member_id,
                 'firstname' => trim($this->input->post('firstname')),
                 'middlename' => trim($this->input->post('middlename')),
+                'maidenname' => trim($this->input->post('maidenname')),
                 'lastname' => trim($this->input->post('lastname')),
                 'gender' => trim($this->input->post('gender')),
                 'maritalstatus' => trim($this->input->post('maritalstatus')),
@@ -473,6 +476,7 @@ class Member extends CI_Controller {
                 'member_id' => $member_id,
                 'firstname' => trim($this->input->post('firstname')),
                 'middlename' => trim($this->input->post('middlename')),
+                'maidenname' => trim($this->input->post('maidenname')),
                 'lastname' => trim($this->input->post('lastname')),
                 'gender' => trim($this->input->post('gender')),
                 'maritalstatus' => trim($this->input->post('maritalstatus')),
@@ -522,6 +526,7 @@ class Member extends CI_Controller {
         $this->form_validation->set_rules('occupation', lang('member_contact_occupation'), '');
         $this->form_validation->set_rules('tinno', lang('member_contact_tinno'), '');
         $this->form_validation->set_rules('sssno', lang('member_contact_sssno'), '');
+        $this->form_validation->set_rules('bpno', lang('member_contact_bpno'), '');
         $this->form_validation->set_rules('officeaddress', lang('member_contact_officeaddress'), '');
         
 
@@ -533,6 +538,7 @@ class Member extends CI_Controller {
                 'occupation' => trim($this->input->post('occupation')),
                 'tinno' => trim($this->input->post('tinno')),
                 'sssno' => trim($this->input->post('sssno')),
+                'bpno' => trim($this->input->post('bpno')),
                 'postaladdress' => trim($this->input->post('box')),
                 'physicaladdress' => trim($this->input->post('physical')),
                 'officeaddress' => trim($this->input->post('officeaddress')),

@@ -9,6 +9,7 @@ $lang['member_firstname'] = 'First Name';
 $lang['member_middlename'] = 'Middle Name';
 $lang['member_lastname'] = 'Last Name';
 $lang['member_gender'] = 'Gender';
+$lang['member_maidenname'] = 'Maiden Name';
 $lang['member_genderoption'] = array('M'=>'Male','F'=>'Female');
 $lang['member_maritalstatus'] = 'Marital Status';
 $lang['member_maritalstatus_option'] = array('Single'=>'Single','Married'=>'Married','Divorced'=>'Devorced','Widow/er'=>'Widow/er');
@@ -74,8 +75,9 @@ $lang['member_remarks'] = 'Remarks';
 //Member contact job information
 $lang['member_contact_jobinfo'] = 'Job Information';
 $lang['member_contact_officeaddress'] = 'Office Address';
-$lang['member_contact_tinno'] = 'BP No.';
+$lang['member_contact_tinno'] = 'TIN No.';
 $lang['member_contact_sssno'] = 'GSIS/SSS No.';
+$lang['member_contact_bpno'] = 'BP No.';
 $lang['member_contact_occupation'] = 'Occupation';
 
 $lang['member_contact_success'] = 'Information successfully saved';

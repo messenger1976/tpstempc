@@ -47,15 +47,36 @@ if (isset($message) && !empty($message)) {
         <?php echo form_error('middlename'); ?>
     </div>
 </div>
+<?php
+// determine which option keys correspond to "female" (try to detect localized label)
+$femaleKeys = array();
+foreach (lang('member_genderoption') as $k => $v) {
+    if (stripos(trim($v), 'female') !== false) {
+        $femaleKeys[] = $k;
+    }
+}
+// fallback common keys
+if (empty($femaleKeys)) {
+    $femaleKeys = array('F', 'f', 'female');
+}
+$isFemale = in_array($basicinfo->gender, $femaleKeys) || in_array(strtolower($basicinfo->gender), array_map('strtolower', $femaleKeys));
+?>
+<div id="maiden-group" class="form-group" style="<?php echo ($isFemale ? '' : 'display:none;'); ?>"><label class="col-lg-3 control-label"><?php echo lang('member_maidenname'); ?>  :</label>
+    <div class="col-lg-6">
+        <input type="text" name="maidenname" value="<?php echo isset($basicinfo->maidenname)?$basicinfo->maidenname:set_value('maidenname'); ?>"  class="form-control"/> 
+        <?php echo form_error('maidenname'); ?>
+    </div>
+</div>
 <div class="form-group"><label class="col-lg-3 control-label"><?php echo lang('member_lastname'); ?>  : <span class="required">*</span></label>
     <div class="col-lg-6">
         <input type="text" name="lastname" value="<?php echo $basicinfo->lastname; ?>"  class="form-control"/> 
         <?php echo form_error('lastname'); ?>
     </div>
 </div>
+
 <div class="form-group"><label class="col-lg-3 control-label"><?php echo lang('member_gender'); ?>  : <span class="required">*</span></label>
     <div class="col-lg-6">
-        <select name="gender" class="form-control">
+        <select id="gender" name="gender" class="form-control">
             <option value=""> <?php echo lang('select_default_text'); ?></option>
             <?php
             $loop = lang('member_genderoption');
@@ -139,6 +160,31 @@ if (isset($message) && !empty($message)) {
             pickTime: false
         });
     });
+</script>
+<script type="text/javascript">
+    // toggle maiden name visibility when gender changes
+    (function($){
+        $(function(){
+            var femaleKeys = <?php echo json_encode($femaleKeys); ?>;
+            function isFemale(val, text){
+                if(!val && !text) return false;
+                if(val && femaleKeys.indexOf(val) !== -1) return true;
+                var l = (val||'').toLowerCase();
+                if(l === 'f' || l === 'female') return true;
+                if(text && text.toLowerCase().indexOf('female') !== -1) return true;
+                return false;
+            }
+            $('#gender').on('change', function(){
+                var val = $(this).val();
+                var text = $(this).find('option:selected').text();
+                if(isFemale(val, text)){
+                    $('#maiden-group').show();
+                } else {
+                    $('#maiden-group').hide();
+                }
+            });
+        });
+    })(jQuery);
 </script>
         
         

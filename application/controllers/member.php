@@ -528,6 +528,7 @@ class Member extends CI_Controller {
         $this->form_validation->set_rules('sssno', lang('member_contact_sssno'), '');
         $this->form_validation->set_rules('bpno', lang('member_contact_bpno'), '');
         $this->form_validation->set_rules('officeaddress', lang('member_contact_officeaddress'), '');
+        $this->form_validation->set_rules('assignedschool', 'Assigned School', '');
         
 
         if ($this->form_validation->run() == TRUE) {
@@ -541,6 +542,7 @@ class Member extends CI_Controller {
                 'bpno' => trim($this->input->post('bpno')),
                 'postaladdress' => trim($this->input->post('box')),
                 'physicaladdress' => trim($this->input->post('physical')),
+                'assignedschool' => trim($this->input->post('assignedschool')),
                 'officeaddress' => trim($this->input->post('officeaddress')),
                 'createdby' => current_user()->id,
                 'PIN'=>  current_user()->PIN

@@ -116,6 +116,12 @@ $this->load->view('member/topmenu');
                 <?php echo form_error('bpno'); ?>
             </div>
         </div>
+        <div class="form-group"><label class="col-lg-3 control-label">Assigned School  : </label>
+            <div class="col-lg-6">
+                <input type="text" name="assignedschool" value="<?php echo set_value('assignedschool', isset($contactinfo->assignedschool)?$contactinfo->assignedschool:''); ?>"  class="form-control"/> 
+                <?php echo form_error('assignedschool'); ?>
+            </div>
+        </div>
         <div class="form-group"><label class="col-lg-3 control-label"><?php echo lang('member_contact_officeaddress'); ?>  : </label>
             <div class="col-lg-6">
                 <input type="text" name="officeaddress" value="<?php echo $contactinfo->officeaddress; ?>"  class="form-control"/> 

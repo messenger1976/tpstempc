@@ -44,7 +44,7 @@ $this->load->view('member/topmenu');
         ?>
 
 
-        <div class="form-group"><label class="col-lg-3 control-label"><?php echo lang('member_contact_phone1'); ?>  : <span class="required">*</span></label>
+        <div class="form-group"><label class="col-lg-3 control-label"><?php echo lang('member_contact_phone1'); ?>  : </label>
             <div class="col-lg-6">
                 <div class="input-group"><span class="input-group-addon" style="border: 0px; padding: 0px 5px 0px 0px; margin: 0px"> <select name="pre_phone1" style="background: transparent; padding: 7px;  border:  1px solid #E5E6E7">
                             <?php

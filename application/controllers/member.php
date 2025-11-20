@@ -513,7 +513,8 @@ class Member extends CI_Controller {
         }
         $this->form_validation->set_rules('pre_phone1', '', 'required');
         $this->form_validation->set_rules('pre_phone2', '', 'required');
-        $this->form_validation->set_rules('phone1', lang('member_contact_phone1'), 'required|numeric|valid_phone');
+        //$this->form_validation->set_rules('phone1', lang('member_contact_phone1'), 'required|numeric|valid_phone');
+        $this->form_validation->set_rules('phone1', lang('member_contact_phone1'), 'numeric|numeric|valid_phone');
         $this->form_validation->set_rules('phone2', lang('member_contact_phone2'), 'numeric|valid_phone');
         $this->form_validation->set_rules('email', lang('member_contact_email'), 'valid_email');
         $this->form_validation->set_rules('box', lang('member_contact_box'), '');

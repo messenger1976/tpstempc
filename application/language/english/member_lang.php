@@ -74,8 +74,8 @@ $lang['member_remarks'] = 'Remarks';
 //Member contact job information
 $lang['member_contact_jobinfo'] = 'Job Information';
 $lang['member_contact_officeaddress'] = 'Office Address';
-$lang['member_contact_tinno'] = 'TIN No.';
-$lang['member_contact_sssno'] = 'SSS No.';
+$lang['member_contact_tinno'] = 'BP No.';
+$lang['member_contact_sssno'] = 'GSIS/SSS No.';
 $lang['member_contact_occupation'] = 'Occupation';
 
 $lang['member_contact_success'] = 'Information successfully saved';

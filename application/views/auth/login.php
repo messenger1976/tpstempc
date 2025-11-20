@@ -33,10 +33,10 @@
         <div>
             <div>
 
-                <!--<h1 class="logo-name"><img src="<?php echo base_url() ?>logo/bmpc-login-logo.png" style="max-width:150px;"/></h1>-->
+                <h1 class="logo-name"><img src="<?php echo base_url() ?>logo/<?php echo $logo; ?>" style="max-width:150px;"/></h1>
                 
             </div>
-            <h3>Welcome to Talibon Public School Teachers and Employees Multi-Purpose Cooperative</h3>
+            <h3><?php echo $name; ?></h3>
             <?php
             if (isset($message) && !empty($message)) {
                 echo '<div class="alert alert-success alert-dismissable"><button aria-hidden="true" data-dismiss="alert" class="close" type="button">×</button>' . $message . '</div>';

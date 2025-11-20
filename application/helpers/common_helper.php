@@ -236,6 +236,19 @@ if (!function_exists('company_info')) {
     }
 
 }
+
+if (!function_exists('company_info_detail')) {
+
+    function company_info_detail() {
+        $CI = &get_instance();
+        //$pin = current_user()->PIN;
+        $CI->db->limit(1);
+        $company = $CI->db->get('companyinfo')->row();
+        return $company;
+    }
+
+}
+
 if (!function_exists('loan_status')) {
 
     function loan_status($id = null) {

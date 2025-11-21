@@ -11,7 +11,7 @@ $activefunction = ($this->uri->segment(3)) ? $this->uri->segment(3) : 'X';
 
             </div>
             <div class="logo-element">
-                BMPC
+                <?php echo lang('app_name'); ?>
             </div>
         </li>
         <li class="<?php echo ($active == 'X' ? 'active' : ''); ?>">

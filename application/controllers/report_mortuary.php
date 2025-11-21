@@ -316,7 +316,7 @@ class Report_Mortuary extends CI_Controller {
                         <h5 style="padding: 0px; margin: 0px; font-size:15px; text-align:center;"><strong> P.O.Box: ' . strtoupper(company_info()->box) . ' , ' . strtoupper(lang('clientaccount_label_phone')) . ':' . company_info()->mobile . '</strong></h5></td></tr></table> 
                 </div>';
         $pdf->SetHTMLHeader($header);
-        $pdf->SetFooter('BMPC COOP' . '|{PAGENO}|' . date('d-m-Y H:i:s')); // Add a footer for good measure <img src="https://davidsimpson.me/wp-includes/images/smilies/icon_wink.gif" alt=";)" class="wp-smiley">
+        $pdf->SetFooter(lang('app_name') . '|{PAGENO}|' . date('d-m-Y H:i:s')); // Add a footer for good measure
         $pdf->WriteHTML($html); // write the HTML into the PDF
         $pdf->Output($filename, 'I'); // save to file because we can  
     }

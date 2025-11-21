@@ -95,6 +95,8 @@ $lang['loanproduct_account_penalt']='Penalty Interest  A/R';
 $lang['loanproduct_security']='Loan Security';
 $lang['loanproduct_add_fail']='Fail to save loan product information';
 $lang['loanproduct_add_success']='Loan Product Information saved successfully';
-$lang['loanproduct_penalt_percentage'] = 'Penalty Percentage (%)'
+$lang['loanproduct_penalt_percentage'] = 'Penalty Percentage (%)';
+
+$lang['app_name'] = 'COOP';
 
 ?>

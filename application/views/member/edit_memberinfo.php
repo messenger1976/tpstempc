@@ -118,6 +118,12 @@ $isFemale = in_array($basicinfo->gender, $femaleKeys) || in_array(strtolower($ba
         <?php echo form_error('dob'); ?>
     </div>
 </div>
+<div class="form-group"><label class="col-lg-3 control-label">Place of Birth  :</label>
+    <div class="col-lg-6">
+        <input type="text" name="placeofbirth" value="<?php echo set_value('placeofbirth', isset($basicinfo->placeofbirth) ? $basicinfo->placeofbirth : ''); ?>"  class="form-control"/> 
+        <?php echo form_error('placeofbirth'); ?>
+    </div>
+</div>
 <div class="form-group"><label class="col-lg-3 control-label"><?php echo ($basicinfo->none_member)?lang('member_reg_date'):lang('member_join_date'); ?>  : <span class="required">*</span></label>
     <div class=" col-lg-6">
         <div class="input-group date" id="datetimepicker2" >

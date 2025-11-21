@@ -65,6 +65,7 @@ $lang['member_contact_phone2'] = 'Mobile 2';
 $lang['member_contact_email']  = 'Email';
 $lang['member_contact_box'] = 'Postal Address';
 $lang['member_contact_physical'] = 'Physical Address';
+$lang['member_contact_personalinfo'] = 'Personal Information';
 $lang['member_contact_info'] = 'Contact Information';
 $lang['member_contactbtn'] = 'Save Information';
 

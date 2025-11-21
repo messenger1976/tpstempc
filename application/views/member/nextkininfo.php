@@ -70,7 +70,7 @@ $this->load->view('member/topmenu');
                 <?php echo form_error('relationship'); ?>
             </div>
         </div>
-        <div class="form-group"><label class="col-lg-3 control-label"><?php echo lang('member_contact_phone1'); ?>  : <span class="required">*</span></label>
+        <div class="form-group"><label class="col-lg-3 control-label"><?php echo lang('member_contact_phone1'); ?>  : </label>
             <div class="col-lg-6">
                 <div class="input-group"><span class="input-group-addon" style="border: 0px; padding: 0px 5px 0px 0px; margin: 0px"> <select name="pre_phone1" style="background: transparent; padding: 7px;  border:  1px solid #E5E6E7">
                             <?php
@@ -101,6 +101,12 @@ $this->load->view('member/topmenu');
             <div class="col-lg-6">
                 <input type="text" name="physical" value="<?php echo $nextkininfo->physicaladdress; ?>"  class="form-control"/> 
                 <?php echo form_error('physical'); ?>
+            </div>
+        </div>
+        <div class="form-group"><label class="col-lg-3 control-label">Source of Income  : </label>
+            <div class="col-lg-6">
+                <input type="text" name="sourceofincome" value="<?php echo isset($nextkininfo->sourceofincome)?$nextkininfo->sourceofincome:''; ?>"  class="form-control"/>
+                <?php echo form_error('sourceofincome'); ?>
             </div>
         </div>
         
@@ -151,8 +157,24 @@ $this->load->view('member/topmenu');
         if(physical) physical.value = memberPhysical || '';
     }
 
+    // Fill helper that DOES NOT touch the name field (used when relationship changes)
+    function doFillOthers(){
+        var prePhone = document.querySelector('select[name="pre_phone1"]');
+        var phone1 = document.querySelector('input[name="phone1"]');
+        var email = document.querySelector('input[name="email"]');
+        var box = document.querySelector('input[name="box"]');
+        var physical = document.querySelector('input[name="physical"]');
+        var p = splitPhone(memberPhone || '');
+        if(prePhone && p.pre) prePhone.value = p.pre;
+        if(phone1 && !phone1.value.trim()) phone1.value = p.rest || '';
+        if(email) email.value = memberEmail || '';
+        if(box) box.value = memberBox || '';
+        if(physical) physical.value = memberPhysical || '';
+    }
+
     if(relationship){
-        relationship.addEventListener('change', function(){ if(relationship.value) doFill(); });
+        // On relationship change, update contact details but do NOT overwrite the name.
+        relationship.addEventListener('change', function(){ if(relationship.value) doFillOthers(); });
     }
 
     var form = document.querySelector('form');
@@ -161,10 +183,8 @@ $this->load->view('member/topmenu');
             var errs = [];
             var nameField = document.querySelector('input[name="name"]');
             var rel = document.querySelector('select[name="relationship"]');
-            var phone1 = document.querySelector('input[name="phone1"]');
             if(!nameField || !nameField.value.trim()) errs.push('Name is required');
             if(!rel || !rel.value.trim()) errs.push('Relationship is required');
-            if(!phone1 || !phone1.value.trim()) errs.push('Phone is required');
             if(errs.length){
                 e.preventDefault();
                 alert(errs.join('\n'));

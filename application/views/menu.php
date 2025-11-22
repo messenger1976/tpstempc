@@ -11,7 +11,7 @@ $activefunction = ($this->uri->segment(3)) ? $this->uri->segment(3) : 'X';
 
             </div>
             <div class="logo-element">
-                BMPC
+                <?php echo lang('app_name'); ?>
             </div>
         </li>
         <li class="<?php echo ($active == 'X' ? 'active' : ''); ?>">
@@ -180,6 +180,12 @@ $activefunction = ($this->uri->segment(3)) ? $this->uri->segment(3) : 'X';
                         <?php if (has_role(6, 'Manage_account_chart')) { ?>
                             <li class="<?php echo ($activefunction == 'finance_account_list' ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/finance/finance_account_list'); ?>"><?php echo lang('finance_account_list'); ?></a></li>
                         <?php } ?>
+                        <?php if (has_role(6, 'Manage_chart_type')) { ?>
+                            <li class="<?php echo ($activefunction == 'chart_type_list' ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/finance/chart_type_list'); ?>"><?php echo lang('chart_type_list'); ?></a></li>
+                        <?php } ?>
+                        <?php if (has_role(6, 'Manage_chart_sub_type')) { ?>
+                            <li class="<?php echo ($activefunction == 'chart_sub_type_list' ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/finance/chart_sub_type_list'); ?>"><?php echo lang('chart_sub_type_list'); ?></a></li>
+                        <?php } ?>
                         <?php if (has_role(6, 'Manage_customer')) { ?>
                             <li class="<?php echo ($activefunction == 'customerlist' ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/customer/customerlist'); ?>"><?php echo lang('customer'); ?></a></li>
                         <?php } ?>
@@ -263,6 +269,10 @@ $activefunction = ($this->uri->segment(3)) ? $this->uri->segment(3) : 'X';
                         <?php } ?>
                         
                             <li class="<?php echo ($activefunction == 'mobile_notification' ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/setting/mobile_notification'); ?>"><?php echo 'Mobile Notification'; ?></a></li>
+                        
+                        <?php if ($this->ion_auth->is_admin()) { ?>
+                            <li class="<?php echo (($active == 'activity_log' || $activefunction == 'index' || $activefunction == 'view') ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/activity_log/index'); ?>"><i class="fa fa-history"></i> Activity Logs</a></li>
+                        <?php } ?>
                       
                     </ul>
                 </li>

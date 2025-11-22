@@ -94,8 +94,8 @@ class Finance_Model extends CI_Model {
         $account_start = (string) $last_account->accounttype . $last_account->sub_account;
         $last_part = format_lastpart_account($last_account->last_account);
         $account_no = $account_start . $last_part;
-
-        $data['account'] = (int) $account_no;
+        //Disabled auto increment of account number - 11/22/2025
+        //$data['account'] = (int) $account_no;
 
 
         $this->db->insert('account_chart', $data);
@@ -105,6 +105,52 @@ class Finance_Model extends CI_Model {
 
     function edit_chart_account($create_account, $id) {
         return $this->db->update('account_chart', $create_account, array('id' => $id));
+    }
+
+    function delete_chart_account($id) {
+        // Get account number before deletion
+        $account_info = $this->account_chart($id, null)->row();
+        
+        if (!$account_info) {
+            return false;
+        }
+        
+        $account_number = $account_info->account;
+        $pin = current_user()->PIN;
+        
+        // Check if account has transactions in general_ledger
+        $this->db->where('account', $account_number);
+        $this->db->where('PIN', $pin);
+        $ledger_count = $this->db->count_all_results('general_ledger');
+        
+        // Check if account has transactions in general_journal
+        $this->db->where('account', $account_number);
+        $journal_count = $this->db->count_all_results('general_journal');
+        
+        // If account has transactions, cannot delete
+        if ($ledger_count > 0 || $journal_count > 0) {
+            return false;
+        }
+        
+        // Safe to delete
+        $this->db->where('id', $id);
+        $this->db->where('PIN', $pin);
+        return $this->db->delete('account_chart');
+    }
+    
+    function check_account_has_transactions($account_number) {
+        $pin = current_user()->PIN;
+        
+        // Check general_ledger
+        $this->db->where('account', $account_number);
+        $this->db->where('PIN', $pin);
+        $ledger_count = $this->db->count_all_results('general_ledger');
+        
+        // Check general_journal
+        $this->db->where('account', $account_number);
+        $journal_count = $this->db->count_all_results('general_journal');
+        
+        return ($ledger_count > 0 || $journal_count > 0);
     }
 
     /*
@@ -464,6 +510,73 @@ $pin=current_user()->PIN;
             $this->db->where('status_flag', $status);
         }
         return count($this->db->get('members_account')->result());
+    }
+
+    // Chart Type CRUD operations
+    function create_chart_type($data) {
+        return $this->db->insert('account_type', $data);
+    }
+
+    function update_chart_type($data, $id) {
+        $this->db->where('id', $id);
+        return $this->db->update('account_type', $data);
+    }
+
+    function delete_chart_type($id) {
+        // Get chart type info
+        $chart_type = $this->account_type($id)->row();
+        if (!$chart_type) {
+            return false; // Chart type doesn't exist
+        }
+        
+        // Check if chart type is being used in account_chart
+        $this->db->where('account_type', $chart_type->account);
+        $count = $this->db->count_all_results('account_chart');
+        
+        if ($count > 0) {
+            return false; // Cannot delete if in use
+        }
+        
+        // Check if chart type has sub types
+        $this->db->where('accounttype', $chart_type->account);
+        $sub_count = $this->db->count_all_results('account_type_sub');
+        
+        if ($sub_count > 0) {
+            return false; // Cannot delete if has sub types
+        }
+        
+        $this->db->where('id', $id);
+        return $this->db->delete('account_type');
+    }
+
+    // Chart Sub Type CRUD operations
+    function create_chart_sub_type($data) {
+        return $this->db->insert('account_type_sub', $data);
+    }
+
+    function update_chart_sub_type($data, $id) {
+        $this->db->where('id', $id);
+        return $this->db->update('account_type_sub', $data);
+    }
+
+    function delete_chart_sub_type($id) {
+        // Get chart sub type info
+        $sub_type = $this->account_type_sub($id)->row();
+        if (!$sub_type) {
+            return false; // Chart sub type doesn't exist
+        }
+        
+        // Check if chart sub type is being used in account_chart
+        $this->db->where('account_type', $sub_type->accounttype);
+        $this->db->where('sub_account_type', $sub_type->sub_account);
+        $count = $this->db->count_all_results('account_chart');
+        
+        if ($count > 0) {
+            return false; // Cannot delete if in use
+        }
+        
+        $this->db->where('id', $id);
+        return $this->db->delete('account_type_sub');
     }
 
 }

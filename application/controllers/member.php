@@ -200,10 +200,12 @@ class Member extends CI_Controller {
                         'member_id' => $member_id,
                         'firstname' => trim($this->input->post('firstname')),
                         'middlename' => trim($this->input->post('middlename')),
+                        'maidenname' => trim($this->input->post('maidenname')),
                         'lastname' => trim($this->input->post('lastname')),
                         'gender' => trim($this->input->post('gender')),
                         'maritalstatus' => trim($this->input->post('maritalstatus')),
                         'dob' => format_date(trim($this->input->post('dob'))),
+                        'placeofbirth' => trim($this->input->post('placeofbirth')),
                         'joiningdate' => format_date(trim($this->input->post('joindate'))),
                         'createdby' => $this->session->userdata('user_id'),
                         'PIN' => current_user()->PIN
@@ -302,9 +304,11 @@ class Member extends CI_Controller {
                         'member_id' => $member_id,
                         'firstname' => trim($this->input->post('firstname')),
                         'middlename' => trim($this->input->post('middlename')),
+                        'maidenname' => trim($this->input->post('maidenname')),
                         'lastname' => trim($this->input->post('lastname')),
                         'gender' => trim($this->input->post('gender')),
                         'maritalstatus' => trim($this->input->post('maritalstatus')),
+                        'placeofbirth' => trim($this->input->post('placeofbirth')),
                         'none_member' => $none_member_flag,
                         'dob' => format_date(trim($this->input->post('dob'))),
                         'joiningdate' => format_date(trim($this->input->post('joindate'))),
@@ -399,10 +403,12 @@ class Member extends CI_Controller {
                 'member_id' => $member_id,
                 'firstname' => trim($this->input->post('firstname')),
                 'middlename' => trim($this->input->post('middlename')),
+                'maidenname' => trim($this->input->post('maidenname')),
                 'lastname' => trim($this->input->post('lastname')),
                 'gender' => trim($this->input->post('gender')),
                 'maritalstatus' => trim($this->input->post('maritalstatus')),
                 'dob' => format_date(trim($this->input->post('dob'))),
+                'placeofbirth' => trim($this->input->post('placeofbirth')),
                 'joiningdate' => format_date(trim($this->input->post('joindate'))),
             );
 
@@ -473,10 +479,12 @@ class Member extends CI_Controller {
                 'member_id' => $member_id,
                 'firstname' => trim($this->input->post('firstname')),
                 'middlename' => trim($this->input->post('middlename')),
+                'maidenname' => trim($this->input->post('maidenname')),
                 'lastname' => trim($this->input->post('lastname')),
                 'gender' => trim($this->input->post('gender')),
                 'maritalstatus' => trim($this->input->post('maritalstatus')),
                 'dob' => format_date(trim($this->input->post('dob'))),
+                'placeofbirth' => trim($this->input->post('placeofbirth')),
                 'joiningdate' => format_date(trim($this->input->post('joindate'))),
             );
 
@@ -513,33 +521,51 @@ class Member extends CI_Controller {
         }
         $this->form_validation->set_rules('pre_phone1', '', 'required');
         $this->form_validation->set_rules('pre_phone2', '', 'required');
+        $this->form_validation->set_rules('dependents', 'Number of Dependents', 'is_natural');
+        // Annual Income is optional; if provided it must be numeric and non-negative
+        if ($this->input->post('annualincome') != '') {
+            $this->form_validation->set_rules('annualincome', 'Annual Income', 'numeric|greater_than_equal_to[0]');
+        }
+        $this->form_validation->set_rules('religion', 'Religion', 'max_length[100]');
         //$this->form_validation->set_rules('phone1', lang('member_contact_phone1'), 'required|numeric|valid_phone');
         $this->form_validation->set_rules('phone1', lang('member_contact_phone1'), 'numeric|numeric|valid_phone');
         $this->form_validation->set_rules('phone2', lang('member_contact_phone2'), 'numeric|valid_phone');
         $this->form_validation->set_rules('email', lang('member_contact_email'), 'valid_email');
         $this->form_validation->set_rules('box', lang('member_contact_box'), '');
         $this->form_validation->set_rules('physical', lang('member_contact_physical'), '');
+        $this->form_validation->set_rules('sourceofincome', 'Source of Income', 'max_length[255]');
         $this->form_validation->set_rules('occupation', lang('member_contact_occupation'), '');
         $this->form_validation->set_rules('tinno', lang('member_contact_tinno'), '');
         $this->form_validation->set_rules('sssno', lang('member_contact_sssno'), '');
+        $this->form_validation->set_rules('bpno', lang('member_contact_bpno'), '');
         $this->form_validation->set_rules('officeaddress', lang('member_contact_officeaddress'), '');
+        $this->form_validation->set_rules('assignedschool', 'Assigned School', '');
         
 
         if ($this->form_validation->run() == TRUE) {
             $member_contact = array(
                 'PID' => $this->data['basicinfo']->PID,
-                'phone1' => trim($this->input->post('pre_phone1')) . trim($this->input->post('phone1')),
+                'dependents' => trim($this->input->post('dependents')),
+                'annualincome' => trim($this->input->post('annualincome')),
+                'religion' => trim($this->input->post('religion')),
+                //'phone1' => trim($this->input->post('pre_phone1')) . trim($this->input->post('phone1')),
                 'email' => trim($this->input->post('email')),
                 'occupation' => trim($this->input->post('occupation')),
                 'tinno' => trim($this->input->post('tinno')),
                 'sssno' => trim($this->input->post('sssno')),
+                'bpno' => trim($this->input->post('bpno')),
                 'postaladdress' => trim($this->input->post('box')),
                 'physicaladdress' => trim($this->input->post('physical')),
+                'assignedschool' => trim($this->input->post('assignedschool')),
                 'officeaddress' => trim($this->input->post('officeaddress')),
                 'createdby' => current_user()->id,
                 'PIN'=>  current_user()->PIN
             );
-
+            if($this->input->post('phone1')){
+                $member_contact['phone1'] = trim($this->input->post('pre_phone1')) . trim($this->input->post('phone1'));
+            }else{
+                $member_contact['phone1'] = '';
+            }
             if ($this->input->post('phone2')) {
                 $member_contact['phone2'] = trim($this->input->post('pre_phone2')) . trim($this->input->post('phone2'));
             }
@@ -569,8 +595,9 @@ class Member extends CI_Controller {
         if ($this->data['basicinfo']->formstatus != 3) {
             $this->data['subtitle'] = ' : ' . lang('member_registration_status_label') . ' <label>' . $status[$this->data['basicinfo']->formstatus] . '</label>';
         }
-        $this->form_validation->set_rules('pre_phone1', '', 'required');
-        $this->form_validation->set_rules('phone1', lang('member_contact_phone1'), 'required|numeric|valid_phone');
+        // phone for next of kin is optional
+        $this->form_validation->set_rules('pre_phone1', '', '');
+        $this->form_validation->set_rules('phone1', lang('member_contact_phone1'), 'numeric|valid_phone');
         $this->form_validation->set_rules('email', lang('member_contact_email'), 'valid_email');
         $this->form_validation->set_rules('name', lang('nextkin_name'), 'required');
         $this->form_validation->set_rules('relationship', lang('nextkin_relationship'), 'required');
@@ -581,15 +608,21 @@ class Member extends CI_Controller {
         if ($this->form_validation->run() == TRUE) {
             $member_nextkin = array(
                 'PID' => $this->data['basicinfo']->PID,
-                'phone' => trim($this->input->post('pre_phone1')) . trim($this->input->post('phone1')),
                 'email' => trim($this->input->post('email')),
                 'relationship' => trim($this->input->post('relationship')),
                 'name' => trim($this->input->post('name')),
                 'postaladdress' => trim($this->input->post('box')),
                 'physicaladdress' => trim($this->input->post('physical')),
+                'sourceofincome' => trim($this->input->post('sourceofincome')),
                 'createdby' => current_user()->id,
                 'PIN'=>  current_user()->PIN
             );
+            // only set phone if the user provided the local part
+            if ($this->input->post('phone1')) {
+                $member_nextkin['phone'] = trim($this->input->post('pre_phone1')) . trim($this->input->post('phone1'));
+            } else {
+                $member_nextkin['phone'] = '';
+            }
 
 
 

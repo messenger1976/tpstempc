@@ -37,6 +37,26 @@ if (isset($message) && !empty($message)) {
         <?php echo form_error('middlename'); ?>
     </div>
 </div>
+<?php
+// detect female option keys to control maiden name visibility
+$femaleKeys = array();
+foreach (lang('member_genderoption') as $k => $v) {
+    if (stripos(trim($v), 'female') !== false) {
+        $femaleKeys[] = $k;
+    }
+}
+if (empty($femaleKeys)) {
+    $femaleKeys = array('F', 'f', 'female');
+}
+$selectedGender = set_value('gender');
+$isFemale = in_array($selectedGender, $femaleKeys) || in_array(strtolower($selectedGender), array_map('strtolower', $femaleKeys));
+?>
+<div id="maiden-group" class="form-group" style="<?php echo ($isFemale ? '' : 'display:none;'); ?>"><label class="col-lg-3 control-label"><?php echo lang('member_maidenname'); ?>  :</label>
+    <div class="col-lg-6">
+        <input type="text" name="maidenname" value="<?php echo set_value('maidenname'); ?>"  class="form-control"/> 
+        <?php echo form_error('maidenname'); ?>
+    </div>
+</div>
 <div class="form-group"><label class="col-lg-3 control-label"><?php echo lang('member_lastname'); ?>  : <span class="required">*</span></label>
     <div class="col-lg-6">
         <input type="text" name="lastname" value="<?php echo set_value('lastname'); ?>"  class="form-control"/> 
@@ -45,7 +65,7 @@ if (isset($message) && !empty($message)) {
 </div>
 <div class="form-group"><label class="col-lg-3 control-label"><?php echo lang('member_gender'); ?>  : <span class="required">*</span></label>
     <div class="col-lg-6">
-        <select name="gender" class="form-control">
+        <select id="gender" name="gender" class="form-control">
             <option value=""> <?php echo lang('select_default_text'); ?></option>
             <?php
             $loop = lang('member_genderoption');
@@ -85,6 +105,12 @@ if (isset($message) && !empty($message)) {
             </span>
         </div>
         <?php echo form_error('dob'); ?>
+    </div>
+</div>
+<div class="form-group"><label class="col-lg-3 control-label">Place of Birth  :</label>
+    <div class="col-lg-6">
+        <input type="text" name="placeofbirth" value="<?php echo set_value('placeofbirth', (isset($basicinfo) && isset($basicinfo->placeofbirth)) ? $basicinfo->placeofbirth : ''); ?>"  class="form-control"/> 
+        <?php echo form_error('placeofbirth'); ?>
     </div>
 </div>
 <div class="form-group"><label class="col-lg-3 control-label"><?php echo lang('member_join_date'); ?>  : <span class="required">*</span></label>
@@ -128,4 +154,28 @@ if (isset($message) && !empty($message)) {
             pickTime: false
         });
     });
+</script>
+<script type="text/javascript">
+    (function($){
+        $(function(){
+            var femaleKeys = <?php echo json_encode($femaleKeys); ?>;
+            function isFemale(val, text){
+                if(!val && !text) return false;
+                if(val && femaleKeys.indexOf(val) !== -1) return true;
+                var l = (val||'').toLowerCase();
+                if(l === 'f' || l === 'female') return true;
+                if(text && text.toLowerCase().indexOf('female') !== -1) return true;
+                return false;
+            }
+            $('#gender').on('change', function(){
+                var val = $(this).val();
+                var text = $(this).find('option:selected').text();
+                if(isFemale(val, text)){
+                    $('#maiden-group').show();
+                } else {
+                    $('#maiden-group').hide();
+                }
+            });
+        });
+    })(jQuery);
 </script>

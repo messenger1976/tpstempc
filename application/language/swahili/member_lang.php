@@ -9,6 +9,7 @@ $lang['member_firstname'] = 'First Name';
 $lang['member_middlename'] = 'Middle Name';
 $lang['member_lastname'] = 'Last Name';
 $lang['member_gender'] = 'Gender';
+$lang['member_maidenname'] = 'Maiden Name';
 $lang['member_genderoption'] = array('M'=>'Male','F'=>'Female');
 $lang['member_maritalstatus'] = 'Marital Status';
 $lang['member_maritalstatus_option'] = array('Single'=>'Single','Married'=>'Married','Divorced'=>'Devorced','Widow/er'=>'Widow/er');
@@ -64,6 +65,7 @@ $lang['member_contact_phone2'] = 'Mobile 2';
 $lang['member_contact_email']  = 'Email';
 $lang['member_contact_box'] = 'Postal Address';
 $lang['member_contact_physical'] = 'Physical Address';
+$lang['member_contact_personalinfo'] = 'Personal Information';
 $lang['member_contact_info'] = 'Contact Information';
 $lang['member_contactbtn'] = 'Save Information';
 

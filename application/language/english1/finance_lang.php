@@ -24,6 +24,11 @@ $lang['finance_account_edit_success'] ='Account Information Edited Successfully'
 $lang['finance_account_edit_fail'] ='Fail to Edit Account';
 $lang['finance_account_edit'] ='Edit Account Information';
 
+$lang['finance_account_delete_success'] ='Chart of account deleted successfully';
+$lang['finance_account_delete_fail'] ='Failed to delete chart of account';
+$lang['finance_account_not_found'] ='Chart of account not found';
+$lang['finance_account_has_transactions'] ='Cannot delete chart of account. This account has transactions in the general ledger or journal entries.';
+
 
 //saving
 

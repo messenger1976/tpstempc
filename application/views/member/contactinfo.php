@@ -43,7 +43,21 @@ $this->load->view('member/topmenu');
         }
         ?>
 
-
+        <div style="color: brown;margin: 20px; font-weight: bold; font-size: 13px; border-bottom: 1px solid #ccc;">
+            <?php echo lang('member_contact_personalinfo'); ?>
+        </div>
+        <div class="form-group"><label class="col-lg-3 control-label">Number of Dependents  : </label>
+            <div class="col-lg-6">
+                <input type="number" name="dependents" value="<?php echo set_value('dependents', isset($contactinfo->dependents)?$contactinfo->dependents:''); ?>" min="0" class="form-control"/>
+                <?php echo form_error('dependents'); ?>
+            </div>
+        </div>
+        <div class="form-group"><label class="col-lg-3 control-label">Religion  : </label>
+            <div class="col-lg-6">
+                <input type="text" name="religion" value="<?php echo set_value('religion', isset($contactinfo->religion)?$contactinfo->religion:''); ?>" class="form-control"/>
+                <?php echo form_error('religion'); ?>
+            </div>
+        </div>
         <div class="form-group"><label class="col-lg-3 control-label"><?php echo lang('member_contact_phone1'); ?>  : </label>
             <div class="col-lg-6">
                 <div class="input-group"><span class="input-group-addon" style="border: 0px; padding: 0px 5px 0px 0px; margin: 0px"> <select name="pre_phone1" style="background: transparent; padding: 7px;  border:  1px solid #E5E6E7">
@@ -92,6 +106,13 @@ $this->load->view('member/topmenu');
         <div style="color: brown;margin: 20px; font-weight: bold; font-size: 13px; border-bottom: 1px solid #ccc;">
             <?php echo lang('member_contact_jobinfo'); ?>
         </div>
+        <div class="form-group"><label class="col-lg-3 control-label">Annual Income  : </label>
+            <div class="col-lg-6">
+                <input type="number" name="annualincome" step="0.01" value="<?php echo set_value('annualincome', isset($contactinfo->annualincome)?$contactinfo->annualincome:''); ?>" class="form-control"/>
+                <?php echo form_error('annualincome'); ?>
+            </div>
+        </div>
+
         <div class="form-group"><label class="col-lg-3 control-label"><?php echo lang('member_contact_occupation'); ?>  : </label>
             <div class="col-lg-6">
                 <input type="text" name="occupation" value="<?php echo $contactinfo->occupation; ?>"  class="form-control"/> 
@@ -108,6 +129,18 @@ $this->load->view('member/topmenu');
             <div class="col-lg-6">
                 <input type="text" name="sssno" value="<?php echo $contactinfo->sssno; ?>"  class="form-control"/> 
                 <?php echo form_error('sssno'); ?>
+            </div>
+        </div>
+        <div class="form-group"><label class="col-lg-3 control-label"><?php echo lang('member_contact_bpno'); ?>  : </label>
+            <div class="col-lg-6">
+                <input type="text" name="bpno" value="<?php echo $contactinfo->bpno; ?>"  class="form-control"/> 
+                <?php echo form_error('bpno'); ?>
+            </div>
+        </div>
+        <div class="form-group"><label class="col-lg-3 control-label">Assigned School  : </label>
+            <div class="col-lg-6">
+                <input type="text" name="assignedschool" value="<?php echo set_value('assignedschool', isset($contactinfo->assignedschool)?$contactinfo->assignedschool:''); ?>"  class="form-control"/> 
+                <?php echo form_error('assignedschool'); ?>
             </div>
         </div>
         <div class="form-group"><label class="col-lg-3 control-label"><?php echo lang('member_contact_officeaddress'); ?>  : </label>
@@ -131,6 +164,28 @@ $this->load->view('member/topmenu');
         </div>
 
         <?php echo form_close(); ?>
+
+        <script>
+            (function(){
+                var form = document.querySelector('form.form-horizontal');
+                if(!form) return;
+                form.addEventListener('submit', function(e){
+                    var fld = form.querySelector('[name="annualincome"]');
+                    if(!fld) return true;
+                    var val = fld.value.trim();
+                    if(val !== ''){
+                        // allow positive floats (e.g. 123, 123.45)
+                        var re = /^\d+(\.\d+)?$/;
+                        if(!re.test(val)){
+                            e.preventDefault();
+                            alert('Annual Income must be a number (e.g. 1234 or 1234.56)');
+                            fld.focus();
+                            return false;
+                        }
+                    }
+                });
+            })();
+        </script>
 
 
 

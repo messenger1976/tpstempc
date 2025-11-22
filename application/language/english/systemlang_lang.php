@@ -33,6 +33,9 @@ $lang['button_edit'] = 'Edit';
 $lang['button_view'] = 'View';
 $lang['button_search'] = 'Search';
 $lang['button_delete'] = 'Delete';
+$lang['button_create'] = 'Create';
+$lang['button_update'] = 'Update';
+$lang['button_cancel'] = 'Cancel';
 $lang['sno'] = 'S/No';
 
 //action column

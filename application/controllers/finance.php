@@ -153,6 +153,45 @@ class Finance extends CI_Controller {
         $this->load->view('template', $this->data);
     }
 
+    function finance_account_delete($id) {
+        $id = decode_id($id);
+        
+        // Check if account exists and belongs to current user's PIN
+        $account_info = $this->finance_model->account_chart($id, null)->row();
+        
+        if (!$account_info) {
+            $this->session->set_flashdata('warning', lang('finance_account_not_found'));
+            redirect(current_lang() . '/finance/finance_account_list', 'refresh');
+            return;
+        }
+        
+        if ($account_info->PIN != current_user()->PIN) {
+            $this->session->set_flashdata('warning', lang('finance_account_not_found'));
+            redirect(current_lang() . '/finance/finance_account_list', 'refresh');
+            return;
+        }
+        
+        // Check if account has transactions
+        $has_transactions = $this->finance_model->check_account_has_transactions($account_info->account);
+        
+        if ($has_transactions) {
+            $this->session->set_flashdata('warning', lang('finance_account_has_transactions'));
+            redirect(current_lang() . '/finance/finance_account_list', 'refresh');
+            return;
+        }
+        
+        // Proceed with deletion
+        $result = $this->finance_model->delete_chart_account($id);
+        
+        if ($result) {
+            $this->session->set_flashdata('message', lang('finance_account_delete_success'));
+        } else {
+            $this->session->set_flashdata('warning', lang('finance_account_delete_fail'));
+        }
+        
+        redirect(current_lang() . '/finance/finance_account_list', 'refresh');
+    }
+
     function journalentry() {
         $this->data['title'] = lang('journalentry');
         $this->form_validation->set_rules('issue_date', lang('journalentry_description'), 'required|valid_date');
@@ -219,6 +258,168 @@ class Finance extends CI_Controller {
 
         $this->data['content'] = 'finance/journalentry';
         $this->load->view('template', $this->data);
+    }
+
+    // Chart Type Management
+    function chart_type_list() {
+        $this->data['title'] = lang('chart_type_list');
+        $this->data['chart_types'] = $this->finance_model->account_type()->result();
+        $this->data['content'] = 'finance/chart_type_list';
+        $this->load->view('template', $this->data);
+    }
+
+    function chart_type_create($id = null) {
+        $this->data['id'] = $id;
+        if (!is_null($id)) {
+            $id = decode_id($id);
+            $this->data['title'] = lang('chart_type_edit');
+            $this->data['chart_type'] = $this->finance_model->account_type($id)->row();
+        } else {
+            $this->data['title'] = lang('chart_type_create');
+        }
+
+        $this->form_validation->set_rules('name', lang('chart_type_name'), 'required');
+        $this->form_validation->set_rules('account', lang('chart_type_account'), 'required|numeric');
+
+        if ($this->form_validation->run() == TRUE) {
+            $data = array(
+                'name' => trim($this->input->post('name')),
+                'account' => trim($this->input->post('account'))
+            );
+
+            if (is_null($id)) {
+                // Check if account number already exists
+                $existing = $this->finance_model->account_type(null, $data['account'])->row();
+                if ($existing) {
+                    $this->data['warning'] = lang('chart_type_account_exists');
+                } else {
+                    $result = $this->finance_model->create_chart_type($data);
+                    if ($result) {
+                        $this->session->set_flashdata('message', lang('chart_type_create_success'));
+                        redirect(current_lang() . '/finance/chart_type_list', 'refresh');
+                    } else {
+                        $this->data['warning'] = lang('chart_type_create_fail');
+                    }
+                }
+            } else {
+                // Check if account number already exists for another record
+                $existing = $this->finance_model->account_type(null, $data['account'])->row();
+                if ($existing && $existing->id != $id) {
+                    $this->data['warning'] = lang('chart_type_account_exists');
+                } else {
+                    $result = $this->finance_model->update_chart_type($data, $id);
+                    if ($result) {
+                        $this->session->set_flashdata('message', lang('chart_type_update_success'));
+                        redirect(current_lang() . '/finance/chart_type_list', 'refresh');
+                    } else {
+                        $this->data['warning'] = lang('chart_type_update_fail');
+                    }
+                }
+            }
+        }
+
+        $this->data['content'] = 'finance/chart_type_form';
+        $this->load->view('template', $this->data);
+    }
+
+    function chart_type_edit($id) {
+        $this->chart_type_create($id);
+    }
+
+    function chart_type_delete($id) {
+        $id = decode_id($id);
+        $result = $this->finance_model->delete_chart_type($id);
+        
+        if ($result) {
+            $this->session->set_flashdata('message', lang('chart_type_delete_success'));
+        } else {
+            $this->session->set_flashdata('warning', lang('chart_type_delete_fail_in_use'));
+        }
+        
+        redirect(current_lang() . '/finance/chart_type_list', 'refresh');
+    }
+
+    // Chart Sub Type Management
+    function chart_sub_type_list() {
+        $this->data['title'] = lang('chart_sub_type_list');
+        $this->data['chart_sub_types'] = $this->finance_model->account_type_sub()->result();
+        $this->data['chart_types'] = $this->finance_model->account_type()->result();
+        $this->data['content'] = 'finance/chart_sub_type_list';
+        $this->load->view('template', $this->data);
+    }
+
+    function chart_sub_type_create($id = null) {
+        $this->data['id'] = $id;
+        if (!is_null($id)) {
+            $id = decode_id($id);
+            $this->data['title'] = lang('chart_sub_type_edit');
+            $this->data['chart_sub_type'] = $this->finance_model->account_type_sub($id)->row();
+        } else {
+            $this->data['title'] = lang('chart_sub_type_create');
+        }
+
+        $this->form_validation->set_rules('name', lang('chart_sub_type_name'), 'required');
+        $this->form_validation->set_rules('accounttype', lang('chart_type'), 'required');
+        $this->form_validation->set_rules('sub_account', lang('chart_sub_type_account'), 'required|numeric');
+
+        if ($this->form_validation->run() == TRUE) {
+            $data = array(
+                'name' => trim($this->input->post('name')),
+                'accounttype' => trim($this->input->post('accounttype')),
+                'sub_account' => trim($this->input->post('sub_account'))
+            );
+
+            if (is_null($id)) {
+                // Check if sub account number already exists for this account type
+                $existing = $this->finance_model->account_type_sub(null, $data['accounttype'], $data['sub_account'])->row();
+                if ($existing) {
+                    $this->data['warning'] = lang('chart_sub_type_account_exists');
+                } else {
+                    $result = $this->finance_model->create_chart_sub_type($data);
+                    if ($result) {
+                        $this->session->set_flashdata('message', lang('chart_sub_type_create_success'));
+                        redirect(current_lang() . '/finance/chart_sub_type_list', 'refresh');
+                    } else {
+                        $this->data['warning'] = lang('chart_sub_type_create_fail');
+                    }
+                }
+            } else {
+                // Check if sub account number already exists for another record
+                $existing = $this->finance_model->account_type_sub(null, $data['accounttype'], $data['sub_account'])->row();
+                if ($existing && $existing->id != $id) {
+                    $this->data['warning'] = lang('chart_sub_type_account_exists');
+                } else {
+                    $result = $this->finance_model->update_chart_sub_type($data, $id);
+                    if ($result) {
+                        $this->session->set_flashdata('message', lang('chart_sub_type_update_success'));
+                        redirect(current_lang() . '/finance/chart_sub_type_list', 'refresh');
+                    } else {
+                        $this->data['warning'] = lang('chart_sub_type_update_fail');
+                    }
+                }
+            }
+        }
+
+        $this->data['chart_types'] = $this->finance_model->account_type()->result();
+        $this->data['content'] = 'finance/chart_sub_type_form';
+        $this->load->view('template', $this->data);
+    }
+
+    function chart_sub_type_edit($id) {
+        $this->chart_sub_type_create($id);
+    }
+
+    function chart_sub_type_delete($id) {
+        $id = decode_id($id);
+        $result = $this->finance_model->delete_chart_sub_type($id);
+        
+        if ($result) {
+            $this->session->set_flashdata('message', lang('chart_sub_type_delete_success'));
+        } else {
+            $this->session->set_flashdata('warning', lang('chart_sub_type_delete_fail_in_use'));
+        }
+        
+        redirect(current_lang() . '/finance/chart_sub_type_list', 'refresh');
     }
 
 }

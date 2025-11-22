@@ -33,7 +33,11 @@
                             <?php if($value->edit == 1){ ?>
                             <a href="<?php echo site_url(current_lang() . '/finance/finance_account_edit/' . encode_id($value->id)); ?>"><i class="fa fa-edit"></i> <?php echo lang('button_edit'); ?> </a>
                             <?php } ?>
-                        
+                            <?php if($value->edit == 1){ ?>
+                            <a href="javascript:void(0);" class="btn-delete-account" data-id="<?php echo encode_id($value->id); ?>" data-name="<?php echo htmlspecialchars($value->name); ?>" style="color: red; margin-left: 10px;">
+                                <i class="fa fa-trash"></i> <?php echo lang('button_delete'); ?>
+                            </a>
+                            <?php } ?>
                         </td>
                     </tr>
                 <?php }
@@ -48,3 +52,29 @@
     </table>
 
 </div>
+
+<script>
+$(document).ready(function() {
+    $('.btn-delete-account').click(function() {
+        var accountId = $(this).data('id');
+        var accountName = $(this).data('name');
+        var deleteUrl = '<?php echo site_url(current_lang() . '/finance/finance_account_delete/'); ?>/' + accountId;
+        
+        swal({
+            title: "Are you sure?",
+            text: "You will not be able to recover the chart of account: " + accountName + "!",
+            type: "warning",
+            showCancelButton: true,
+            confirmButtonColor: "#DD6B55",
+            confirmButtonText: "Yes, delete it!",
+            cancelButtonText: "No, cancel!",
+            closeOnConfirm: false,
+            closeOnCancel: true
+        }, function(isConfirm) {
+            if (isConfirm) {
+                window.location.href = deleteUrl;
+            }
+        });
+    });
+});
+</script>

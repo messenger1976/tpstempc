@@ -24,6 +24,11 @@ $lang['finance_account_edit_success'] ='Account Information Edited Successfully'
 $lang['finance_account_edit_fail'] ='Fail to Edit Account';
 $lang['finance_account_edit'] ='Edit Account Information';
 
+$lang['finance_account_delete_success'] ='Chart of account deleted successfully';
+$lang['finance_account_delete_fail'] ='Failed to delete chart of account';
+$lang['finance_account_not_found'] ='Chart of account not found';
+$lang['finance_account_has_transactions'] ='Cannot delete chart of account. This account has transactions in the general ledger or journal entries.';
+
 
 //saving
 
@@ -51,5 +56,34 @@ $lang['journalentry_total'] ='Total';
 $lang['journalentry_tax'] ='Tax';
 $lang['add_row'] ='Add Row';
 $lang['record_addbtn'] ='Record Journal';
+
+// Chart Type
+$lang['chart_type_list'] = 'Chart Type List';
+$lang['chart_type_create'] = 'Create Chart Type';
+$lang['chart_type_edit'] = 'Edit Chart Type';
+$lang['chart_type_name'] = 'Chart Type Name';
+$lang['chart_type_account'] = 'Account Number';
+$lang['chart_type'] = 'Chart Type';
+$lang['chart_type_create_success'] = 'Chart Type created successfully';
+$lang['chart_type_create_fail'] = 'Failed to create Chart Type';
+$lang['chart_type_update_success'] = 'Chart Type updated successfully';
+$lang['chart_type_update_fail'] = 'Failed to update Chart Type';
+$lang['chart_type_delete_success'] = 'Chart Type deleted successfully';
+$lang['chart_type_delete_fail_in_use'] = 'Cannot delete Chart Type. It is being used or has sub types associated with it.';
+$lang['chart_type_account_exists'] = 'Account number already exists';
+
+// Chart Sub Type
+$lang['chart_sub_type_list'] = 'Chart Sub Type List';
+$lang['chart_sub_type_create'] = 'Create Chart Sub Type';
+$lang['chart_sub_type_edit'] = 'Edit Chart Sub Type';
+$lang['chart_sub_type_name'] = 'Chart Sub Type Name';
+$lang['chart_sub_type_account'] = 'Sub Account Number';
+$lang['chart_sub_type_create_success'] = 'Chart Sub Type created successfully';
+$lang['chart_sub_type_create_fail'] = 'Failed to create Chart Sub Type';
+$lang['chart_sub_type_update_success'] = 'Chart Sub Type updated successfully';
+$lang['chart_sub_type_update_fail'] = 'Failed to update Chart Sub Type';
+$lang['chart_sub_type_delete_success'] = 'Chart Sub Type deleted successfully';
+$lang['chart_sub_type_delete_fail_in_use'] = 'Cannot delete Chart Sub Type. It is being used in account charts.';
+$lang['chart_sub_type_account_exists'] = 'Sub account number already exists for this chart type';
 
 ?>

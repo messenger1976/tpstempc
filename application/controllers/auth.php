@@ -95,6 +95,11 @@ class Auth extends CI_Controller {
 
             if ($this->ion_auth->login($this->input->post('identity'), $this->input->post('password'), $remember)) {
                 //if the login is successful
+                //log the login activity
+                $this->load->helper('activity_log');
+                $user = $this->ion_auth->user()->row();
+                log_login($user->id, $user->username);
+                
                 //redirect them back to the home page
                 $this->session->set_flashdata('message', $this->ion_auth->messages());
                 redirect('/', 'refresh');
@@ -129,6 +134,13 @@ class Auth extends CI_Controller {
     //log the user out
     function logout() {
         $this->data['title'] = "Logout";
+
+        //log the logout activity before logging out
+        $this->load->helper('activity_log');
+        if ($this->ion_auth->logged_in()) {
+            $user = $this->ion_auth->user()->row();
+            log_logout($user->id, $user->username);
+        }
 
         //log the user out
         $logout = $this->ion_auth->logout();

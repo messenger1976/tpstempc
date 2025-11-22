@@ -94,8 +94,8 @@ class Finance_Model extends CI_Model {
         $account_start = (string) $last_account->accounttype . $last_account->sub_account;
         $last_part = format_lastpart_account($last_account->last_account);
         $account_no = $account_start . $last_part;
-
-        $data['account'] = (int) $account_no;
+        //Disabled auto increment of account number - 11/22/2025
+        //$data['account'] = (int) $account_no;
 
 
         $this->db->insert('account_chart', $data);

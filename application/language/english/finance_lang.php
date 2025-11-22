@@ -6,6 +6,7 @@
  */
 
 $lang['finance_account_create'] = 'Create New Account Chart';
+$lang['finance_account_code'] = 'Account Number';
 $lang['finance_account_name'] = 'Account Name';
 $lang['finance_account_type'] = 'Account Type';
 $lang['finance_account_description'] = 'Description';

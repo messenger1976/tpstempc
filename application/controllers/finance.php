@@ -44,6 +44,7 @@ class Finance extends CI_Controller {
         if (!is_null($parent_account)) {
             $this->data['parent_info'] = $this->finance_model->account_chart(null, $parent_account)->row();
         }
+        $this->form_validation->set_rules('accountcode', lang('finance_account_code'), 'required');
         $this->form_validation->set_rules('account_type', lang('member_group_description'), 'required');
         $this->form_validation->set_rules('accountname', lang('finance_account_name'), 'required');
         $this->form_validation->set_rules('accountdescription', lang('finance_account_description'), '');
@@ -66,6 +67,7 @@ class Finance extends CI_Controller {
             
             $tmp = $this->input->post('account_type');
             $name = $this->input->post('accountname');
+            $accountcode = $this->input->post('accountcode');
             $description = $this->input->post('accountdescription');
             $tmp1 = explode('_', $tmp);
             $accounttype = $tmp1[0];
@@ -76,6 +78,7 @@ class Finance extends CI_Controller {
                 'account_type' => $accounttype,
                 'sub_account_type' => $accounttype_sub,
                 'name' => trim($name),
+                'account' => $accountcode,
                 'description' => trim($description),
                 'createdby' => current_user()->id,
                 'PIN' =>  current_user()->PIN
@@ -106,6 +109,7 @@ class Finance extends CI_Controller {
         if ($accountinfo->account_parent != 0) {
             $this->data['parent_info'] = $this->finance_model->account_chart(null, $accountinfo->account_parent)->row();
         }
+        $this->form_validation->set_rules('accountcode', lang('finance_account_code'), 'required');
         $this->form_validation->set_rules('account_type', lang('member_group_description'), 'required');
         $this->form_validation->set_rules('accountname', lang('finance_account_name'), 'required');
         $this->form_validation->set_rules('accountdescription', lang('finance_account_description'), '');
@@ -117,6 +121,7 @@ class Finance extends CI_Controller {
             
              $tmp = $this->input->post('account_type');
             $name = $this->input->post('accountname');
+            $accountcode = $this->input->post('accountcode');
             $description = $this->input->post('accountdescription');
             $tmp1 = explode('_', $tmp);
             $accounttype = $tmp1[0];
@@ -126,6 +131,7 @@ class Finance extends CI_Controller {
             $create_account = array(
                 'account_type' => $accounttype,
                 'sub_account_type' => $accounttype_sub,
+                'account' => trim($accountcode),
                 'name' => trim($name),
                 'description' => trim($description),
                 'PIN' =>  current_user()->PIN

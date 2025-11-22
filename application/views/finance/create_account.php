@@ -40,7 +40,12 @@ if (isset($parent_info)) {
         <?php echo form_error('account_type'); ?>
     </div>
 </div>
-
+<div class="form-group"><label class="col-lg-3 control-label"><?php echo lang('finance_account_code'); ?>  : <span class="required">*</span></label>
+    <div class="col-lg-6">
+        <input type="text" name="accountcode" value="<?php echo set_value('accountcode'); ?>"  class="form-control"/> 
+        <?php echo form_error('accountcode'); ?>
+    </div>
+</div>
 <div class="form-group"><label class="col-lg-3 control-label"><?php echo lang('finance_account_name'); ?>  : <span class="required">*</span></label>
     <div class="col-lg-6">
         <input type="text" name="accountname" value="<?php echo set_value('accountname'); ?>"  class="form-control"/> 

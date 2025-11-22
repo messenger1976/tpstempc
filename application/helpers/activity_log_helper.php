@@ -23,7 +23,7 @@ if (!function_exists('log_activity')) {
      */
     function log_activity($action, $module = NULL, $description = NULL, $record_id = NULL, $record_type = NULL) {
         $CI = &get_instance();
-        $CI->load->model('Activity_log_model');
+        $CI->load->model('activity_log_model');
 
         // Get current user info
         $user_id = 0;

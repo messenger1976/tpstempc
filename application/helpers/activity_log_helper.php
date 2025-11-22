@@ -77,7 +77,7 @@ if (!function_exists('log_login')) {
      */
     function log_login($user_id, $username) {
         $CI = &get_instance();
-        $CI->load->model('Activity_log_model');
+        $CI->load->model('activity_log_model');
 
         $data = array(
             'user_id' => $user_id,
@@ -103,7 +103,7 @@ if (!function_exists('log_logout')) {
      */
     function log_logout($user_id, $username) {
         $CI = &get_instance();
-        $CI->load->model('Activity_log_model');
+        $CI->load->model('activity_log_model');
 
         $data = array(
             'user_id' => $user_id,

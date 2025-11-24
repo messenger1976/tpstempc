@@ -1380,7 +1380,7 @@ function _getPageFormat($format) {
 			case 'A1': {$format = array(1683.78,2383.94); break;}
 			case 'A2': {$format = array(1190.55,1683.78); break;}
 			case 'A3': {$format = array(841.89,1190.55); break;}
-			case 'A4': default: {$format = array(595.28,841.89); break;}
+			case 'A4': {$format = array(595.28,841.89); break;}
 			case 'A5': {$format = array(419.53,595.28); break;}
 			case 'A6': {$format = array(297.64,419.53); break;}
 			case 'A7': {$format = array(209.76,297.64); break;}
@@ -32445,10 +32445,31 @@ function ConvertSize($size=5,$maxsize=0,$fontsize=false,$usefontsize=true){
 	$size = trim(strtolower($size));
 
   if ( $size == 'thin' ) $size = 1*(25.4/$this->dpi); //1 pixel width for table borders
-  elseif ( stristr($size,'px') ) $size *= (25.4/$this->dpi); //pixels
-  elseif ( stristr($size,'cm') ) $size *= 10; //centimeters
+  elseif ( stristr($size,'px') ) {
+	$size += 0; // Convert to numeric first
+	if (is_numeric($size)) {
+		$size *= (25.4/$this->dpi); //pixels
+	} else {
+		$size = 0;
+	}
+  }
+  elseif ( stristr($size,'cm') ) {
+	$size += 0; // Convert to numeric first
+	if (is_numeric($size)) {
+		$size *= 10; //centimeters
+	} else {
+		$size = 0;
+	}
+  }
   elseif ( stristr($size,'mm') ) $size += 0; //millimeters
-  elseif ( stristr($size,'pt') ) $size *= 25.4/72; //72 pts/inch
+  elseif ( stristr($size,'pt') ) {
+	$size += 0; // Convert to numeric first
+	if (is_numeric($size)) {
+		$size *= 25.4/72; //72 pts/inch
+	} else {
+		$size = 0;
+	}
+  }
   elseif ( stristr($size,'rem') ) {	// mPDF 5.6.12
   	$size += 0; //make "0.83rem" become simply "0.83" 
 	$size *= ($this->default_font_size / _MPDFK);
@@ -32463,8 +32484,22 @@ function ConvertSize($size=5,$maxsize=0,$fontsize=false,$usefontsize=true){
 	if ($fontsize && $usefontsize) { $size *= $fontsize/100; }
 	else { $size *= $maxsize/100; }
   }
-  elseif ( stristr($size,'in') ) $size *= 25.4; //inches 
-  elseif ( stristr($size,'pc') ) $size *= 38.1/9; //PostScript picas 
+  elseif ( stristr($size,'in') ) {
+	$size += 0; // Convert to numeric first
+	if (is_numeric($size)) {
+		$size *= 25.4; //inches
+	} else {
+		$size = 0;
+	}
+  }
+  elseif ( stristr($size,'pc') ) {
+	$size += 0; // Convert to numeric first
+	if (is_numeric($size)) {
+		$size *= 38.1/9; //PostScript picas
+	} else {
+		$size = 0;
+	}
+  } 
   elseif ( stristr($size,'ex') ) {	// Approximates "ex" as half of font height
   	$size += 0; //make "3.5ex" become simply "3.5" 
 	if ($fontsize) { $size *= $fontsize/2; }
@@ -32500,7 +32535,15 @@ function ConvertSize($size=5,$maxsize=0,$fontsize=false,$usefontsize=true){
 	if ($fontsize) { $size *= $fontsize*2; }
 	else { $size *= $maxsize*2; }
   }
-  else $size *= (25.4/$this->dpi); //nothing == px
+  else {
+	// Ensure $size is numeric before multiplication
+	if (is_numeric($size)) {
+		$size *= (25.4/$this->dpi); //nothing == px
+	} else {
+		// If not numeric (e.g., 'auto', 'inherit'), return as-is or default value
+		$size = is_numeric($maxsize) ? $maxsize : 0;
+	}
+  }
   
   return $size;
 }

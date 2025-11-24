@@ -866,16 +866,30 @@ class Ion_auth_model extends CI_Model {
         $this->db->insert($this->tables['users'], $user_data);
 
         $id = $this->db->insert_id();
+        
+        // Verify the insert was successful and we got a valid ID
+        if (!$id || $id === 0) {
+            $this->set_error('account_creation_unsuccessful');
+            return FALSE;
+        }
 
         //add in groups array if it doesn't exits and stop adding into default group if default group ids are set
         if (isset($default_group->id) && empty($groups)) {
             $groups[] = $default_group->id;
         }
 
-        if (!empty($groups)) {
-            //add to groups
+        if (!empty($groups) && $id > 0) {
+            //add to groups - verify user exists first
             foreach ($groups as $group) {
-                $this->add_to_group($group, $id);
+                // Double-check that user exists before adding to group
+                if ($this->db->get_where($this->tables['users'], array('id' => $id))->num_rows() > 0) {
+                    $this->add_to_group($group, $id);
+                } else {
+                    // User doesn't exist, something went wrong
+                    log_message('error', 'Cannot add user to group: User ID ' . $id . ' does not exist');
+                    $this->set_error('account_creation_unsuccessful');
+                    return FALSE;
+                }
             }
         }
 
@@ -1300,6 +1314,19 @@ class Ion_auth_model extends CI_Model {
 
         //if no id was passed use the current users id
         $user_id || $user_id = $this->session->userdata('user_id');
+        
+        // Validate user_id is valid
+        if (!$user_id || $user_id <= 0) {
+            $this->set_error('add_to_group_unsuccessful');
+            return FALSE;
+        }
+        
+        // Verify user exists before trying to add to group
+        if ($this->db->get_where($this->tables['users'], array('id' => (int)$user_id))->num_rows() == 0) {
+            log_message('error', 'Cannot add user to group: User ID ' . $user_id . ' does not exist in users table');
+            $this->set_error('add_to_group_unsuccessful');
+            return FALSE;
+        }
 
         //check if unique - num_rows() > 0 means row found
         if ($this->db->where(array($this->join['groups'] => (int) $group_id, $this->join['users'] => (int) $user_id))->get($this->tables['users_groups'])->num_rows())
@@ -1986,23 +2013,59 @@ class Ion_auth_model extends CI_Model {
         return $this->db->get('groups');
     }
 
-    function count_users($key = null) {
+    function count_users($key = null, $group_id = null) {
         $pin = current_user()->PIN;
-        $sql = " SELECT * FROM users WHERE PIN='$pin'";
+        $sql = " SELECT DISTINCT u.* FROM users u";
+        
+        // Join with users_groups if filtering by group
+        if ($group_id !== null && $group_id > 0) {
+            $sql .= " INNER JOIN users_groups ug ON u.id = ug.user_id";
+        }
+        
+        $sql .= " WHERE u.PIN='$pin' AND (u.deleted IS NULL OR u.deleted = 0)";
+        
+        if ($group_id !== null && $group_id > 0) {
+            $sql .= " AND ug.group_id = " . (int)$group_id;
+        }
+        
         if (!is_null($key)) {
-            $sql .= " AND (username LIKE '%$key%' OR first_name LIKE '%$key%' OR last_name LIKE '%$key%' OR
-            email LIKE '%$key%' OR phone LIKE '%$key%')";
+            $sql .= " AND (u.username LIKE '%$key%' OR u.first_name LIKE '%$key%' OR u.last_name LIKE '%$key%' OR
+            u.email LIKE '%$key%' OR u.phone LIKE '%$key%')";
         }
 
         return count($this->db->query($sql)->result());
     }
 
-    function all_users($key, $limit, $start) {
+    function all_users($key, $limit, $start, $sort_by = 'created_on', $sort_order = 'DESC', $group_id = null) {
         $pin = current_user()->PIN;
-        $sql = " SELECT * FROM users WHERE PIN='$pin'";
+        $sql = " SELECT DISTINCT u.* FROM users u";
+        
+        // Join with users_groups if filtering by group
+        if ($group_id !== null && $group_id > 0) {
+            $sql .= " INNER JOIN users_groups ug ON u.id = ug.user_id";
+        }
+        
+        $sql .= " WHERE u.PIN='$pin' AND (u.deleted IS NULL OR u.deleted = 0)";
+        
+        if ($group_id !== null && $group_id > 0) {
+            $sql .= " AND ug.group_id = " . (int)$group_id;
+        }
+        
         if (!is_null($key)) {
-            $sql .= " AND (username LIKE '%$key%' OR first_name LIKE '%$key%' OR last_name LIKE '%$key%' OR
-            email LIKE '%$key%' OR phone LIKE '%$key%')";
+            $sql .= " AND (u.username LIKE '%$key%' OR u.first_name LIKE '%$key%' OR u.last_name LIKE '%$key%' OR
+            u.email LIKE '%$key%' OR u.phone LIKE '%$key%')";
+        }
+
+        // Add sorting
+        $allowed_sort_fields = array('created_on', 'first_name', 'last_name', 'email');
+        if (in_array($sort_by, $allowed_sort_fields)) {
+            $sort_order = strtoupper($sort_order);
+            if ($sort_order != 'ASC' && $sort_order != 'DESC') {
+                $sort_order = 'DESC';
+            }
+            $sql .= " ORDER BY u.$sort_by $sort_order";
+        } else {
+            $sql .= " ORDER BY u.created_on DESC";
         }
 
         $sql .= " LIMIT $start,$limit";
@@ -2020,7 +2083,7 @@ class Ion_auth_model extends CI_Model {
             foreach ($get_role as $k => $v) {
                 $check = $this->db->get_where('access_level', array('group_id' => $group_id, 'Module' => $value->id, 'link' => $v->Name))->row();
                 $module_info[$value->Name][$v->Name] = array($value->id, $v->id);
-                if (count($check) == 1) {
+                if ($check !== null) {
                     $array[$value->Name][$v->Name] = $check->allow;
                 } else {
                     $array[$value->Name][$v->Name] = 0;

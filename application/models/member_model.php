@@ -21,7 +21,7 @@ class Member_Model extends CI_Model {
         $this->db->where('PIN', current_user()->PIN);
         $this->db->where('member_id', $member_id);
         $data = $this->db->get('members')->row();
-        if (count($data) == 1) {
+        if (!empty($data)) {
             return TRUE;
         }
 
@@ -228,7 +228,7 @@ class Member_Model extends CI_Model {
         $this->db->where('PID', $pid);
         $return = $this->db->get('members_contact')->row();
 
-        if (count($return) == 0) {
+        if (empty($return) || $return === NULL) {
             $fields = $this->db->list_fields('members_contact');
             $fieldschange = array_flip($fields);
             foreach ($fieldschange as $key => $value) {
@@ -243,7 +243,7 @@ class Member_Model extends CI_Model {
     function member_nextkin($pid) {
         $this->db->where('PID', $pid);
         $return = $this->db->get('members_nextkin')->row();
-        if (count($return) == 0) {
+        if (empty($return) || $return === NULL) {
             $fields = $this->db->list_fields('members_nextkin');
             $fieldschange = array_flip($fields);
             foreach ($fieldschange as $key => $value) {
@@ -259,7 +259,7 @@ class Member_Model extends CI_Model {
         //check if data exist
         $this->db->where('PID', $data['PID']);
         $contact = $this->db->get('members_contact')->row();
-        if (count($contact) == 0) {
+        if (empty($contact) || $contact === NULL) {
             $return = $this->db->insert('members_contact', $data);
         } else {
             $return = $this->db->update('members_contact', $data, array('PID' => $data['PID']));
@@ -276,7 +276,7 @@ class Member_Model extends CI_Model {
         //check if data exist
         $this->db->where('PID', $data['PID']);
         $contact = $this->db->get('members_nextkin')->row();
-        if (count($contact) == 0) {
+        if (empty($contact) || $contact === NULL) {
             $return = $this->db->insert('members_nextkin', $data);
         } else {
             $return = $this->db->update('members_nextkin', $data, array('PID' => $data['PID']));
@@ -362,7 +362,7 @@ class Member_Model extends CI_Model {
     function member_contribution_balance($pid) {
         $this->db->where('PID', $pid);
         $return = $this->db->get('members_contribution')->row();
-        if (count($return) == 0) {
+        if (empty($return) || $return === NULL) {
             $fields = $this->db->list_fields('members_contribution');
             $fieldschange = array_flip($fields);
             foreach ($fieldschange as $key => $value) {
@@ -377,7 +377,7 @@ class Member_Model extends CI_Model {
     function member_mortuary_balance($pid) {
         $this->db->where('PID', $pid);
         $return = $this->db->get('members_mortuary')->row();
-        if (count($return) == 0) {
+        if (empty($return) || $return === NULL) {
             $fields = $this->db->list_fields('members_mortuary');
             $fieldschange = array_flip($fields);
             foreach ($fieldschange as $key => $value) {
@@ -393,7 +393,7 @@ class Member_Model extends CI_Model {
          $this->db->where('PID', $pid);
          $return = $this->db->get('members_share')->row();         
          
-        if (count($return) == 0) {
+        if (empty($return) || $return === NULL) {
             $fields = $this->db->list_fields('members_share');
             $fieldschange = array_flip($fields);
             foreach ($fieldschange as $key => $value) {
@@ -412,7 +412,7 @@ class Member_Model extends CI_Model {
          $this->db->limit(1);
          $return = $this->db->get('loan_contract')->row();         
          
-        if (count($return) == 0) {
+        if (empty($return) || $return === NULL) {
             $fields = $this->db->list_fields('loan_contract');
             $fieldschange = array_flip($fields);
             foreach ($fieldschange as $key => $value) {
@@ -430,7 +430,7 @@ class Member_Model extends CI_Model {
          $this->db->where('LID', $LID);
          $return = $this->db->get('loan_contract_repayment')->row();         
          
-        if (count($return) == 0) {
+        if (empty($return) || $return === NULL) {
             $fields = $this->db->list_fields('loan_contract_repayment');
             $fieldschange = array_flip($fields);
             foreach ($fieldschange as $key => $value) {

@@ -218,7 +218,7 @@ if (!function_exists('default_text_value')) {
         $CI = &get_instance();
         $pin = current_user()->PIN;
         $content = $CI->db->get_where('global_setting', array('key' => $key, 'PIN' => $pin))->row();
-        if (count($content) == 1) {
+        if (!empty($content)) {
             return $content->text;
         }
         return '';

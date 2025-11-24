@@ -21,7 +21,7 @@ class Setting_Model extends CI_Model {
     function global_contribution_info() {
        $this->db->where('PIN',  current_user()->PIN);
         $row = $this->db->get('contribution_global')->row();
-        if (count($row) == 0) {
+        if (empty($row) || $row === NULL) {
             $fields = $this->db->list_fields('contribution_global');
             $fieldschange = array_flip($fields);
             foreach ($fieldschange as $key => $value) {
@@ -36,7 +36,7 @@ class Setting_Model extends CI_Model {
     function global_mortuary_info() {
         $this->db->where('PIN',  current_user()->PIN);
         $row = $this->db->get('mortuary_global')->row();
-        if (count($row) == 0) {
+        if (empty($row) || $row === NULL) {
             $fields = $this->db->list_fields('mortuary_global');
             $fieldschange = array_flip($fields);
             foreach ($fieldschange as $key => $value) {
@@ -52,7 +52,7 @@ class Setting_Model extends CI_Model {
     function share_setting_info() {
         $this->db->where('PIN',  current_user()->PIN);
         $row = $this->db->get('share_setting')->row();
-        if (count($row) == 0) {
+        if (empty($row) || $row === NULL) {
             $fields = $this->db->list_fields('share_setting');
             $fieldschange = array_flip($fields);
             foreach ($fieldschange as $key => $value) {
@@ -68,7 +68,7 @@ class Setting_Model extends CI_Model {
     function mortuary_global_info() {
         $this->db->where('PIN',  current_user()->PIN);
         $row = $this->db->get('mortuary_global')->row();
-        if (count($row) == 0) {
+        if (empty($row) || $row === NULL) {
             $fields = $this->db->list_fields('mortuary_global');
             $fieldschange = array_flip($fields);
             foreach ($fieldschange as $key => $value) {
@@ -83,7 +83,7 @@ class Setting_Model extends CI_Model {
         //check exist
         $this->db->where('PIN',  current_user()->PIN);
         $check = $this->db->get('contribution_global')->row();
-        if (count($check) == 1) {
+        if (!empty($check)) {
             return $this->db->update('contribution_global', $data, array('id' => $check->id));
         } else {
             return $this->db->insert('contribution_global', $data);
@@ -95,7 +95,7 @@ class Setting_Model extends CI_Model {
         //check exist
         $this->db->where('PIN',  current_user()->PIN);
         $check = $this->db->get('share_setting')->row();
-        if (count($check) == 1) {
+        if (!empty($check)) {
             return $this->db->update('share_setting', $data, array('id' => $check->id));
         } else {
             return $this->db->insert('share_setting', $data);
@@ -107,7 +107,7 @@ class Setting_Model extends CI_Model {
         //check exist
         $this->db->where('PIN',  current_user()->PIN);
         $check = $this->db->get('mortuary_global')->row();
-        if (count($check) == 1) {
+        if (!empty($check)) {
             return $this->db->update('mortuary_global', $data, array('id' => $check->id));
         } else {
             return $this->db->insert('mortuary_global', $data);
@@ -183,7 +183,7 @@ class Setting_Model extends CI_Model {
        $this->db->where('PIN',  $pin);
         $check = $this->db->get('taxcode')->row();
 
-        if (count($check) > 0) {
+        if (!empty($check)) {
             return TRUE;
         }
         return FALSE;
@@ -195,7 +195,7 @@ class Setting_Model extends CI_Model {
         $this->db->where('PIN',  $pin);
         $check = $this->db->get('items')->row();
 
-        if (count($check) > 0) {
+        if (!empty($check)) {
             return TRUE;
         }
         return FALSE;

@@ -154,9 +154,188 @@ class Finance extends CI_Controller {
 
     function finance_account_list() {
         $this->data['title'] = lang('finance_account_list');
-        $this->data['account_chart'] = $this->finance_model->account_chart()->result();
+        $account_chart = $this->finance_model->account_chart()->result();
+        
+        // Sort by account field (ASC)
+        usort($account_chart, function($a, $b) {
+            return (int)$a->account - (int)$b->account;
+        });
+        
+        $this->data['account_chart'] = $account_chart;
         $this->data['content'] = 'finance/account_chart_list';
         $this->load->view('template', $this->data);
+    }
+
+    function finance_account_list_print() {
+        $this->data['title'] = 'Chart of Accounts';
+        // Get accounts organized by account type for ladder display
+        $account_chart_by_type = $this->finance_model->account_chart_by_accounttype();
+        
+        // Sort account types by account code (ASC)
+        uasort($account_chart_by_type, function($a, $b) {
+            $account_a = isset($a['info']->account) ? (int)$a['info']->account : 0;
+            $account_b = isset($b['info']->account) ? (int)$b['info']->account : 0;
+            return $account_a - $account_b;
+        });
+        
+        // Sort accounts within each type by account field (ASC)
+        foreach ($account_chart_by_type as $type_id => $type_data) {
+            if (isset($type_data['data']) && is_array($type_data['data'])) {
+                usort($type_data['data'], function($a, $b) {
+                    return (int)$a->account - (int)$b->account;
+                });
+                $account_chart_by_type[$type_id]['data'] = $type_data['data'];
+            }
+        }
+        
+        $this->data['account_chart_by_type'] = $account_chart_by_type;
+        
+        // Sort the flat list by account field (ASC)
+        $account_chart = $this->finance_model->account_chart()->result();
+        usort($account_chart, function($a, $b) {
+            return (int)$a->account - (int)$b->account;
+        });
+        $this->data['account_chart'] = $account_chart;
+        
+        $this->load->view('finance/print/account_chart_list_print', $this->data);
+    }
+
+    function finance_account_list_export() {
+        // Clear ALL output buffers first
+        if (ob_get_level()) {
+            ob_end_clean();
+        }
+        while (@ob_end_clean());
+        
+        // Disable CodeIgniter's output completely
+        $this->output->enable_profiler(FALSE);
+        // Prevent CodeIgniter from sending output
+        $this->output->set_output('');
+        
+        // Load Excel library
+        $this->load->library('excel');
+        
+        // Get account chart data - same as list function
+        $account_chart = $this->finance_model->account_chart()->result();
+        
+        // Check if we have data
+        if (empty($account_chart) || !is_array($account_chart) || count($account_chart) == 0) {
+            // Clear buffers before redirect
+            if (ob_get_level()) {
+                ob_end_clean();
+            }
+            $this->session->set_flashdata('warning', 'No data available to export');
+            redirect(current_lang() . '/finance/finance_account_list', 'refresh');
+            exit();
+        }
+        
+        // Sort by account field (ASC)
+        usort($account_chart, function($a, $b) {
+            return (int)$a->account - (int)$b->account;
+        });
+        
+        // Create new PHPExcel object
+        $objPHPExcel = new PHPExcel();
+        
+        // Set document properties
+        $objPHPExcel->getProperties()->setCreator(company_info()->name)
+                                     ->setTitle("Chart of Accounts")
+                                     ->setSubject("Chart of Accounts Export")
+                                     ->setDescription("Chart of Accounts exported from " . company_info()->name);
+        
+        // Set active sheet index to the first sheet
+        $objPHPExcel->setActiveSheetIndex(0);
+        $sheet = $objPHPExcel->getActiveSheet();
+        
+        // Set sheet title
+        $sheet->setTitle('Chart of Accounts');
+        
+        // Set column headers
+        $sheet->setCellValue('A1', lang('sno'));
+        $sheet->setCellValue('B1', lang('account_no'));
+        $sheet->setCellValue('C1', lang('finance_account_type'));
+        $sheet->setCellValue('D1', lang('finance_account_name'));
+        $sheet->setCellValue('E1', lang('finance_account_description'));
+        
+        // Style the header row
+        $headerStyle = array(
+            'font' => array(
+                'bold' => true,
+                'color' => array('rgb' => 'FFFFFF'),
+            ),
+            'fill' => array(
+                'type' => PHPExcel_Style_Fill::FILL_SOLID,
+                'color' => array('rgb' => '4472C4')
+            ),
+            'alignment' => array(
+                'horizontal' => PHPExcel_Style_Alignment::HORIZONTAL_CENTER,
+            ),
+        );
+        
+        $sheet->getStyle('A1:E1')->applyFromArray($headerStyle);
+        
+        // Set column widths
+        $sheet->getColumnDimension('A')->setWidth(10);
+        $sheet->getColumnDimension('B')->setWidth(15);
+        $sheet->getColumnDimension('C')->setWidth(25);
+        $sheet->getColumnDimension('D')->setWidth(30);
+        $sheet->getColumnDimension('E')->setWidth(40);
+        
+        // Populate data
+        $row = 2;
+        $i = 1;
+        foreach ($account_chart as $account) {
+            // Get account type name - exactly as in view
+            $account_type_name = '';
+            if (isset($account->account_type)) {
+                $account_type_result = $this->finance_model->account_type(null, $account->account_type);
+                if ($account_type_result && $account_type_result->num_rows() > 0) {
+                    $account_type = $account_type_result->row();
+                    $account_type_name = isset($account_type->name) ? $account_type->name : '';
+                }
+            }
+            
+            // Write data to cells
+            $sheet->setCellValue('A' . $row, $i++);
+            $sheet->setCellValue('B' . $row, $account->account);
+            $sheet->setCellValue('C' . $row, $account_type_name);
+            $sheet->setCellValue('D' . $row, $account->name);
+            $sheet->setCellValue('E' . $row, $account->description);
+            
+            // Add borders to cells
+            $sheet->getStyle('A' . $row . ':E' . $row)->applyFromArray(array(
+                'borders' => array(
+                    'allborders' => array(
+                        'style' => PHPExcel_Style_Border::BORDER_THIN
+                    )
+                )
+            ));
+            
+            $row++;
+        }
+        
+        // Set filename
+        $filename = 'Chart_of_Accounts_' . date('Y-m-d_His') . '.xls';
+        
+        // Clear any remaining output buffers before sending headers
+        if (ob_get_level()) {
+            ob_end_clean();
+        }
+        while (@ob_end_clean());
+        
+        // Set headers - MUST be before any output
+        header('Content-Type: application/vnd.ms-excel');
+        header('Content-Disposition: attachment;filename="' . $filename . '"');
+        header('Cache-Control: must-revalidate, post-check=0, pre-check=0');
+        header('Pragma: public');
+        header('Expires: 0');
+        
+        // Create writer and output directly
+        $objWriter = PHPExcel_IOFactory::createWriter($objPHPExcel, 'Excel5');
+        $objWriter->save('php://output');
+        
+        // Exit immediately to prevent any further output
+        exit();
     }
 
     function finance_account_delete($id) {

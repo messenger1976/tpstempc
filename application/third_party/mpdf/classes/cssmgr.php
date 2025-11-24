@@ -1069,6 +1069,11 @@ function MergeCSS($inherit,$tag,$attr) {
 	$p = array();
 	$zp = array(); 
 
+	// Ensure $attr is an array
+	if (!is_array($attr)) {
+		$attr = array();
+	}
+
 	$classes = array();
 	if (isset($attr['CLASS'])) {
 		$classes = preg_split('/\s+/',$attr['CLASS']);

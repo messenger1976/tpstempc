@@ -122,11 +122,24 @@ function &DB($params = '', $active_record_override = NULL)
 
 	if ( ! isset($active_record) OR $active_record == TRUE)
 	{
+		// Always load the base Active Record class first
 		require_once(BASEPATH.'database/DB_active_rec.php');
-
-		if ( ! class_exists('CI_DB'))
+		
+		// Check for extended Active Record class after base class is loaded
+		if (file_exists(APPPATH.'core/MY_DB_active_record.php'))
 		{
-			eval('class CI_DB extends CI_DB_active_record { }');
+			require_once(APPPATH.'core/MY_DB_active_record.php');
+			if ( ! class_exists('CI_DB'))
+			{
+				eval('class CI_DB extends MY_DB_active_record { }');
+			}
+		}
+		else
+		{
+			if ( ! class_exists('CI_DB'))
+			{
+				eval('class CI_DB extends CI_DB_active_record { }');
+			}
 		}
 	}
 	else
@@ -137,10 +150,34 @@ function &DB($params = '', $active_record_override = NULL)
 		}
 	}
 
+	// Always load the base driver class first (required for extended driver)
 	require_once(BASEPATH.'database/drivers/'.$params['dbdriver'].'/'.$params['dbdriver'].'_driver.php');
-
-	// Instantiate the DB adapter
-	$driver = 'CI_DB_'.$params['dbdriver'].'_driver';
+	
+	// Now check for extended driver and load it if it exists
+	$extended_driver_path = APPPATH.'core/MY_DB_'.$params['dbdriver'].'_driver.php';
+	$extended_driver_class = 'MY_DB_'.$params['dbdriver'].'_driver';
+	$base_driver_class = 'CI_DB_'.$params['dbdriver'].'_driver';
+	
+	if (file_exists($extended_driver_path))
+	{
+		@require_once($extended_driver_path);
+		if (class_exists($extended_driver_class))
+		{
+			// Use extended driver if it loaded successfully
+			$driver = $extended_driver_class;
+		}
+		else
+		{
+			// Fall back to base driver if extended driver failed to load
+			$driver = $base_driver_class;
+		}
+	}
+	else
+	{
+		// Use base driver if extended driver file doesn't exist
+		$driver = $base_driver_class;
+	}
+	
 	$DB = new $driver($params);
 
 	if ($DB->autoinit == TRUE)

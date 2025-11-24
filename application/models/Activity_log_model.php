@@ -202,5 +202,31 @@ class Activity_log_model extends CI_Model {
         return $this->db->delete('activity_logs');
     }
 
+    /**
+     * Get recent activities for dashboard
+     * 
+     * @param int $limit Number of recent activities to return
+     * @return array Array of activity log objects
+     */
+    public function get_recent_activities($limit = 10) {
+        $this->db->select('activity_logs.*, users.first_name, users.last_name, users.email, users.username');
+        $this->db->from('activity_logs');
+        $this->db->join('users', 'users.id = activity_logs.user_id', 'left');
+        $this->db->order_by('activity_logs.created_at', 'DESC');
+        $this->db->limit($limit);
+        
+        $query = $this->db->get();
+        return $query->result();
+    }
+
+    /**
+     * Get model version (for debugging cache issues)
+     * 
+     * @return string Version identifier with timestamp
+     */
+    public function get_model_version() {
+        return 'v2.0 - Dashboard Integration - ' . date('Y-m-d H:i:s');
+    }
+
 }
 

@@ -7,6 +7,7 @@ class Auth extends CI_Controller {
     function __construct() {
         parent::__construct();
         $this->load->database();
+        $this->load->helper('cookie');
         $this->form_validation->set_error_delimiters('<div class="error_message">', '</div>');
 
         $this->lang->load('auth');
@@ -38,13 +39,52 @@ class Auth extends CI_Controller {
             $key = $_GET['key'];
         }
 
-        if (!is_null($key)) {
-            $config['suffix'] = '?key=' . $key;
+        // Get sort parameters
+        $sort_by = isset($_GET['sort_by']) ? $_GET['sort_by'] : 'created_on';
+        $sort_order = isset($_GET['sort_order']) ? $_GET['sort_order'] : 'DESC';
+        
+        // Validate sort_by to prevent SQL injection
+        $allowed_sort_fields = array('created_on', 'first_name', 'last_name', 'email');
+        if (!in_array($sort_by, $allowed_sort_fields)) {
+            $sort_by = 'created_on';
         }
+        
+        // Validate sort_order
+        $sort_order = strtoupper($sort_order);
+        if ($sort_order != 'ASC' && $sort_order != 'DESC') {
+            $sort_order = 'DESC';
+        }
+
+        // Get group filter
+        $group_id = null;
+        if (isset($_POST['group_id']) && $_POST['group_id'] != '') {
+            $group_id = (int)$_POST['group_id'];
+        } else if (isset($_GET['group_id']) && $_GET['group_id'] != '') {
+            $group_id = (int)$_GET['group_id'];
+        }
+        if ($group_id !== null && $group_id <= 0) {
+            $group_id = null;
+        }
+
+        // Build query string for pagination
+        $query_params = array();
+        if (!is_null($key)) {
+            $query_params['key'] = $key;
+        }
+        $query_params['sort_by'] = $sort_by;
+        $query_params['sort_order'] = $sort_order;
+        if ($group_id !== null) {
+            $query_params['group_id'] = $group_id;
+        }
+        $config['suffix'] = '?' . http_build_query($query_params);
+        
+        // Get groups list for dropdown
+        $this->data['groups'] = $this->ion_auth->grouplist()->result();
+        $this->data['selected_group_id'] = $group_id;
 
 
         $config["base_url"] = site_url(current_lang() . '/auth/index/');
-       $config["total_rows"] = $this->ion_auth->count_users($key);
+       $config["total_rows"] = $this->ion_auth->count_users($key, $group_id);
         $config["uri_segment"] = 4;
 
         $config['full_tag_open'] = '<div class="pagination" style="background-color:#fff; margin-left:0px;">';
@@ -72,7 +112,11 @@ class Auth extends CI_Controller {
         $page = ($this->uri->segment(4) ? $this->uri->segment(4) : 0);
         $this->data['links'] = $this->pagination->create_links();
 
-        $this->data['users'] = $this->ion_auth->all_users($key, $config["per_page"], $page);
+        $this->data['users'] = $this->ion_auth->all_users($key, $config["per_page"], $page, $sort_by, $sort_order, $group_id);
+        
+        // Pass sort parameters to view
+        $this->data['sort_by'] = $sort_by;
+        $this->data['sort_order'] = $sort_order;
 
 
 
@@ -126,6 +170,11 @@ class Auth extends CI_Controller {
 
             $this->data['logo'] = company_info_detail()->logo;
             $this->data['name'] = company_info_detail()->name;
+            
+            // Pass cookie names for remember me functionality
+            $this->load->config('ion_auth', TRUE);
+            $this->data['identity_cookie_name'] = $this->config->item('identity_cookie_name', 'ion_auth');
+            $this->data['remember_cookie_name'] = $this->config->item('remember_cookie_name', 'ion_auth');
 
             $this->_render_page('auth/login', $this->data);
         }
@@ -398,6 +447,42 @@ class Auth extends CI_Controller {
 
         $this->data['content'] = 'auth/deactivate_user';
         $this->load->view('template', $this->data);
+    }
+
+    //delete the user (soft delete - hide the record)
+    function delete_user($id = NULL) {
+        if (!$this->ion_auth->logged_in() || !$this->ion_auth->is_admin()) {
+            redirect('auth', 'refresh');
+        }
+
+        $id = decode_id($id);
+        $id = (int) $id;
+
+        if (!$id) {
+            $this->session->set_flashdata('warning', 'Invalid user ID');
+            redirect(current_lang() . '/auth/index', 'refresh');
+        }
+
+        // Prevent deleting the current logged-in user
+        $current_user = $this->ion_auth->user()->row();
+        if ($id == $current_user->id) {
+            $this->session->set_flashdata('warning', 'You cannot delete your own account');
+            redirect(current_lang() . '/auth/index', 'refresh');
+        }
+
+        // Perform soft delete - set deleted field to 1 (hide the record)
+        $pin = current_user()->PIN;
+        $this->db->where('id', $id);
+        $this->db->where('PIN', $pin);
+        $this->db->update('users', array('deleted' => 1, 'deleted_at' => date('Y-m-d H:i:s')));
+
+        if ($this->db->affected_rows() > 0) {
+            $this->session->set_flashdata('message', 'User has been deleted successfully');
+        } else {
+            $this->session->set_flashdata('warning', 'Failed to delete user');
+        }
+
+        redirect(current_lang() . '/auth/index', 'refresh');
     }
 
     //create a new user
@@ -721,7 +806,7 @@ class Auth extends CI_Controller {
                 foreach ($value as $k => $v) {
                     if ($this->input->post('module_' . $v[0] . '_' . $v[1])) {
                         $check = $this->db->get_where('access_level', array('group_id' => $group_id, 'Module' => $v[0], 'link' => $k))->row();
-                        if (count($check) == 1) {
+                        if ($check !== null) {
                             $this->db->update('access_level', array('allow' => $this->input->post('module_' . $v[0] . '_' . $v[1])), array('group_id' => $group_id, 'Module' => $v[0], 'link' => $k));
                         } else {
                             $this->db->insert('access_level', array('group_id' => $group_id, 'Module' => $v[0], 'link' => $k, 'allow' => 1));
@@ -743,6 +828,79 @@ class Auth extends CI_Controller {
         
         $this->data['content'] = 'auth/assign_privillege';
         $this->load->view('template',  $this->data);
+    }
+
+    //register a new user (public registration)
+    function register() {
+        $this->data['title'] = "Register";
+
+        // If user is already logged in, redirect to home
+        if ($this->ion_auth->logged_in()) {
+            redirect('/', 'refresh');
+        }
+
+        $tables = $this->config->item('tables', 'ion_auth');
+
+        //validate form input
+        $this->form_validation->set_rules('first_name', $this->lang->line('create_user_validation_fname_label'), 'required|xss_clean');
+        $this->form_validation->set_rules('last_name', $this->lang->line('create_user_validation_lname_label'), 'required|xss_clean');
+        $this->form_validation->set_rules('email', $this->lang->line('create_user_validation_email_label'), 'required|valid_email|is_unique[' . $tables['users'] . '.email]');
+        $this->form_validation->set_rules('password', $this->lang->line('create_user_validation_password_label'), 'required|min_length[' . $this->config->item('min_password_length', 'ion_auth') . ']|max_length[' . $this->config->item('max_password_length', 'ion_auth') . ']|matches[password_confirm]');
+        $this->form_validation->set_rules('password_confirm', $this->lang->line('create_user_validation_password_confirm_label'), 'required');
+        $this->form_validation->set_rules('username', $this->lang->line('create_user_username_label'), 'required|is_unique[users.username]');
+
+        if ($this->form_validation->run() == true) {
+            $username = trim($this->input->post('username'));
+            $email = strtolower($this->input->post('email'));
+            $password = trim($this->input->post('password'));
+            
+            // Get the member group ID
+            $member_group = $this->ion_auth->where('name', 'member')->group()->row();
+            
+            if (!$member_group) {
+                // If member group doesn't exist, try to get default group from config
+                $default_group_name = $this->config->item('default_group', 'ion_auth');
+                $member_group = $this->ion_auth->where('name', $default_group_name)->group()->row();
+            }
+            
+            if (!$member_group) {
+                // If still no group found, use first available group (fallback)
+                $member_group = $this->ion_auth->groups()->row();
+            }
+
+            $additional_data = array(
+                'first_name' => ucwords(strtolower(trim($this->input->post('first_name')))),
+                'last_name' => ucwords(strtolower(trim($this->input->post('last_name'))))
+            );
+
+            // PIN is not required for public registration, but if the field exists and is required, 
+            // you may need to set a default value or handle it differently based on your database schema
+            // For now, we'll omit it as public users may not have a PIN assigned yet
+
+            // Register user with member group
+            $group_id = $member_group ? $member_group->id : null;
+            $groups_array = $group_id ? array($group_id) : array();
+
+            if ($this->ion_auth->register($username, $password, $email, $additional_data, $groups_array)) {
+                //if the registration is successful
+                $this->session->set_flashdata('message', $this->ion_auth->messages());
+                redirect('auth/login', 'refresh');
+            } else {
+                //if the registration was un-successful
+                $this->session->set_flashdata('warning', $this->ion_auth->errors());
+                redirect('auth/register', 'refresh');
+            }
+        } else {
+            //the user is not registering so display the register page
+            //set the flash data error message if there is one
+            $this->data['warning'] = ($this->ion_auth->errors() ? $this->ion_auth->errors() : (validation_errors() ? validation_errors() : $this->session->flashdata('warning')));
+            $this->data['message'] = $this->session->flashdata('message');
+
+            $this->data['logo'] = company_info_detail()->logo;
+            $this->data['name'] = company_info_detail()->name;
+
+            $this->_render_page('auth/register', $this->data);
+        }
     }
 
 }

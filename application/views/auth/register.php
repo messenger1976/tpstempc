@@ -6,14 +6,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
 
-    <title>TAPSTEMCO | Login</title>
+    <title>TAPSTEMCO | Create Account</title>
 
     <link href="<?php echo base_url() ?>assets/css/bootstrap.min.css" rel="stylesheet">
     <link href="<?php echo base_url() ?>assets/font-awesome/css/font-awesome.css" rel="stylesheet">
-    <link href="<?php echo base_url() ?>assets/css/plugins/iCheck/custom.css" rel="stylesheet">
     <link href="<?php echo base_url() ?>assets/css/animate.css" rel="stylesheet">
     <link href="<?php echo base_url() ?>assets/css/style.css" rel="stylesheet">
-    <link href="<?php echo base_url() ?>assets/css/plugins/awesome-bootstrap-checkbox/awesome-bootstrap-checkbox.css" rel="stylesheet">
     
     <style type="text/css">
         * {
@@ -45,53 +43,82 @@
             opacity: 0.5;
         }
 
-        .login-container {
+        .register-container {
             width: 100%;
-            max-width: 420px;
+            max-width: 500px;
             position: relative;
             z-index: 1;
             animation: fadeInDown 0.6s ease-out;
         }
 
-        .login-card {
+        .register-card {
             background: #ffffff;
             border-radius: 20px;
             box-shadow: 0 15px 35px rgba(0, 0, 0, 0.2), 0 5px 15px rgba(0, 0, 0, 0.1);
             overflow: hidden;
             padding: 40px 35px;
             transition: transform 0.3s ease, box-shadow 0.3s ease;
+            max-height: 90vh;
+            overflow-y: auto;
         }
 
-        .login-card:hover {
+        .register-card:hover {
             transform: translateY(-5px);
             box-shadow: 0 20px 40px rgba(0, 0, 0, 0.25), 0 8px 20px rgba(0, 0, 0, 0.15);
         }
 
+        .register-card::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .register-card::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 10px;
+        }
+
+        .register-card::-webkit-scrollbar-thumb {
+            background: #667eea;
+            border-radius: 10px;
+        }
+
         .logo-section {
             text-align: center;
-            margin-bottom: 30px;
+            margin-bottom: 25px;
             padding-bottom: 25px;
             border-bottom: 2px solid #f0f0f0;
         }
 
-        .logo-section img {
-            max-width: 120px;
-            height: auto;
-            margin-bottom: 15px;
-            filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.1));
-            transition: transform 0.3s ease;
+        .logo-section .icon-wrapper {
+            width: 70px;
+            height: 70px;
+            margin: 0 auto 15px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 8px 20px rgba(102, 126, 234, 0.3);
         }
 
-        .logo-section img:hover {
-            transform: scale(1.05);
+        .logo-section .icon-wrapper i {
+            font-size: 32px;
+            color: #fff;
         }
 
-        .company-name {
+        .page-title {
             color: #333;
             font-size: 24px;
             font-weight: 600;
             margin: 0;
+            text-align: center;
             letter-spacing: -0.5px;
+        }
+
+        .page-description {
+            color: #666;
+            font-size: 13px;
+            text-align: center;
+            margin-top: 8px;
         }
 
         .alert {
@@ -109,7 +136,8 @@
             border-left: 4px solid #28a745;
         }
 
-        .alert-danger {
+        .alert-danger,
+        .alert-warning {
             background: #f8d7da;
             color: #721c24;
             border-left: 4px solid #dc3545;
@@ -127,7 +155,18 @@
         }
 
         .form-group {
-            margin-bottom: 20px;
+            margin-bottom: 18px;
+        }
+
+        .form-row {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 18px;
+        }
+
+        .form-row .form-group {
+            flex: 1;
+            margin-bottom: 0;
         }
 
         .input-group {
@@ -146,7 +185,8 @@
             transition: all 0.3s ease;
         }
 
-        .input-group input {
+        .input-group input,
+        .input-group select {
             border: 2px solid #e9ecef;
             border-left: none;
             border-radius: 0 10px 10px 0;
@@ -154,9 +194,11 @@
             font-size: 14px;
             transition: all 0.3s ease;
             height: auto;
+            width: 100%;
         }
 
-        .input-group input:focus {
+        .input-group input:focus,
+        .input-group select:focus {
             border-color: #667eea;
             box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
             outline: none;
@@ -167,47 +209,7 @@
             background: #f0f4ff;
         }
 
-        .remember-me-section {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 25px;
-            flex-wrap: wrap;
-            gap: 10px;
-        }
-
-        .remember-me-section .i-checks {
-            margin: 0;
-        }
-
-        .remember-me-section label {
-            font-size: 14px;
-            color: #555;
-            font-weight: normal;
-            cursor: pointer;
-            margin: 0;
-            display: flex;
-            align-items: center;
-        }
-
-        .remember-me-section .i-checks input {
-            margin-right: 8px;
-        }
-
-        .forgot-password-link {
-            color: #667eea;
-            text-decoration: none;
-            font-size: 14px;
-            font-weight: 500;
-            transition: color 0.3s ease;
-        }
-
-        .forgot-password-link:hover {
-            color: #764ba2;
-            text-decoration: none;
-        }
-
-        .btn-login {
+        .btn-register {
             width: 100%;
             padding: 14px;
             font-size: 16px;
@@ -216,36 +218,37 @@
             border: none;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: #fff;
-            margin-bottom: 20px;
+            margin-top: 10px;
+            margin-bottom: 15px;
             transition: all 0.3s ease;
             box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
             cursor: pointer;
         }
 
-        .btn-login:hover {
+        .btn-register:hover {
             transform: translateY(-2px);
             box-shadow: 0 6px 20px rgba(102, 126, 234, 0.5);
             background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
         }
 
-        .btn-login:active {
+        .btn-register:active {
             transform: translateY(0);
         }
 
-        .register-section {
+        .back-to-login-section {
             text-align: center;
-            margin-top: 25px;
-            padding-top: 25px;
+            margin-top: 20px;
+            padding-top: 20px;
             border-top: 2px solid #f0f0f0;
         }
 
-        .register-section p {
+        .back-to-login-section p {
             color: #888;
             font-size: 13px;
-            margin-bottom: 15px;
+            margin-bottom: 10px;
         }
 
-        .btn-register {
+        .btn-back-login {
             display: inline-block;
             padding: 10px 20px;
             font-size: 14px;
@@ -259,7 +262,7 @@
             width: 100%;
         }
 
-        .btn-register:hover {
+        .btn-back-login:hover {
             background: #667eea;
             color: #fff;
             text-decoration: none;
@@ -300,17 +303,18 @@
 
         /* Responsive Design */
         @media (max-width: 768px) {
-            .login-card {
+            .register-card {
                 padding: 30px 25px;
                 border-radius: 15px;
             }
 
-            .logo-section img {
-                max-width: 100px;
+            .page-title {
+                font-size: 22px;
             }
 
-            .company-name {
-                font-size: 20px;
+            .form-row {
+                flex-direction: column;
+                gap: 0;
             }
 
             .input-group input,
@@ -319,7 +323,7 @@
                 font-size: 14px;
             }
 
-            .btn-login {
+            .btn-register {
                 padding: 12px;
                 font-size: 15px;
             }
@@ -330,35 +334,36 @@
                 padding: 15px;
             }
 
-            .login-card {
+            .register-card {
                 padding: 25px 20px;
             }
 
             .logo-section {
-                margin-bottom: 25px;
+                margin-bottom: 20px;
                 padding-bottom: 20px;
             }
 
-            .logo-section img {
-                max-width: 90px;
+            .logo-section .icon-wrapper {
+                width: 60px;
+                height: 60px;
+                margin-bottom: 12px;
             }
 
-            .company-name {
-                font-size: 18px;
+            .logo-section .icon-wrapper i {
+                font-size: 28px;
             }
 
-            .remember-me-section {
-                flex-direction: column;
-                align-items: flex-start;
+            .page-title {
+                font-size: 20px;
             }
 
-            .forgot-password-link {
-                align-self: flex-end;
+            .page-description {
+                font-size: 12px;
             }
         }
 
         @media (max-width: 320px) {
-            .login-card {
+            .register-card {
                 padding: 20px 15px;
             }
 
@@ -372,58 +377,100 @@
 </head>
 
 <body>
-    <div class="login-container">
-        <div class="login-card">
+    <div class="register-container">
+        <div class="register-card">
             <div class="logo-section">
-                <img src="<?php echo base_url() ?>logo/<?php echo $logo; ?>" alt="Logo" />
-                <h3 class="company-name"><?php echo $name; ?></h3>
+                <div class="icon-wrapper">
+                    <i class="fa fa-user-plus" aria-hidden="true"></i>
+                </div>
+                <h2 class="page-title">Create Account</h2>
+                <p class="page-description">Fill in your information to get started</p>
             </div>
 
             <?php
             if (isset($message) && !empty($message)) {
-                echo '<div class="alert alert-success alert-dismissable"><button aria-hidden="true" data-dismiss="alert" class="close" type="button">×</button>' . $message . '</div>';
-            } else if ($this->session->flashdata('message') != '') {
-                echo '<div class="alert alert-success alert-dismissable"><button aria-hidden="true" data-dismiss="alert" class="close" type="button">×</button>' . $this->session->flashdata('message') . '</div>';
-            } else if (isset($warning) && !empty($warning)) {
+                if (strpos($message, 'success') !== false || strpos($message, 'created') !== false) {
+                    echo '<div class="alert alert-success alert-dismissable"><button aria-hidden="true" data-dismiss="alert" class="close" type="button">×</button>' . $message . '</div>';
+                } else {
+                    echo '<div class="alert alert-danger alert-dismissable"><button aria-hidden="true" data-dismiss="alert" class="close" type="button">×</button>' . $message . '</div>';
+                }
+            }
+            if ($this->session->flashdata('message') != '') {
+                $flash_msg = $this->session->flashdata('message');
+                if (strpos($flash_msg, 'success') !== false || strpos($flash_msg, 'created') !== false) {
+                    echo '<div class="alert alert-success alert-dismissable"><button aria-hidden="true" data-dismiss="alert" class="close" type="button">×</button>' . $flash_msg . '</div>';
+                } else {
+                    echo '<div class="alert alert-danger alert-dismissable"><button aria-hidden="true" data-dismiss="alert" class="close" type="button">×</button>' . $flash_msg . '</div>';
+                }
+            }
+            if (isset($warning) && !empty($warning)) {
                 echo '<div class="alert alert-danger alert-dismissable"><button aria-hidden="true" data-dismiss="alert" class="close" type="button">×</button>' . $warning . '</div>';
             } else if ($this->session->flashdata('warning') != '') {
                 echo '<div class="alert alert-danger alert-dismissable"><button aria-hidden="true" data-dismiss="alert" class="close" type="button">×</button>' . $this->session->flashdata('warning') . '</div>';
             }
             ?>
             
-            <?php echo form_open('auth/login', 'role="form"'); ?>              
+            <?php echo form_open('auth/register', 'role="form"'); ?>              
 
-            <div class="form-group">
-                <div class="input-group">
-                    <span class="input-group-addon"><i class="fa fa-user-circle-o" aria-hidden="true"></i></span>
-                    <input type="text" name="identity" class="form-control" placeholder="Username" value="<?php echo set_value('identity') ? set_value('identity') : (isset($identity_cookie_name) ? get_cookie($identity_cookie_name) : ''); ?>" required>
+            <div class="form-row">
+                <div class="form-group">
+                    <div class="input-group">
+                        <span class="input-group-addon"><i class="fa fa-user" aria-hidden="true"></i></span>
+                        <input type="text" name="first_name" class="form-control" placeholder="First Name" value="<?php echo set_value('first_name'); ?>" required>
+                    </div>
+                    <?php echo form_error('first_name'); ?>
                 </div>
-                <?php echo form_error('identity'); ?>
+
+                <div class="form-group">
+                    <div class="input-group">
+                        <span class="input-group-addon"><i class="fa fa-user" aria-hidden="true"></i></span>
+                        <input type="text" name="last_name" class="form-control" placeholder="Last Name" value="<?php echo set_value('last_name'); ?>" required>
+                    </div>
+                    <?php echo form_error('last_name'); ?>
+                </div>
             </div>
 
             <div class="form-group">
                 <div class="input-group">
-                    <span class="input-group-addon"><i class="fa fa-unlock-alt" aria-hidden="true"></i></span>
-                    <input type="password" name="password" class="form-control" placeholder="Password" required>
+                    <span class="input-group-addon"><i class="fa fa-envelope" aria-hidden="true"></i></span>
+                    <input type="email" name="email" class="form-control" placeholder="Email Address" value="<?php echo set_value('email'); ?>" required>
+                </div>
+                <?php echo form_error('email'); ?>
+            </div>
+
+            <div class="form-group">
+                <div class="input-group">
+                    <span class="input-group-addon"><i class="fa fa-user-circle" aria-hidden="true"></i></span>
+                    <input type="text" name="username" class="form-control" placeholder="Username" value="<?php echo set_value('username'); ?>" required>
+                </div>
+                <?php echo form_error('username'); ?>
+            </div>
+
+            <div class="form-group">
+                <div class="input-group">
+                    <span class="input-group-addon"><i class="fa fa-lock" aria-hidden="true"></i></span>
+                    <input type="password" name="password" class="form-control" placeholder="Password (min <?php echo $this->config->item('min_password_length', 'ion_auth'); ?> characters)" required>
                 </div>
                 <?php echo form_error('password'); ?>
             </div>
 
-            <div class="remember-me-section">
-                <div class="i-checks">
-                    <label>
-                        <input type="checkbox" name="remember" value="1" <?php echo (isset($identity_cookie_name) && isset($remember_cookie_name) && get_cookie($identity_cookie_name) && get_cookie($remember_cookie_name)) ? 'checked' : ''; ?>>
-                        <i></i> Remember me
-                    </label>
+            <div class="form-group">
+                <div class="input-group">
+                    <span class="input-group-addon"><i class="fa fa-lock" aria-hidden="true"></i></span>
+                    <input type="password" name="password_confirm" class="form-control" placeholder="Confirm Password" required>
                 </div>
-                <a href="<?php echo base_url() ?>auth/forgot_password" class="forgot-password-link">Forgot password?</a>
+                <?php echo form_error('password_confirm'); ?>
             </div>
 
-            <button type="submit" class="btn-login">Login</button>
+            <button type="submit" class="btn-register">
+                <i class="fa fa-user-plus" aria-hidden="true"></i> Create Account
+            </button>
 
-            <div class="register-section">
-                <p>Do not have an account?</p>
-                <a class="btn-register" href="<?php echo base_url() ?>auth/register">Create an account</a>
+            <div class="back-to-login-section">
+                <p>Already have an account?</p>
+                <a href="<?php echo base_url() ?>auth/login" class="btn-back-login">
+                    <i class="fa fa-arrow-left" aria-hidden="true"></i> Back to Login
+                </a>
             </div>
 
             <?php echo form_close(); ?>
@@ -431,19 +478,11 @@
 
         <p class="copyright">Copyright &copy; 2025 - Bohollander IT Solutions</p>
     </div>
+
     <!-- Mainly scripts -->
     <script src="<?php echo base_url() ?>assets/js/jquery-3.1.1.min.js"></script>
     <script src="<?php echo base_url() ?>assets/js/bootstrap.min.js"></script>
-    <!-- iCheck -->
-    <script src="<?php echo base_url() ?>assets/js/plugins/iCheck/icheck.min.js"></script>
-        <script>
-            $(document).ready(function () {
-                $('.i-checks').iCheck({
-                    checkboxClass: 'icheckbox_square-green',
-                    radioClass: 'iradio_square-green',
-                });
-            });
-        </script>
 </body>
 
 </html>
+

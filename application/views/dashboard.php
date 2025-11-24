@@ -197,435 +197,486 @@
 
 
 
-        <div class="row wrapper border-bottom white-bg page-heading">
+        <div class="row wrapper border-bottom white-bg page-heading" style="background: linear-gradient(135deg, #1ab394 0%, #17a085 100%); border-bottom: none !important;">
                     <div class="col-lg-10">
-                        <h2><?php echo (isset ($title) ? $title : $current_title); ?></h2>
+                        <h2 style="color: white; margin: 0; padding: 15px 0;">
+                            <i class="fa fa-dashboard"></i> <?php echo (isset ($title) ? $title : $current_title); ?>
+                            <small style="color: rgba(255,255,255,0.8);">Cooperative Management Dashboard</small>
+                        </h2>
                         <?php if(!isset ($dashboard)){ ?>
-                        <ol class="breadcrumb">
+                        <ol class="breadcrumb" style="background: transparent; margin: 0; padding: 10px 0;">
                             <li>
-                                <a href="<?php echo site_url(current_lang()); ?>"><?php echo lang('home'); ?></a>
+                                <a href="<?php echo site_url(current_lang()); ?>" style="color: rgba(255,255,255,0.8);"><?php echo lang('home'); ?></a>
                             </li>
                             <li>
-                                <a><?php echo $current_title; ?></a>
+                                <a style="color: rgba(255,255,255,0.8);"><?php echo $current_title; ?></a>
                             </li>
                             <li class="active">
-                                <strong><?php echo (isset ($title) ? $title : $current_title); ?></strong>
+                                <strong style="color: white;"><?php echo (isset ($title) ? $title : $current_title); ?></strong>
                             </li>
                         </ol>
                         <?php } ?>
                     </div>
-                    <div class="col-lg-2">
-
+                    <div class="col-lg-2 text-right" style="padding-top: 20px;">
+                        <span style="color: white; font-size: 14px;">
+                            <i class="fa fa-calendar"></i> <?php echo date('F d, Y'); ?>
+                        </span>
                     </div>
                 </div>
 
 
             <div class="wrapper wrapper-content">
+                <!-- Cooperative Dashboard Statistics -->
                 <div class="row">
                     <div class="col-lg-3">
                         <div class="ibox float-e-margins">
-                            <div class="ibox-title">
-                                <span class="label label-success pull-right">Monthly</span>
-                                <h5>Income</h5>
+                            <div class="ibox-title" style="background: linear-gradient(135deg, #1ab394 0%, #17a085 100%); color: white;">
+                                <span class="pull-right"><i class="fa fa-users fa-2x"></i></span>
+                                <h5 style="color: white; margin: 0;">Total Members</h5>
                             </div>
-                            <div class="ibox-content">
-                                <h1 class="no-margins">40,886,200</h1>
-                                <div class="stat-percent font-bold text-success">98% <i class="fa fa-bolt"></i></div>
-                                <small>Total Income</small>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-lg-3">
-                        <div class="ibox float-e-margins">
-                            <div class="ibox-title">
-                                <span class="label label-info pull-right">Annual</span>
-                                <h5>Expenses</h5>
-                            </div>
-                            <div class="ibox-content">
-                                <h1 class="no-margins">275,800</h1>
-                                <div class="stat-percent font-bold text-info">20% <i class="fa fa-level-up"></i></div>
-                                <small>Total Expenses</small>
+                            <div class="ibox-content" style="background: #f8f9fa;">
+                                <h1 class="no-margins" style="color: #1ab394; font-weight: bold;"><?php echo isset($total_members) ? number_format($total_members) : '0'; ?></h1>
+                                <small style="color: #777;">Active Cooperative Members</small>
+                                <div class="stat-percent font-bold text-success" style="margin-top: 10px;">
+                                    <i class="fa fa-arrow-up"></i> Active
+                                </div>
                             </div>
                         </div>
                     </div>
                     <div class="col-lg-3">
                         <div class="ibox float-e-margins">
-                            <div class="ibox-title">
-                                <span class="label label-primary pull-right">Today</span>
-                                <h5>Loans</h5>
+                            <div class="ibox-title" style="background: linear-gradient(135deg, #1c84c6 0%, #155d8b 100%); color: white;">
+                                <span class="pull-right"><i class="fa fa-money fa-2x"></i></span>
+                                <h5 style="color: white; margin: 0;">Share Capital</h5>
                             </div>
-                            <div class="ibox-content">
-                                <h1 class="no-margins">106,120</h1>
-                                <div class="stat-percent font-bold text-navy">44% <i class="fa fa-level-up"></i></div>
-                                <small>Total Active Loans</small>
+                            <div class="ibox-content" style="background: #f8f9fa;">
+                                <h1 class="no-margins" style="color: #1c84c6; font-weight: bold;"><?php echo isset($total_share_capital) ? number_format($total_share_capital, 2) : '0.00'; ?></h1>
+                                <small style="color: #777;">Total Share Capital</small>
+                                <div class="stat-percent font-bold text-info" style="margin-top: 10px;">
+                                    <i class="fa fa-handshake-o"></i> Member Equity
+                                </div>
                             </div>
                         </div>
                     </div>
                     <div class="col-lg-3">
                         <div class="ibox float-e-margins">
-                            <div class="ibox-title">
-                                <span class="label label-danger pull-right">Low value</span>
-                                <h5>User activity</h5>
+                            <div class="ibox-title" style="background: linear-gradient(135deg, #23c6c8 0%, #1a9b9d 100%); color: white;">
+                                <span class="pull-right"><i class="fa fa-bank fa-2x"></i></span>
+                                <h5 style="color: white; margin: 0;">Total Savings</h5>
                             </div>
-                            <div class="ibox-content">
-                                <h1 class="no-margins">80,600</h1>
-                                <div class="stat-percent font-bold text-danger">38% <i class="fa fa-level-down"></i></div>
-                                <small>In first month</small>
+                            <div class="ibox-content" style="background: #f8f9fa;">
+                                <h1 class="no-margins" style="color: #23c6c8; font-weight: bold;"><?php echo isset($total_savings) ? number_format($total_savings, 2) : '0.00'; ?></h1>
+                                <small style="color: #777;">Member Savings Deposits</small>
+                                <div class="stat-percent font-bold" style="margin-top: 10px; color: #23c6c8;">
+                                    <i class="fa fa-piggy-bank"></i> Deposits
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-lg-3">
+                        <div class="ibox float-e-margins">
+                            <div class="ibox-title" style="background: linear-gradient(135deg, #f8ac59 0%, #d68910 100%); color: white;">
+                                <span class="pull-right"><i class="fa fa-credit-card fa-2x"></i></span>
+                                <h5 style="color: white; margin: 0;">Active Loans</h5>
+                            </div>
+                            <div class="ibox-content" style="background: #f8f9fa;">
+                                <h1 class="no-margins" style="color: #f8ac59; font-weight: bold;"><?php echo isset($total_active_loans) ? number_format($total_active_loans, 2) : '0.00'; ?></h1>
+                                <small style="color: #777;">Outstanding Loan Balance</small>
+                                <div class="stat-percent font-bold" style="margin-top: 10px; color: #f8ac59;">
+                                    <i class="fa fa-file-text-o"></i> Loans
+                                </div>
                             </div>
                         </div>
                     </div>
                 </div>
-                <div class="row">
+                
+                <!-- Second Row Statistics -->
+                <div class="row" style="margin-top: 20px;">
+                    <div class="col-lg-3">
+                        <div class="ibox float-e-margins">
+                            <div class="ibox-title" style="background: linear-gradient(135deg, #ed5565 0%, #da4453 100%); color: white;">
+                                <span class="pull-right"><i class="fa fa-calculator fa-2x"></i></span>
+                                <h5 style="color: white; margin: 0;">Contributions (CBU)</h5>
+                            </div>
+                            <div class="ibox-content" style="background: #f8f9fa;">
+                                <h1 class="no-margins" style="color: #ed5565; font-weight: bold;"><?php echo isset($total_contributions) ? number_format($total_contributions, 2) : '0.00'; ?></h1>
+                                <small style="color: #777;">Capital Build-Up Funds</small>
+                                <div class="stat-percent font-bold text-danger" style="margin-top: 10px;">
+                                    <i class="fa fa-line-chart"></i> CBU Balance
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-lg-3">
+                        <div class="ibox float-e-margins">
+                            <div class="ibox-title" style="background: linear-gradient(135deg, #9b59b6 0%, #8e44ad 100%); color: white;">
+                                <span class="pull-right"><i class="fa fa-money fa-2x"></i></span>
+                                <h5 style="color: white; margin: 0;">Loan Collections</h5>
+                            </div>
+                            <div class="ibox-content" style="background: #f8f9fa;">
+                                <h1 class="no-margins" style="color: #9b59b6; font-weight: bold;"><?php echo isset($total_collections) ? number_format($total_collections, 2) : '0.00'; ?></h1>
+                                <small style="color: #777;">Monthly Collections</small>
+                                <div class="stat-percent font-bold" style="margin-top: 10px; color: #9b59b6;">
+                                    <i class="fa fa-arrow-circle-down"></i> This Month
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-lg-3">
+                        <div class="ibox float-e-margins">
+                            <div class="ibox-title" style="background: linear-gradient(135deg, #34495e 0%, #2c3e50 100%); color: white;">
+                                <span class="pull-right"><i class="fa fa-cubes fa-2x"></i></span>
+                                <h5 style="color: white; margin: 0;">Mortuary Fund</h5>
+                            </div>
+                            <div class="ibox-content" style="background: #f8f9fa;">
+                                <h1 class="no-margins" style="color: #34495e; font-weight: bold;"><?php echo isset($total_mortuary) ? number_format($total_mortuary, 2) : '0.00'; ?></h1>
+                                <small style="color: #777;">Mortuary Contributions</small>
+                                <div class="stat-percent font-bold" style="margin-top: 10px; color: #34495e;">
+                                    <i class="fa fa-heart"></i> Benefit Fund
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-lg-3">
+                        <div class="ibox float-e-margins">
+                            <div class="ibox-title" style="background: linear-gradient(135deg, #16a085 0%, #138d75 100%); color: white;">
+                                <span class="pull-right"><i class="fa fa-pie-chart fa-2x"></i></span>
+                                <h5 style="color: white; margin: 0;">Net Assets</h5>
+                            </div>
+                            <div class="ibox-content" style="background: #f8f9fa;">
+                                <h1 class="no-margins" style="color: #16a085; font-weight: bold;"><?php echo isset($net_assets) ? number_format($net_assets, 2) : '0.00'; ?></h1>
+                                <small style="color: #777;">Cooperative Net Worth</small>
+                                <div class="stat-percent font-bold text-success" style="margin-top: 10px;">
+                                    <i class="fa fa-check-circle"></i> Total Assets
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <!-- Loan Collections and Performance Chart -->
+                <div class="row" style="margin-top: 20px;">
                     <div class="col-lg-12">
                         <div class="ibox float-e-margins">
-                            <div class="ibox-title">
-                                <h5>Loans Collections</h5>
+                            <div class="ibox-title" style="border-bottom: 2px solid #1ab394;">
+                                <h5 style="color: #1ab394; font-weight: bold;"><i class="fa fa-line-chart"></i> Loan Collections & Performance</h5>
                                 <div class="pull-right">
                                     <div class="btn-group">
-                                        <button type="button" class="btn btn-xs btn-white active">Today</button>
-                                        <button type="button" class="btn btn-xs btn-white">Monthly</button>
-                                        <button type="button" class="btn btn-xs btn-white">Annual</button>
+                                        <button type="button" class="btn btn-xs btn-primary active">Monthly</button>
+                                        <button type="button" class="btn btn-xs btn-default">Quarterly</button>
+                                        <button type="button" class="btn btn-xs btn-default">Annual</button>
                                     </div>
                                 </div>
                             </div>
-                            <div class="ibox-content">
+                            <div class="ibox-content" style="background: white;">
                                 <div class="row">
                                     <div class="col-lg-9">
                                         <div class="flot-chart">
-                                            <div class="flot-chart-content" id="flot-dashboard-chart"></div>
+                                            <div class="flot-chart-content" id="flot-dashboard-chart" style="height: 320px;"></div>
                                         </div>
                                     </div>
                                     <div class="col-lg-3">
                                         <ul class="stat-list">
-                                            <li>
-                                                <h2 class="no-margins">2,346</h2>
-                                                <small>Total Loan Releases in period</small>
-                                                <div class="stat-percent">48% <i class="fa fa-level-up text-navy"></i></div>
-                                                <div class="progress progress-mini">
-                                                    <div style="width: 48%;" class="progress-bar"></div>
+                                            <li style="border-left: 3px solid #1ab394; padding-left: 15px;">
+                                                <h2 class="no-margins" style="color: #1ab394;"><?php echo isset($loan_releases) ? number_format($loan_releases) : '0'; ?></h2>
+                                                <small style="color: #777;">Loan Releases (This Month)</small>
+                                                <div class="stat-percent" style="color: #1ab394;">Active Loans <i class="fa fa-arrow-up text-navy"></i></div>
+                                                <div class="progress progress-mini" style="margin-top: 8px;">
+                                                    <div style="width: 75%;" class="progress-bar progress-bar-success"></div>
                                                 </div>
                                             </li>
-                                            <li>
-                                                <h2 class="no-margins ">4,422</h2>
-                                                <small>Collections in last month</small>
-                                                <div class="stat-percent">60% <i class="fa fa-level-down text-navy"></i></div>
-                                                <div class="progress progress-mini">
-                                                    <div style="width: 60%;" class="progress-bar"></div>
+                                            <li style="border-left: 3px solid #1c84c6; padding-left: 15px; margin-top: 20px;">
+                                                <h2 class="no-margins" style="color: #1c84c6;"><?php echo isset($collections_monthly) ? number_format($collections_monthly, 2) : '0.00'; ?></h2>
+                                                <small style="color: #777;">Collections (Last Month)</small>
+                                                <div class="stat-percent" style="color: #1c84c6;">Collection Rate <i class="fa fa-check-circle text-navy"></i></div>
+                                                <div class="progress progress-mini" style="margin-top: 8px;">
+                                                    <div style="width: 85%;" class="progress-bar progress-bar-info"></div>
                                                 </div>
                                             </li>
-                                            <li>
-                                                <h2 class="no-margins ">9,180</h2>
-                                                <small>Monthly Collections from Loans</small>
-                                                <div class="stat-percent">22% <i class="fa fa-bolt text-navy"></i></div>
-                                                <div class="progress progress-mini">
-                                                    <div style="width: 22%;" class="progress-bar"></div>
+                                            <li style="border-left: 3px solid #f8ac59; padding-left: 15px; margin-top: 20px;">
+                                                <h2 class="no-margins" style="color: #f8ac59;"><?php echo isset($payment_rate) ? number_format($payment_rate, 1) : '0'; ?>%</h2>
+                                                <small style="color: #777;">On-Time Payment Rate</small>
+                                                <div class="stat-percent" style="color: #f8ac59;">Performance <i class="fa fa-trophy text-navy"></i></div>
+                                                <div class="progress progress-mini" style="margin-top: 8px;">
+                                                    <div style="width: <?php echo isset($payment_rate) ? $payment_rate : 0; ?>%;" class="progress-bar progress-bar-warning"></div>
                                                 </div>
                                             </li>
                                         </ul>
                                     </div>
                                 </div>
                             </div>
-
                         </div>
                     </div>
                 </div>
 
 
-                <div class="row">
+                <!-- Recent Activities and Quick Access -->
+                <div class="row" style="margin-top: 20px;">
                     <div class="col-lg-4">
                         <div class="ibox float-e-margins">
-                            <div class="ibox-title">
-                                <h5>Messages</h5>
+                            <div class="ibox-title" style="border-bottom: 2px solid #1c84c6;">
+                                <h5 style="color: #1c84c6; font-weight: bold;"><i class="fa fa-bell-o"></i> Recent Activities</h5>
                                 <div class="ibox-tools">
                                     <a class="collapse-link">
                                         <i class="fa fa-chevron-up"></i>
                                     </a>
-                                    <a class="close-link">
-                                        <i class="fa fa-times"></i>
-                                    </a>
                                 </div>
                             </div>
-                            <div class="ibox-content ibox-heading">
-                                <h3><i class="fa fa-envelope-o"></i> New messages</h3>
-                                <small><i class="fa fa-tim"></i> You have 22 new messages and 16 waiting in draft folder.</small>
+                            <div class="ibox-content ibox-heading" style="background: linear-gradient(135deg, #1c84c6 0%, #155d8b 100%); color: white;">
+                                <h3><i class="fa fa-clock-o"></i> System Activities</h3>
+                                <small><i class="fa fa-info-circle"></i> Latest cooperative transactions and updates.</small>
                             </div>
-                            <div class="ibox-content">
+                            <div class="ibox-content" style="background: #f8f9fa; max-height: 400px; overflow-y: auto;">
                                 <div class="feed-activity-list">
-
+                                    <?php 
+                                    // Helper function to get icon and color based on action type
+                                    function get_activity_style($action) {
+                                        $styles = array(
+                                            'login' => array('icon' => 'fa-sign-in', 'color' => '#1ab394'),
+                                            'logout' => array('icon' => 'fa-sign-out', 'color' => '#ed5565'),
+                                            'create' => array('icon' => 'fa-plus', 'color' => '#1ab394'),
+                                            'update' => array('icon' => 'fa-edit', 'color' => '#f8ac59'),
+                                            'delete' => array('icon' => 'fa-trash', 'color' => '#ed5565'),
+                                            'view' => array('icon' => 'fa-eye', 'color' => '#23c6c8'),
+                                            'approve' => array('icon' => 'fa-check', 'color' => '#1ab394'),
+                                            'reject' => array('icon' => 'fa-times', 'color' => '#ed5565'),
+                                        );
+                                        
+                                        // Default style
+                                        $default = array('icon' => 'fa-circle', 'color' => '#1c84c6');
+                                        
+                                        return isset($styles[strtolower($action)]) ? $styles[strtolower($action)] : $default;
+                                    }
+                                    
+                                    // Helper function to format time ago
+                                    function time_ago($datetime) {
+                                        $timestamp = strtotime($datetime);
+                                        $diff = time() - $timestamp;
+                                        
+                                        if ($diff < 3600) {
+                                            $mins = floor($diff / 60);
+                                            return $mins <= 1 ? 'Just now' : $mins . ' minutes ago';
+                                        } elseif ($diff < 86400) {
+                                            $hours = floor($diff / 3600);
+                                            return $hours == 1 ? '1 hour ago' : $hours . ' hours ago';
+                                        } elseif ($diff < 604800) {
+                                            $days = floor($diff / 86400);
+                                            if ($days == 1) return 'Yesterday';
+                                            return $days . ' days ago';
+                                        } else {
+                                            return date('M d, Y', $timestamp);
+                                        }
+                                    }
+                                    
+                                    if (isset($recent_activities) && !empty($recent_activities)): 
+                                        foreach ($recent_activities as $activity): 
+                                            $style = get_activity_style($activity->action);
+                                            $user_name = trim(($activity->first_name ?: '') . ' ' . ($activity->last_name ?: ''));
+                                            if (empty($user_name)) {
+                                                $user_name = $activity->username ?: 'System';
+                                            }
+                                            $time_ago = time_ago($activity->created_at);
+                                            $formatted_date = date('M d, Y - h:i A', strtotime($activity->created_at));
+                                    ?>
                                     <div class="feed-element">
-                                        <div>
-                                            <small class="pull-right text-navy">1m ago</small>
-                                            <strong>Monica Smith</strong>
-                                            <div>Lorem Ipsum is simply dummy text of the printing and typesetting industry. Lorem Ipsum</div>
-                                            <small class="text-muted">Today 5:60 pm - 12.06.2014</small>
+                                        <div style="border-left: 3px solid <?php echo $style['color']; ?>; padding-left: 10px;">
+                                            <small class="pull-right text-navy"><?php echo $time_ago; ?></small>
+                                            <strong style="color: <?php echo $style['color']; ?>;">
+                                                <i class="fa <?php echo $style['icon']; ?>"></i> 
+                                                <?php echo ucfirst($activity->action); ?> 
+                                                <?php echo $activity->module ? ucfirst($activity->module) : 'Activity'; ?>
+                                            </strong>
+                                            <div style="color: #777;">
+                                                <?php echo $activity->description ?: ucfirst($activity->action) . ' ' . ($activity->module ?: 'activity'); ?>
+                                                <?php if ($activity->first_name || $activity->username): ?>
+                                                    <br><small>by <?php echo $user_name; ?></small>
+                                                <?php endif; ?>
+                                            </div>
+                                            <small class="text-muted"><i class="fa fa-clock-o"></i> <?php echo $formatted_date; ?></small>
                                         </div>
                                     </div>
-
+                                    <?php 
+                                        endforeach; 
+                                    else: 
+                                    ?>
                                     <div class="feed-element">
-                                        <div>
-                                            <small class="pull-right">2m ago</small>
-                                            <strong>Jogn Angel</strong>
-                                            <div>There are many variations of passages of Lorem Ipsum available</div>
-                                            <small class="text-muted">Today 2:23 pm - 11.06.2014</small>
+                                        <div style="padding: 20px; text-align: center; color: #777;">
+                                            <i class="fa fa-info-circle fa-2x"></i>
+                                            <p style="margin-top: 10px;">No recent activities found.</p>
                                         </div>
                                     </div>
-
-                                    <div class="feed-element">
-                                        <div>
-                                            <small class="pull-right">5m ago</small>
-                                            <strong>Jesica Ocean</strong>
-                                            <div>Contrary to popular belief, Lorem Ipsum</div>
-                                            <small class="text-muted">Today 1:00 pm - 08.06.2014</small>
-                                        </div>
-                                    </div>
-
-                                    <div class="feed-element">
-                                        <div>
-                                            <small class="pull-right">5m ago</small>
-                                            <strong>Monica Jackson</strong>
-                                            <div>The generated Lorem Ipsum is therefore </div>
-                                            <small class="text-muted">Yesterday 8:48 pm - 10.06.2014</small>
-                                        </div>
-                                    </div>
-
-
-                                    <div class="feed-element">
-                                        <div>
-                                            <small class="pull-right">5m ago</small>
-                                            <strong>Anna Legend</strong>
-                                            <div>All the Lorem Ipsum generators on the Internet tend to repeat </div>
-                                            <small class="text-muted">Yesterday 8:48 pm - 10.06.2014</small>
-                                        </div>
-                                    </div>
-                                    <div class="feed-element">
-                                        <div>
-                                            <small class="pull-right">5m ago</small>
-                                            <strong>Damian Nowak</strong>
-                                            <div>The standard chunk of Lorem Ipsum used </div>
-                                            <small class="text-muted">Yesterday 8:48 pm - 10.06.2014</small>
-                                        </div>
-                                    </div>
-                                    <div class="feed-element">
-                                        <div>
-                                            <small class="pull-right">5m ago</small>
-                                            <strong>Gary Smith</strong>
-                                            <div>200 Latin words, combined with a handful</div>
-                                            <small class="text-muted">Yesterday 8:48 pm - 10.06.2014</small>
-                                        </div>
-                                    </div>
-
+                                    <?php endif; ?>
+                                </div>
+                                <div style="text-align: center; padding-top: 15px; border-top: 1px solid #e5e5e5; margin-top: 10px;">
+                                    <a href="<?php echo site_url(current_lang() . '/activity_log'); ?>" class="btn btn-sm btn-primary" style="background: #1c84c6; border-color: #1c84c6;">
+                                        <i class="fa fa-list"></i> View All Activities
+                                    </a>
                                 </div>
                             </div>
                         </div>
                     </div>
 
                     <div class="col-lg-8">
-
+                        <!-- Pending Loan Applications -->
                         <div class="row">
-                            <div class="col-lg-6">
+                            <div class="col-lg-12">
                                 <div class="ibox float-e-margins">
-                                    <div class="ibox-title">
-                                        <h5>User project list</h5>
+                                    <div class="ibox-title" style="border-bottom: 2px solid #f8ac59;">
+                                        <h5 style="color: #f8ac59; font-weight: bold;"><i class="fa fa-file-text-o"></i> Pending Loan Applications</h5>
                                         <div class="ibox-tools">
                                             <a class="collapse-link">
                                                 <i class="fa fa-chevron-up"></i>
                                             </a>
-                                            <a class="close-link">
-                                                <i class="fa fa-times"></i>
-                                            </a>
                                         </div>
                                     </div>
-                                    <div class="ibox-content">
+                                    <div class="ibox-content" style="background: white;">
                                         <table class="table table-hover no-margins">
-                                            <thead>
+                                            <thead style="background: #f8f9fa;">
                                             <tr>
                                                 <th>Status</th>
-                                                <th>Date</th>
-                                                <th>User</th>
-                                                <th>Value</th>
+                                                <th>Member ID</th>
+                                                <th>Member Name</th>
+                                                <th>Loan Amount</th>
+                                                <th>Application Date</th>
                                             </tr>
                                             </thead>
                                             <tbody>
                                             <tr>
-                                                <td><small>Pending...</small></td>
-                                                <td><i class="fa fa-clock-o"></i> 11:20pm</td>
-                                                <td>Samantha</td>
-                                                <td class="text-navy"> <i class="fa fa-level-up"></i> 24% </td>
+                                                <td><span class="label label-warning">Pending</span></td>
+                                                <td>M-00123</td>
+                                                <td>Sample Member</td>
+                                                <td class="text-navy">₱ 50,000.00</td>
+                                                <td><i class="fa fa-clock-o"></i> <?php echo date('M d, Y'); ?></td>
                                             </tr>
                                             <tr>
-                                                <td><span class="label label-warning">Canceled</span> </td>
-                                                <td><i class="fa fa-clock-o"></i> 10:40am</td>
-                                                <td>Monica</td>
-                                                <td class="text-navy"> <i class="fa fa-level-up"></i> 66% </td>
+                                                <td><span class="label label-info">Under Review</span></td>
+                                                <td>M-00124</td>
+                                                <td>Sample Member 2</td>
+                                                <td class="text-navy">₱ 75,000.00</td>
+                                                <td><i class="fa fa-clock-o"></i> <?php echo date('M d, Y', strtotime('-1 day')); ?></td>
                                             </tr>
                                             <tr>
-                                                <td><small>Pending...</small> </td>
-                                                <td><i class="fa fa-clock-o"></i> 01:30pm</td>
-                                                <td>John</td>
-                                                <td class="text-navy"> <i class="fa fa-level-up"></i> 54% </td>
+                                                <td><span class="label label-warning">Pending</span></td>
+                                                <td>M-00125</td>
+                                                <td>Sample Member 3</td>
+                                                <td class="text-navy">₱ 30,000.00</td>
+                                                <td><i class="fa fa-clock-o"></i> <?php echo date('M d, Y', strtotime('-2 days')); ?></td>
                                             </tr>
                                             <tr>
-                                                <td><small>Pending...</small> </td>
-                                                <td><i class="fa fa-clock-o"></i> 02:20pm</td>
-                                                <td>Agnes</td>
-                                                <td class="text-navy"> <i class="fa fa-level-up"></i> 12% </td>
-                                            </tr>
-                                            <tr>
-                                                <td><small>Pending...</small> </td>
-                                                <td><i class="fa fa-clock-o"></i> 09:40pm</td>
-                                                <td>Janet</td>
-                                                <td class="text-navy"> <i class="fa fa-level-up"></i> 22% </td>
-                                            </tr>
-                                            <tr>
-                                                <td><span class="label label-primary">Completed</span> </td>
-                                                <td><i class="fa fa-clock-o"></i> 04:10am</td>
-                                                <td>Amelia</td>
-                                                <td class="text-navy"> <i class="fa fa-level-up"></i> 66% </td>
-                                            </tr>
-                                            <tr>
-                                                <td><small>Pending...</small> </td>
-                                                <td><i class="fa fa-clock-o"></i> 12:08am</td>
-                                                <td>Damian</td>
-                                                <td class="text-navy"> <i class="fa fa-level-up"></i> 23% </td>
+                                                <td><span class="label label-primary">Approved</span></td>
+                                                <td>M-00120</td>
+                                                <td>Sample Member 4</td>
+                                                <td class="text-success">₱ 100,000.00</td>
+                                                <td><i class="fa fa-check-circle"></i> <?php echo date('M d, Y', strtotime('-3 days')); ?></td>
                                             </tr>
                                             </tbody>
                                         </table>
                                     </div>
                                 </div>
                             </div>
+                        </div>
+                        
+                        <!-- Quick Stats and Member Summary -->
+                        <div class="row" style="margin-top: 20px;">
                             <div class="col-lg-6">
                                 <div class="ibox float-e-margins">
-                                    <div class="ibox-title">
-                                        <h5>Small todo list</h5>
+                                    <div class="ibox-title" style="border-bottom: 2px solid #1ab394;">
+                                        <h5 style="color: #1ab394; font-weight: bold;"><i class="fa fa-tasks"></i> Quick Actions</h5>
                                         <div class="ibox-tools">
                                             <a class="collapse-link">
                                                 <i class="fa fa-chevron-up"></i>
                                             </a>
-                                            <a class="close-link">
-                                                <i class="fa fa-times"></i>
-                                            </a>
                                         </div>
                                     </div>
-                                    <div class="ibox-content">
-                                        <ul class="todo-list m-t small-list">
-                                            <li>
-                                                <a href="#" class="check-link"><i class="fa fa-check-square"></i> </a>
-                                                <span class="m-l-xs todo-completed">Buy a milk</span>
-
-                                            </li>
-                                            <li>
-                                                <a href="#" class="check-link"><i class="fa fa-square-o"></i> </a>
-                                                <span class="m-l-xs">Go to shop and find some products.</span>
-
-                                            </li>
-                                            <li>
-                                                <a href="#" class="check-link"><i class="fa fa-square-o"></i> </a>
-                                                <span class="m-l-xs">Send documents to Mike</span>
-                                                <small class="label label-primary"><i class="fa fa-clock-o"></i> 1 mins</small>
-                                            </li>
-                                            <li>
-                                                <a href="#" class="check-link"><i class="fa fa-square-o"></i> </a>
-                                                <span class="m-l-xs">Go to the doctor dr Smith</span>
-                                            </li>
-                                            <li>
-                                                <a href="#" class="check-link"><i class="fa fa-check-square"></i> </a>
-                                                <span class="m-l-xs todo-completed">Plan vacation</span>
-                                            </li>
-                                            <li>
-                                                <a href="#" class="check-link"><i class="fa fa-square-o"></i> </a>
-                                                <span class="m-l-xs">Create new stuff</span>
-                                            </li>
-                                            <li>
-                                                <a href="#" class="check-link"><i class="fa fa-square-o"></i> </a>
-                                                <span class="m-l-xs">Call to Anna for dinner</span>
-                                            </li>
-                                        </ul>
+                                    <div class="ibox-content" style="background: #f8f9fa;">
+                                        <div class="row text-center">
+                                            <div class="col-md-6" style="margin-bottom: 15px;">
+                                                <div style="padding: 20px; background: white; border-radius: 5px; border-left: 4px solid #1ab394;">
+                                                    <h3 style="color: #1ab394; margin: 0;"><i class="fa fa-user-plus fa-2x"></i></h3>
+                                                    <p style="margin: 10px 0 0 0; color: #777;">Register New Member</p>
+                                                </div>
+                                            </div>
+                                            <div class="col-md-6" style="margin-bottom: 15px;">
+                                                <div style="padding: 20px; background: white; border-radius: 5px; border-left: 4px solid #f8ac59;">
+                                                    <h3 style="color: #f8ac59; margin: 0;"><i class="fa fa-credit-card fa-2x"></i></h3>
+                                                    <p style="margin: 10px 0 0 0; color: #777;">Process Loan Application</p>
+                                                </div>
+                                            </div>
+                                            <div class="col-md-6" style="margin-bottom: 15px;">
+                                                <div style="padding: 20px; background: white; border-radius: 5px; border-left: 4px solid #23c6c8;">
+                                                    <h3 style="color: #23c6c8; margin: 0;"><i class="fa fa-bank fa-2x"></i></h3>
+                                                    <p style="margin: 10px 0 0 0; color: #777;">Savings Deposit</p>
+                                                </div>
+                                            </div>
+                                            <div class="col-md-6" style="margin-bottom: 15px;">
+                                                <div style="padding: 20px; background: white; border-radius: 5px; border-left: 4px solid #ed5565;">
+                                                    <h3 style="color: #ed5565; margin: 0;"><i class="fa fa-file-text fa-2x"></i></h3>
+                                                    <p style="margin: 10px 0 0 0; color: #777;">Generate Reports</p>
+                                                </div>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
-                        </div>
-                        <div class="row">
-                            <div class="col-lg-12">
+                            
+                            <div class="col-lg-6">
                                 <div class="ibox float-e-margins">
-                                    <div class="ibox-title">
-                                        <h5>Transactions worldwide</h5>
+                                    <div class="ibox-title" style="border-bottom: 2px solid #1c84c6;">
+                                        <h5 style="color: #1c84c6; font-weight: bold;"><i class="fa fa-bar-chart"></i> Member Growth Summary</h5>
                                         <div class="ibox-tools">
                                             <a class="collapse-link">
                                                 <i class="fa fa-chevron-up"></i>
                                             </a>
-                                            <a class="close-link">
-                                                <i class="fa fa-times"></i>
-                                            </a>
                                         </div>
                                     </div>
-                                    <div class="ibox-content">
-
-                                        <div class="row">
-                                            <div class="col-lg-6">
-                                                <table class="table table-hover margin bottom">
-                                                    <thead>
-                                                    <tr>
-                                                        <th style="width: 1%" class="text-center">No.</th>
-                                                        <th>Transaction</th>
-                                                        <th class="text-center">Date</th>
-                                                        <th class="text-center">Amount</th>
-                                                    </tr>
-                                                    </thead>
-                                                    <tbody>
-                                                    <tr>
-                                                        <td class="text-center">1</td>
-                                                        <td> Security doors
-                                                            </td>
-                                                        <td class="text-center small">16 Jun 2014</td>
-                                                        <td class="text-center"><span class="label label-primary">$483.00</span></td>
-
-                                                    </tr>
-                                                    <tr>
-                                                        <td class="text-center">2</td>
-                                                        <td> Wardrobes
-                                                        </td>
-                                                        <td class="text-center small">10 Jun 2014</td>
-                                                        <td class="text-center"><span class="label label-primary">$327.00</span></td>
-
-                                                    </tr>
-                                                    <tr>
-                                                        <td class="text-center">3</td>
-                                                        <td> Set of tools
-                                                        </td>
-                                                        <td class="text-center small">12 Jun 2014</td>
-                                                        <td class="text-center"><span class="label label-warning">$125.00</span></td>
-
-                                                    </tr>
-                                                    <tr>
-                                                        <td class="text-center">4</td>
-                                                        <td> Panoramic pictures</td>
-                                                        <td class="text-center small">22 Jun 2013</td>
-                                                        <td class="text-center"><span class="label label-primary">$344.00</span></td>
-                                                    </tr>
-                                                    <tr>
-                                                        <td class="text-center">5</td>
-                                                        <td>Phones</td>
-                                                        <td class="text-center small">24 Jun 2013</td>
-                                                        <td class="text-center"><span class="label label-primary">$235.00</span></td>
-                                                    </tr>
-                                                    <tr>
-                                                        <td class="text-center">6</td>
-                                                        <td>Monitors</td>
-                                                        <td class="text-center small">26 Jun 2013</td>
-                                                        <td class="text-center"><span class="label label-primary">$100.00</span></td>
-                                                    </tr>
-                                                    </tbody>
-                                                </table>
+                                    <div class="ibox-content" style="background: white;">
+                                        <div style="padding: 15px;">
+                                            <div style="margin-bottom: 20px;">
+                                                <div class="row">
+                                                    <div class="col-md-6">
+                                                        <h4 style="color: #1c84c6; margin: 0;">New Members</h4>
+                                                        <p style="color: #777; margin: 5px 0;">This Month</p>
+                                                    </div>
+                                                    <div class="col-md-6 text-right">
+                                                        <h2 style="color: #1c84c6; margin: 0;"><?php echo isset($new_members_month) ? number_format($new_members_month) : '0'; ?></h2>
+                                                    </div>
+                                                </div>
+                                                <div class="progress" style="height: 8px; margin-top: 10px;">
+                                                    <div class="progress-bar progress-bar-info" style="width: 65%;"></div>
+                                                </div>
                                             </div>
-                                            <div class="col-lg-6">
-                                                <div id="world-map" style="height: 300px;"></div>
+                                            <div style="margin-bottom: 20px;">
+                                                <div class="row">
+                                                    <div class="col-md-6">
+                                                        <h4 style="color: #1ab394; margin: 0;">Active Loans</h4>
+                                                        <p style="color: #777; margin: 5px 0;">Currently Active</p>
+                                                    </div>
+                                                    <div class="col-md-6 text-right">
+                                                        <h2 style="color: #1ab394; margin: 0;"><?php echo isset($active_loans_count) ? number_format($active_loans_count) : '0'; ?></h2>
+                                                    </div>
+                                                </div>
+                                                <div class="progress" style="height: 8px; margin-top: 10px;">
+                                                    <div class="progress-bar progress-bar-success" style="width: 80%;"></div>
+                                                </div>
                                             </div>
-                                    </div>
+                                            <div>
+                                                <div class="row">
+                                                    <div class="col-md-6">
+                                                        <h4 style="color: #f8ac59; margin: 0;">Collection Rate</h4>
+                                                        <p style="color: #777; margin: 5px 0;">This Month</p>
+                                                    </div>
+                                                    <div class="col-md-6 text-right">
+                                                        <h2 style="color: #f8ac59; margin: 0;"><?php echo isset($collection_rate) ? number_format($collection_rate, 1) : '0'; ?>%</h2>
+                                                    </div>
+                                                </div>
+                                                <div class="progress" style="height: 8px; margin-top: 10px;">
+                                                    <div class="progress-bar progress-bar-warning" style="width: <?php echo isset($collection_rate) ? $collection_rate : 0; ?>%;"></div>
+                                                </div>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
                         </div>
-
                     </div>
 
 
@@ -633,10 +684,10 @@
             </div>
             <div class="footer">
             <div class="pull-right">
-                10GB of <strong>250GB</strong> Free.
+                <strong>Talibon Public School Teachers and Employees Multi-Purpose Cooperative</strong>
             </div>
             <div>
-                <strong>Copyright</strong> Example Company &copy; 2014-2015
+                <strong>Copyright</strong> Cooperative Management System &copy; <?php echo date('Y'); ?>
             </div>
         </div>
         </div>
@@ -723,7 +774,7 @@
 
             var dataset = [
                 {
-                    label: "Number of orders",
+                    label: "Loan Collections",
                     data: data3,
                     color: "#1ab394",
                     bars: {
@@ -734,7 +785,7 @@
                     }
 
                 }, {
-                    label: "Payments",
+                    label: "Loan Releases",
                     data: data2,
                     yaxis: 2,
                     color: "#464f88",
@@ -765,7 +816,7 @@
                     mode: "time",
                     tickSize: [3, "day"],
                     tickLength: 0,
-                    axisLabel: "Date",
+                    axisLabel: "Date (Monthly)",
                     axisLabelUseCanvas: true,
                     axisLabelFontSizePixels: 12,
                     axisLabelFontFamily: 'Arial',
@@ -809,40 +860,10 @@
 
             $.plot($("#flot-dashboard-chart"), dataset, options);
 
-            var mapData = {
-                "US": 298,
-                "SA": 200,
-                "DE": 220,
-                "FR": 540,
-                "CN": 120,
-                "AU": 760,
-                "BR": 550,
-                "IN": 200,
-                "GB": 120,
-            };
-
-            $('#world-map').vectorMap({
-                map: 'world_mill_en',
-                backgroundColor: "transparent",
-                regionStyle: {
-                    initial: {
-                        fill: '#e4e4e4',
-                        "fill-opacity": 0.9,
-                        stroke: 'none',
-                        "stroke-width": 0,
-                        "stroke-opacity": 0
-                    }
-                },
-
-                series: {
-                    regions: [{
-                        values: mapData,
-                        scale: ["#1ab394", "#22d6b1"],
-                        normalizeFunction: 'polynomial'
-                    }]
-                },
-            });
+            // World map removed - not needed for cooperative dashboard
         });
     </script>
 </body>
 </html>
+
+

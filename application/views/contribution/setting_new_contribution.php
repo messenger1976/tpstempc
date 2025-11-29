@@ -111,6 +111,29 @@ if (isset($message) && !empty($message)) {
 
 <script type="text/javascript">
     $(document).ready(function(){
+        
+        // Helper function to extract member ID from autocomplete format
+        // Handles formats like "2005-00173 - BRENDALOU SALES" or just "2005-00173"
+        function extractMemberId(value) {
+            if (!value) return '';
+            value = $.trim(value);
+            
+            // Check if value contains " - " (space-dash-space) separator
+            if (value.indexOf(' - ') !== -1) {
+                // Extract everything before " - " as the ID
+                var parts = value.split(' - ');
+                return $.trim(parts[0]);
+            }
+            
+            // If no separator, check if it looks like a member ID (starts with digits and dashes)
+            var match = value.match(/^[\d\-]+/);
+            if (match) {
+                return $.trim(match[0]);
+            }
+            
+            // Fallback: return the value as-is (might be just the ID)
+            return value;
+        }
 
         $('#cancel_button').click(function(e){
             e.preventDefault();
@@ -179,6 +202,7 @@ if (isset($message) && !empty($message)) {
      
         
         var pid = '<?php echo (isset ($contr) ? $contr->PID :set_value('pid')); ?>';
+        pid = extractMemberId(pid);
             
         if(pid.length > 0){
             $('#member_info').html('<?php echo lang("please_wait"); ?>');
@@ -186,44 +210,50 @@ if (isset($message) && !empty($message)) {
                 url:'<?php echo site_url(current_lang() . '/saving/search_member/'); ?>',
                 type:'POST',
                 data:{
-                    value:pid,
-                    column :'PID'
-                },                              
+                    value: pid,
+                    column: 'PID'
+                },
+                dataType: 'text',
                 success: function(data){
-                    var json = JSON.parse(data);
-                    if(json['success'].toString() == 'N'){
-                        $('#member_info').html('<div style="color:red;">'+json['error'].toString()+'</div>');
-                    }else{
-                        var userdata = json['data'];
-                        var contact = json['contact'];
-                        $("#member_id").val(userdata["member_id"]);
-                        var output = '<div style="border:1px solid  #ccc;font-size:15px;"><table style="width:100%;"><tr><td style="width:70%;">';
-                        output += '<div style="border-bottom:1px dashed #ccc;"><strong><?php echo lang('member_fullname'); ?> : </strong> '+userdata["firstname"]+' '+userdata["middlename"]+' '+userdata["lastname"]+'</div>';
-                        output += '<div style="border-bottom:1px dashed #ccc;"><strong><?php echo lang('member_gender'); ?> : </strong> '+userdata["gender"]+'</div>';
-                        output += '<div style="border-bottom:1px dashed #ccc;"><strong><?php echo lang('member_dob'); ?> : </strong> '+userdata["dob"]+'</div>';
-                        output += '<div style="border-bottom:1px dashed #ccc;"><strong><?php echo lang('member_join_date'); ?> : </strong> '+userdata["joiningdate"]+'</div>';
-                        output += '<div style="border-bottom:1px dashed #ccc;"><strong><?php echo lang('member_contact_phone1'); ?> : </strong> '+contact["phone1"]+'</div>';
-                        output += '<div style="border-bottom:1px dashed #ccc;"><strong><?php echo lang('member_contact_phone2'); ?> : </strong> '+contact["phone2"]+'</div>';
-                        output += '<div style="border-bottom:1px dashed #ccc;"><strong><?php echo lang('member_contact_email'); ?> : </strong> '+contact["email"]+'</div>';
-                        output +='</td><td>  <img style=" height:120px;" src="<?php echo base_url(); ?>uploads/memberphoto/'+userdata["photo"].toString()+'"/></td></tr></table>       </div>'
-                        $('#member_info').html(output);   
+                    try {
+                        var json = JSON.parse(data);
+                        if(json['success'] && json['success'].toString() == 'N'){
+                            $('#member_info').html('<div style="color:red;">'+json['error'].toString()+'</div>');
+                        }else if(json['success'] && json['success'].toString() == 'Y'){
+                            var userdata = json['data'];
+                            var contact = json['contact'];
+                            if(userdata && userdata["member_id"]) {
+                                $("#member_id").val(userdata["member_id"]);
+                            }
+                            var output = '<div style="border:1px solid  #ccc;font-size:15px;"><table style="width:100%;"><tr><td style="width:70%;">';
+                            output += '<div style="border-bottom:1px dashed #ccc;"><strong><?php echo lang('member_fullname'); ?> : </strong> '+userdata["firstname"]+' '+userdata["middlename"]+' '+userdata["lastname"]+'</div>';
+                            output += '<div style="border-bottom:1px dashed #ccc;"><strong><?php echo lang('member_gender'); ?> : </strong> '+userdata["gender"]+'</div>';
+                            output += '<div style="border-bottom:1px dashed #ccc;"><strong><?php echo lang('member_dob'); ?> : </strong> '+userdata["dob"]+'</div>';
+                            output += '<div style="border-bottom:1px dashed #ccc;"><strong><?php echo lang('member_join_date'); ?> : </strong> '+userdata["joiningdate"]+'</div>';
+                            output += '<div style="border-bottom:1px dashed #ccc;"><strong><?php echo lang('member_contact_phone1'); ?> : </strong> '+(contact["phone1"] || '')+'</div>';
+                            output += '<div style="border-bottom:1px dashed #ccc;"><strong><?php echo lang('member_contact_phone2'); ?> : </strong> '+(contact["phone2"] || '')+'</div>';
+                            output += '<div style="border-bottom:1px dashed #ccc;"><strong><?php echo lang('member_contact_email'); ?> : </strong> '+(contact["email"] || '')+'</div>';
+                            output +='</td><td>  <img style=" height:120px;" src="<?php echo base_url(); ?>uploads/memberphoto/'+(userdata["photo"] || '')+'"/></td></tr></table>       </div>'
+                            $('#member_info').html(output);
+                        } else {
+                            $('#member_info').html('<div style="color:red;">Invalid response from server</div>');
+                        }
+                    } catch(e) {
+                        $('#member_info').html('<div style="color:red;">Error parsing response: ' + e.message + '</div>');
+                        console.error('JSON Parse Error:', e, 'Response:', data);
                     }
-                        
-                        
                 },
                 error:function(xhr,textStatus,errorThrown){
-                    alert(errorThrown); 
+                    $('#member_info').html('<div style="color:red;">Error: ' + errorThrown + '</div>');
+                    console.error('AJAX Error:', textStatus, errorThrown, xhr.responseText);
                 }
             });
-                
-                
-                
         }
         
         
         $("#search_pid").click(function(){
             
-            var pid = $("#pid").val();
+            var pid = extractMemberId($("#pid").val());
             
             if(pid.length > 0){
                 $('#member_info').html('<?php echo lang("please_wait"); ?>');
@@ -231,38 +261,44 @@ if (isset($message) && !empty($message)) {
                     url:'<?php echo site_url(current_lang() . '/saving/search_member/'); ?>',
                     type:'POST',
                     data:{
-                        value:pid,
-                        column :'PID'
-                    },                              
+                        value: pid,
+                        column: 'PID'
+                    },
+                    dataType: 'text',
                     success: function(data){
-                        var json = JSON.parse(data);
-                        if(json['success'].toString() == 'N'){
-                            $('#member_info').html('<div style="color:red;">'+json['error'].toString()+'</div>');
-                        }else{
-                            var userdata = json['data'];
-                            var contact = json['contact'];
-                            $("#member_id").val(userdata["member_id"]);
-                            var output = '<div style="border:1px solid  #ccc;font-size:15px;"><table style="width:100%;"><tr><td style="width:70%;">';
-                            output += '<div style="border-bottom:1px dashed #ccc;"><strong><?php echo lang('member_fullname'); ?> : </strong> '+userdata["firstname"]+' '+userdata["middlename"]+' '+userdata["lastname"]+'</div>';
-                            output += '<div style="border-bottom:1px dashed #ccc;"><strong><?php echo lang('member_gender'); ?> : </strong> '+userdata["gender"]+'</div>';
-                            output += '<div style="border-bottom:1px dashed #ccc;"><strong><?php echo lang('member_dob'); ?> : </strong> '+userdata["dob"]+'</div>';
-                            output += '<div style="border-bottom:1px dashed #ccc;"><strong><?php echo lang('member_join_date'); ?> : </strong> '+userdata["joiningdate"]+'</div>';
-                            output += '<div style="border-bottom:1px dashed #ccc;"><strong><?php echo lang('member_contact_phone1'); ?> : </strong> '+contact["phone1"]+'</div>';
-                            output += '<div style="border-bottom:1px dashed #ccc;"><strong><?php echo lang('member_contact_phone2'); ?> : </strong> '+contact["phone2"]+'</div>';
-                            output += '<div style="border-bottom:1px dashed #ccc;"><strong><?php echo lang('member_contact_email'); ?> : </strong> '+contact["email"]+'</div>';
-                            output +='</td><td>  <img style=" height:120px;" src="<?php echo base_url(); ?>uploads/memberphoto/'+userdata["photo"].toString()+'"/></td></tr></table>       </div>'
-                            $('#member_info').html(output);   
+                        try {
+                            var json = JSON.parse(data);
+                            if(json['success'] && json['success'].toString() == 'N'){
+                                $('#member_info').html('<div style="color:red;">'+json['error'].toString()+'</div>');
+                            }else if(json['success'] && json['success'].toString() == 'Y'){
+                                var userdata = json['data'];
+                                var contact = json['contact'];
+                                if(userdata && userdata["member_id"]) {
+                                    $("#member_id").val(userdata["member_id"]);
+                                }
+                                var output = '<div style="border:1px solid  #ccc;font-size:15px;"><table style="width:100%;"><tr><td style="width:70%;">';
+                                output += '<div style="border-bottom:1px dashed #ccc;"><strong><?php echo lang('member_fullname'); ?> : </strong> '+userdata["firstname"]+' '+userdata["middlename"]+' '+userdata["lastname"]+'</div>';
+                                output += '<div style="border-bottom:1px dashed #ccc;"><strong><?php echo lang('member_gender'); ?> : </strong> '+userdata["gender"]+'</div>';
+                                output += '<div style="border-bottom:1px dashed #ccc;"><strong><?php echo lang('member_dob'); ?> : </strong> '+userdata["dob"]+'</div>';
+                                output += '<div style="border-bottom:1px dashed #ccc;"><strong><?php echo lang('member_join_date'); ?> : </strong> '+userdata["joiningdate"]+'</div>';
+                                output += '<div style="border-bottom:1px dashed #ccc;"><strong><?php echo lang('member_contact_phone1'); ?> : </strong> '+(contact["phone1"] || '')+'</div>';
+                                output += '<div style="border-bottom:1px dashed #ccc;"><strong><?php echo lang('member_contact_phone2'); ?> : </strong> '+(contact["phone2"] || '')+'</div>';
+                                output += '<div style="border-bottom:1px dashed #ccc;"><strong><?php echo lang('member_contact_email'); ?> : </strong> '+(contact["email"] || '')+'</div>';
+                                output +='</td><td>  <img style=" height:120px;" src="<?php echo base_url(); ?>uploads/memberphoto/'+(userdata["photo"] || '')+'"/></td></tr></table>       </div>'
+                                $('#member_info').html(output);
+                            } else {
+                                $('#member_info').html('<div style="color:red;">Invalid response from server</div>');
+                            }
+                        } catch(e) {
+                            $('#member_info').html('<div style="color:red;">Error parsing response: ' + e.message + '</div>');
+                            console.error('JSON Parse Error:', e, 'Response:', data);
                         }
-                        
-                        
                     },
                     error:function(xhr,textStatus,errorThrown){
-                        alert(errorThrown); 
+                        $('#member_info').html('<div style="color:red;">Error: ' + errorThrown + '</div>');
+                        console.error('AJAX Error:', textStatus, errorThrown);
                     }
                 });
-                
-                
-                
             }else{
                 alert('<?php echo lang("alert_pid"); ?>');
             }
@@ -270,45 +306,51 @@ if (isset($message) && !empty($message)) {
         
         
         $("#search_mid").click(function(){
-            var pid = $("#member_id").val();
-            if(pid.length > 0){
+            var member_id = extractMemberId($("#member_id").val());
+            if(member_id.length > 0){
                 $('#member_info').html('<?php echo lang("please_wait"); ?>');
                 $.ajax({
                     url:'<?php echo site_url(current_lang() . '/saving/search_member/'); ?>',
                     type:'POST',
                     data:{
-                        value:pid,
-                        column :'MID'
-                    },                              
+                        value: member_id,
+                        column: 'MID'
+                    },
+                    dataType: 'text',
                     success: function(data){
-                        var json = JSON.parse(data);
-                        if(json['success'].toString() == 'N'){
-                            $('#member_info').html('<div style="color:red;">'+json['error'].toString()+'</div>');
-                        }else{
-                            var userdata = json['data'];
-                            var contact = json['contact'];
-                            $("#pid").val(userdata["PID"]);
-                            var output = '<div style="border:1px solid  #ccc; font-size:15px;"><table style="width:100%;"><tr><td style="width:70%;">';
-                            output += '<div style="border-bottom:1px dashed #ccc;"><strong><?php echo lang('member_fullname'); ?> : </strong> '+userdata["firstname"]+' '+userdata["middlename"]+' '+userdata["lastname"]+'</div>';
-                            output += '<div style="border-bottom:1px dashed #ccc;"><strong><?php echo lang('member_gender'); ?> : </strong> '+userdata["gender"]+'</div>';
-                            output += '<div style="border-bottom:1px dashed #ccc;"><strong><?php echo lang('member_dob'); ?> : </strong> '+userdata["dob"]+'</div>';
-                            output += '<div style="border-bottom:1px dashed #ccc;"><strong><?php echo lang('member_join_date'); ?> : </strong> '+userdata["joiningdate"]+'</div>';
-                            output += '<div style="border-bottom:1px dashed #ccc;"><strong><?php echo lang('member_contact_phone1'); ?> : </strong> '+contact["phone1"]+'</div>';
-                            output += '<div style="border-bottom:1px dashed #ccc;"><strong><?php echo lang('member_contact_phone2'); ?> : </strong> '+contact["phone2"]+'</div>';
-                            output += '<div style="border-bottom:1px dashed #ccc;"><strong><?php echo lang('member_contact_email'); ?> : </strong> '+contact["email"]+'</div>';
-                            output +='</td><td>  <img style=" height:120px;" src="<?php echo base_url(); ?>uploads/memberphoto/'+userdata["photo"].toString()+'"/></td></tr></table>       </div>'
-                            $('#member_info').html(output);   
+                        try {
+                            var json = JSON.parse(data);
+                            if(json['success'] && json['success'].toString() == 'N'){
+                                $('#member_info').html('<div style="color:red;">'+json['error'].toString()+'</div>');
+                            }else if(json['success'] && json['success'].toString() == 'Y'){
+                                var userdata = json['data'];
+                                var contact = json['contact'];
+                                if(userdata && userdata["PID"]) {
+                                    $("#pid").val(userdata["PID"]);
+                                }
+                                var output = '<div style="border:1px solid  #ccc; font-size:15px;"><table style="width:100%;"><tr><td style="width:70%;">';
+                                output += '<div style="border-bottom:1px dashed #ccc;"><strong><?php echo lang('member_fullname'); ?> : </strong> '+userdata["firstname"]+' '+userdata["middlename"]+' '+userdata["lastname"]+'</div>';
+                                output += '<div style="border-bottom:1px dashed #ccc;"><strong><?php echo lang('member_gender'); ?> : </strong> '+userdata["gender"]+'</div>';
+                                output += '<div style="border-bottom:1px dashed #ccc;"><strong><?php echo lang('member_dob'); ?> : </strong> '+userdata["dob"]+'</div>';
+                                output += '<div style="border-bottom:1px dashed #ccc;"><strong><?php echo lang('member_join_date'); ?> : </strong> '+userdata["joiningdate"]+'</div>';
+                                output += '<div style="border-bottom:1px dashed #ccc;"><strong><?php echo lang('member_contact_phone1'); ?> : </strong> '+(contact["phone1"] || '')+'</div>';
+                                output += '<div style="border-bottom:1px dashed #ccc;"><strong><?php echo lang('member_contact_phone2'); ?> : </strong> '+(contact["phone2"] || '')+'</div>';
+                                output += '<div style="border-bottom:1px dashed #ccc;"><strong><?php echo lang('member_contact_email'); ?> : </strong> '+(contact["email"] || '')+'</div>';
+                                output +='</td><td>  <img style=" height:120px;" src="<?php echo base_url(); ?>uploads/memberphoto/'+(userdata["photo"] || '')+'"/></td></tr></table>       </div>'
+                                $('#member_info').html(output);
+                            } else {
+                                $('#member_info').html('<div style="color:red;">Invalid response from server</div>');
+                            }
+                        } catch(e) {
+                            $('#member_info').html('<div style="color:red;">Error parsing response: ' + e.message + '</div>');
+                            console.error('JSON Parse Error:', e, 'Response:', data);
                         }
-                        
-                        
                     },
                     error:function(xhr,textStatus,errorThrown){
-                        alert(errorThrown); 
+                        $('#member_info').html('<div style="color:red;">Error: ' + errorThrown + '</div>');
+                        console.error('AJAX Error:', textStatus, errorThrown);
                     }
                 });
-                
-               
-               
             }else{
                 alert('<?php echo lang("alert_member_id"); ?>');
             }

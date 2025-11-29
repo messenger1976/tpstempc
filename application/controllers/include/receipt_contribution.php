@@ -69,4 +69,3 @@ $this->pdf->writeHTML($html, true, false, true, false, '');
 
 $this->pdf->Output($trans->PID. '.pdf', 'I');
 exit;
-?>

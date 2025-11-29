@@ -26,7 +26,7 @@ class Contribution_Model extends CI_Model {
      function get_transaction($receipt) {
         $this->db->where('receipt', $receipt);
         $data = $this->db->get('contribution_transaction')->row();
-        if (count($data) == 1) {
+        if (!empty($data) && isset($data->receipt)) {
             return $data;
         }
 
@@ -172,19 +172,19 @@ class Contribution_Model extends CI_Model {
         $check = $this->member_model->member_basic_info(null, $data['PID'], $data['member_id'])->row();
         if (!is_null($id)) {
             //update
-            if (count($check) > 0) {
+            if (!empty($check) && isset($check->PID)) {
                 return $this->db->update('contribution_settings', $data, array('id' => $id));
             } else {
                 return FALSE;
             }
         } else {
             // insert
-            if (count($check) == 0) {
+            if (empty($check) || !isset($check->PID)) {
                 return FALSE;
             } else {
                 //check if data exist
                 $check2 = $this->db->get_where('contribution_settings', array('PID' => $data['PID']))->row();
-                if (count($check2) > 0) {
+                if (!empty($check2) && isset($check2->id)) {
                     return FALSE;
                 } else {
                     return $this->db->insert('contribution_settings', $data);
@@ -271,6 +271,142 @@ class Contribution_Model extends CI_Model {
         return TRUE;
     }
     
+    function post_contribution_to_gl($id, $posted, $pid, $member_id, $amount, $trans_date) {
+        $pin = current_user()->PIN;
+        $this->load->model('setting_model');
+        
+        // Get Capital Build Up Account from settings
+        $global_contribution = $this->setting_model->global_contribution_info();
+        $capital_build_up_account = isset($global_contribution->capital_build_up_account) ? $global_contribution->capital_build_up_account : null;
+        
+        if (empty($capital_build_up_account)) {
+            return FALSE; // Cannot post without Capital Build Up Account configured
+        }
+        
+        // Check if GL entry already exists for this contribution setting
+        $this->db->where('refferenceID', $id);
+        $this->db->where('fromtable', 'contribution_settings');
+        $this->db->where('PIN', $pin);
+        $existing_entry = $this->db->get('general_ledger')->row();
+        
+        if ($posted == 1) {
+            // Posting to GL - Create entries
+            if (empty($existing_entry)) {
+                // Create ledger entry
+                $ledger_entry = array(
+                    'date' => $trans_date,
+                    'PIN' => $pin
+                );
+                $this->db->insert('general_ledger_entry', $ledger_entry);
+                $ledger_entry_id = $this->db->insert_id();
+                
+                // Get account info for Capital Build Up Account
+                $capital_account_info = account_row_info($capital_build_up_account);
+                if (!$capital_account_info) {
+                    return FALSE; // Account not found
+                }
+                
+                // Prepare ledger data
+                $ledger = array(
+                    'journalID' => 7, // Journal ID for Contribution (adjust if your system uses different ID)
+                    'refferenceID' => $id,
+                    'entryid' => $ledger_entry_id,
+                    'date' => $trans_date,
+                    'description' => 'Contribution Beginning Balance - ' . $member_id,
+                    'linkto' => 'contribution_settings.id',
+                    'fromtable' => 'contribution_settings',
+                    'paid' => 0,
+                    'PID' => $pid,
+                    'member_id' => $member_id,
+                    'PIN' => $pin,
+                );
+                
+                // Determine accounting entries based on Capital Build Up account type
+                // If Capital Build Up is Equity (account_type 30 or 40): Debit Cash, Credit Capital Build Up
+                // If Capital Build Up is Asset: Debit Capital Build Up, Credit Member Payable
+                $capital_account_type = $capital_account_info->account_type;
+                
+                if ($capital_account_type == 30 || $capital_account_type == 40) {
+                    // Capital Build Up is Equity - Standard entry: Debit Cash, Credit Capital Build Up
+                    // Use standard cash account (1010001) or check if exists
+                    $cash_account = 1010001; // Default cash account - adjust if needed
+                    $cash_account_info = account_row_info($cash_account);
+                    
+                    if (!$cash_account_info) {
+                        return FALSE; // Cash account not found
+                    }
+                    
+                    // Debit: Cash Account
+                    $ledger['account'] = $cash_account;
+                    $ledger['debit'] = $amount;
+                    $ledger['credit'] = 0;
+                    $ledger['account_type'] = $cash_account_info->account_type;
+                    $ledger['sub_account_type'] = isset($cash_account_info->sub_account_type) ? $cash_account_info->sub_account_type : null;
+                    $this->db->insert('general_ledger', $ledger);
+                    
+                    // Credit: Capital Build Up Account
+                    $ledger['account'] = $capital_build_up_account;
+                    $ledger['debit'] = 0;
+                    $ledger['credit'] = $amount;
+                    $ledger['account_type'] = $capital_account_info->account_type;
+                    $ledger['sub_account_type'] = isset($capital_account_info->sub_account_type) ? $capital_account_info->sub_account_type : null;
+                    $this->db->insert('general_ledger', $ledger);
+                } else {
+                    // Capital Build Up is Asset - Debit Capital Build Up, Credit Member Contribution Payable
+                    // Debit: Capital Build Up Account
+                    $ledger['account'] = $capital_build_up_account;
+                    $ledger['debit'] = $amount;
+                    $ledger['credit'] = 0;
+                    $ledger['account_type'] = $capital_account_info->account_type;
+                    $ledger['sub_account_type'] = isset($capital_account_info->sub_account_type) ? $capital_account_info->sub_account_type : null;
+                    $this->db->insert('general_ledger', $ledger);
+                    
+                    // Credit: Member Contribution Payable (Liability) - using default account
+                    // You may want to add this as a setting
+                    $member_payable_account = 2000002; // Default member contribution payable - adjust as needed
+                    $payable_account_info = account_row_info($member_payable_account);
+                    
+                    if (!$payable_account_info) {
+                        // If payable account doesn't exist, use cash account as credit
+                        $cash_account = 1010001;
+                        $payable_account_info = account_row_info($cash_account);
+                        if (!$payable_account_info) {
+                            return FALSE;
+                        }
+                        $member_payable_account = $cash_account;
+                    }
+                    
+                    $ledger['account'] = $member_payable_account;
+                    $ledger['debit'] = 0;
+                    $ledger['credit'] = $amount;
+                    $ledger['account_type'] = $payable_account_info->account_type;
+                    $ledger['sub_account_type'] = isset($payable_account_info->sub_account_type) ? $payable_account_info->sub_account_type : null;
+                    $this->db->insert('general_ledger', $ledger);
+                }
+                
+                return TRUE;
+            }
+        } else {
+            // Unposting - Delete GL entries
+            if (!empty($existing_entry)) {
+                $this->db->where('refferenceID', $id);
+                $this->db->where('fromtable', 'contribution_settings');
+                $this->db->where('PIN', $pin);
+                $this->db->delete('general_ledger');
+                
+                // Also delete ledger entry if no other records reference it
+                $this->db->where('entryid', $existing_entry->entryid);
+                $remaining = $this->db->count_all_results('general_ledger');
+                if ($remaining == 0) {
+                    $this->db->where('id', $existing_entry->entryid);
+                    $this->db->delete('general_ledger_entry');
+                }
+                return TRUE;
+            }
+        }
+        
+        return FALSE;
+    }
 
 }
 

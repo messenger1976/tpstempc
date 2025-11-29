@@ -155,10 +155,31 @@ class Contribution extends CI_Controller {
 
         if ($this->form_validation->run() == TRUE) {
 
-            $PID_initial = explode('-', trim($this->input->post('pid')));
-            $member_id_initial = explode('-', trim($this->input->post('member_id')));
-            $PID = $PID_initial[0];
-            $member_id = $member_id_initial[0];
+            // Handle member IDs with dashes (e.g., "2005-00173 - BRENDALOU SALES")
+            $pid_value = trim($this->input->post('pid'));
+            $member_id_value = trim($this->input->post('member_id'));
+            
+            // Extract PID - check for " - " separator first
+            if (strpos($pid_value, ' - ') !== false) {
+                $PID_initial = explode(' - ', $pid_value);
+                $PID = trim($PID_initial[0]);
+            } else if (preg_match('/^[\d\-]+/', $pid_value, $matches)) {
+                $PID = trim($matches[0]);
+            } else {
+                $PID_initial = explode('-', $pid_value);
+                $PID = trim($PID_initial[0]);
+            }
+            
+            // Extract member_id - check for " - " separator first
+            if (strpos($member_id_value, ' - ') !== false) {
+                $member_id_initial = explode(' - ', $member_id_value);
+                $member_id = trim($member_id_initial[0]);
+            } else if (preg_match('/^[\d\-]+/', $member_id_value, $matches)) {
+                $member_id = trim($matches[0]);
+            } else {
+                $member_id_initial = explode('-', $member_id_value);
+                $member_id = trim($member_id_initial[0]);
+            }
             $posting_date = date("Y-m-d",strtotime($this->input->post('posting_date')));
             $source = $this->input->post('contribution_source');
             $amount = trim($this->input->post('open_balance'));
@@ -214,10 +235,31 @@ class Contribution extends CI_Controller {
             }
         }
         if ($this->form_validation->run() == TRUE) {
-            $PID_initial = explode('-', trim($this->input->post('pid')));
-            $member_id_initial = explode('-', trim($this->input->post('member_id')));
-            $pid = $PID_initial[0];
-            $member_id = $member_id_initial[0];
+            // Handle member IDs with dashes (e.g., "2005-00173 - BRENDALOU SALES")
+            $pid_value = trim($this->input->post('pid'));
+            $member_id_value = trim($this->input->post('member_id'));
+            
+            // Extract PID - check for " - " separator first
+            if (strpos($pid_value, ' - ') !== false) {
+                $PID_initial = explode(' - ', $pid_value);
+                $pid = trim($PID_initial[0]);
+            } else if (preg_match('/^[\d\-]+/', $pid_value, $matches)) {
+                $pid = trim($matches[0]);
+            } else {
+                $PID_initial = explode('-', $pid_value);
+                $pid = trim($PID_initial[0]);
+            }
+            
+            // Extract member_id - check for " - " separator first
+            if (strpos($member_id_value, ' - ') !== false) {
+                $member_id_initial = explode(' - ', $member_id_value);
+                $member_id = trim($member_id_initial[0]);
+            } else if (preg_match('/^[\d\-]+/', $member_id_value, $matches)) {
+                $member_id = trim($matches[0]);
+            } else {
+                $member_id_initial = explode('-', $member_id_value);
+                $member_id = trim($member_id_initial[0]);
+            }
 
 
 
@@ -274,12 +316,39 @@ class Contribution extends CI_Controller {
     }
 
     function print_receipt($receipt) {
+        // Suppress PHP warnings/errors for TCPDF compatibility (PHP 7.3+ issues)
+        $old_error_reporting = error_reporting(0);
+        $old_display_errors = ini_set('display_errors', 0);
+        
+        // Start output buffering to prevent any output before PDF
+        if (ob_get_level()) {
+            ob_end_clean();
+        }
+        ob_start();
+        
         $this->lang->load('setting');
         $trans = $this->contribution_model->get_transaction($receipt);
         if ($trans) {
-            include 'include/receipt_contribution.php';
+            // Clear any output that might have been generated
+            ob_clean();
+            
+            // Suppress warnings for TCPDF library
+            @include 'include/receipt_contribution.php';
+            
+            // Restore settings
+            error_reporting($old_error_reporting);
+            if ($old_display_errors !== false) {
+                ini_set('display_errors', $old_display_errors);
+            }
             exit;
         } else {
+            // Clean output buffer before showing error
+            ob_end_clean();
+            // Restore settings
+            error_reporting($old_error_reporting);
+            if ($old_display_errors !== false) {
+                ini_set('display_errors', $old_display_errors);
+            }
             return show_error('Transaction id not exist..', 500, 'INVALID RECEIPT NUMBER');
         }
     }
@@ -417,8 +486,28 @@ class Contribution extends CI_Controller {
             //now finalize
             $receipt = $this->contribution_model->contribution_transaction($trans_type, $pid, $member_id, $amount, $paymethod, $comment, '','',0, $trans_date);
             if ($receipt) {
+                // Update posted status
                 $ifposted = $this->contribution_model->post_to_gl($id, $posted);
-                $status['success'] = 'Y';
+                
+                // Post to General Ledger
+                if ($ifposted && $posted == 1) {
+                    $gl_posted = $this->contribution_model->post_contribution_to_gl($id, $posted, $pid, $member_id, $amount, $trans_date);
+                    if (!$gl_posted) {
+                        $status['message'] = 'Transaction recorded but GL posting failed. Please check Capital Build Up Account setting.';
+                        $status['success'] = 'W'; // Warning
+                    } else {
+                        $status['message'] = 'Successfully posted to GL';
+                        $status['success'] = 'Y';
+                    }
+                } else if ($ifposted && $posted == 0) {
+                    // Unpost from GL
+                    $gl_unposted = $this->contribution_model->post_contribution_to_gl($id, $posted, $pid, $member_id, $amount, $trans_date);
+                    $status['message'] = 'Successfully unposted from GL';
+                    $status['success'] = 'Y';
+                } else {
+                    $status['success'] = 'Y';
+                    $status['message'] = 'Posted successfully';
+                }
                 $status['posted'] = $posted;
             } else {
                 $status['message'] = lang('transaction_fail');

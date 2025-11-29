@@ -138,10 +138,10 @@
                     <div class="col-lg-12">
                         <div class="footer">
                             <div class="pull-right">
-                                <strong>BOHOLLANDER COOPERATIVE</strong>
+                                <strong>Talibon Public School Teachers and Employees Multi-Purpose Cooperative</strong>
                             </div>
                             <div>
-                                <strong><?php echo date('Y'); ?> &copy; bohollander.com  </strong>
+                                <strong>Copyright</strong> Cooperative Management System &copy; <?php echo date('Y'); ?>
                             </div>
                         </div>
                     </div>

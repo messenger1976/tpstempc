@@ -753,10 +753,20 @@ class Mortuary extends CI_Controller {
         $this->load->model('contribution_model');
         $this->load->model('mortuary_model');
         $share_setting = $this->setting_model->share_setting_info();
-        $value = $this->input->post('value');
-        $column = $this->input->post('column');
-        $explode = explode('-', $value);
-        $value = $explode[0];
+        $value = trim($this->input->post('value'));
+        $column = trim($this->input->post('column'));
+        
+        // Handle autocomplete format: "2005-00173 - BRENDALOU SALES" or just "2005-00173"
+        if (strpos($value, ' - ') !== false) {
+            $explode = explode(' - ', $value);
+            $value = trim($explode[0]);
+        } else if (preg_match('/^[\d\-]+/', $value, $matches)) {
+            $value = trim($matches[0]);
+        } else {
+            $explode = explode('-', $value);
+            $value = trim($explode[0]);
+        }
+        
         $pid = null;
         $member_id = null;
         $error = '';
@@ -774,7 +784,7 @@ class Mortuary extends CI_Controller {
         $status = array();
         
         
-        if (count($member) == 1) {
+        if (!empty($member) && isset($member->PID)) {
             $balance = 0;
             $current_mortuary = $this->mortuary_model->contribution_balance($member->PID, $member->member_id);
             if ($current_mortuary) {

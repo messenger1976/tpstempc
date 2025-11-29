@@ -29,3 +29,4 @@ application/config/database.php
 .git-ftp.log
 .htaccess
 Wopxop.php
+.vscode/sftp.json

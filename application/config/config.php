@@ -26,10 +26,9 @@ elseif (!empty($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED
 $REQUEST_PROTOCOL = $isSecure ? 'https' : 'http';
 /* end code */
 
-$config['base_url'] = $REQUEST_PROTOCOL.'://'.$_SERVER['HTTP_HOST'].'/';
-
-
-$config['base_url']='http://localhost/tapstemco/';
+// Get the directory path from the script name
+$script_path = str_replace(basename($_SERVER['SCRIPT_NAME']), '', $_SERVER['SCRIPT_NAME']);
+$config['base_url'] = $REQUEST_PROTOCOL.'://'.$_SERVER['HTTP_HOST'].$script_path;
 
 
 date_default_timezone_set('Asia/Manila');
@@ -109,7 +108,7 @@ $config['charset'] = 'UTF-8';
 | setting this variable to TRUE (boolean).  See the user guide for details.
 |
 */
-$config['enable_hooks'] = FALSE;
+$config['enable_hooks'] = TRUE;
 
 
 /*
@@ -198,7 +197,7 @@ $config['directory_trigger']	= 'd'; // experimental not currently in use
 | your log files will fill up very fast.
 |
 */
-$config['log_threshold'] = 0;
+$config['log_threshold'] = 1; // Set to 1 to enable error logging, 0 to disable
 
 /*
 |--------------------------------------------------------------------------

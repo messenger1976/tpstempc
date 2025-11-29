@@ -1,6 +1,8 @@
 <div class="table-responsive">
     <div style="text-align: right; margin-right: 20px;">
         <a  class="btn btn-primary" href="<?php echo site_url(current_lang() . '/finance/finance_account_create'); ?>"><?php echo lang('finance_account_create') ?></a>
+        <a  class="btn btn-success" href="<?php echo site_url(current_lang() . '/finance/finance_account_list_print'); ?>" target="_blank" style="margin-left: 10px;"><i class="fa fa-print"></i> Print</a>
+        <a  class="btn btn-info" href="<?php echo site_url(current_lang() . '/finance/finance_account_list_export'); ?>" style="margin-left: 10px;"><i class="fa fa-file-excel-o"></i> Export to Excel</a>
     </div>
     <table class="table table-bordered table-striped">
         <thead>
@@ -8,9 +10,10 @@
                 <th style="width:80px;"><?php echo lang('sno'); ?></th>
                 <th><?php echo lang('account_no'); ?></th>
                 <th><?php echo lang('finance_account_type'); ?></th>
+                <th><?php echo lang('chart_sub_type_name'); ?></th>
                 <th><?php echo lang('finance_account_name'); ?></th>
                <th><?php echo lang('finance_account_description'); ?></th>
-                <th><?php echo lang('actioncolumn'); ?></th>
+                <th style="width:150px;"><?php echo lang('actioncolumn'); ?></th>
             </tr>
         </thead>
         <tbody>
@@ -25,6 +28,17 @@
                          <td><?php
                             $account_type = $this->finance_model->account_type(null,$value->account_type)->row();
                             echo $account_type->name
+                            ?></td>
+                        <td><?php
+                            $sub_account_type = '-';
+                            if (isset($value->sub_account_type) && !empty($value->sub_account_type)) {
+                                $sub_type_result = $this->finance_model->account_type_sub(null, $value->account_type, $value->sub_account_type);
+                                if ($sub_type_result && $sub_type_result->num_rows() > 0) {
+                                    $sub_type = $sub_type_result->row();
+                                    $sub_account_type = $sub_type->name;
+                                }
+                            }
+                            echo $sub_account_type;
                             ?></td>
                         <td><?php echo $value->name ?></td>
                        
@@ -45,7 +59,7 @@
                 ?>
 
                 <tr>
-                    <td colspan="7"> <?php echo lang('data_not_found'); ?></td>
+                    <td colspan="8"> <?php echo lang('data_not_found'); ?></td>
                 </tr>
 <?php } ?>
         </tbody>

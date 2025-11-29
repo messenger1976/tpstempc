@@ -1,0 +1,24 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "SFTP: Upload Active File",
+            "type": "shell",
+            "command": "echo 'Use Command Palette: SFTP: Upload Active File'",
+            "problemMatcher": []
+        },
+        {
+            "label": "SFTP: Upload Folder",
+            "type": "shell",
+            "command": "echo 'Use Command Palette: SFTP: Upload Folder'",
+            "problemMatcher": []
+        },
+        {
+            "label": "SFTP: Upload All",
+            "type": "shell",
+            "command": "echo 'Use Command Palette: SFTP: Upload All'",
+            "problemMatcher": []
+        }
+    ]
+}
+

@@ -496,16 +496,39 @@ jQuery.autocomplete = function(input, options) {
     }
         
     function showPersonData(value){
-        var npid = value.split("-");
-        var pid = npid[0];
+        // Extract member ID from autocomplete format
+        // Handles formats like "2005-00173 - BRENDALOU SALES" or just "2005-00173"
+        var pid = '';
+        if (!value) {
+            return;
+        }
+        value = value.trim();
+        
+        // Check if value contains " - " (space-dash-space) separator
+        if (value.indexOf(' - ') !== -1) {
+            // Extract everything before " - " as the ID
+            var parts = value.split(' - ');
+            pid = parts[0].trim();
+        } else {
+            // If no separator, check if it looks like a member ID (starts with digits and dashes)
+            var match = value.match(/^[\d\-]+/);
+            if (match) {
+                pid = match[0].trim();
+            } else {
+                // Fallback: split on first dash (old behavior for backward compatibility)
+                var npid = value.split("-");
+                pid = npid[0].trim();
+            }
+        }
+        
         if(pid.length > 0){
             $('#member_info').html(options.pleasewait);
             $.ajax({
                 url:options.serverURLq,
                 type:'POST',
                 data:{
-                    value:pid,
-                    column :options.column
+                    value: pid,
+                    column: options.column
                 },                              
                 success: function(data){
                     var json = JSON.parse(data);

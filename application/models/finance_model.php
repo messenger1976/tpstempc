@@ -26,6 +26,7 @@ class Finance_Model extends CI_Model {
             $this->db->where('account', $account);
         }
 
+        $this->db->order_by('account', 'ASC');
         return $this->db->get('account_type');
     }
 
@@ -42,6 +43,7 @@ class Finance_Model extends CI_Model {
             $this->db->where('sub_account', $sub_account);
         }
 
+        $this->db->order_by('sub_account', 'ASC');
         return $this->db->get('account_type_sub');
     }
 
@@ -207,7 +209,6 @@ if (!is_null($account_type)) {
             $this->db->where('account_parent', $parent_account);
         }
 
-        $this->db->order_by('account_type', 'ASC');
         $this->db->order_by('account', 'ASC');
         return $this->db->get('account_chart');
     }

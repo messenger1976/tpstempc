@@ -470,7 +470,7 @@ class Saving extends CI_Controller {
             $status['accountinfo'] = $account_info;
             $member = $this->member_model->member_basic_info(null, $account_info->RFID, $account_info->member_id)->row();
 
-            if (count($member) == 1) {
+            if (!empty($member) && isset($member->PID)) {
                 $contact = $this->member_model->member_contact($member->PID);
                 $status['success'] = 'Y';
                 $status['data'] = $member;
@@ -491,25 +491,81 @@ class Saving extends CI_Controller {
 
     function search_member() {
 
-        $value = $this->input->post('value');
-        $column = $this->input->post('column');
-        $explode = explode('-', $value);
-        $value = $explode[0];
+        $value = trim($this->input->post('value'));
+        $column = trim($this->input->post('column'));
+        
+        // Validate input
+        if (empty($value) || empty($column)) {
+            $status = array();
+            $status['success'] = 'N';
+            $status['error'] = lang('invalid_member_id');
+            echo json_encode($status);
+            return;
+        }
+        
+        // Handle autocomplete format: "2005-00173 - BRENDALOU SALES" or just "2005-00173"
+        // Check if value contains " - " (space-dash-space) which separates ID from name
+        if (strpos($value, ' - ') !== false) {
+            // Extract everything before " - " as the ID
+            $explode = explode(' - ', $value);
+            $value = trim($explode[0]);
+        } else {
+            // If no " - " separator, the value might be just the ID or formatted differently
+            // Try to extract ID by splitting on first dash, but preserve member IDs with dashes
+            // For member IDs like "2005-00173", we need to be smarter
+            // Check if it looks like a member ID format (contains dash and has numbers)
+            if (preg_match('/^[\d\-]+/', $value, $matches)) {
+                // If it starts with digits and dashes, use the matched portion
+                $value = trim($matches[0]);
+            } else {
+                // Fallback: split on first dash (old behavior for backward compatibility)
+                $explode = explode('-', $value);
+                $value = trim($explode[0]);
+            }
+        }
+        
+        if (empty($value)) {
+            $status = array();
+            $status['success'] = 'N';
+            $status['error'] = lang('invalid_member_id');
+            echo json_encode($status);
+            return;
+        }
+        
         $pid = null;
         $member_id = null;
         $error = '';
         if ($column == 'PID') {
-            $pid = $value;
+            $pid = trim($value);
             $error = lang('invalid_PID');
         } else if ($column == 'MID') {
-            $member_id = $value;
+            $member_id = trim($value);
             $error = lang('invalid_member_id');
+        } else {
+            $status = array();
+            $status['success'] = 'N';
+            $status['error'] = lang('invalid_member_id');
+            echo json_encode($status);
+            return;
         }
-        $member = $this->member_model->member_basic_info(null, $pid, $member_id)->row();
-
+        
+        // Ensure values are not empty after trimming
+        if (($column == 'PID' && empty($pid)) || ($column == 'MID' && empty($member_id))) {
+            $status = array();
+            $status['success'] = 'N';
+            $status['error'] = $error;
+            echo json_encode($status);
+            return;
+        }
+        
+        // Query member with proper null handling
+        $member_query = $this->member_model->member_basic_info(null, $pid, $member_id);
+        $member = $member_query->row();
 
         $status = array();
-        if (count($member)==1){
+        // Check if member exists and has valid PID
+        // Use num_rows() to check if query returned results, then check object properties
+        if ($member_query->num_rows() > 0 && $member && isset($member->PID) && !empty($member->PID)){
             $contact = $this->member_model->member_contact($member->PID);
             $status['success'] = 'Y';
             $status['data'] = $member;
@@ -526,10 +582,20 @@ class Saving extends CI_Controller {
         $this->load->model('share_model');
         $this->load->model('setting_model');
         $share_setting = $this->setting_model->share_setting_info();
-        $value = $this->input->post('value');
-        $column = $this->input->post('column');
-        $explode = explode('-', $value);
-        $value = $explode[0];
+        $value = trim($this->input->post('value'));
+        $column = trim($this->input->post('column'));
+        
+        // Handle autocomplete format: "2005-00173 - BRENDALOU SALES" or just "2005-00173"
+        if (strpos($value, ' - ') !== false) {
+            $explode = explode(' - ', $value);
+            $value = trim($explode[0]);
+        } else if (preg_match('/^[\d\-]+/', $value, $matches)) {
+            $value = trim($matches[0]);
+        } else {
+            $explode = explode('-', $value);
+            $value = trim($explode[0]);
+        }
+        
         $pid = null;
         $member_id = null;
         $error = '';
@@ -545,7 +611,7 @@ class Saving extends CI_Controller {
         $status = array();
         $share_array = array('amount' => 0, 'share' => 0, 'max_share' => $share_setting->max_share, 'min_share' => $share_setting->min_share);
 
-        if (count($member) == 1) {
+        if (!empty($member) && isset($member->PID)) {
             $current_share = $this->share_model->share_member_info($member->PID, $member->member_id);
             if ($current_share) {
                 $share_array['share'] = $current_share->totalshare;
@@ -568,10 +634,20 @@ class Saving extends CI_Controller {
         $this->load->model('setting_model');
         $this->load->model('contribution_model');
         $share_setting = $this->setting_model->share_setting_info();
-        $value = $this->input->post('value');
-        $column = $this->input->post('column');
-        $explode = explode('-', $value);
-        $value = $explode[0];
+        $value = trim($this->input->post('value'));
+        $column = trim($this->input->post('column'));
+        
+        // Handle autocomplete format: "2005-00173 - BRENDALOU SALES" or just "2005-00173"
+        if (strpos($value, ' - ') !== false) {
+            $explode = explode(' - ', $value);
+            $value = trim($explode[0]);
+        } else if (preg_match('/^[\d\-]+/', $value, $matches)) {
+            $value = trim($matches[0]);
+        } else {
+            $explode = explode('-', $value);
+            $value = trim($explode[0]);
+        }
+        
         $pid = null;
         $member_id = null;
         $error = '';
@@ -589,7 +665,7 @@ class Saving extends CI_Controller {
         $status = array();
         
 
-        if (count($member) == 1) {
+        if (!empty($member) && isset($member->PID)) {
             $balance = 0;
             $current_share = $this->contribution_model->contribution_balance($member->PID, $member->member_id);
             if ($current_share) {
@@ -614,10 +690,20 @@ class Saving extends CI_Controller {
         $this->load->model('contribution_model');
         $this->load->model('mortuary_model');
         $share_setting = $this->setting_model->share_setting_info();
-        $value = $this->input->post('value');
-        $column = $this->input->post('column');
-        $explode = explode('-', $value);
-        $value = $explode[0];
+        $value = trim($this->input->post('value'));
+        $column = trim($this->input->post('column'));
+        
+        // Handle autocomplete format: "2005-00173 - BRENDALOU SALES" or just "2005-00173"
+        if (strpos($value, ' - ') !== false) {
+            $explode = explode(' - ', $value);
+            $value = trim($explode[0]);
+        } else if (preg_match('/^[\d\-]+/', $value, $matches)) {
+            $value = trim($matches[0]);
+        } else {
+            $explode = explode('-', $value);
+            $value = trim($explode[0]);
+        }
+        
         $pid = null;
         $member_id = null;
         $error = '';
@@ -635,7 +721,7 @@ class Saving extends CI_Controller {
         $status = array();
         
         
-        if (count($member) == 1) {
+        if (!empty($member) && isset($member->PID)) {
             $balance = 0;
             $current_share = $this->contribution_model->contribution_balance($member->PID, $member->member_id);
             if ($current_share) {

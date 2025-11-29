@@ -1,0 +1,19 @@
+{
+    // SFTP Extension Settings
+    // These settings control SFTP behavior in this workspace
+    
+    // Disable auto-upload on save (manual control)
+    "sftp.autoSave": false,
+    
+    // Show confirmation dialogs before upload
+    "sftp.confirm": true,
+    
+    // Exclude files from upload
+    "files.exclude": {
+        "**/.git": true,
+        "**/.DS_Store": true,
+        "**/node_modules": true,
+        "**/*.log": true
+    }
+}
+

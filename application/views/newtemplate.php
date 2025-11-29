@@ -84,10 +84,10 @@
 
         <div class="footer">
             <div class="pull-right">
-                10GB of <strong>250GB</strong> Free.
+                <strong>Talibon Public School Teachers and Employees Multi-Purpose Cooperative</strong>
             </div>
             <div>
-                <strong>Copyright</strong> UnifiedAR &copy; 2014-2023
+                <strong>Copyright</strong> Cooperative Management System &copy; <?php echo date('Y'); ?>
             </div>
         </div>
         </div>

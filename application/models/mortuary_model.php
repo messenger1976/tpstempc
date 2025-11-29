@@ -209,19 +209,19 @@ class Mortuary_Model extends CI_Model {
         $check = $this->member_model->member_basic_info(null, $data['PID'], $data['member_id'])->row();
         if (!is_null($id)) {
             //update
-            if (count($check) > 0) {
+            if (!empty($check) && isset($check->PID)) {
                 return $this->db->update('mortuary_settings', $data, array('id' => $id));
             } else {
                 return FALSE;
             }
         } else {
             // insert
-            if (count($check) == 0) {
+            if (empty($check) || !isset($check->PID)) {
                 return FALSE;
             } else {
                 //check if data exist
                 $check2 = $this->db->get_where('mortuary_settings', array('PID' => $data['PID']))->row();
-                if (count($check2) > 0) {
+                if (!empty($check2) && isset($check2->id)) {
                     return FALSE;
                 } else {
                     return $this->db->insert('mortuary_settings', $data);

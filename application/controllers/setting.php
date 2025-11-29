@@ -122,11 +122,13 @@ class Setting extends CI_Controller {
 
         $this->form_validation->set_rules('amount', lang('contribution_minimum_amount'), 'xss_clean|required|numeric');
         $this->form_validation->set_rules('charge', lang('contribution_minimum_overdueamount'), 'xss_clean|required|numeric');
+        $this->form_validation->set_rules('capital_build_up_account', 'Capital Build Up Account', 'xss_clean|required');
 
         if ($this->form_validation->run() == TRUE) {
             $global_info = array(
                 'amount' => trim($this->input->post('amount')),
                 'overdue_amount' => trim($this->input->post('charge')),
+                'capital_build_up_account' => trim($this->input->post('capital_build_up_account')),
                 'PIN' =>  current_user()->PIN
             );
 
@@ -139,7 +141,56 @@ class Setting extends CI_Controller {
             }
         }
 
-
+        // Get account list and build hierarchical structure with indentation
+        $account_list_raw = $this->finance_model->account_chart_by_accounttype(array(10, 40));
+        
+        // Build hierarchical tree structure with indentation based on account number
+        $account_tree = array();
+        foreach ($account_list_raw as $type_key => $type_data) {
+            $accounts = $type_data['data'];
+            
+            // Determine level based on account number structure (ladderize)
+            foreach ($accounts as $account) {
+                // Convert account to string and pad if needed
+                $account_str = str_pad((string)$account->account, 7, '0', STR_PAD_LEFT);
+                $level = 0;
+                
+                // Level detection based on trailing zeros or account structure
+                // Accounts ending in 0000 = Level 0 (Main)
+                // Accounts ending in 00 = Level 1 (Sub)
+                // Accounts ending in 0 = Level 2 (Detail)
+                // Other accounts = Level 3 (Sub-detail)
+                if (strlen($account_str) >= 4) {
+                    $last_4 = substr($account_str, -4);
+                    $last_2 = substr($account_str, -2);
+                    $last_1 = substr($account_str, -1);
+                    
+                    if ($last_4 == '0000') {
+                        $level = 0; // Main account
+                    } else if ($last_2 == '00') {
+                        $level = 1; // Sub-account
+                    } else if ($last_1 == '0') {
+                        $level = 2; // Detail account
+                    } else {
+                        $level = 3; // Sub-detail account
+                    }
+                }
+                // Ensure display_level is set
+                $account->display_level = (int)$level;
+            }
+            
+            // Sort by account number to maintain hierarchy
+            usort($accounts, function($a, $b) {
+                return (int)$a->account - (int)$b->account;
+            });
+            
+            $account_tree[$type_key] = array(
+                'info' => $type_data['info'],
+                'data' => $accounts
+            );
+        }
+        
+        $this->data['account_list'] = $account_tree;
         $this->data['content'] = 'setting/minimum_contribution';
         $this->load->view('template', $this->data);
     }

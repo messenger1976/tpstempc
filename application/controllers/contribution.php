@@ -48,7 +48,7 @@ class Contribution extends CI_Controller {
                 foreach ($member_list as $key => $value) {
                     $monthly_contribution = 0;
                     $contr_setup = $this->db->get_where('contribution_settings', array('PID' => $value->PID))->row();
-                    if (count($contr_setup) > 0) {
+                    if ($contr_setup) {
                        
                         $monthly_contribution = $contr_setup->amount;
                     } else {

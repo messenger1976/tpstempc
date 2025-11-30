@@ -429,7 +429,7 @@ $pin=current_user()->PIN;
     function get_transaction($receipt) {
         $this->db->where('receipt', $receipt);
         $data = $this->db->get('savings_transaction')->row();
-        if (count($data) == 1) {
+        if ($data) {
             return $data;
         }
 

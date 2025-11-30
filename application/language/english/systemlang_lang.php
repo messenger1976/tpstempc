@@ -170,6 +170,9 @@ $lang['account_name']='Account Name';
 $lang['account_description']='Description';
 $lang['account_charge']='Monthly Fee';
 $lang['account_min_amount']='Minimum Amount';
+$lang['account_max_withdrawal']='Maximum Withdrawal';
+$lang['account_min_deposit']='Minimum Deposit';
+$lang['account_interest_rate']='Interest Rate';
 $lang['saving_account_process_success']='Information saved successfully';
 $lang['saving_account_process_fail']='Fail to save information';
 

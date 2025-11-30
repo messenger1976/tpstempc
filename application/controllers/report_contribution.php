@@ -164,6 +164,192 @@ class Report_Contribution extends CI_Controller {
         $this->export_to_pdf($html, 'Contribution_balance', $reportinfo->page);
     }
 
+    function contribution_balance_export($link, $id) {
+        // Clear ALL output buffers first
+        if (ob_get_level()) {
+            ob_end_clean();
+        }
+        while (@ob_end_clean());
+        
+        // Disable CodeIgniter's output completely
+        $this->output->enable_profiler(FALSE);
+        // Prevent CodeIgniter from sending output
+        $this->output->set_output('');
+        
+        // Load Excel library
+        $this->load->library('excel');
+        
+        // Store original encoded ID for redirect
+        $encoded_id = $id;
+        if (!is_null($id)) {
+            $id = decode_id($id);
+        }
+
+        $reportinfo = $this->report_model->report_contribution($id)->row();
+        $transaction = $this->report_model->account_contribution_balance($reportinfo->fromdate, $reportinfo->todate);
+        
+        // Check if we have data
+        if (empty($transaction) || !is_array($transaction) || count($transaction) == 0) {
+            // Clear buffers before redirect
+            if (ob_get_level()) {
+                ob_end_clean();
+            }
+            $this->session->set_flashdata('warning', 'No data available to export');
+            redirect(current_lang() . '/report_contribution/contribution_balance_view/' . $link . '/' . $encoded_id, 'refresh');
+            exit();
+        }
+        
+        // Create new PHPExcel object
+        $objPHPExcel = new PHPExcel();
+        
+        // Set document properties
+        $objPHPExcel->getProperties()->setCreator(company_info()->name)
+                                     ->setTitle("Member CBU Balance")
+                                     ->setSubject("Member CBU Balance Export")
+                                     ->setDescription("Member CBU Balance exported from " . company_info()->name);
+        
+        // Set active sheet index to the first sheet
+        $objPHPExcel->setActiveSheetIndex(0);
+        $sheet = $objPHPExcel->getActiveSheet();
+        
+        // Set sheet title
+        $sheet->setTitle('Member CBU Balance');
+        
+        // Add company name and report title
+        $sheet->setCellValue('A1', company_info()->name);
+        $sheet->mergeCells('A1:D1');
+        $sheet->getStyle('A1')->getFont()->setBold(true)->setSize(14);
+        $sheet->getStyle('A1')->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_CENTER);
+        
+        $sheet->setCellValue('A2', 'Member CBU balance');
+        $sheet->mergeCells('A2:D2');
+        $sheet->getStyle('A2')->getFont()->setBold(true)->setSize(12);
+        $sheet->getStyle('A2')->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_CENTER);
+        
+        $sheet->setCellValue('A3', 'Member Joined As of ' . format_date($reportinfo->todate, false));
+        $sheet->mergeCells('A3:D3');
+        $sheet->getStyle('A3')->getFont()->setSize(10);
+        $sheet->getStyle('A3')->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_CENTER);
+        
+        // Set column headers
+        $sheet->setCellValue('A5', 'S/No');
+        $sheet->setCellValue('B5', 'Member ID');
+        $sheet->setCellValue('C5', 'Name');
+        $sheet->setCellValue('D5', 'Balance');
+        
+        // Style the header row
+        $headerStyle = array(
+            'font' => array(
+                'bold' => true,
+                'color' => array('rgb' => 'FFFFFF'),
+            ),
+            'fill' => array(
+                'type' => PHPExcel_Style_Fill::FILL_SOLID,
+                'color' => array('rgb' => '4472C4')
+            ),
+            'alignment' => array(
+                'horizontal' => PHPExcel_Style_Alignment::HORIZONTAL_CENTER,
+            ),
+            'borders' => array(
+                'allborders' => array(
+                    'style' => PHPExcel_Style_Border::BORDER_THIN
+                )
+            ),
+        );
+        
+        $sheet->getStyle('A5:D5')->applyFromArray($headerStyle);
+        
+        // Set column widths
+        $sheet->getColumnDimension('A')->setWidth(10);
+        $sheet->getColumnDimension('B')->setWidth(20);
+        $sheet->getColumnDimension('C')->setWidth(40);
+        $sheet->getColumnDimension('D')->setWidth(20);
+        
+        // Populate data
+        $row = 6;
+        $i = 1;
+        $total_balance = 0;
+        foreach ($transaction as $value) {
+            $total_balance += $value->balance;
+            
+            // Write data to cells
+            $sheet->setCellValue('A' . $row, $i++);
+            $sheet->setCellValue('B' . $row, $value->member_id);
+            $sheet->setCellValue('C' . $row, $value->name);
+            $sheet->setCellValue('D' . $row, number_format($value->balance, 2));
+            
+            // Set alignment
+            $sheet->getStyle('A' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_RIGHT);
+            $sheet->getStyle('B' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_LEFT);
+            $sheet->getStyle('C' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_LEFT);
+            $sheet->getStyle('D' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_RIGHT);
+            
+            // Add borders to cells
+            $sheet->getStyle('A' . $row . ':D' . $row)->applyFromArray(array(
+                'borders' => array(
+                    'allborders' => array(
+                        'style' => PHPExcel_Style_Border::BORDER_THIN
+                    )
+                )
+            ));
+            
+            $row++;
+        }
+        
+        // Add total row
+        $sheet->setCellValue('A' . $row, '');
+        $sheet->setCellValue('B' . $row, '');
+        $sheet->setCellValue('C' . $row, '');
+        $sheet->setCellValue('D' . $row, number_format($total_balance, 2));
+        
+        // Style total row
+        $totalStyle = array(
+            'font' => array(
+                'bold' => true,
+            ),
+            'borders' => array(
+                'top' => array(
+                    'style' => PHPExcel_Style_Border::BORDER_THIN
+                ),
+                'bottom' => array(
+                    'style' => PHPExcel_Style_Border::BORDER_THIN
+                ),
+                'left' => array(
+                    'style' => PHPExcel_Style_Border::BORDER_THIN
+                ),
+                'right' => array(
+                    'style' => PHPExcel_Style_Border::BORDER_THIN
+                ),
+            ),
+        );
+        
+        $sheet->getStyle('A' . $row . ':D' . $row)->applyFromArray($totalStyle);
+        $sheet->getStyle('D' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_RIGHT);
+        
+        // Set filename
+        $filename = 'Member_CBU_Balance_' . date('Y-m-d_His') . '.xls';
+        
+        // Clear any remaining output buffers before sending headers
+        if (ob_get_level()) {
+            ob_end_clean();
+        }
+        while (@ob_end_clean());
+        
+        // Set headers - MUST be before any output
+        header('Content-Type: application/vnd.ms-excel');
+        header('Content-Disposition: attachment;filename="' . $filename . '"');
+        header('Cache-Control: must-revalidate, post-check=0, pre-check=0');
+        header('Pragma: public');
+        header('Expires: 0');
+        
+        // Create writer and output directly
+        $objWriter = PHPExcel_IOFactory::createWriter($objPHPExcel, 'Excel5');
+        $objWriter->save('php://output');
+        
+        // Exit immediately to prevent any further output
+        exit();
+    }
+
     function contribution_statement_view($link, $id) {
         $this->data['title'] = lang('member_contribution_statement');
         $this->data['link_cat'] = $link;

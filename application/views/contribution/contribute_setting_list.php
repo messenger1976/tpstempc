@@ -40,6 +40,7 @@ if (isset($message) && !empty($message)) {
     <table class="table table-bordered table-striped">
         <thead>
             <tr>
+                <th style="text-align: center; width: 60px;"><?php echo lang('sno'); ?></th>
                 <th><?php echo lang('member_pid'); ?></th>
                 <th><?php echo lang('member_member_id'); ?></th>
                 <th><?php echo lang('contribution_member_name'); ?></th>
@@ -52,9 +53,13 @@ if (isset($message) && !empty($message)) {
 
         </thead>
         <tbody>
-            <?php foreach ($contribution_setting as $key => $value) { ?>
+            <?php 
+            $index = ($this->uri->segment(4) ? $this->uri->segment(4) : 0);
+            $index++;
+            foreach ($contribution_setting as $key => $value) { ?>
 
                 <tr>
+                    <td style="text-align: center;"><?php echo $index++; ?></td>
                     <td style="width:100px;"><?php echo htmlspecialchars($value->PID, ENT_QUOTES, 'UTF-8'); ?></td>
                     <td><?php echo htmlspecialchars($value->member_id, ENT_QUOTES, 'UTF-8'); ?></td>
                     

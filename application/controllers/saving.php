@@ -203,12 +203,39 @@ class Saving extends CI_Controller {
     }
 
     function print_receipt($receipt) {
+        // Suppress PHP warnings/errors for TCPDF compatibility (PHP 7.3+ issues)
+        $old_error_reporting = error_reporting(0);
+        $old_display_errors = ini_set('display_errors', 0);
+        
+        // Start output buffering to prevent any output before PDF
+        if (ob_get_level()) {
+            ob_end_clean();
+        }
+        ob_start();
+        
         $this->lang->load('setting');
         $trans = $this->finance_model->get_transaction($receipt);
         if ($trans) {
-            include 'include/receipt.php';
+            // Clear any output that might have been generated
+            ob_clean();
+            
+            // Suppress warnings for TCPDF library
+            @include 'include/receipt.php';
+            
+            // Restore settings
+            error_reporting($old_error_reporting);
+            if ($old_display_errors !== false) {
+                ini_set('display_errors', $old_display_errors);
+            }
             exit;
         } else {
+            // Clean output buffer before showing error
+            ob_end_clean();
+            // Restore settings
+            error_reporting($old_error_reporting);
+            if ($old_display_errors !== false) {
+                ini_set('display_errors', $old_display_errors);
+            }
             return show_error('Transaction id not exist..', 500, 'INVALID RECEIPT NUMBER');
         }
     }

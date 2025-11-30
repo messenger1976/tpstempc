@@ -21,11 +21,11 @@ class Share_Model extends CI_Model {
     function is_share_max_reached($PID, $member_id) {
         $pin = current_user()->PIN;
         $share_info = $this->setting_model->share_setting_info();
-$this->db->where('PIN', $pin);
+        $this->db->where('PIN', $pin);
         $this->db->where('PID', $PID);
         $this->db->where('member_id', $member_id);
         $row = $this->db->get('members_share')->row();
-        if (count($row) > 0) {
+        if ($row !== null) {
             if ($row->totalshare >= $share_info->max_share) {
                 return TRUE;
             }
@@ -39,7 +39,7 @@ $this->db->where('PIN', $pin);
         $this->db->where('PID', $pid);
         $this->db->where('member_id', $member_id);
         $row = $this->db->get('members_share')->row();
-        if (count($row) == 0) {
+        if ($row === null) {
             return FALSE;
         }
 
@@ -49,7 +49,7 @@ $this->db->where('PIN', $pin);
     function get_transaction($receipt) {
         $this->db->where('receipt', $receipt);
         $data = $this->db->get('share_transaction')->row();
-        if (count($data) == 1) {
+        if ($data !== null) {
             return $data;
         }
 
@@ -69,7 +69,7 @@ $this->db->where('PIN', $pin);
         }
 
         $check = $this->db->get_where('members_share', array('PID' => $pid, 'member_id' => $member_id))->row();
-        if (count($check) == 0) {
+        if ($check === null) {
             //insert
             $array_insert = array(
                 'PID' => $pid,

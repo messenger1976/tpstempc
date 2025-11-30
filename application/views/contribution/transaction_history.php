@@ -16,9 +16,9 @@ if (isset($message) && !empty($message)) {
 }
 
 $sp = $jxy;
-$_GET['from'] = format_date($jxy['from'],FALSE);
-$_GET['upto'] = format_date($jxy['upto'],FALSE);
-$_GET['key'] = $jxy['key'];
+$_GET['from'] = isset($jxy['from']) && !empty($jxy['from']) ? format_date($jxy['from'],FALSE) : '';
+$_GET['upto'] = isset($jxy['upto']) && !empty($jxy['upto']) ? format_date($jxy['upto'],FALSE) : '';
+$_GET['key'] = isset($jxy['key']) ? $jxy['key'] : '';
 
 
 ?>
@@ -84,7 +84,10 @@ $_GET['key'] = $jxy['key'];
                     <td><?php echo $value->createdon; ?></td>
                     
 
-                    <td><?php echo anchor(current_lang() . "/contribution/receipt_view/" . $value->receipt, ' <i class="fa fa-edit"></i> ' . lang('view_link')); ?></td>
+                    <td>
+                        <?php echo anchor(current_lang() . "/contribution/receipt_view/" . $value->receipt, ' <i class="fa fa-edit"></i> ' . lang('view_link'), 'class="btn btn-primary btn-xs"'); ?>
+                        <?php echo anchor(current_lang() . "/contribution/delete_transaction/" . $value->receipt, ' <i class="fa fa-trash"></i> Delete', 'class="btn btn-danger btn-xs" onclick="return confirm(\'Are you sure you want to delete this transaction? This action cannot be undone.\');"'); ?>
+                    </td>
                 </tr>
             <?php } ?>
         </tbody>

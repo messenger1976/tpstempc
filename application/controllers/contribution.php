@@ -366,46 +366,56 @@ class Contribution extends CI_Controller {
         $config["per_page"] = $this->session->userdata('PER_PAGE');
 
         $key = null;
+        $key1 = null;
         $from = null;
         $to = null;
         if (isset($_POST['key']) && $_POST['key'] != '') {
             $key = $_POST['key'];
             $expl = explode('-', $key);
-            $key1 = $expl[0];
-        } else if (isset($_GET['key'])) {
+            $key1 = trim($expl[0]);
+        } else if (isset($_GET['key']) && $_GET['key'] != '') {
             $key = $_GET['key'];
             $expl = explode('-', $key);
-            $key1 = $expl[0];
+            $key1 = trim($expl[0]);
         }
 
-        if (isset($_POST['from']) && $_POST['from'] != '') {
-            $from = format_date($_POST['from']);
-        } else if (isset($_GET['from'])) {
-            $from = format_date($_GET['from']);
-        } else {
-            $from = date('Y-m-d');
-        }
+        // If Member ID is provided, ignore date filters
+        // Otherwise, use date filters
+        if (empty($key1) || $key1 == '0') {
+            // Member ID is blank/empty, use date filters
+            if (isset($_POST['from']) && $_POST['from'] != '') {
+                $from = format_date($_POST['from']);
+            } else if (isset($_GET['from']) && $_GET['from'] != '') {
+                $from = format_date($_GET['from']);
+            } else {
+                $from = date('Y-m-d');
+            }
 
-        if (isset($_POST['upto']) && $_POST['upto'] != '') {
-            $upto = format_date($_POST['upto']);
-        } else if (isset($_GET['upto'])) {
-            $upto = format_date($_GET['upto']);
+            if (isset($_POST['upto']) && $_POST['upto'] != '') {
+                $upto = format_date($_POST['upto']);
+            } else if (isset($_GET['upto']) && $_GET['upto'] != '') {
+                $upto = format_date($_GET['upto']);
+            } else {
+                $upto = date('Y-m-d');
+            }
         } else {
-            $upto = date('Y-m-d');
+            // Member ID is provided, ignore date filters
+            $from = null;
+            $upto = null;
         }
 
 
         $suffix_array = array();
 
-        if (!is_null($key)) {
+        if (!is_null($key) && $key != '') {
             $suffix_array['key'] = $key;
         }
 
-        if (!is_null($from)) {
+        if (!is_null($from) && $from != '') {
             $suffix_array['from'] = $from;
         }
 
-        if (!is_null($upto)) {
+        if (!is_null($upto) && $upto != '') {
             $suffix_array['upto'] = $upto;
         }
         $this->data['jxy'] = $suffix_array;
@@ -444,11 +454,33 @@ class Contribution extends CI_Controller {
         $page = ($this->uri->segment(4) ? $this->uri->segment(4) : 0);
         $this->data['links'] = $this->pagination->create_links();
 
+        // Pass key1 (can be null if empty) and date filters
         $this->data['transactionlist'] = $this->contribution_model->search_transaction($key1, $from, $upto, $config["per_page"], $page);
 
 
         $this->data['content'] = 'contribution/transaction_history';
         $this->load->view('template', $this->data);
+    }
+
+    function delete_transaction($receipt) {
+        // Verify receipt is provided
+        if (empty($receipt)) {
+            $this->session->set_flashdata('warning', 'Invalid transaction receipt');
+            redirect(current_lang() . '/contribution/contribution_transaction', 'refresh');
+            return;
+        }
+        
+        // Delete the transaction
+        $result = $this->contribution_model->delete_transaction($receipt);
+        
+        if ($result) {
+            $this->session->set_flashdata('message', 'Transaction deleted successfully');
+        } else {
+            $this->session->set_flashdata('warning', 'Failed to delete transaction. Transaction may not exist or you may not have permission.');
+        }
+        
+        // Redirect back to transaction list
+        redirect(current_lang() . '/contribution/contribution_transaction', 'refresh');
     }
 
     function contribution_post_to_gl(){

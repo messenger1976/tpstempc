@@ -244,9 +244,18 @@ class Contribution_Model extends CI_Model {
     
      function count_transaction($key, $from, $upto) {
       $pin = current_user()->PIN;
-        $and = " PIN ='$pin' AND createdon >= '$from 00:00:00' AND createdon <= '$upto 23:59:59'";
-        if (!is_null($key)) {
-            $and.=" AND PID = '$key'";
+        $and = " PIN ='$pin'";
+        
+        // If Member ID is provided, ignore date filters
+        // Otherwise, use date filters
+        if (empty($key) || $key == '0' || is_null($key)) {
+            // Member ID is blank/empty, use date filters
+            if (!is_null($from) && !is_null($upto) && $from != '' && $upto != '') {
+                $and.=" AND createdon >= '$from 00:00:00' AND createdon <= '$upto 23:59:59'";
+            }
+        } else {
+            // Member ID is provided, ignore date filters and filter by PID or member_id
+            $and.=" AND (PID = '$key' OR member_id = '$key')";
         }
 
         return count($this->db->query("SELECT * FROM contribution_transaction WHERE $and ORDER BY createdon DESC")->result());
@@ -255,10 +264,18 @@ class Contribution_Model extends CI_Model {
     function search_transaction($key, $from, $upto, $limit, $start) {
          $pin = current_user()->PIN;
        
-        $and = " PIN ='$pin' AND  createdon >= '$from 00:00:00' AND createdon <= '$upto 23:59:59'";
-        //$and = " PIN ='$pin' AND  posting_date >= '$from' AND posting_date <= '$upto'";
-        if (!is_null($key)) {
-            $and.=" AND PID = '$key'";
+        $and = " PIN ='$pin'";
+        
+        // If Member ID is provided, ignore date filters
+        // Otherwise, use date filters
+        if (empty($key) || $key == '0' || is_null($key)) {
+            // Member ID is blank/empty, use date filters
+            if (!is_null($from) && !is_null($upto) && $from != '' && $upto != '') {
+                $and.=" AND createdon >= '$from 00:00:00' AND createdon <= '$upto 23:59:59'";
+            }
+        } else {
+            // Member ID is provided, ignore date filters and filter by PID or member_id
+            $and.=" AND (PID = '$key' OR member_id = '$key')";
         }
 
         return $this->db->query("SELECT * FROM contribution_transaction WHERE $and ORDER BY createdon DESC LIMIT $start,$limit")->result();
@@ -406,6 +423,71 @@ class Contribution_Model extends CI_Model {
         }
         
         return FALSE;
+    }
+    
+    function total_cbu_balance() {
+        $pin = current_user()->PIN;
+        // Sum all CBU balances from active members
+        $this->db->select_sum('members_contribution.balance');
+        $this->db->from('members_contribution');
+        $this->db->join('members', 'members.PID = members_contribution.PID', 'inner');
+        $this->db->where('members.PIN', $pin);
+        $this->db->where('members.status', 1); // Only active members
+        $result = $this->db->get()->row();
+        
+        return isset($result->balance) && is_numeric($result->balance) ? $result->balance : 0;
+    }
+    
+    function delete_transaction($receipt) {
+        $pin = current_user()->PIN;
+        
+        // Get transaction details
+        $this->db->where('receipt', $receipt);
+        $this->db->where('PIN', $pin); // Ensure transaction belongs to current user's organization
+        $transaction = $this->db->get('contribution_transaction')->row();
+        
+        if (!$transaction) {
+            return FALSE; // Transaction not found or doesn't belong to this organization
+        }
+        
+        $pid = $transaction->PID;
+        $member_id = $transaction->member_id;
+        $amount = $transaction->amount;
+        $trans_type = $transaction->trans_type;
+        
+        // Start transaction
+        $this->db->trans_start();
+        
+        // Reverse the balance adjustment based on transaction type
+        // CR (Credit/Deposit) added to balance, so we subtract it
+        // DR (Debit/Withdrawal) subtracted from balance, so we add it back
+        if ($trans_type == 'CR') {
+            // Reverse credit: subtract the amount from balance
+            $this->db->where("PID", $pid);
+            $this->db->where("member_id", $member_id);
+            $this->db->set("balance", "balance-{$amount}", FALSE);
+            $this->db->update('members_contribution');
+        } else if ($trans_type == 'DR') {
+            // Reverse debit: add the amount back to balance
+            $this->db->where("PID", $pid);
+            $this->db->where("member_id", $member_id);
+            $this->db->set("balance", "balance+{$amount}", FALSE);
+            $this->db->update('members_contribution');
+        }
+        
+        // Delete the transaction record
+        $this->db->where('receipt', $receipt);
+        $this->db->where('PIN', $pin);
+        $this->db->delete('contribution_transaction');
+        
+        // Complete transaction
+        $this->db->trans_complete();
+        
+        if ($this->db->trans_status() === FALSE) {
+            return FALSE;
+        }
+        
+        return TRUE;
     }
 
 }

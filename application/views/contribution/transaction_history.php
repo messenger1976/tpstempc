@@ -91,9 +91,16 @@ $_GET['key'] = $jxy['key'];
 
     </table>
    
-    <?php echo $links; ?>
-    <div style="margin-right: 20px; text-align: right;"> <?php page_selector(); ?></div> 
-   
+    <div style="margin-top: 20px; margin-bottom: 20px;">
+        <?php if (isset($links) && !empty($links)): ?>
+            <div style="text-align: center; margin-bottom: 15px;">
+                <?php echo $links; ?>
+            </div>
+        <?php endif; ?>
+        <div style="margin-right: 20px; text-align: right;">
+            <?php page_selector(); ?>
+        </div>
+    </div>
     
 </div>
 <script src="<?php echo base_url() ?>media/js/script/moment.js"></script>

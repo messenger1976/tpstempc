@@ -31,16 +31,22 @@ if (isset($message) && !empty($message)) {
         <?php echo form_error('minimum_amount'); ?>
     </div>
 </div>
-<div class="form-group"><label class="col-lg-3 control-label"><?php echo lang('account_charge'); ?>  : <span class="required">*</span></label>
+<div class="form-group"><label class="col-lg-3 control-label"><?php echo lang('account_max_withdrawal'); ?>  : <span class="required">*</span></label>
     <div class="col-lg-6">
-        <input type="text" name="monthly_amount" value="<?php echo (isset ($account) ? $account->month_fee : set_value('monthly_amount')); ?>"  class="form-control amountformat"/> 
-        <?php echo form_error('monthly_amount'); ?>
+        <input type="text" name="max_withdrawal" value="<?php echo (isset ($account) ? $account->max_withdrawal : set_value('max_withdrawal')); ?>"  class="form-control amountformat"/> 
+        <?php echo form_error('max_withdrawal'); ?>
     </div>
 </div>
-<div class="form-group"><label class="col-lg-3 control-label"><?php echo lang('account_charge'); ?>  : <span class="required">*</span></label>
+<div class="form-group"><label class="col-lg-3 control-label"><?php echo lang('account_interest_rate'); ?>  : <span class="required">*</span></label>
     <div class="col-lg-6">
         <input type="text" name="interest_rate" value="<?php echo (isset ($account) ? $account->interest_rate : set_value('interest_rate')); ?>"  class="form-control amountformat"/> 
         <?php echo form_error('monthly_amount'); ?>
+    </div>
+</div>
+<div class="form-group"><label class="col-lg-3 control-label"><?php echo lang('account_min_deposit'); ?> :</label>
+    <div class="col-lg-6">
+        <input type="text" name="min_deposit" value="<?php echo (isset ($account) ? $account->min_deposit: set_value('min_deposit')); ?>"  class="form-control amountformat"/> 
+        <?php echo form_error('min_deposit'); ?>
     </div>
 </div>
 <div class="form-group">

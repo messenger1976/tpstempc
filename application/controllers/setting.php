@@ -208,18 +208,24 @@ class Setting extends CI_Controller {
 
         if ($this->input->post('minimum_amount')) {
             $_POST['minimum_amount'] = str_replace(',', '', $_POST['minimum_amount']);
-            $_POST['monthly_amount'] = str_replace(',', '', $_POST['monthly_amount']);
+            $_POST['max_withdrawal'] = str_replace(',', '', $_POST['max_withdrawal']);
+            $_POST['interest_rate'] = str_replace(',', '', $_POST['interest_rate']);
+            $_POST['min_deposit'] = str_replace(',', '', $_POST['min_deposit']);
         }
         $this->form_validation->set_rules('account_name', lang('account_name'), 'xss_clean|required');
         $this->form_validation->set_rules('account_description', lang('account_description'), 'xss_clean|required');
         $this->form_validation->set_rules('minimum_amount', lang('account_min_amount'), 'xss_clean|required|numeric');
-        $this->form_validation->set_rules('monthly_amount', lang('account_charge'), 'xss_clean|required|numeric');
+        $this->form_validation->set_rules('max_withdrawal', lang('account_max_withdrawal'), 'xss_clean|required|numeric');
+        $this->form_validation->set_rules('interest_rate', lang('account_interest_rate'), 'xss_clean|required|numeric');
+        $this->form_validation->set_rules('min_deposit', lang('account_min_deposit'), 'xss_clean|numeric');
         if ($this->form_validation->run() == TRUE) {
             $account_info = array(
                 'name' => trim($this->input->post('account_name')),
                 'description' => trim($this->input->post('account_description')),
                 'min_amount' => trim($this->input->post('minimum_amount')),
-                'month_fee' => trim($this->input->post('monthly_amount')),
+                'max_withdrawal' => trim($this->input->post('max_withdrawal')),
+                'interest_rate' => trim($this->input->post('interest_rate')),
+                'min_deposit' => trim($this->input->post('min_deposit')),
                 'PIN' =>  current_user()->PIN
             );
 

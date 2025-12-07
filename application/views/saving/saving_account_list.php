@@ -12,105 +12,105 @@ if (isset($message) && !empty($message)) {
     echo '<div class="label label-danger displaymessage">' . $this->session->flashdata('warning') . '</div>';
 }
 
-$sp = $jxy;
-$_GET['searchstatus'] = $jxy['searchstatus'];
-$_GET['key'] = $jxy['key'];
+$sp = isset($jxy) ? $jxy : array();
+$search_key = isset($jxy['key']) ? $jxy['key'] : (isset($_GET['key']) ? $_GET['key'] : '');
+$account_type_filter = isset($account_type_filter) ? $account_type_filter : (isset($_GET['account_type_filter']) ? $_GET['account_type_filter'] : 'all');
 ?>
 
 <div class="form-group col-lg-12">
-
-    <div class="col-lg-4">
-        <input type="text" class="form-control" id="accountno" name="key" value="<?php echo (isset($_GET['key']) ? $_GET['key'] : ''); ?>"/> 
+    <div class="col-lg-3">
+        <input type="text" class="form-control" id="accountno" name="key" placeholder="<?php echo lang('search_account_member'); ?>" value="<?php echo htmlspecialchars($search_key, ENT_QUOTES, 'UTF-8'); ?>"/> 
     </div>
-    <div class="col-lg-2">
-           
-        <select name="searchstatus" class="form-control">
-            <option value=""><?php echo lang('select_default_text'); ?></option>
-            <?php
-            $selected = (isset ($_GET['searchstatus'] ) ? $_GET['searchstatus']  : '');
-            foreach ($mortuary_status_list as $key => $value) {
-                ?>
-                <option <?php echo ($value->id == $selected ? 'selected="selected"' : ''); ?> value="<?php echo $value->id ?>"><?php echo $value->description ; ?></option>
-            <?php } ?>
+    <div class="col-lg-3">
+        <select name="account_type_filter" class="form-control">
+            <option value="all" <?php echo ($account_type_filter == 'all' ? 'selected="selected"' : ''); ?>>All</option>
+            <option value="special" <?php echo ($account_type_filter == 'special' ? 'selected="selected"' : ''); ?>>Special</option>
+            <option value="mso" <?php echo ($account_type_filter == 'mso' ? 'selected="selected"' : ''); ?>>MSO</option>
         </select>
     </div>
     <div class="col-lg-2">
         <input type="submit" value="<?php echo lang('button_search'); ?>" class="btn btn-primary"/>
     </div>
     <div class="col-lg-4" style="text-align: right;">
-        <?php echo anchor(current_lang().'/mortuary/mortuary_setting_create/',  lang('mortuary_setting_create'),'class="btn btn-primary"'); ?>
-        <?php echo anchor('#',  'Process Balances','class="btn btn-warning" id="btnprocessbalances"'); ?>
+        <?php echo anchor(current_lang().'/saving/create_saving_account/', lang('create_saving_account'), 'class="btn btn-primary"'); ?>
     </div>
 </div>
 
-
 <?php echo form_close(); ?>
 
+<!-- Total Amount Display -->
+<div class="form-group col-lg-12" style="margin-top: 20px;">
+    <div class="col-lg-12">
+        <div class="alert alert-info" style="font-size: 16px; font-weight: bold;">
+            <strong><?php echo lang('total_savings_amount'); ?>: </strong>
+            <?php echo number_format($total_savings_amount, 2, '.', ','); ?>
+        </div>
+    </div>
+</div>
 
 <div class="table-responsive">
-    
     <table class="table table-bordered table-striped">
         <thead>
             <tr>
-                <!--<th style="width: 10px;"><?php echo lang('member_pid'); ?></th>-->
-                <th style="width: 10px;"><?php echo lang('member_member_id'); ?></th>
-                <th style="max-width: 40px;"><?php echo 'Pix'; ?></th>
-                <th><?php echo lang('mortuary_member_name'); ?></th>
-                <th><?php echo lang('member_gender'); ?></th>
-                <th style="width: 20px;"><?php echo lang('member_dob'); ?></th>
-                <th style="text-align: center;"><?php echo 'Age'; ?></th>
-                <th style="text-align: right; width: 100px;"><?php echo lang('mortuary_balance_amount'); ?></th>
-                <th style="text-align: right;  width: 100px;"><?php echo lang('mortuary_deduction_amount'); ?></th>
-                <th style="text-align: center;"><?php echo lang('mortuary_status'); ?></th>
-                <th style="text-align: center;"><?php echo lang('claim_mortuary_status'); ?></th>
-                
-                <th style="text-align: center;"><?php echo lang('index_action_th'); ?></th>
+                <th><?php echo lang('account_number'); ?></th>
+                <th><?php echo lang('member_member_id'); ?></th>
+                <th><?php echo lang('member_fullname'); ?></th>
+                <th><?php echo lang('member_old_account_no'); ?></th>
+                <th><?php echo lang('account_type_name'); ?></th>
+                <th style="text-align: right; width: 120px;"><?php echo lang('balance'); ?></th>
+                <th style="text-align: right; width: 120px;"><?php echo lang('virtual_balance'); ?></th>
+                <th style="text-align: center; width: 100px;"><?php echo lang('index_action_th'); ?></th>
             </tr>
-
         </thead>
         <tbody>
-            <?php foreach ($mortuary_setting as $key => $value) { ?>
-
+            <?php if (isset($saving_accounts) && count($saving_accounts) > 0) { ?>
+                <?php foreach ($saving_accounts as $key => $value) { ?>
+                    <tr>
+                        <td><?php echo htmlspecialchars($value->account, ENT_QUOTES, 'UTF-8'); ?></td>
+                        <td><?php echo htmlspecialchars($value->member_id_display, ENT_QUOTES, 'UTF-8'); ?></td>
+                        <td>
+                            <?php 
+                            if ($value->tablename == 'members_grouplist' && $value->group_name) {
+                                echo htmlspecialchars($value->group_name, ENT_QUOTES, 'UTF-8');
+                            } else if (($value->firstname || $value->lastname)) {
+                                echo htmlspecialchars(trim($value->lastname . ', ' . $value->firstname . ' ' . $value->middlename), ENT_QUOTES, 'UTF-8');
+                            } else {
+                                echo '-';
+                            }
+                            ?>
+                        </td>
+                        <!--<td>
+                            <?php 
+                            if ($value->tablename == 'members_grouplist' && $value->group_name) {
+                                echo htmlspecialchars($value->group_name, ENT_QUOTES, 'UTF-8');
+                            } else if (($value->firstname || $value->lastname)) {
+                                echo htmlspecialchars(trim($value->firstname . ' ' . $value->middlename . ' ' . $value->lastname), ENT_QUOTES, 'UTF-8');
+                            } else {
+                                echo '-';
+                            }
+                            ?>
+                        </td>-->
+                        <td><?php echo htmlspecialchars($value->old_members_acct ? $value->old_members_acct : '-', ENT_QUOTES, 'UTF-8'); ?></td>
+                        <td><?php echo htmlspecialchars($value->account_type_name_display ? $value->account_type_name_display : '-', ENT_QUOTES, 'UTF-8'); ?></td>
+                        <td style="text-align: right;"><?php echo number_format($value->balance, 2, '.', ','); ?></td>
+                        <td style="text-align: right;"><?php echo number_format($value->virtual_balance, 2, '.', ','); ?></td>
+                        <td style="text-align: center;">
+                            <?php echo anchor(current_lang() . "/saving/edit_saving_account/" . encode_id($value->id), ' <i class="fa fa-edit"></i> ' . lang('button_edit'), 'class="btn btn-success btn-xs btn-outline"'); ?>
+                        </td>
+                    </tr>
+                <?php } ?>
+            <?php } else { ?>
                 <tr>
-                    <!--<td><?php echo htmlspecialchars($value->PID, ENT_QUOTES, 'UTF-8'); ?></td>-->
-                    <td><?php echo htmlspecialchars($value->member_id, ENT_QUOTES, 'UTF-8'); ?></td>
-                    <td><img src="<?php echo htmlspecialchars(base_url().'uploads/memberphoto/'.get_photo($value->PIN, $value->PID, $value->member_id)->photo, ENT_QUOTES, 'UTF-8'); ?>" width="40"/></td>
-                    
-                    <td><?php
-                    $memberinfo = $this->member_model->member_basic_info(null,$value->PID,$value->member_id)->row();
-                    $dob = new DateTime($memberinfo->dob);
-                    $today   = new DateTime('today');
-                    $year = $dob->diff($today)->y;
-                    //echo $year;
-                    echo '<b>'.$memberinfo->lastname.'</b>, '.$memberinfo->firstname.' '.$memberinfo->middlename; ?></td>
-                    <td><?php echo ($memberinfo->gender=='F'?'Female':'Male'); ?></td>
-                    <td><?php echo date('m/d/Y',strtotime($memberinfo->dob)); ?></td>
-                    <td style="text-align: center;"><?php echo $year; ?></td>
-                    
-                    <td style="text-align: right;"><?php echo number_format($this->mortuary_model->mortuary_balance($value->PID,$value->member_id)->balance,2,'.',','); ?></td>
-                    <td style="text-align: right;"><?php echo number_format($deduction_amount*$year,2,'.',','); ?></td>
-                    <?php $mortstat = ($value->status_flag==1)?'class="btn btn-info btn-xs"': ($value->status_flag==2?'class="btn btn-warning btn-xs"':'class="btn btn-danger btn-xs"');?>
-                    <td style="text-align: center;"><span <?php echo $mortstat;?>><?php echo $this->mortuary_model->mortuary_status($value->status_flag)->row()->description; ?></span></td>
-                    <?php
-                    foreach ($mortuary_type_claim_array as $key => $value1) {
-                        if($key==$value->claim_status){
-                            $mortuary_type_claim = $value1;
-                        }
-                    }
-                    ?>
-                    <td style="text-align: center;"><?php echo $mortuary_type_claim;?></td>
-                    <td style="text-align: center;"><?php echo anchor(current_lang() . "/mortuary/mortuary_setting_edit/" . encode_id($value->id), ' <i class="fa fa-edit"></i> ' . lang('button_edit'),' class="btn btn-success btn-xs btn-outline"'); ?></td>
+                    <td colspan="9" style="text-align: center;"><?php echo lang('no_records_found'); ?></td>
                 </tr>
             <?php } ?>
         </tbody>
-
     </table>
 
     <?php echo $links; ?>
-    <div style="margin-right: 20px; text-align: right;"> <?php page_selector(); ?></div> 
-
-
+    <div style="margin-right: 20px; text-align: right;"> <?php page_selector(); ?></div>
 </div>
+
 <script type="text/javascript" src="<?php echo base_url(); ?>media/js/jquery.autocomplete_origin.js" ></script>
 <script type="text/javascript">
     $(document).ready(function(){
@@ -118,28 +118,4 @@ $_GET['key'] = $jxy['key'];
             matchContains:true
         });
     });
-    $(function(){
-        $('#btnprocessbalances').on('click', function(e){
-            e.preventDefault();
-            $('#ibox-main').children('.ibox-content').addClass('sk-loading');
-            $("body").css("cursor", "wait");
-            recomputebalances();
-        })
-    })   
-    async function recomputebalances() {
-        let response = await fetch('<?php echo site_url(current_lang() . '/mortuary/recomputebalances/'); ?>');
-		let totalrecdata = await response.json();
-		success = totalrecdata.success;
-        message = totalrecdata.message;
-        await new Promise((resolve, reject) => setTimeout(resolve, 1000));
-        $('#ibox-main').children('.ibox-content').removeClass('sk-loading');
-        $("body").css("cursor", "default");
-        swal({
-            title: "Good job!",
-            text: "All mortuary balances are successfully process!",
-            icon: "success",
-            button: "Close",
-        });
-        return true;
-    } 
 </script>

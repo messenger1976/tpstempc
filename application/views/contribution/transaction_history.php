@@ -16,9 +16,9 @@ if (isset($message) && !empty($message)) {
 }
 
 $sp = $jxy;
-$_GET['from'] = isset($jxy['from']) && !empty($jxy['from']) ? format_date($jxy['from'],FALSE) : '';
-$_GET['upto'] = isset($jxy['upto']) && !empty($jxy['upto']) ? format_date($jxy['upto'],FALSE) : '';
-$_GET['key'] = isset($jxy['key']) ? $jxy['key'] : '';
+$_GET['from'] = isset($jxy['from']) && !empty($jxy['from']) ? format_date($jxy['from'],FALSE) : (($this->session->userdata('contribution_transaction_from')) ? $this->session->userdata('contribution_transaction_from') : '');
+$_GET['upto'] = isset($jxy['upto']) && !empty($jxy['upto']) ? format_date($jxy['upto'],FALSE) : (($this->session->userdata('contribution_transaction_upto')) ? $this->session->userdata('contribution_transaction_upto') : '');
+$_GET['key'] = isset($jxy['key']) ? $jxy['key'] : (($this->session->userdata('contribution_transaction_key')) ? $this->session->userdata('contribution_transaction_key') : '');
 
 
 ?>
@@ -26,13 +26,13 @@ $_GET['key'] = isset($jxy['key']) ? $jxy['key'] : '';
 <div class="form-group col-lg-12">
 
     <div class="col-lg-4">
-        <input type="text" class="form-control" name="key" id="accountno" placeholder="<?php echo lang('member_member_id').'/'.  lang('customer_name'); ?>" value="<?php echo (isset($_GET['key']) ? $_GET['key'] : ''); ?>"/> 
+        <input type="text" class="form-control" name="key" id="accountno" placeholder="<?php echo lang('member_member_id').'/'.  lang('customer_name'); ?>" value="<?php echo (isset($_GET['key']) && $_GET['key'] != '' ? $_GET['key'] : ($this->session->userdata('contribution_transaction_key') ? $this->session->userdata('contribution_transaction_key') : '')); ?>"/> 
     </div>
     <div class="col-lg-3">
-        <input type="text" class="form-control" id="from" data-date-format="DD-MM-YYYY" placeholder="<?php echo lang('hint_date'); ?>" name="from" value="<?php echo (isset($_GET['from']) ? $_GET['from'] : ''); ?>"/> 
+        <input type="text" class="form-control" id="from" data-date-format="DD-MM-YYYY" placeholder="<?php echo lang('hint_date'); ?>" name="from" value="<?php echo (isset($_GET['from']) && $_GET['from'] != '' ? $_GET['from'] : ($this->session->userdata('contribution_transaction_from') ? $this->session->userdata('contribution_transaction_from') : '')); ?>"/> 
     </div>
     <div class="col-lg-3">
-        <input type="text" class="form-control" id="upto" data-date-format="DD-MM-YYYY" placeholder="<?php echo lang('hint_date'); ?>" name="upto" value="<?php echo (isset($_GET['upto']) ? $_GET['upto'] : ''); ?>"/> 
+        <input type="text" class="form-control" id="upto" data-date-format="DD-MM-YYYY" placeholder="<?php echo lang('hint_date'); ?>" name="upto" value="<?php echo (isset($_GET['upto']) && $_GET['upto'] != '' ? $_GET['upto'] : ($this->session->userdata('contribution_transaction_upto') ? $this->session->userdata('contribution_transaction_upto') : '')); ?>"/> 
     </div>
     <div class="col-lg-2" style="text-align-last: right;">
         <input type="submit" value="<?php echo lang('button_search'); ?>" class="btn btn-primary"/>
@@ -86,7 +86,7 @@ $_GET['key'] = isset($jxy['key']) ? $jxy['key'] : '';
 
                     <td>
                         <?php echo anchor(current_lang() . "/contribution/receipt_view/" . $value->receipt, ' <i class="fa fa-edit"></i> ' . lang('view_link'), 'class="btn btn-primary btn-xs"'); ?>
-                        <?php echo anchor(current_lang() . "/contribution/delete_transaction/" . $value->receipt, ' <i class="fa fa-trash"></i> Delete', 'class="btn btn-danger btn-xs" onclick="return confirm(\'Are you sure you want to delete this transaction? This action cannot be undone.\');"'); ?>
+                        <?php echo anchor(current_lang() . "/contribution/delete_transaction/" . $value->receipt, ' <i class="fa fa-trash"></i> Delete', 'class="btn btn-danger btn-xs delete-transaction" data-receipt="' . $value->receipt . '"'); ?>
                     </td>
                 </tr>
             <?php } ?>
@@ -130,6 +130,28 @@ $_GET['key'] = isset($jxy['key']) ? $jxy['key'] : '';
         });*/
         $('#upto').datetimepicker({
             pickTime: false
+        });
+    });
+    
+    // SweetAlert delete confirmation
+    $(document).on('click', '.delete-transaction', function(e) {
+        e.preventDefault();
+        var deleteUrl = $(this).attr('href');
+        var receipt = $(this).data('receipt');
+        
+        swal({
+            title: "Are you sure?",
+            text: "You are about to delete transaction receipt #" + receipt + ". This action cannot be undone!",
+            type: "warning",
+            showCancelButton: true,
+            confirmButtonColor: "#DD6B55",
+            confirmButtonText: "Yes, delete it!",
+            cancelButtonText: "Cancel",
+            closeOnConfirm: false
+        }, function(isConfirm) {
+            if (isConfirm) {
+                window.location.href = deleteUrl;
+            }
         });
     });
 </script>

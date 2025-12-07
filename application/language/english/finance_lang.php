@@ -39,11 +39,13 @@ $lang['invalid_member_id'] = 'Invalid Member ID';
 $lang['member_fullname'] = 'Name';
 $lang['opening_balance_error'] = 'Opening balance for selected account is ';
 $lang['create_saving_account_error'] = 'Account fail to be created';
-
+$lang['total_savings_amount'] = 'Total Savings Amount';
 $lang['saving_account_list'] = 'Saving Account List';
 $lang['saving_account_statement'] = 'Account Statement';
 $lang['saving_account_transactions'] = 'Saving Accounts Transactions';
 $lang['saving_account_transactions_summary'] = 'Saving  Transactions Summary';
+$lang['account_type_code'] = 'Account Type Code';
+$lang['account_type_name'] = 'Account Type Name';
 
 
 // general journal

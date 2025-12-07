@@ -166,6 +166,7 @@ $lang['share_trans_fail'] = 'Fail to record information';
 $lang['share_trans_success'] = 'Information successfully recorded';
 
 $lang['saving_account_edit']='Edit Account Information';
+$lang['edit_saving_account']='Edit Saving Account';
 $lang['account_name']='Account Name';
 $lang['account_description']='Description';
 $lang['account_charge']='Monthly Fee';
@@ -175,6 +176,8 @@ $lang['account_min_deposit']='Minimum Deposit';
 $lang['account_interest_rate']='Interest Rate';
 $lang['saving_account_process_success']='Information saved successfully';
 $lang['saving_account_process_fail']='Fail to save information';
+$lang['account_updated_successfully']='Account updated successfully';
+$lang['account_update_failed']='Failed to update account';
 
 
 //contribution

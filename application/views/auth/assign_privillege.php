@@ -246,6 +246,20 @@ else:
 <div class="action-buttons">
     <!-- Hidden field to ensure 'save' parameter is always sent -->
     <input type="hidden" name="save" value="1" />
+    
+    <!-- Hidden fields for all checkboxes to ensure they're sent even when unchecked -->
+    <?php 
+    foreach ($privilege_list[1] as $key => $value): 
+        foreach ($value as $k => $v): 
+            $module_id = $privilege_list[1][$key][$k];
+            $field_name = 'module_' . $module_id[0] . '_' . $module_id[1];
+    ?>
+        <input type="hidden" name="<?php echo $field_name; ?>_exists" value="1" />
+    <?php 
+        endforeach; 
+    endforeach; 
+    ?>
+    
     <button type="submit" class="btn btn-primary btn-save" id="btn-save-privileges">
         <i class="fa fa-save"></i> <?php echo lang('privillege_btn_save'); ?>
     </button>
@@ -276,30 +290,86 @@ $(document).ready(function() {
     
     // Handle form submission - DO NOT prevent default
     form.on('submit', function(e) {
+        console.log('========================================');
         console.log('Form submit event triggered');
+        console.log('========================================');
         
         // Count checked checkboxes and log them
         var checkedBoxes = [];
-        $('.privilege-checkbox:checked').each(function() {
-            checkedBoxes.push($(this).attr('name') + '=' + $(this).val());
+        var allBoxes = [];
+        $('.privilege-checkbox').each(function() {
+            var name = $(this).attr('name');
+            var checked = $(this).is(':checked');
+            allBoxes.push(name + '=' + (checked ? '1' : 'NOT CHECKED'));
+            if (checked) {
+                checkedBoxes.push(name + '=1');
+            }
         });
+        console.log('All checkboxes:', allBoxes);
         console.log('Checked checkboxes:', checkedBoxes.length, checkedBoxes);
         
         // Log all form data that will be submitted
         var formData = $(this).serialize();
-        console.log('Form data to submit:', formData.substring(0, 200) + '...');
+        console.log('Form data to submit:', formData);
+        console.log('Form data length:', formData.length);
         
         // Verify save hidden field
-        console.log('Save hidden field:', $('input[name="save"]').val());
+        var saveField = $('input[name="save"]');
+        console.log('Save hidden field exists:', saveField.length > 0);
+        console.log('Save hidden field value:', saveField.val());
         
-        // Set button state AFTER allowing form to submit
-        setTimeout(function() {
-            var btn = $('#btn-save-privileges');
-            btn.prop('disabled', true);
-            btn.html('<i class="fa fa-spinner fa-spin"></i> Saving...');
-        }, 10);
+        // Check specifically for saving_account_list
+        var savingListCheckbox = $('input[name*="saving_account_list"], input[id*="saving_account_list"]');
+        console.log('saving_account_list checkbox found:', savingListCheckbox.length);
+        if (savingListCheckbox.length > 0) {
+            console.log('saving_account_list checkbox name:', savingListCheckbox.attr('name'));
+            console.log('saving_account_list checkbox checked:', savingListCheckbox.is(':checked'));
+        }
         
-        // CRITICAL: Do NOT prevent default - let form submit normally
+        // Check specifically for Edit_saving_account
+        var editCheckbox = $('input[name*="Edit_saving_account"], input[id*="Edit_saving_account"]');
+        console.log('Edit_saving_account checkbox found:', editCheckbox.length);
+        if (editCheckbox.length > 0) {
+            console.log('Edit_saving_account checkbox name:', editCheckbox.attr('name'));
+            console.log('Edit_saving_account checkbox checked:', editCheckbox.is(':checked'));
+        }
+        
+        console.log('========================================');
+        console.log('PAUSING FOR 3 SECONDS - Check console above');
+        console.log('Form will submit after delay...');
+        console.log('========================================');
+        
+        // Set button state
+        var btn = $('#btn-save-privileges');
+        btn.prop('disabled', true);
+        btn.html('<i class="fa fa-spinner fa-spin"></i> Saving...');
+        
+        // Show saving message
+        var savingMsg = $('<div class="alert alert-info" style="margin:15px 0;"><i class="fa fa-spinner fa-spin"></i> Saving permissions, please wait...</div>');
+        $('.assign-role-container').prepend(savingMsg);
+        
+        // Don't prevent default - let form submit normally
+        // The delay was just for viewing console, but we need actual submission
+        // Remove the delay and submit immediately
+        console.log('========================================');
+        console.log('Submitting form now...');
+        console.log('========================================');
+        
+        // Ensure all checkboxes are properly included
+        // Make sure unchecked checkboxes don't interfere
+        $('.privilege-checkbox').each(function() {
+            if (!$(this).is(':checked')) {
+                // For unchecked boxes, ensure they're not sent (or send as 0)
+                // The server-side code handles this, but we can add a hidden field
+                var name = $(this).attr('name');
+                if (name && !$('input[type="hidden"][name="' + name + '_unchecked"]').length) {
+                    // Add a marker that this checkbox exists but is unchecked
+                    $(this).after('<input type="hidden" name="' + name + '_exists" value="0">');
+                }
+            }
+        });
+        
+        // Allow form to submit normally
         return true;
     });
     

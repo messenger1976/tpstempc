@@ -513,6 +513,112 @@ $pin=current_user()->PIN;
         return count($this->db->get('members_account')->result());
     }
 
+    function count_saving_account($key=null, $account_type_filter=null) {
+        $pin = current_user()->PIN;
+        $this->db->from('members_account ma');
+        $this->db->join('saving_account_type sat', 'ma.account_cat = sat.account AND sat.PIN = ' . $this->db->escape($pin), 'left');
+        $this->db->where('ma.PIN', $pin);
+        
+        // Filter by account type (Special or MSO)
+        if (!is_null($account_type_filter) && $account_type_filter != '' && $account_type_filter != 'all') {
+            if ($account_type_filter == 'special') {
+                // Special accounts: check account_setup prefix, account_type, or name/description contains "special"
+                $this->db->join('account_chart ac', 'sat.account_setup = ac.account AND ac.PIN = ' . $this->db->escape($pin), 'left');
+                $this->db->where("((sat.account_setup IS NOT NULL AND sat.account_setup != '' AND (LEFT(sat.account_setup, 2) = '10' OR ac.account_type = 10 OR ac.account_type = '10')) OR LOWER(sat.name) LIKE '%special%' OR LOWER(sat.description) LIKE '%special%')", NULL, FALSE);
+            } else if ($account_type_filter == 'mso') {
+                // MSO accounts: check account_setup prefix, account_type, or name/description contains "mso"
+                $this->db->join('account_chart ac', 'sat.account_setup = ac.account AND ac.PIN = ' . $this->db->escape($pin), 'left');
+                $this->db->where("((sat.account_setup IS NOT NULL AND sat.account_setup != '' AND (LEFT(sat.account_setup, 2) = '40' OR ac.account_type = 40 OR ac.account_type = '40')) OR LOWER(sat.name) LIKE '%mso%' OR LOWER(sat.description) LIKE '%mso%')", NULL, FALSE);
+            }
+        }
+        
+        if (!is_null($key) && $key != '') {
+            $key_escaped = $this->db->escape_like_str($key);
+            $this->db->where("(ma.account LIKE '%{$key_escaped}%' OR ma.member_id LIKE '%{$key_escaped}%' OR ma.RFID = " . $this->db->escape($key) . ")", NULL, FALSE);
+        }
+        
+        return $this->db->count_all_results();
+    }
+
+    function search_saving_account($key=null, $limit=40, $start=0, $account_type_filter=null) {
+        $pin = current_user()->PIN;
+        $this->db->select('ma.*, m.firstname, m.middlename, m.lastname, m.member_id as member_id_display, mg.name as group_name, sat.description as account_type_name, sat.account as account_type_code, sat.name as account_type_name_display');
+        $this->db->from('members_account ma');
+        $this->db->join('members m', 'ma.RFID = m.PID AND m.PIN = ma.PIN AND ma.tablename = \'members\'', 'left');
+        $this->db->join('members_grouplist mg', 'ma.RFID = mg.GID AND mg.PIN = ma.PIN AND ma.tablename = \'members_grouplist\'', 'left');
+        $this->db->join('saving_account_type sat', 'ma.account_cat = sat.account AND sat.PIN = ' . $this->db->escape($pin), 'left');
+        $this->db->where('ma.PIN', $pin);
+        
+        // Filter by account type (Special or MSO)
+        if (!is_null($account_type_filter) && $account_type_filter != '' && $account_type_filter != 'all') {
+            if ($account_type_filter == 'special') {
+                // Special accounts: check account_setup prefix, account_type, or name/description contains "special"
+                $this->db->join('account_chart ac', 'sat.account_setup = ac.account AND ac.PIN = ' . $this->db->escape($pin), 'left');
+                $this->db->where("((sat.account_setup IS NOT NULL AND sat.account_setup != '' AND (LEFT(sat.account_setup, 2) = '10' OR ac.account_type = 10 OR ac.account_type = '10')) OR LOWER(sat.name) LIKE '%special%' OR LOWER(sat.description) LIKE '%special%')", NULL, FALSE);
+            } else if ($account_type_filter == 'mso') {
+                // MSO accounts: check account_setup prefix, account_type, or name/description contains "mso"
+                $this->db->join('account_chart ac', 'sat.account_setup = ac.account AND ac.PIN = ' . $this->db->escape($pin), 'left');
+                $this->db->where("((sat.account_setup IS NOT NULL AND sat.account_setup != '' AND (LEFT(sat.account_setup, 2) = '40' OR ac.account_type = 40 OR ac.account_type = '40')) OR LOWER(sat.name) LIKE '%mso%' OR LOWER(sat.description) LIKE '%mso%')", NULL, FALSE);
+            }
+        }
+        
+        if (!is_null($key) && $key != '') {
+            $key_escaped = $this->db->escape_like_str($key);
+            $this->db->where("(ma.account LIKE '%{$key_escaped}%' OR ma.member_id LIKE '%{$key_escaped}%' OR ma.RFID = " . $this->db->escape($key) . " OR m.firstname LIKE '%{$key_escaped}%' OR m.lastname LIKE '%{$key_escaped}%')", NULL, FALSE);
+        }
+        
+        $this->db->order_by('ma.account', 'ASC');
+        $this->db->limit($limit, $start);
+        return $this->db->get()->result();
+    }
+
+    function get_total_savings_amount($key=null, $account_type_filter=null) {
+        $pin = current_user()->PIN;
+        $this->db->select_sum('ma.balance');
+        $this->db->from('members_account ma');
+        $this->db->join('saving_account_type sat', 'ma.account_cat = sat.account AND sat.PIN = ' . $this->db->escape($pin), 'left');
+        $this->db->where('ma.PIN', $pin);
+        
+        // Filter by account type (Special or MSO)
+        if (!is_null($account_type_filter) && $account_type_filter != '' && $account_type_filter != 'all') {
+            if ($account_type_filter == 'special') {
+                // Special accounts: check account_setup prefix, account_type, or name/description contains "special"
+                $this->db->join('account_chart ac', 'sat.account_setup = ac.account AND ac.PIN = ' . $this->db->escape($pin), 'left');
+                $this->db->where("((sat.account_setup IS NOT NULL AND sat.account_setup != '' AND (LEFT(sat.account_setup, 2) = '10' OR ac.account_type = 10 OR ac.account_type = '10')) OR LOWER(sat.name) LIKE '%special%' OR LOWER(sat.description) LIKE '%special%')", NULL, FALSE);
+            } else if ($account_type_filter == 'mso') {
+                // MSO accounts: check account_setup prefix, account_type, or name/description contains "mso"
+                $this->db->join('account_chart ac', 'sat.account_setup = ac.account AND ac.PIN = ' . $this->db->escape($pin), 'left');
+                $this->db->where("((sat.account_setup IS NOT NULL AND sat.account_setup != '' AND (LEFT(sat.account_setup, 2) = '40' OR ac.account_type = 40 OR ac.account_type = '40')) OR LOWER(sat.name) LIKE '%mso%' OR LOWER(sat.description) LIKE '%mso%')", NULL, FALSE);
+            }
+        }
+        
+        if (!is_null($key) && $key != '') {
+            $key_escaped = $this->db->escape_like_str($key);
+            $this->db->where("(ma.account LIKE '%{$key_escaped}%' OR ma.member_id LIKE '%{$key_escaped}%' OR ma.RFID = " . $this->db->escape($key) . ")", NULL, FALSE);
+        }
+        
+        $result = $this->db->get()->row();
+        return $result->balance ? $result->balance : 0;
+    }
+
+    function get_saving_account_info($id) {
+        $pin = current_user()->PIN;
+        $this->db->select('ma.*, m.firstname, m.middlename, m.lastname, sat.description as account_type_name');
+        $this->db->from('members_account ma');
+        $this->db->join('members m', 'ma.RFID = m.PID AND ma.member_id = m.member_id', 'left');
+        $this->db->join('saving_account_type sat', 'ma.account_cat = sat.account', 'left');
+        $this->db->where('ma.id', $id);
+        $this->db->where('ma.PIN', $pin);
+        return $this->db->get()->row();
+    }
+
+    function update_saving_account($data, $id) {
+        $pin = current_user()->PIN;
+        $this->db->where('id', $id);
+        $this->db->where('PIN', $pin);
+        return $this->db->update('members_account', $data);
+    }
+
     // Chart Type CRUD operations
     function create_chart_type($data) {
         return $this->db->insert('account_type', $data);

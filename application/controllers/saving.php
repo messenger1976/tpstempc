@@ -35,11 +35,18 @@ class Saving extends CI_Controller {
  //Added by Herald
     function saving_account_list() {
         $this->load->library('pagination');
-        $this->data['title'] = lang('mortuary_account_list');
+        $this->data['title'] = lang('saving_account_list');
         
         if (!$this->ion_auth->logged_in()) {
             //redirect them to the login page
             redirect('auth/login', 'refresh');
+        }
+        
+        // Check permission
+        if (!has_role(3, 'saving_account_list')) {
+            $this->session->set_flashdata('warning', lang('access_denied'));
+            redirect('dashboard', 'refresh');
+            return;
         }
         
         
@@ -52,43 +59,41 @@ class Saving extends CI_Controller {
         $config["per_page"] = $this->session->userdata('PER_PAGE');
         
         $key = null;
-        $searchstatus = null;
         
         if (isset($_POST['key']) && $_POST['key'] != '') {
             $explode = explode('-', $_POST['key']);
-            $key = $explode[0];
-        } else if (isset($_GET['key'])) {
-            $key = $_GET['key'];
+            $key = trim($explode[0]);
+        } else if (isset($_GET['key']) && $_GET['key'] != '') {
+            $key = trim($_GET['key']);
         }
-
-        if (isset($_POST['searchstatus']) || $_POST['searchstatus'] != '') {
-            $searchstatus = $_POST['searchstatus'];
-        } else if (isset($_GET['searchstatus'])) {
-            $searchstatus = $_GET['searchstatus'];
-        } else {
-            $searchstatus = '';
+        
+        $account_type_filter = null;
+        if (isset($_POST['account_type_filter']) && $_POST['account_type_filter'] != '') {
+            $account_type_filter = $_POST['account_type_filter'];
+        } else if (isset($_GET['account_type_filter']) && $_GET['account_type_filter'] != '') {
+            $account_type_filter = $_GET['account_type_filter'];
         }
+        
         $suffix_array = array();
 
-        if (!is_null($key)) {
+        if (!is_null($key) && $key != '') {
             $suffix_array['key'] = $key;
         }
-
-        if (!is_null($searchstatus) || $searchstatus!='') {
-            $suffix_array['searchstatus'] = $searchstatus;
+        
+        if (!is_null($account_type_filter) && $account_type_filter != '') {
+            $suffix_array['account_type_filter'] = $account_type_filter;
         }
+        
         $this->data['jxy'] = $suffix_array;
+        $this->data['account_type_filter'] = $account_type_filter;
         if (count($suffix_array) > 0) {
             $query_string = http_build_query($suffix_array, '', '&');
             $config['suffix'] = '?' . $query_string;
         }
-        /*if (!is_null($key)) {
-            $config['suffix'] = '?key=' . $key;
-        }*/
         
         
         $config["base_url"] = site_url(current_lang() . '/saving/saving_account_list');
-        $config["total_rows"] = $this->mortuary_model->count_contribution_setting($key,$searchstatus);
+        $config["total_rows"] = $this->finance_model->count_saving_account($key, $account_type_filter);
         $config["uri_segment"] = 4;
         
         $config['full_tag_open'] = '<div class="pagination" style="background-color:#fff; margin-left:0px;">';
@@ -122,12 +127,84 @@ class Saving extends CI_Controller {
         $page = ($this->uri->segment(4) ? $this->uri->segment(4) : 0);
         $this->data['links'] = $this->pagination->create_links();
         
-        $this->data['mortuary_setting'] = $this->mortuary_model->search_contribution_setting($key, $config["per_page"], $page, $searchstatus);
-        $this->data['mortuary_status_list'] = $this->mortuary_model->mortuary_status()->result();
+        $this->data['saving_accounts'] = $this->finance_model->search_saving_account($key, $config["per_page"], $page, $account_type_filter);
+        $this->data['total_savings_amount'] = $this->finance_model->get_total_savings_amount($key, $account_type_filter);
         
         $this->data['content'] = 'saving/saving_account_list';
         $this->load->view('template', $this->data);
     }
+    function edit_saving_account($id = null) {
+        $this->data['title'] = lang('edit_saving_account');
+        $this->data['id'] = $id;
+        
+        if (!$this->ion_auth->logged_in()) {
+            //redirect them to the login page
+            redirect('auth/login', 'refresh');
+        }
+        
+        // Check permission - allow if user has either saving_account_list or Edit_saving_account permission
+        if (!has_role(3, 'saving_account_list') && !has_role(3, 'Edit_saving_account')) {
+            $this->session->set_flashdata('warning', lang('access_denied'));
+            redirect('dashboard', 'refresh');
+            return;
+        }
+        
+        if (!is_null($id)) {
+            $id = decode_id($id);
+        }
+        
+        if (!is_null($id)) {
+            $this->data['account_info'] = $this->finance_model->get_saving_account_info($id);
+            if (!$this->data['account_info']) {
+                $this->session->set_flashdata('warning', lang('invalid_account'));
+                redirect(current_lang() . '/saving/saving_account_list', 'refresh');
+                return;
+            }
+        } else {
+            $this->session->set_flashdata('warning', lang('invalid_account'));
+            redirect(current_lang() . '/saving/saving_account_list', 'refresh');
+            return;
+        }
+        
+        // Handle comma-formatted numbers
+        if ($this->input->post('balance')) {
+            $initial = $this->input->post('balance');
+            $_POST['balance'] = str_replace(',', '', $initial);
+        }
+        if ($this->input->post('virtual_balance')) {
+            $initial = $this->input->post('virtual_balance');
+            $_POST['virtual_balance'] = str_replace(',', '', $initial);
+        }
+        
+        $this->form_validation->set_rules('account', lang('account_number'), 'required');
+        $this->form_validation->set_rules('member_id', lang('member_member_id'), 'required');
+        $this->form_validation->set_rules('account_cat', lang('account_type'), 'required');
+        $this->form_validation->set_rules('balance', lang('balance'), 'required|numeric');
+        $this->form_validation->set_rules('virtual_balance', lang('virtual_balance'), 'numeric');
+        
+        if ($this->form_validation->run() == TRUE) {
+            $update_data = array(
+                'account' => trim($this->input->post('account')),
+                'member_id' => trim($this->input->post('member_id')),
+                'account_cat' => trim($this->input->post('account_cat')),
+                'balance' => trim($this->input->post('balance')),
+                'virtual_balance' => trim($this->input->post('virtual_balance')) ? trim($this->input->post('virtual_balance')) : 0,
+            );
+            
+            $result = $this->finance_model->update_saving_account($update_data, $id);
+            if ($result) {
+                $this->session->set_flashdata('message', lang('account_updated_successfully'));
+                redirect(current_lang() . '/saving/saving_account_list', 'refresh');
+            } else {
+                $this->data['warning'] = lang('account_update_failed');
+            }
+        }
+        
+        $this->data['account_list'] = $this->finance_model->saving_account_list()->result();
+        $this->data['content'] = 'saving/edit_account';
+        $this->load->view('template', $this->data);
+    }
+
     function create_saving_account() {
         $this->data['title'] = lang('create_saving_account');
         $this->data['account_list'] = $this->finance_model->saving_account_list()->result();

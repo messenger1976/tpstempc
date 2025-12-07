@@ -216,19 +216,25 @@ class Contribution_Model extends CI_Model {
         return $this->db->get('contribution_settings');
     }
 
-    function count_contribution_setting($key=null) {
+    function count_contribution_setting($key=null, $status=null) {
         $this->db->where('PIN',  current_user()->PIN);
         if (!is_null($key)) {
             $this->db->where('PID', $key);
+        }
+        if (!is_null($status) && $status !== '') {
+            $this->db->where('posted', $status);
         }
 
         return count($this->db->get('contribution_settings')->result());
     }
 
-    function search_contribution_setting($key, $limit, $start) {
+    function search_contribution_setting($key, $limit, $start, $status=null) {
         $this->db->where('PIN',  current_user()->PIN);
         if (!is_null($key)) {
             $this->db->where('PID', $key);
+        }
+        if (!is_null($status) && $status !== '') {
+            $this->db->where('posted', $status);
         }
 
         $this->db->limit($limit, $start);

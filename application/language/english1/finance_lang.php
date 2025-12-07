@@ -43,6 +43,7 @@ $lang['saving_account_list'] = 'Saving Account List';
 $lang['saving_account_statement'] = 'Account Statement';
 $lang['saving_account_transactions'] = 'Saving Accounts Transactions';
 $lang['saving_account_transactions_summary'] = 'Saving  Transactions Summary';
+$lang['account_type_code'] = 'Account Type Code';
 
 
 // general journal

@@ -892,14 +892,46 @@ class Auth extends CI_Controller {
                         if ($k == 'saving_account_list' || $k == 'Edit_saving_account') {
                             log_message('error', "=== Processing target role: $k, field: $field_name, POST value: " . ($post_value !== FALSE ? $post_value : 'NOT IN POST') . ' ===');
                             log_message('error', "=== Role details - Module: {$v[0]}, Role ID: {$v[1]}, Module name: $key ===");
+                            
+                            // Force save for these specific roles even if POST value is missing (for production debugging)
+                            if ($post_value === FALSE) {
+                                log_message('error', "=== WARNING: $k field NOT in POST! Checking if checkbox exists on page... ===");
+                                // Try to get from alternative POST field names
+                                $alt_names = array(
+                                    'module_' . $v[0] . '_' . $v[1] . '_exists',
+                                    'module_' . $v[0] . '_' . $v[1] . '_unchecked',
+                                    strtolower($field_name),
+                                    str_replace('_', '', $field_name)
+                                );
+                                foreach ($alt_names as $alt_name) {
+                                    $alt_value = $this->input->post($alt_name);
+                                    if ($alt_value !== FALSE) {
+                                        log_message('error', "=== Found $k in alternative field: $alt_name = $alt_value ===");
+                                        $post_value = $alt_value;
+                                        break;
+                                    }
+                                }
+                            }
                         }
                         
                         // Debug: Log what we're processing
                         $debug_info[] = "Processing: $k (field: $field_name, value: " . ($post_value !== FALSE ? $post_value : 'NOT SET') . ")";
                         
-                        // Check if checkbox was checked (value will be '1' or set)
-                        // If checkbox is unchecked, it won't be in POST at all
-                        $allow_value = ($post_value !== FALSE && $post_value != '' && ($post_value == '1' || $post_value == 1)) ? 1 : 0;
+                        // Check if checkbox was checked
+                        // Hidden fields send "0" for unchecked, checkboxes send "1" for checked
+                        // If field is not in POST at all, default to 0 (unchecked)
+                        if ($post_value === FALSE) {
+                            $allow_value = 0;
+                            if ($k == 'saving_account_list' || $k == 'Edit_saving_account') {
+                                log_message('error', "=== $k not in POST - setting to 0 (unchecked) ===");
+                            }
+                        } else {
+                            // Field exists in POST - check if value is "1" (checked) or "0" (unchecked)
+                            $allow_value = ($post_value == '1' || $post_value == 1) ? 1 : 0;
+                            if ($k == 'saving_account_list' || $k == 'Edit_saving_account') {
+                                log_message('error', "=== $k in POST with value: $post_value, setting allow to: $allow_value ===");
+                            }
+                        }
                         
                         // Check if access_level entry exists
                         $check = $this->db->get_where('access_level', array('group_id' => $group_id, 'Module' => $v[0], 'link' => $k))->row();
@@ -914,6 +946,9 @@ class Auth extends CI_Controller {
                             if ($result) {
                                 $saved_count++;
                                 $debug_info[] = "Updated: $k = $allow_value";
+                                if ($k == 'saving_account_list' || $k == 'Edit_saving_account') {
+                                    log_message('error', "=== SUCCESS: Updated $k to $allow_value ===");
+                                }
                             } else {
                                 $db_error = $this->db->error();
                                 $error_msg = "Failed to update: $k";
@@ -922,6 +957,9 @@ class Auth extends CI_Controller {
                                 }
                                 $error_messages[] = $error_msg;
                                 $debug_info[] = "ERROR: $error_msg";
+                                if ($k == 'saving_account_list' || $k == 'Edit_saving_account') {
+                                    log_message('error', "=== FAILED: Could not update $k - " . $error_msg . ' ===');
+                                }
                             }
                         } else {
                             // Insert new entry
@@ -936,6 +974,9 @@ class Auth extends CI_Controller {
                             if ($result) {
                                 $saved_count++;
                                 $debug_info[] = "Inserted: $k = $allow_value";
+                                if ($k == 'saving_account_list' || $k == 'Edit_saving_account') {
+                                    log_message('error', "=== SUCCESS: Inserted $k with value $allow_value ===");
+                                }
                             } else {
                                 $db_error = $this->db->error();
                                 $error_msg = "Failed to insert: $k";
@@ -944,6 +985,9 @@ class Auth extends CI_Controller {
                                 }
                                 $error_messages[] = $error_msg;
                                 $debug_info[] = "ERROR: $error_msg";
+                                if ($k == 'saving_account_list' || $k == 'Edit_saving_account') {
+                                    log_message('error', "=== FAILED: Could not insert $k - " . $error_msg . ' ===');
+                                }
                             }
                         }
                     }

@@ -247,14 +247,16 @@ else:
     <!-- Hidden field to ensure 'save' parameter is always sent -->
     <input type="hidden" name="save" value="1" />
     
-    <!-- Hidden fields for all checkboxes to ensure they're sent even when unchecked -->
+    <!-- Hidden fields for all checkboxes to ensure unchecked state is sent -->
     <?php 
     foreach ($privilege_list[1] as $key => $value): 
         foreach ($value as $k => $v): 
             $module_id = $privilege_list[1][$key][$k];
             $field_name = 'module_' . $module_id[0] . '_' . $module_id[1];
+            // Add hidden field with value 0 - checked checkbox will override with value 1
+            // This ensures unchecked checkboxes send 0 instead of nothing
     ?>
-        <input type="hidden" name="<?php echo $field_name; ?>_exists" value="1" />
+        <input type="hidden" name="<?php echo $field_name; ?>" value="0" />
     <?php 
         endforeach; 
     endforeach; 
@@ -286,6 +288,35 @@ $(document).ready(function() {
         if (!$(this).attr('value')) {
             $(this).attr('value', '1');
         }
+    });
+    
+    // Initialize: Remove hidden fields for checked checkboxes on page load
+    $('.privilege-checkbox:checked').each(function() {
+        var name = $(this).attr('name');
+        $('input[type="hidden"][name="' + name + '"]').remove();
+    });
+    
+    // Handle checkbox changes - remove/add hidden fields as needed
+    $('.privilege-checkbox').on('change', function() {
+        var $checkbox = $(this);
+        var name = $checkbox.attr('name');
+        var isChecked = $checkbox.is(':checked');
+        
+        // Remove any existing hidden field with same name
+        $('input[type="hidden"][name="' + name + '"]').remove();
+        
+        // If unchecked, add hidden field with value 0
+        if (!isChecked) {
+            $('<input>').attr({
+                type: 'hidden',
+                name: name,
+                value: '0'
+            }).insertAfter($checkbox);
+            console.log('Added hidden field (value=0) for unchecked:', name);
+        } else {
+            console.log('Removed hidden field for checked:', name);
+        }
+        // If checked, checkbox itself will send value 1, no hidden field needed
     });
     
     // Handle form submission - DO NOT prevent default
@@ -355,19 +386,52 @@ $(document).ready(function() {
         console.log('Submitting form now...');
         console.log('========================================');
         
-        // Ensure all checkboxes are properly included
-        // Make sure unchecked checkboxes don't interfere
+        // Ensure unchecked checkboxes send value 0
+        // When checkbox is unchecked, it won't be in POST, so we need to add hidden field with value 0
         $('.privilege-checkbox').each(function() {
-            if (!$(this).is(':checked')) {
-                // For unchecked boxes, ensure they're not sent (or send as 0)
-                // The server-side code handles this, but we can add a hidden field
-                var name = $(this).attr('name');
-                if (name && !$('input[type="hidden"][name="' + name + '_unchecked"]').length) {
-                    // Add a marker that this checkbox exists but is unchecked
-                    $(this).after('<input type="hidden" name="' + name + '_exists" value="0">');
-                }
+            var $checkbox = $(this);
+            var name = $checkbox.attr('name');
+            if (name && !$checkbox.is(':checked')) {
+                // Remove any existing hidden field for this checkbox
+                $('input[type="hidden"][name="' + name + '"]').remove();
+                // Add hidden field with value 0 for unchecked checkbox
+                $('<input>').attr({
+                    type: 'hidden',
+                    name: name,
+                    value: '0'
+                }).insertAfter($checkbox);
+                console.log('Added hidden field for unchecked checkbox:', name);
+            } else if (name && $checkbox.is(':checked')) {
+                // Remove hidden field if checkbox is checked (checkbox will send value 1)
+                $('input[type="hidden"][name="' + name + '"]').remove();
             }
         });
+        
+        // Final check - log what will be submitted
+        var finalFormData = form.serialize();
+        console.log('Final form data length:', finalFormData.length);
+        
+        var savingListCheckbox = $('input[name*="saving_account_list"], input[id*="saving_account_list"]');
+        var editCheckbox = $('input[name*="Edit_saving_account"], input[id*="Edit_saving_account"]');
+        
+        if (savingListCheckbox.length > 0) {
+            var savingName = savingListCheckbox.attr('name');
+            var savingChecked = savingListCheckbox.is(':checked');
+            var savingInData = finalFormData.indexOf(savingName + '=1') !== -1 || finalFormData.indexOf(savingName + '=0') !== -1;
+            console.log('saving_account_list - Checked:', savingChecked, 'In form data:', savingInData);
+            if (!savingInData) {
+                console.error('ERROR: saving_account_list NOT in form data!');
+            }
+        }
+        if (editCheckbox.length > 0) {
+            var editName = editCheckbox.attr('name');
+            var editChecked = editCheckbox.is(':checked');
+            var editInData = finalFormData.indexOf(editName + '=1') !== -1 || finalFormData.indexOf(editName + '=0') !== -1;
+            console.log('Edit_saving_account - Checked:', editChecked, 'In form data:', editInData);
+            if (!editInData) {
+                console.error('ERROR: Edit_saving_account NOT in form data!');
+            }
+        }
         
         // Allow form to submit normally
         return true;

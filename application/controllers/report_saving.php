@@ -168,6 +168,214 @@ class Report_Saving extends CI_Controller {
         $html = $this->load->view('report/saving/print/account_list_balance_print', $this->data, true);
         $this->export_to_pdf($html, 'Saving_account_list', $reportinfo->page);
     }
+
+    function saving_account_accountlist_export($link, $id) {
+        // Clear ALL output buffers first
+        if (ob_get_level()) {
+            ob_end_clean();
+        }
+        while (@ob_end_clean());
+        
+        // Disable CodeIgniter's output completely
+        $this->output->enable_profiler(FALSE);
+        // Prevent CodeIgniter from sending output
+        $this->output->set_output('');
+        
+        // Load Excel library
+        $this->load->library('excel');
+        
+        // Store original encoded ID for redirect
+        $encoded_id = $id;
+        if (!is_null($id)) {
+            $id = decode_id($id);
+        }
+
+        $reportinfo = $this->report_model->report_saving($id)->row();
+        $transaction = $this->report_model->account_saving_balance($reportinfo->fromdate, $reportinfo->todate, $reportinfo->account_type);
+        
+        // Check if we have data
+        if (empty($transaction) || !is_array($transaction) || count($transaction) == 0) {
+            // Clear buffers before redirect
+            if (ob_get_level()) {
+                ob_end_clean();
+            }
+            $this->session->set_flashdata('warning', 'No data available to export');
+            redirect(current_lang() . '/report_saving/saving_account_accountlist_view/' . $link . '/' . $encoded_id, 'refresh');
+            exit();
+        }
+        
+        // Create new PHPExcel object
+        $objPHPExcel = new PHPExcel();
+        
+        // Set document properties
+        $objPHPExcel->getProperties()->setCreator(company_info()->name)
+                                     ->setTitle("Saving Account List")
+                                     ->setSubject("Saving Account List Export")
+                                     ->setDescription("Saving Account List exported from " . company_info()->name);
+        
+        // Set active sheet index to the first sheet
+        $objPHPExcel->setActiveSheetIndex(0);
+        $sheet = $objPHPExcel->getActiveSheet();
+        
+        // Set sheet title
+        $sheet->setTitle('Saving Account List');
+        
+        // Add company name and report title
+        $sheet->setCellValue('A1', company_info()->name);
+        $sheet->mergeCells('A1:H1');
+        $sheet->getStyle('A1')->getFont()->setBold(true)->setSize(14);
+        $sheet->getStyle('A1')->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_CENTER);
+        
+        $sheet->setCellValue('A2', 'Saving Account List');
+        $sheet->mergeCells('A2:H2');
+        $sheet->getStyle('A2')->getFont()->setBold(true)->setSize(12);
+        $sheet->getStyle('A2')->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_CENTER);
+        
+        $sheet->setCellValue('A3', 'Account created from ' . format_date($reportinfo->fromdate, false) . ' to ' . format_date($reportinfo->todate, false));
+        $sheet->mergeCells('A3:H3');
+        $sheet->getStyle('A3')->getFont()->setSize(10);
+        $sheet->getStyle('A3')->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_CENTER);
+        
+        // Set column headers
+        $sheet->setCellValue('A5', 'S/No');
+        $sheet->setCellValue('B5', 'Account No');
+        $sheet->setCellValue('C5', 'Member ID');
+        $sheet->setCellValue('D5', 'Account Name');
+        $sheet->setCellValue('E5', 'Account Type');
+        $sheet->setCellValue('F5', 'Available Balance');
+        $sheet->setCellValue('G5', 'Actual Balance');
+        
+        // Style the header row
+        $headerStyle = array(
+            'font' => array(
+                'bold' => true,
+                'color' => array('rgb' => 'FFFFFF'),
+            ),
+            'fill' => array(
+                'type' => PHPExcel_Style_Fill::FILL_SOLID,
+                'color' => array('rgb' => '4472C4')
+            ),
+            'alignment' => array(
+                'horizontal' => PHPExcel_Style_Alignment::HORIZONTAL_CENTER,
+            ),
+            'borders' => array(
+                'allborders' => array(
+                    'style' => PHPExcel_Style_Border::BORDER_THIN
+                )
+            ),
+        );
+        
+        $sheet->getStyle('A5:G5')->applyFromArray($headerStyle);
+        
+        // Set column widths
+        $sheet->getColumnDimension('A')->setWidth(10);
+        $sheet->getColumnDimension('B')->setWidth(15);
+        $sheet->getColumnDimension('C')->setWidth(15);
+        $sheet->getColumnDimension('D')->setWidth(30);
+        $sheet->getColumnDimension('E')->setWidth(20);
+        $sheet->getColumnDimension('F')->setWidth(18);
+        $sheet->getColumnDimension('G')->setWidth(18);
+        
+        // Populate data
+        $row = 6;
+        $i = 1;
+        $balance = 0;
+        $actual = 0;
+        foreach ($transaction as $value) {
+            $account = $this->finance_model->saving_account_list(null, $value->account_cat)->row();
+            $account_name = $this->report_model->saving_account_name($value->RFID, $value->tablename);
+            
+            $balance += $value->balance;
+            $actual += $value->balance;
+            $actual += $value->virtual_balance;
+            
+            // Write data to cells
+            $sheet->setCellValue('A' . $row, $i++);
+            $sheet->setCellValue('B' . $row, $value->account);
+            $sheet->setCellValue('C' . $row, $value->member_id);
+            $sheet->setCellValue('D' . $row, $account_name);
+            $sheet->setCellValue('E' . $row, $account->name);
+            $sheet->setCellValue('F' . $row, number_format($value->balance, 2));
+            $sheet->setCellValue('G' . $row, number_format(($value->balance + $value->virtual_balance), 2));
+            
+            // Set alignment
+            $sheet->getStyle('A' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_RIGHT);
+            $sheet->getStyle('B' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_LEFT);
+            $sheet->getStyle('C' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_LEFT);
+            $sheet->getStyle('D' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_LEFT);
+            $sheet->getStyle('E' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_LEFT);
+            $sheet->getStyle('F' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_RIGHT);
+            $sheet->getStyle('G' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_RIGHT);
+            
+            // Add borders to cells
+            $sheet->getStyle('A' . $row . ':G' . $row)->applyFromArray(array(
+                'borders' => array(
+                    'allborders' => array(
+                        'style' => PHPExcel_Style_Border::BORDER_THIN
+                    )
+                )
+            ));
+            
+            $row++;
+        }
+        
+        // Add total row
+        $sheet->setCellValue('A' . $row, '');
+        $sheet->setCellValue('B' . $row, '');
+        $sheet->setCellValue('C' . $row, '');
+        $sheet->setCellValue('D' . $row, '');
+        $sheet->setCellValue('E' . $row, '');
+        $sheet->setCellValue('F' . $row, number_format($balance, 2));
+        $sheet->setCellValue('G' . $row, number_format($actual, 2));
+        
+        // Style total row
+        $totalStyle = array(
+            'font' => array(
+                'bold' => true,
+            ),
+            'borders' => array(
+                'top' => array(
+                    'style' => PHPExcel_Style_Border::BORDER_THIN
+                ),
+                'bottom' => array(
+                    'style' => PHPExcel_Style_Border::BORDER_THIN
+                ),
+                'left' => array(
+                    'style' => PHPExcel_Style_Border::BORDER_THIN
+                ),
+                'right' => array(
+                    'style' => PHPExcel_Style_Border::BORDER_THIN
+                ),
+            ),
+        );
+        
+        $sheet->getStyle('A' . $row . ':G' . $row)->applyFromArray($totalStyle);
+        $sheet->getStyle('F' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_RIGHT);
+        $sheet->getStyle('G' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_RIGHT);
+        
+        // Set filename
+        $filename = 'Saving_Account_List_' . date('Y-m-d_His') . '.xls';
+        
+        // Clear any remaining output buffers before sending headers
+        if (ob_get_level()) {
+            ob_end_clean();
+        }
+        while (@ob_end_clean());
+        
+        // Set headers - MUST be before any output
+        header('Content-Type: application/vnd.ms-excel');
+        header('Content-Disposition: attachment;filename="' . $filename . '"');
+        header('Cache-Control: must-revalidate, post-check=0, pre-check=0');
+        header('Pragma: public');
+        header('Expires: 0');
+        
+        // Create writer and output directly
+        $objWriter = PHPExcel_IOFactory::createWriter($objPHPExcel, 'Excel5');
+        $objWriter->save('php://output');
+        
+        // Exit immediately to prevent any further output
+        exit();
+    }
     
     
       function saving_account_statement_view($link, $id) {

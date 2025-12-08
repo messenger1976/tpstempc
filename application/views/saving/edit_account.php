@@ -19,15 +19,15 @@ $account_info = isset($account_info) ? $account_info : null;
         <div class="form-group">
             <label class="col-lg-4 control-label"><?php echo lang('account_number'); ?>: <span class="required">*</span></label>
             <div class="col-lg-7">
-                <input type="text" name="account" value="<?php echo set_value('account', $account_info ? $account_info->account : ''); ?>" class="form-control" required/>
+                <input type="text" name="account" value="<?php echo set_value('account', $account_info ? ($account_info->old_members_acct ? $account_info->old_members_acct : $account_info->account) : ''); ?>" class="form-control" required/>
                 <?php echo form_error('account'); ?>
             </div>
         </div>
         
         <div class="form-group">
-            <label class="col-lg-4 control-label"><?php echo lang('member_member_id'); ?>: <span class="required">*</span></label>
+            <label class="col-lg-4 control-label"><?php echo lang('member_member_id'); ?>: </label>
             <div class="col-lg-7">
-                <input type="text" name="member_id" value="<?php echo set_value('member_id', $account_info ? $account_info->member_id : ''); ?>" class="form-control" required/>
+                <input type="text" name="member_id" value="<?php echo set_value('member_id', $account_info && isset($account_info->member_member_id) ? $account_info->member_member_id : ($account_info ? $account_info->member_id : '')); ?>" class="form-control" readonly required/>
                 <?php echo form_error('member_id'); ?>
             </div>
         </div>

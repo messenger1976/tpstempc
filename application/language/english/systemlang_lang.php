@@ -86,6 +86,9 @@ $lang['finance_account_list'] = 'Account Chart List';
 //
 
 $lang['account_no'] = 'Account Number';
+$lang['account_number'] = 'Account Number';
+$lang['account_type'] = 'Savings Account Type';
+$lang['virtual_balance'] = 'Maintaining Balance';
 $lang['member_pid'] = 'System Member ID';
 $lang['group_id'] = 'Group ID';
 $lang['member_group_list'] = 'Member Group List';

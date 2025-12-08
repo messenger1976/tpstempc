@@ -603,9 +603,9 @@ $pin=current_user()->PIN;
 
     function get_saving_account_info($id) {
         $pin = current_user()->PIN;
-        $this->db->select('ma.*, m.firstname, m.middlename, m.lastname, sat.description as account_type_name');
+        $this->db->select('ma.*, m.member_id as member_member_id, m.firstname, m.middlename, m.lastname, sat.description as account_type_name');
         $this->db->from('members_account ma');
-        $this->db->join('members m', 'ma.RFID = m.PID AND ma.member_id = m.member_id', 'left');
+        $this->db->join('members m', 'ma.RFID = m.PID AND m.PIN = ' . $this->db->escape($pin), 'left');
         $this->db->join('saving_account_type sat', 'ma.account_cat = sat.account', 'left');
         $this->db->where('ma.id', $id);
         $this->db->where('ma.PIN', $pin);

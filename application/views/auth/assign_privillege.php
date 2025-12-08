@@ -290,33 +290,51 @@ $(document).ready(function() {
         }
     });
     
-    // Initialize: Remove hidden fields for checked checkboxes on page load
-    $('.privilege-checkbox:checked').each(function() {
-        var name = $(this).attr('name');
-        $('input[type="hidden"][name="' + name + '"]').remove();
-    });
-    
-    // Handle checkbox changes - remove/add hidden fields as needed
-    $('.privilege-checkbox').on('change', function() {
+    // Initialize: Setup checkboxes on page load - keep ALL checkboxes ENABLED for user interaction
+    $('.privilege-checkbox').each(function() {
         var $checkbox = $(this);
         var name = $checkbox.attr('name');
-        var isChecked = $checkbox.is(':checked');
         
-        // Remove any existing hidden field with same name
-        $('input[type="hidden"][name="' + name + '"]').remove();
+        // Ensure all checkboxes are enabled (user can interact with them)
+        $checkbox.prop('disabled', false);
         
-        // If unchecked, add hidden field with value 0
-        if (!isChecked) {
+        if ($checkbox.is(':checked')) {
+            // Checked: Remove any hidden fields
+            $('input[type="hidden"][name="' + name + '"]').remove();
+        } else {
+            // Unchecked: Remove existing hidden fields first, then add one with value 0
+            $('input[type="hidden"][name="' + name + '"]').remove();
             $('<input>').attr({
                 type: 'hidden',
                 name: name,
                 value: '0'
             }).insertAfter($checkbox);
-            console.log('Added hidden field (value=0) for unchecked:', name);
-        } else {
-            console.log('Removed hidden field for checked:', name);
         }
-        // If checked, checkbox itself will send value 1, no hidden field needed
+    });
+    
+    // Handle checkbox changes - add/remove hidden fields (ALWAYS keep checkboxes ENABLED)
+    $('.privilege-checkbox').on('change', function() {
+        var $checkbox = $(this);
+        var name = $checkbox.attr('name');
+        var isChecked = $checkbox.is(':checked');
+        
+        // CRITICAL: Always keep checkbox enabled so user can interact with it
+        $checkbox.prop('disabled', false);
+        
+        // Remove any existing hidden field with same name
+        $('input[type="hidden"][name="' + name + '"]').remove();
+        
+        if (!isChecked) {
+            // Unchecked: Add hidden field with value 0 (will be used during form submit)
+            $('<input>').attr({
+                type: 'hidden',
+                name: name,
+                value: '0'
+            }).insertAfter($checkbox);
+            console.log('Checkbox unchecked - added hidden field (0), checkbox remains enabled:', name);
+        } else {
+            console.log('Checkbox checked - removed hidden field, checkbox enabled:', name);
+        }
     });
     
     // Handle form submission - DO NOT prevent default
@@ -386,26 +404,46 @@ $(document).ready(function() {
         console.log('Submitting form now...');
         console.log('========================================');
         
-        // Ensure unchecked checkboxes send value 0
-        // When checkbox is unchecked, it won't be in POST, so we need to add hidden field with value 0
+        // CRITICAL: Ensure unchecked checkboxes send value 0
+        // Temporarily disable unchecked checkboxes ONLY during form submission
+        // This prevents them from sending value 1, hidden field with 0 will be sent instead
         $('.privilege-checkbox').each(function() {
             var $checkbox = $(this);
             var name = $checkbox.attr('name');
-            if (name && !$checkbox.is(':checked')) {
-                // Remove any existing hidden field for this checkbox
+            if (name) {
+                // Remove ALL hidden fields with this name first
                 $('input[type="hidden"][name="' + name + '"]').remove();
-                // Add hidden field with value 0 for unchecked checkbox
-                $('<input>').attr({
-                    type: 'hidden',
-                    name: name,
-                    value: '0'
-                }).insertAfter($checkbox);
-                console.log('Added hidden field for unchecked checkbox:', name);
-            } else if (name && $checkbox.is(':checked')) {
-                // Remove hidden field if checkbox is checked (checkbox will send value 1)
-                $('input[type="hidden"][name="' + name + '"]').remove();
+                
+                if (!$checkbox.is(':checked')) {
+                    // For unchecked: Temporarily disable checkbox during submit only
+                    // Store that it was enabled so we can re-enable it later
+                    $checkbox.data('was-enabled', true);
+                    $checkbox.prop('disabled', true); // Disable only during submit
+                    
+                    // Ensure hidden field with 0 exists
+                    $('<input>').attr({
+                        type: 'hidden',
+                        name: name,
+                        value: '0'
+                    }).insertAfter($checkbox);
+                    console.log('Unchecked checkbox - temporarily disabled for submit, hidden field (0) will be sent:', name);
+                } else {
+                    // For checked: ensure checkbox is enabled and no hidden field
+                    $checkbox.prop('disabled', false);
+                    console.log('Checked checkbox - enabled, will send value 1:', name);
+                }
             }
         });
+        
+        // Re-enable all checkboxes after form submits (in case submission fails or is prevented)
+        setTimeout(function() {
+            $('.privilege-checkbox').each(function() {
+                if ($(this).data('was-enabled')) {
+                    $(this).prop('disabled', false);
+                    $(this).removeData('was-enabled');
+                }
+            });
+        }, 100);
         
         // Final check - log what will be submitted
         var finalFormData = form.serialize();
@@ -451,4 +489,5 @@ $(document).ready(function() {
         console.log('Form method:', form.attr('method') || 'GET (default)');
     }
 });
+</script>
 </script>

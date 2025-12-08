@@ -2083,7 +2083,7 @@ class Ion_auth_model extends CI_Model {
             foreach ($get_role as $k => $v) {
                 $check = $this->db->get_where('access_level', array('group_id' => $group_id, 'Module' => $value->id, 'link' => $v->Name))->row();
                 $module_info[$value->Name][$v->Name] = array($value->id, $v->id);
-                if ($check !== null) {
+                if ($check !== null && is_object($check) && isset($check->allow)) {
                     $array[$value->Name][$v->Name] = $check->allow;
                 } else {
                     $array[$value->Name][$v->Name] = 0;

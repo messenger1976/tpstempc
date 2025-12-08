@@ -389,9 +389,9 @@ $(document).ready(function() {
         console.log('========================================');
         
         // Set button state
-        var btn = $('#btn-save-privileges');
-        btn.prop('disabled', true);
-        btn.html('<i class="fa fa-spinner fa-spin"></i> Saving...');
+            var btn = $('#btn-save-privileges');
+            btn.prop('disabled', true);
+            btn.html('<i class="fa fa-spinner fa-spin"></i> Saving...');
         
         // Show saving message
         var savingMsg = $('<div class="alert alert-info" style="margin:15px 0;"><i class="fa fa-spinner fa-spin"></i> Saving permissions, please wait...</div>');
@@ -489,5 +489,4 @@ $(document).ready(function() {
         console.log('Form method:', form.attr('method') || 'GET (default)');
     }
 });
-</script>
 </script>

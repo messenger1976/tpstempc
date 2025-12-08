@@ -2086,7 +2086,20 @@ class Ion_auth_model extends CI_Model {
                 if ($check !== null && is_object($check) && isset($check->allow)) {
                     $array[$value->Name][$v->Name] = $check->allow;
                 } else {
-                    $array[$value->Name][$v->Name] = 0;
+                    // Default to 0, except for saving_account_list and Edit_saving_account which default to 1
+                    $default_value = 0;
+                    if ($value->id == 3 && ($v->Name == 'saving_account_list' || $v->Name == 'Edit_saving_account')) {
+                        $default_value = 1;
+                        // Auto-create access_level entry with allow=1 if it doesn't exist
+                        $insert_data = array(
+                            'group_id' => $group_id,
+                            'Module' => $value->id,
+                            'link' => $v->Name,
+                            'allow' => 1
+                        );
+                        $this->db->insert('access_level', $insert_data);
+                    }
+                    $array[$value->Name][$v->Name] = $default_value;
                 }
             }
         }

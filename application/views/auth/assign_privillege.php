@@ -247,20 +247,8 @@ else:
     <!-- Hidden field to ensure 'save' parameter is always sent -->
     <input type="hidden" name="save" value="1" />
     
-    <!-- Hidden fields for all checkboxes to ensure unchecked state is sent -->
-    <?php 
-    foreach ($privilege_list[1] as $key => $value): 
-        foreach ($value as $k => $v): 
-            $module_id = $privilege_list[1][$key][$k];
-            $field_name = 'module_' . $module_id[0] . '_' . $module_id[1];
-            // Add hidden field with value 0 - checked checkbox will override with value 1
-            // This ensures unchecked checkboxes send 0 instead of nothing
-    ?>
-        <input type="hidden" name="<?php echo $field_name; ?>" value="0" />
-    <?php 
-        endforeach; 
-    endforeach; 
-    ?>
+    <!-- Hidden fields will be added dynamically by JavaScript for unchecked checkboxes only -->
+    <!-- This prevents conflicts where both hidden field and checkbox send values -->
     
     <button type="submit" class="btn btn-primary btn-save" id="btn-save-privileges">
         <i class="fa fa-save"></i> <?php echo lang('privillege_btn_save'); ?>
@@ -405,32 +393,33 @@ $(document).ready(function() {
         console.log('========================================');
         
         // CRITICAL: Ensure unchecked checkboxes send value 0
-        // Temporarily disable unchecked checkboxes ONLY during form submission
-        // This prevents them from sending value 1, hidden field with 0 will be sent instead
+        // Strategy: Temporarily disable unchecked checkboxes during submit
+        // This prevents them from sending value 1, only hidden field with 0 will be sent
         $('.privilege-checkbox').each(function() {
             var $checkbox = $(this);
             var name = $checkbox.attr('name');
             if (name) {
-                // Remove ALL hidden fields with this name first
-                $('input[type="hidden"][name="' + name + '"]').remove();
-                
                 if (!$checkbox.is(':checked')) {
-                    // For unchecked: Temporarily disable checkbox during submit only
-                    // Store that it was enabled so we can re-enable it later
+                    // For unchecked: Temporarily disable checkbox during submit
+                    // This ensures only hidden field (value 0) is sent, not checkbox value
                     $checkbox.data('was-enabled', true);
-                    $checkbox.prop('disabled', true); // Disable only during submit
+                    $checkbox.prop('disabled', true);
                     
-                    // Ensure hidden field with 0 exists
-                    $('<input>').attr({
-                        type: 'hidden',
-                        name: name,
-                        value: '0'
-                    }).insertAfter($checkbox);
+                    // Ensure hidden field with 0 exists (should already exist from change handler)
+                    if (!$('input[type="hidden"][name="' + name + '"]').length) {
+                        $('<input>').attr({
+                            type: 'hidden',
+                            name: name,
+                            value: '0'
+                        }).insertAfter($checkbox);
+                    }
                     console.log('Unchecked checkbox - temporarily disabled for submit, hidden field (0) will be sent:', name);
                 } else {
-                    // For checked: ensure checkbox is enabled and no hidden field
+                    // For checked: Ensure checkbox is enabled and NO hidden field exists
                     $checkbox.prop('disabled', false);
-                    console.log('Checked checkbox - enabled, will send value 1:', name);
+                    // Remove any hidden field to prevent conflicts
+                    $('input[type="hidden"][name="' + name + '"]').remove();
+                    console.log('Checked checkbox - enabled, will send value 1 (no hidden field):', name);
                 }
             }
         });

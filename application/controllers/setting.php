@@ -206,11 +206,19 @@ class Setting extends CI_Controller {
             $id = decode_id($id);
         }
 
-        if ($this->input->post('minimum_amount')) {
-            $_POST['minimum_amount'] = str_replace(',', '', $_POST['minimum_amount']);
-            $_POST['max_withdrawal'] = str_replace(',', '', $_POST['max_withdrawal']);
-            $_POST['interest_rate'] = str_replace(',', '', $_POST['interest_rate']);
-            $_POST['min_deposit'] = str_replace(',', '', $_POST['min_deposit']);
+        // Handle comma-formatted monetary values before validation
+        // Remove commas from all monetary fields if they exist in POST
+        if ($this->input->post('minimum_amount') !== FALSE) {
+            $_POST['minimum_amount'] = str_replace(',', '', $this->input->post('minimum_amount'));
+        }
+        if ($this->input->post('max_withdrawal') !== FALSE) {
+            $_POST['max_withdrawal'] = str_replace(',', '', $this->input->post('max_withdrawal'));
+        }
+        if ($this->input->post('interest_rate') !== FALSE) {
+            $_POST['interest_rate'] = str_replace(',', '', $this->input->post('interest_rate'));
+        }
+        if ($this->input->post('min_deposit') !== FALSE) {
+            $_POST['min_deposit'] = str_replace(',', '', $this->input->post('min_deposit'));
         }
         $this->form_validation->set_rules('account_name', lang('account_name'), 'xss_clean|required');
         $this->form_validation->set_rules('account_description', lang('account_description'), 'xss_clean|required');

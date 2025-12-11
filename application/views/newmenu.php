@@ -266,6 +266,9 @@ $activefunction = ($this->uri->segment(3)) ? $this->uri->segment(3) : 'X';
                         <?php if (has_role(9, 'Manage_loan_product')) { ?>
                             <li class="<?php echo ($activefunction == 'loan_product_list' ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/setting/loan_product_list'); ?>"><?php echo lang('loan_product_list'); ?></a></li>
                         <?php } ?>
+                        <?php if (has_role(9, 'Manage_payment_method') || $this->ion_auth->is_admin()) { ?>
+                            <li class="<?php echo ($activefunction == 'payment_method_list' ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/setting/payment_method_list'); ?>"><?php echo lang('payment_method_list'); ?></a></li>
+                        <?php } ?>
                         
                             <li class="<?php echo ($activefunction == 'mobile_notification' ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/setting/mobile_notification'); ?>"><?php echo 'Mobile Notification'; ?></a></li>
                         

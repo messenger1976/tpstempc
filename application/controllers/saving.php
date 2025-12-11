@@ -417,7 +417,7 @@ class Saving extends CI_Controller {
             $PID_initial = explode('-', trim($this->input->post('pid')));
             $member_id_initial = explode('-', trim($this->input->post('member_id')));
             $PID = $PID_initial[0];
-            $member_id = $member_id_initial[0];
+            $member_id = $member_id_initial[0].'-'.$member_id_initial[1];
             $posting_date = date("Y-m-d",strtotime($this->input->post('posting_date')));
 
             $account_type = $this->input->post('saving_account');
@@ -740,21 +740,44 @@ class Saving extends CI_Controller {
     
 
     function search_account() {
-
+        // Set JSON header to ensure proper content type
+        header('Content-Type: application/json');
+        
         $value = $this->input->post('value');
         $column = $this->input->post('column');
-        $explode = explode('-', $value);
-        $value = $explode[0];
+        
+        // Initialize status array
+        $status = array();
+        
+        // Validate input
+        if (empty($value) || empty($column)) {
+            $status['success'] = 'N';
+            $status['error'] = lang('invalid_account');
+            echo json_encode($status);
+            return;
+        }
+        
+        // Handle autocomplete format: "2005-00173 - BRENDALOU SALES" or just "2005-00173"
+        if (strpos($value, ' - ') !== false) {
+            $explode = explode(' - ', $value);
+            $value = trim($explode[0]);
+        } else {
+            $explode = explode('-', $value);
+            $value = trim($explode[0]);
+        }
+        
         $account_pin = null;
         $error = '';
         if ($column == 'PID') {
             $account_pin = $value;
             $error = lang('invalid_account');
         }
+        
         //$pid is the account number; query account info
         $account_info = $this->finance_model->saving_account_balance($account_pin);
-        $status = array();
-        if (count($account_info) == 1) {
+        
+        // Check if account_info is valid (returns object or null)
+        if (!empty($account_info) && is_object($account_info)) {
             $status['accountinfo'] = $account_info;
             $member = $this->member_model->member_basic_info(null, $account_info->RFID, $account_info->member_id)->row();
 
@@ -770,7 +793,6 @@ class Saving extends CI_Controller {
                 echo json_encode($status);
             }
         } else {
-            $error = lang('invalid_account');
             $status['success'] = 'N';
             $status['error'] = $error;
             echo json_encode($status);

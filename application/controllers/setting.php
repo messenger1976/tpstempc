@@ -777,6 +777,203 @@ class Setting extends CI_Controller {
         $this->load->view('template', $this->data);
     }
 
+    function payment_method_list() {
+        // Allow admin users to access without permission check
+        if (!has_role(9, 'Manage_payment_method') && !$this->ion_auth->is_admin()) {
+            $this->session->set_flashdata('warning', lang('access_denied'));
+            redirect('dashboard', 'refresh');
+            return;
+        }
+        
+        $this->data['title'] = lang('payment_method_list');
+        $this->data['payment_method_list'] = $this->setting_model->payment_method_list()->result();
+        $this->data['content'] = 'setting/payment_method_list';
+        $this->load->view('template', $this->data);
+    }
+
+    function payment_method_create($id = null) {
+        // Allow admin users to access without permission check
+        if (!has_role(9, 'Manage_payment_method') && !$this->ion_auth->is_admin()) {
+            $this->session->set_flashdata('warning', lang('access_denied'));
+            redirect('dashboard', 'refresh');
+            return;
+        }
+        
+        $this->data['id'] = $id;
+        if (!is_null($id)) {
+            $id = decode_id($id);
+        }
+        if (is_null($id)) {
+            $this->data['title'] = lang('payment_method_create');
+        } else {
+            $this->data['title'] = lang('payment_method_edit');
+        }
+
+        $this->form_validation->set_rules('name', lang('payment_method_name'), 'xss_clean|required');
+        $this->form_validation->set_rules('description', lang('payment_method_description'), 'xss_clean');
+        $this->form_validation->set_rules('gl_account_code', lang('payment_method_gl_account'), 'xss_clean');
+
+        if ($this->form_validation->run() == TRUE) {
+            $payment_method_info = array(
+                'name' => trim($this->input->post('name')),
+                'description' => trim($this->input->post('description')),
+                'gl_account_code' => trim($this->input->post('gl_account_code')),
+                'status' => 1, // Default to active
+                'PIN' => current_user()->PIN
+            );
+
+            $error = 0;
+            // Check if payment method name already exists
+            if ($this->setting_model->is_payment_method_exist(trim($this->input->post('name')), $id)) {
+                $error = 1;
+            }
+
+            if ($error == 0) {
+                $create = $this->setting_model->payment_method_create($payment_method_info, $id);
+                if ($create) {
+                    $this->session->set_flashdata('message', lang('payment_method_success'));
+                    redirect(current_lang() . '/setting/payment_method_list', 'refresh');
+                } else {
+                    $this->data['warning'] = lang('payment_method_fail');
+                }
+            } else {
+                $this->data['warning'] = lang('payment_method_exist');
+            }
+        }
+
+        if (!is_null($id)) {
+            $this->data['payment_method'] = $this->setting_model->payment_method_list($id)->row();
+        }
+
+        // Get account list and build hierarchical structure with indentation
+        $account_list_raw = $this->finance_model->account_chart_by_accounttype(array(10, 40));
+        
+        // Build hierarchical tree structure with indentation based on account number
+        $account_tree = array();
+        foreach ($account_list_raw as $type_key => $type_data) {
+            $accounts = $type_data['data'];
+            
+            // Determine level based on account number structure (ladderize)
+            foreach ($accounts as $account) {
+                // Convert account to string and pad if needed
+                $account_str = str_pad((string)$account->account, 7, '0', STR_PAD_LEFT);
+                $level = 0;
+                
+                // Level detection based on trailing zeros or account structure
+                // Accounts ending in 0000 = Level 0 (Main)
+                // Accounts ending in 00 = Level 1 (Sub)
+                // Accounts ending in 0 = Level 2 (Detail)
+                // Other accounts = Level 3 (Sub-detail)
+                if (strlen($account_str) >= 4) {
+                    $last_4 = substr($account_str, -4);
+                    $last_2 = substr($account_str, -2);
+                    $last_1 = substr($account_str, -1);
+                    
+                    if ($last_4 == '0000') {
+                        $level = 0; // Main account
+                    } else if ($last_2 == '00') {
+                        $level = 1; // Sub-account
+                    } else if ($last_1 == '0') {
+                        $level = 2; // Detail account
+                    } else {
+                        $level = 3; // Sub-detail account
+                    }
+                }
+                // Ensure display_level is set
+                $account->display_level = (int)$level;
+            }
+            
+            // Sort by account number to maintain hierarchy
+            usort($accounts, function($a, $b) {
+                return (int)$a->account - (int)$b->account;
+            });
+            
+            $account_tree[$type_key] = array(
+                'info' => $type_data['info'],
+                'data' => $accounts
+            );
+        }
+        
+        $this->data['account_list'] = $account_tree;
+
+        $this->data['content'] = 'setting/payment_method_create';
+        $this->load->view('template', $this->data);
+    }
+
+    function payment_method_delete($id) {
+        // Allow admin users to access without permission check
+        if (!has_role(9, 'Manage_payment_method') && !$this->ion_auth->is_admin()) {
+            $this->session->set_flashdata('warning', lang('access_denied'));
+            redirect('dashboard', 'refresh');
+            return;
+        }
+        
+        if (empty($id)) {
+            $this->session->set_flashdata('warning', lang('payment_method_invalid_id'));
+            redirect(current_lang() . '/setting/payment_method_list', 'refresh');
+            return;
+        }
+        
+        $id = decode_id($id);
+        $id = (int) $id;
+
+        if (!$id || $id <= 0) {
+            $this->session->set_flashdata('warning', lang('payment_method_invalid_id'));
+            redirect(current_lang() . '/setting/payment_method_list', 'refresh');
+            return;
+        }
+
+        // Check if record exists before deleting
+        $payment_method = $this->setting_model->payment_method_list($id)->row();
+        if (!$payment_method) {
+            $this->session->set_flashdata('warning', lang('payment_method_not_found'));
+            redirect(current_lang() . '/setting/payment_method_list', 'refresh');
+            return;
+        }
+
+        $result = $this->setting_model->payment_method_delete($id);
+        if ($result) {
+            $this->session->set_flashdata('message', lang('payment_method_delete_success'));
+        } else {
+            $this->session->set_flashdata('warning', lang('payment_method_delete_fail'));
+        }
+        
+        redirect(current_lang() . '/setting/payment_method_list', 'refresh');
+    }
+
+    function payment_method_toggle_status($id) {
+        // Allow admin users to access without permission check
+        if (!has_role(9, 'Manage_payment_method') && !$this->ion_auth->is_admin()) {
+            echo json_encode(array('success' => false, 'message' => lang('access_denied')));
+            return;
+        }
+        
+        if (!is_null($id)) {
+            $id = decode_id($id);
+            $id = (int) $id;
+
+            if (!$id) {
+                echo json_encode(array('success' => false, 'message' => lang('payment_method_invalid_id')));
+                return;
+            }
+
+            $result = $this->setting_model->payment_method_toggle_status($id);
+            if ($result) {
+                $payment_method = $this->setting_model->payment_method_list($id)->row();
+                echo json_encode(array(
+                    'success' => true, 
+                    'message' => lang('payment_method_status_updated'),
+                    'status' => $payment_method->status,
+                    'status_text' => $payment_method->status == 1 ? lang('payment_method_active') : lang('payment_method_inactive')
+                ));
+            } else {
+                echo json_encode(array('success' => false, 'message' => lang('payment_method_status_update_fail')));
+            }
+        } else {
+            echo json_encode(array('success' => false, 'message' => lang('payment_method_invalid_id')));
+        }
+    }
+
 }
 
 ?>

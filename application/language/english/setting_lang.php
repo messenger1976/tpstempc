@@ -97,6 +97,36 @@ $lang['loanproduct_add_fail']='Fail to save loan product information';
 $lang['loanproduct_add_success']='Loan Product Information saved successfully';
 $lang['loanproduct_penalt_percentage'] = 'Penalty Percentage (%)';
 
+// Payment Method
+$lang['payment_method_list'] = 'Payment Method List';
+$lang['payment_method_create'] = 'Create Payment Method';
+$lang['payment_method_edit'] = 'Edit Payment Method';
+$lang['payment_method_name'] = 'Payment Method Name';
+$lang['payment_method_description'] = 'Description';
+$lang['payment_method_save_btn'] = 'Save Information';
+$lang['payment_method_success'] = 'Payment method saved successfully';
+$lang['payment_method_fail'] = 'Failed to save payment method';
+$lang['payment_method_exist'] = 'Payment method name already exists';
+$lang['payment_method_delete_success'] = 'Payment method deleted successfully';
+$lang['payment_method_delete_fail'] = 'Failed to delete payment method';
+$lang['payment_method_delete_confirm'] = 'Are you sure you want to delete this payment method?';
+$lang['payment_method_delete_confirm_title'] = 'Are you sure?';
+$lang['payment_method_delete_confirm_text'] = 'You want to delete payment method';
+$lang['payment_method_yes_delete'] = 'Yes, delete it!';
+$lang['payment_method_invalid_id'] = 'Invalid payment method ID';
+$lang['payment_method_no_data'] = 'No payment methods found';
+$lang['payment_method_gl_account'] = 'GL Account Code';
+$lang['payment_method_status'] = 'Status';
+$lang['payment_method_active'] = 'Active';
+$lang['payment_method_inactive'] = 'Inactive';
+$lang['payment_method_change_status'] = 'Change Status';
+$lang['payment_method_change_status_confirm'] = 'Do you want to change the status of payment method';
+$lang['payment_method_yes_change'] = 'Yes, change it!';
+$lang['payment_method_status_updated'] = 'Status Updated!';
+$lang['payment_method_status_update_fail'] = 'Failed to update status';
+$lang['payment_method_error'] = 'Error';
+$lang['payment_method_not_found'] = 'Payment method not found';
+
 $lang['app_name'] = 'COOP';
 
 ?>

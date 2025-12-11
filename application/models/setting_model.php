@@ -296,6 +296,66 @@ $this->db->where('PIN',  current_user()->PIN);
         return $this->db->get('loan_product');
     }
 
+    function payment_method_list($id = null) {
+        $pin = current_user()->PIN;
+        $this->db->select('pm.*, ac.name as gl_account_name, IFNULL(pm.status, 1) as status', FALSE);
+        $this->db->from('paymentmenthod pm');
+        $this->db->join('account_chart ac', 'pm.gl_account_code = ac.account AND ac.PIN = ' . $this->db->escape($pin), 'left');
+        $this->db->where('pm.PIN', $pin);
+        if (!is_null($id)) {
+            $this->db->where('pm.id', $id);
+        }
+        $this->db->order_by('pm.name', 'ASC');
+        return $this->db->get();
+    }
+
+    function payment_method_create($data, $id = null) {
+        if (is_null($id)) {
+            return $this->db->insert('paymentmenthod', $data);
+        } else {
+            return $this->db->update('paymentmenthod', $data, array('id' => $id));
+        }
+    }
+
+    function payment_method_delete($id) {
+        $pin = current_user()->PIN;
+        $this->db->where('id', $id);
+        $this->db->where('PIN', $pin);
+        $result = $this->db->delete('paymentmenthod');
+        return $result;
+    }
+
+    function payment_method_toggle_status($id) {
+        $pin = current_user()->PIN;
+        // Get current status
+        $this->db->where('id', $id);
+        $this->db->where('PIN', $pin);
+        $current = $this->db->get('paymentmenthod')->row();
+        
+        if ($current) {
+            $new_status = $current->status == 1 ? 0 : 1;
+            $this->db->where('id', $id);
+            $this->db->where('PIN', $pin);
+            return $this->db->update('paymentmenthod', array('status' => $new_status));
+        }
+        return FALSE;
+    }
+
+    function is_payment_method_exist($name, $exclude_id = null) {
+        $pin = current_user()->PIN;
+        $this->db->where('name', $name);
+        $this->db->where('PIN', $pin);
+        if (!is_null($exclude_id)) {
+            $this->db->where('id !=', $exclude_id);
+        }
+        $check = $this->db->get('paymentmenthod')->row();
+
+        if (!empty($check)) {
+            return TRUE;
+        }
+        return FALSE;
+    }
+
 }
 
 ?>

@@ -519,7 +519,26 @@ jQuery.autocomplete = function(input, options) {
                     column: options.column
                 },                              
                 success: function(data){
-                    var json = JSON.parse(data);
+                    // Trim whitespace that might cause JSON parse errors
+                    data = data.trim();
+                    
+                    // Check if response is empty or not valid JSON
+                    if (!data || data.length === 0) {
+                        $('#member_info').html('<div style="color:red;">Error: Invalid response from server. Please try again.</div>');
+                        return;
+                    }
+                    
+                    // Try to parse JSON, handle errors gracefully
+                    var json;
+                    try {
+                        json = JSON.parse(data);
+                    } catch (e) {
+                        console.error('JSON Parse Error:', e);
+                        console.error('Response data:', data);
+                        $('#member_info').html('<div style="color:red;">Error: Invalid response from server. Please try again.</div>');
+                        return;
+                    }
+                    
                     if(json['success'].toString() == 'N'){
                         $('#member_info').html('<div style="color:red;">'+json['error'].toString()+'</div>');
                     }else{
@@ -545,7 +564,9 @@ jQuery.autocomplete = function(input, options) {
                         
                 },
                 error:function(xhr,textStatus,errorThrown){
-                    alert(errorThrown); 
+                    console.error('AJAX Error:', textStatus, errorThrown);
+                    console.error('Response:', xhr.responseText);
+                    $('#member_info').html('<div style="color:red;">Error: Unable to connect to server. Please try again.</div>');
                 }
             });
           

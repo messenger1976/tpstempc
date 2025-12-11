@@ -32,7 +32,22 @@ $account_type_filter = isset($account_type_filter) ? $account_type_filter : (iss
         <input type="submit" value="<?php echo lang('button_search'); ?>" class="btn btn-primary"/>
     </div>
     <div class="col-lg-4" style="text-align: right;">
-        <?php echo anchor(current_lang().'/saving/create_saving_account/', lang('create_saving_account'), 'class="btn btn-primary"'); ?>
+        <?php 
+        // Build export URL with current search parameters
+        $export_url = current_lang().'/saving/saving_account_list_export';
+        $export_params = array();
+        if (!empty($search_key)) {
+            $export_params['key'] = $search_key;
+        }
+        if (!empty($account_type_filter) && $account_type_filter != 'all') {
+            $export_params['account_type_filter'] = $account_type_filter;
+        }
+        if (!empty($export_params)) {
+            $export_url .= '?' . http_build_query($export_params);
+        }
+        echo anchor($export_url, 'Export to Excel', 'class="btn btn-success" style="margin-right: 10px;"');
+        echo anchor(current_lang().'/saving/create_saving_account/', lang('create_saving_account'), 'class="btn btn-primary"'); 
+        ?>
     </div>
 </div>
 

@@ -52,7 +52,7 @@ $account_type_filter = isset($account_type_filter) ? $account_type_filter : (iss
     <table class="table table-bordered table-striped">
         <thead>
             <tr>
-                <th><?php echo lang('account_number'); ?></th>
+                <!--<th><?php echo lang('account_number'); ?></th>-->
                 <th><?php echo lang('member_member_id'); ?></th>
                 <th><?php echo lang('member_fullname'); ?></th>
                 <th><?php echo lang('member_old_account_no'); ?></th>
@@ -66,7 +66,7 @@ $account_type_filter = isset($account_type_filter) ? $account_type_filter : (iss
             <?php if (isset($saving_accounts) && count($saving_accounts) > 0) { ?>
                 <?php foreach ($saving_accounts as $key => $value) { ?>
                     <tr>
-                        <td><?php echo htmlspecialchars($value->account, ENT_QUOTES, 'UTF-8'); ?></td>
+                        <!--<td><?php echo htmlspecialchars($value->account, ENT_QUOTES, 'UTF-8'); ?></td>-->
                         <td><?php echo htmlspecialchars($value->member_id_display, ENT_QUOTES, 'UTF-8'); ?></td>
                         <td>
                             <?php 

@@ -213,11 +213,11 @@ FROM member_registrationfee INNER JOIN members ON member_registrationfee.member_
 
     function account_saving_balance($fromdate, $todate, $account_type = '') {
         $pin = current_user()->PIN;
-        $sql = "SELECT * FROM members_account WHERE PIN='$pin' AND createdon >= '$fromdate 00:00:00' AND createdon <= '$todate 23:59:59' ";
+        $sql = "SELECT members_account.*, members.member_id as members_member_id FROM members_account LEFT JOIN members ON members_account.RFID = members.PID AND members.PIN = '$pin' WHERE members_account.PIN='$pin' AND members_account.createdon >= '$fromdate 00:00:00' AND members_account.createdon <= '$todate 23:59:59' ";
         if ($account_type != '') {
-            $sql.= " AND account_cat='$account_type' ";
+            $sql.= " AND members_account.account_cat='$account_type' ";
         }
-        $sql.=" ORDER BY ABS(member_id) ASC";
+        $sql.=" ORDER BY ABS(members_account.member_id) ASC";
 
         return $this->db->query($sql)->result();
     }

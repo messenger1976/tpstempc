@@ -291,8 +291,8 @@ class Report_Saving extends CI_Controller {
             
             // Write data to cells
             $sheet->setCellValue('A' . $row, $i++);
-            $sheet->setCellValue('B' . $row, $value->account);
-            $sheet->setCellValue('C' . $row, $value->member_id);
+            $sheet->setCellValue('B' . $row, !empty($value->old_members_acct) ? $value->old_members_acct : $value->account);
+            $sheet->setCellValue('C' . $row, !empty($value->members_member_id) ? $value->members_member_id : $value->member_id);
             $sheet->setCellValue('D' . $row, $account_name);
             $sheet->setCellValue('E' . $row, $account->name);
             $sheet->setCellValue('F' . $row, number_format($value->balance, 2));

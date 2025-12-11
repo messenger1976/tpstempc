@@ -86,16 +86,16 @@ $account_info = isset($account_info) ? $account_info : null;
                     <?php echo htmlspecialchars($account_info->account_type_name ? $account_info->account_type_name : '-', ENT_QUOTES, 'UTF-8'); ?>
                 </div>
                 <div style="border-bottom:1px dashed #ccc; padding:5px 0;">
-                    <strong><?php echo lang('current_balance'); ?>:</strong> 
+                    <strong><?php echo lang('member_current_balance'); ?>:</strong> 
                     <?php echo number_format($account_info->balance, 2, '.', ','); ?>
                 </div>
                 <div style="border-bottom:1px dashed #ccc; padding:5px 0;">
-                    <strong><?php echo lang('virtual_balance'); ?>:</strong> 
+                    <strong><?php echo lang('member_virtual_balance'); ?>:</strong> 
                     <?php echo number_format($account_info->virtual_balance, 2, '.', ','); ?>
                 </div>
                 <?php if ($account_info->createdon) { ?>
                 <div style="border-bottom:1px dashed #ccc; padding:5px 0;">
-                    <strong><?php echo lang('created_date'); ?>:</strong> 
+                    <strong><?php echo lang('member_created_date'); ?>:</strong> 
                     <?php echo date('Y-m-d', strtotime($account_info->createdon)); ?>
                 </div>
                 <?php } ?>

@@ -185,6 +185,7 @@ class Saving extends CI_Controller {
         if ($this->form_validation->run() == TRUE) {
             $update_data = array(
                 'account' => trim($this->input->post('account')),
+                'old_members_acct' => trim($this->input->post('account')),
                 'member_id' => trim($this->input->post('member_id')),
                 'account_cat' => trim($this->input->post('account_cat')),
                 'balance' => trim($this->input->post('balance')),

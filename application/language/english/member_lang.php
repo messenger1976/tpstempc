@@ -38,6 +38,10 @@ $lang['member_registration_status_label'] = 'Form Registration Status';
 $lang['member_registration_status']=array(1=>'INCOMPLETE',2=>'PARTIAL COMPLETED','3'=>'COMPLETED');
 
 //edit
+$lang['member_name'] = 'Member Name';
+$lang['member_current_balance'] = 'Current Balance';
+$lang['member_virtual_balance'] = 'Maintaining Balance';
+$lang['member_created_date'] = 'Created Date';
 $lang['member_edit_btn'] = 'Edit Information';
 $lang['member_edited_fail'] = 'Editing fail, Please try again';
 $lang['member_edited_success'] = 'Member Information edited successfully';

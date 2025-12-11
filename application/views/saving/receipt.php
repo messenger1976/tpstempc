@@ -56,16 +56,30 @@
     </table>
     <div style="height: 10px; border-top: 1px solid #ccc;"></div>
     <table id="receipt_after_title">
-       <?php //$deposited_to = client_user_info($trans->FROM_TO_PIN, TRUE); ?>
+       <?php 
+       // Get account info once to reuse
+       $account_info = $this->finance_model->saving_account_balance($trans->account);
+       $account_name = $this->finance_model->saving_account_name($trans->account);
+       // Get member_id if account belongs to a member
+       $member_id = '-';
+       if ($account_info && $account_info->tablename == 'members' && !empty($account_info->RFID)) {
+           $this->load->model('member_model');
+           $member_query = $this->member_model->member_basic_info(null, $account_info->RFID, null);
+           $member = $member_query->row();
+           $member_id = ($member && isset($member->member_id) ? $member->member_id : '-');
+       }
+       ?>
         <tr>
             <td>Date <br/> <b> <?php $ex = explode(' ', $trans->trans_date); echo format_date($ex[0], FALSE) ; ?></b></td>
             <td>&nbsp;</td>
         </tr>
         <tr>
-            <td>Account Number<b> <?php echo $trans->account ; ?></b></td>
-            <td>Account Holder's Name<b>   <?php
-            $account_name = $this->finance_model->saving_account_name($trans->account);
-          echo $account_name;  ?></b></td>
+            <td>Account Number<b> <?php echo (!empty($account_info->old_members_acct) ? $account_info->old_members_acct : $trans->account); ?></b></td>
+            <td>Account Holder's Name<b>   <?php echo $account_name; ?></b></td>
+        </tr>
+        <tr>
+            <td>Member ID<b> <?php echo $member_id; ?></b></td>
+            <td>&nbsp;</td>
         </tr>
         <tr>
             <td>Deposit/Withdrawal<br/><b> <?php echo ($trans->trans_type == 'CR' ? lang('CR'): lang('DR')) ; ?></b></td>
@@ -94,7 +108,7 @@
 </div>
 
 <div style="margin: auto; text-align: center; margin-top: 20px;">
-            <?php echo anchor(current_lang().'/saving/print_receipt/'.$trans->receipt,  lang('print_receipt'),'class="btn btn-primary"'); ?>
+            <?php echo anchor(current_lang().'/saving/print_receipt/'.$trans->receipt,  lang('print_receipt'),'class="btn btn-primary" target="_blank"'); ?>
     &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;
     
             <?php 

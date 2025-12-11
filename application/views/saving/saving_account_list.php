@@ -74,7 +74,7 @@ $account_type_filter = isset($account_type_filter) ? $account_type_filter : (iss
                 <th><?php echo lang('account_type_name'); ?></th>
                 <th style="text-align: right; width: 120px;"><?php echo lang('balance'); ?></th>
                 <th style="text-align: right; width: 120px;"><?php echo lang('virtual_balance'); ?></th>
-                <th style="text-align: center; width: 100px;"><?php echo lang('index_action_th'); ?></th>
+                <th style="text-align: center; width: 200px;"><?php echo lang('index_action_th'); ?></th>
             </tr>
         </thead>
         <tbody>
@@ -109,8 +109,26 @@ $account_type_filter = isset($account_type_filter) ? $account_type_filter : (iss
                         <td><?php echo htmlspecialchars($value->account_type_name_display ? $value->account_type_name_display : '-', ENT_QUOTES, 'UTF-8'); ?></td>
                         <td style="text-align: right;"><?php echo number_format($value->balance, 2, '.', ','); ?></td>
                         <td style="text-align: right;"><?php echo number_format($value->virtual_balance, 2, '.', ','); ?></td>
-                        <td style="text-align: center;">
-                            <?php echo anchor(current_lang() . "/saving/edit_saving_account/" . encode_id($value->id), ' <i class="fa fa-edit"></i> ' . lang('button_edit'), 'class="btn btn-success btn-xs btn-outline"'); ?>
+                        <td style="text-align: center; white-space: nowrap;">
+                            <?php 
+                            // Find the most recent report for saving account list (link=1) with matching account type
+                            $this->db->where('PIN', current_user()->PIN);
+                            $this->db->where('link', 1);
+                            if (!empty($value->account_cat)) {
+                                $this->db->where('account_type', $value->account_cat);
+                            }
+                            $this->db->order_by('id', 'DESC');
+                            $this->db->limit(1);
+                            $report = $this->db->get('report_table_saving')->row();
+                            
+                            if ($report && !empty($value->account)) {
+                                // Use the same URL structure as ledger button in account_list_balance.php
+                                // Format: /report_saving/new_saving_account_statement_view/{link_cat}/{id}/{encoded_account}
+                                $ledger_url = current_lang() . "/report_saving/new_saving_account_statement_view/1/" . encode_id($report->id) . "/" . encode_id($value->account);
+                                echo anchor($ledger_url, ' <i class="fa fa-th-list"></i> Ledger', 'class="btn btn-info btn-xs btn-outline" target="_blank" style="margin-right: 5px;"');
+                            }
+                            echo anchor(current_lang() . "/saving/edit_saving_account/" . encode_id($value->id), ' <i class="fa fa-edit"></i> ' . lang('button_edit'), 'class="btn btn-success btn-xs btn-outline"'); 
+                            ?>
                         </td>
                     </tr>
                 <?php } ?>

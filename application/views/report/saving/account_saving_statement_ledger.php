@@ -33,7 +33,7 @@
                     }
                 </style>
                 <div style="margin-left: 100px; margin-bottom: 20px;">
-                    <strong>Account Number : </strong> <?php echo $account; ?><br/>
+                    <strong>Account Number : </strong> <?php echo !empty($account_info) && !empty($account_info->old_members_acct) ? htmlspecialchars($account_info->old_members_acct, ENT_QUOTES, 'UTF-8') : htmlspecialchars($account, ENT_QUOTES, 'UTF-8'); ?><br/>
                     <strong>Account Name : </strong> <?php echo $this->finance_model->saving_account_name($account); ?><br/>
                 </div>
                 <div class="table-responsive" style="overflow: auto;">
@@ -203,9 +203,12 @@ $(document).ready(function(){
                     
                 </div>
                 <div style="text-align: center;  padding-top: 30px;">
-                <a href="#"  onclick="setTimeout(function(){var ww = window.open(window.location, '_self'); ww.close(); }, 500);" class="btn btn-danger">Close</a>
-                    &nbsp;
-                    <!--<a href="<?php echo site_url(current_lang() . '/report_saving/saving_account_report_title/' . $link_cat . '/' . $id); ?>" class="btn btn-primary">Edit</a>-->
+                    <a href="<?php echo site_url(current_lang() . '/report_saving/new_saving_account_statement_print/' . $link_cat . '/' . $id . '/' . encode_id($account)); ?>" class="btn btn-primary">Print</a>
+                    &nbsp; &nbsp; &nbsp; &nbsp;
+                    <a href="<?php echo site_url(current_lang() . '/report_saving/new_saving_account_statement_export/' . $link_cat . '/' . $id . '/' . encode_id($account)); ?>" class="btn btn-success">Export to Excel</a>
+                    &nbsp; &nbsp; &nbsp; &nbsp;
+                    <a href="#"  onclick="setTimeout(function(){var ww = window.open(window.location, '_self'); ww.close(); }, 500);" class="btn btn-danger">Close</a>
+                    &nbsp; &nbsp; &nbsp; &nbsp;
                     <?php echo anchor('#',  'Process Balances','class="btn btn-warning" id="btnprocessbalances"'); ?>
                 </div>
             </div>

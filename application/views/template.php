@@ -9,7 +9,7 @@
         <title>TAPSTEMCO |  <?php echo (isset ($title) ? $title : $current_title); ?></title>
 
         <link href="<?php echo base_url(); ?>media/css/bootstrap.min.css" rel="stylesheet">
-        <link href="<?php echo base_url(); ?>media/font-awesome/css/font-awesome.css" rel="stylesheet">
+        <link href="<?php echo base_url(); ?>assets/font-awesome/css/font-awesome.css?v=4.7.0" rel="stylesheet">
 
         <!-- Morris -->
         <link href="<?php echo base_url(); ?>media/css/plugins/morris/morris-0.4.3.min.css" rel="stylesheet">
@@ -24,46 +24,6 @@
  
         <!-- Sweet Alert -->
         <link href="<?php echo base_url(); ?>media/css/plugins/sweetalert/sweetalert.css" rel="stylesheet">
-        
-          <!-- Mainly scripts -->
-        <script src="<?php echo base_url(); ?>media/js/jquery-1.10.2.js"></script>
-        <script src="<?php echo base_url(); ?>media/js/bootstrap.min.js"></script>
-        <script src="<?php echo base_url(); ?>media/js/plugins/metisMenu/jquery.metisMenu.js"></script>
-        <script src="<?php echo base_url(); ?>media/js/plugins/slimscroll/jquery.slimscroll.min.js"></script>
-
-        <!-- Flot -->
-       <script src="<?php echo base_url(); ?>media/js/plugins/flot/jquery.flot.js"></script>
-        <script src="<?php echo base_url(); ?>media/js/plugins/flot/jquery.flot.tooltip.min.js"></script>
-        <script src="<?php echo base_url(); ?>media/js/plugins/flot/jquery.flot.spline.js"></script>
-        <script src="<?php echo base_url(); ?>media/js/plugins/flot/jquery.flot.resize.js"></script>
-        <script src="<?php echo base_url(); ?>media/js/plugins/flot/jquery.flot.pie.js"></script>
-
-        <!-- Peity -->
-        <script src="<?php echo base_url(); ?>media/js/plugins/peity/jquery.peity.min.js"></script>
-        <script src="<?php echo base_url(); ?>media/js/demo/peity-demo.js"></script>
-
-        <!-- Custom and plugin javascript -->
-       <script src="<?php echo base_url(); ?>media/js/inspinia.js"></script> 
-        <!--<script src="<?php //echo base_url(); ?>media/js/plugins/pace/pace.min.js"></script>-->
-
-        <!-- jQuery UI -->
-        <script src="<?php echo base_url(); ?>media/js/plugins/jquery-ui/jquery-ui.min.js"></script>
-
-        <!-- GITTER -->
-        <script src="<?php echo base_url(); ?>media/js/plugins/gritter/jquery.gritter.min.js"></script>
-
-        <!-- EayPIE -->
-        <script src="<?php echo base_url(); ?>media/js/plugins/easypiechart/jquery.easypiechart.js"></script>
-
-        <!-- Sparkline -->
-        <script src="<?php echo base_url(); ?>media/js/plugins/sparkline/jquery.sparkline.min.js"></script>
-
-       
-        <!-- ChartJS -->
-        <script src="<?php echo base_url(); ?>media/js/plugins/chartJs/Chart.min.js"></script>
-        
-        <!-- Sweet alert -->
-        <script src="<?php echo base_url(); ?>media/js/plugins/sweetalert/sweetalert.min.js"></script>
 
  <style type="text/css">
         div#member_info img{
@@ -309,6 +269,46 @@
 
             });*/
         </script>
+        
+        <!-- Mainly scripts -->
+        <script src="<?php echo base_url(); ?>media/js/jquery-1.10.2.js"></script>
+        <script src="<?php echo base_url(); ?>media/js/bootstrap.min.js"></script>
+        <script src="<?php echo base_url(); ?>media/js/plugins/metisMenu/jquery.metisMenu.js"></script>
+        <script src="<?php echo base_url(); ?>media/js/plugins/slimscroll/jquery.slimscroll.min.js"></script>
+
+        <!-- Flot -->
+        <script src="<?php echo base_url(); ?>media/js/plugins/flot/jquery.flot.js"></script>
+        <script src="<?php echo base_url(); ?>media/js/plugins/flot/jquery.flot.tooltip.min.js"></script>
+        <script src="<?php echo base_url(); ?>media/js/plugins/flot/jquery.flot.spline.js"></script>
+        <script src="<?php echo base_url(); ?>media/js/plugins/flot/jquery.flot.resize.js"></script>
+        <script src="<?php echo base_url(); ?>media/js/plugins/flot/jquery.flot.pie.js"></script>
+
+        <!-- Peity -->
+        <script src="<?php echo base_url(); ?>media/js/plugins/peity/jquery.peity.min.js"></script>
+        <script src="<?php echo base_url(); ?>media/js/demo/peity-demo.js"></script>
+
+        <!-- Custom and plugin javascript -->
+        <script src="<?php echo base_url(); ?>media/js/inspinia.js"></script>
+        <!--<script src="<?php //echo base_url(); ?>media/js/plugins/pace/pace.min.js"></script>-->
+
+        <!-- jQuery UI -->
+        <script src="<?php echo base_url(); ?>media/js/plugins/jquery-ui/jquery-ui.min.js"></script>
+
+        <!-- GITTER -->
+        <script src="<?php echo base_url(); ?>media/js/plugins/gritter/jquery.gritter.min.js"></script>
+
+        <!-- EayPIE -->
+        <script src="<?php echo base_url(); ?>media/js/plugins/easypiechart/jquery.easypiechart.js"></script>
+
+        <!-- Sparkline -->
+        <script src="<?php echo base_url(); ?>media/js/plugins/sparkline/jquery.sparkline.min.js"></script>
+
+        <!-- ChartJS -->
+        <script src="<?php echo base_url(); ?>media/js/plugins/chartJs/Chart.min.js"></script>
+        
+        <!-- Sweet alert -->
+        <script src="<?php echo base_url(); ?>media/js/plugins/sweetalert/sweetalert.min.js"></script>
+        
         <script type="text/javascript" src="<?php echo base_url(); ?>media/js/script/script.js"></script>
     </body>
 </html>

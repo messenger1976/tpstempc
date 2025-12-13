@@ -1,6 +1,6 @@
 
         <link href="<?php echo base_url(); ?>media/css/bootstrap.min.css" rel="stylesheet">
-        <link href="<?php echo base_url(); ?>media/font-awesome/css/font-awesome.css" rel="stylesheet">
+        <link href="<?php echo base_url(); ?>assets/font-awesome/css/font-awesome.css?v=4.7.0" rel="stylesheet">
 
    
         <link href="<?php echo base_url(); ?>media/css/animate.css" rel="stylesheet">

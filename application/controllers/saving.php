@@ -693,12 +693,12 @@ class Saving extends CI_Controller {
         if (!$q)
             return;
 
-        $auto = $this->db->query("SELECT a.account,b.firstname, b.middlename, b.lastname FROM members_account as a INNER JOIN members as b ON a.RFID=b.PID   WHERE b.PIN='$pin' AND ( a.account LIKE '$q%'  OR b.firstname LIKE '$q%' OR b.lastname LIKE '$q%') ")->result();
+        $auto = $this->db->query("SELECT a.account,a.old_members_acct,b.firstname, b.middlename, b.lastname FROM members_account as a INNER JOIN members as b ON a.RFID=b.PID   WHERE b.PIN='$pin' AND ( a.account LIKE '$q%'  OR b.firstname LIKE '$q%' OR b.lastname LIKE '$q%') ")->result();
 
 
         foreach ($auto as $key => $value) {
 
-            echo $value->account . ' - ' . $value->firstname . ' ' . $value->middlename . ' ' . $value->lastname . "\n";
+            echo $value->account . ' - [' . $value->old_members_acct . '] ' . $value->firstname . ' ' . $value->middlename . ' ' . $value->lastname . "\n";
         }
     }
 

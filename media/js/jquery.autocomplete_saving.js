@@ -487,7 +487,7 @@ jQuery.autocomplete = function(input, options) {
         // Extract member ID from autocomplete format
         // Handles formats like "2005-00173 - BRENDALOU SALES" or just "2005-00173"
         var pid = '';
-        if (!value) {
+        if (!value || typeof value !== 'string') {
             return;
         }
         value = value.trim();
@@ -519,22 +519,32 @@ jQuery.autocomplete = function(input, options) {
                     column: options.column
                 },                              
                 success: function(data){
-                    // Trim whitespace that might cause JSON parse errors
-                    data = data.trim();
-                    
-                    // Check if response is empty or not valid JSON
-                    if (!data || data.length === 0) {
-                        $('#member_info').html('<div style="color:red;">Error: Invalid response from server. Please try again.</div>');
-                        return;
-                    }
-                    
-                    // Try to parse JSON, handle errors gracefully
+                    // Handle both string and already-parsed JSON object responses
                     var json;
-                    try {
-                        json = JSON.parse(data);
-                    } catch (e) {
-                        console.error('JSON Parse Error:', e);
-                        console.error('Response data:', data);
+                    if (typeof data === 'string') {
+                        // If data is a string, trim it and parse it
+                        data = data.trim();
+                        
+                        // Check if response is empty
+                        if (!data || data.length === 0) {
+                            $('#member_info').html('<div style="color:red;">Error: Invalid response from server. Please try again.</div>');
+                            return;
+                        }
+                        
+                        // Try to parse JSON, handle errors gracefully
+                        try {
+                            json = JSON.parse(data);
+                        } catch (e) {
+                            console.error('JSON Parse Error:', e);
+                            console.error('Response data:', data);
+                            $('#member_info').html('<div style="color:red;">Error: Invalid response from server. Please try again.</div>');
+                            return;
+                        }
+                    } else if (typeof data === 'object' && data !== null) {
+                        // If data is already a parsed object, use it directly
+                        json = data;
+                    } else {
+                        // Invalid data type
                         $('#member_info').html('<div style="color:red;">Error: Invalid response from server. Please try again.</div>');
                         return;
                     }

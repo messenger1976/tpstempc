@@ -156,16 +156,38 @@ if (isset($message) && !empty($message)) {
 </div>
 <?php echo form_close(); ?>
 <script src="<?php echo base_url() ?>media/js/script/moment.js"></script>
-<script src="<?php echo base_url() ?>media/js/plugins/datapicker/bootstrap-datepicker.js"></script>
-
 <script type="text/javascript">
-
-    $(function() {
-        $('#datetimepicker').datetimepicker({
-            pickTime: false
-        });
-    });
-    $(document).ready(function() {
+    (function() {
+        function initScripts() {
+            if (typeof jQuery === 'undefined') {
+                setTimeout(initScripts, 50);
+                return;
+            }
+            
+            // Load bootstrap-datepicker after jQuery is available
+            if (typeof $.fn.datetimepicker === 'undefined') {
+                var script = document.createElement('script');
+                script.src = '<?php echo base_url() ?>media/js/plugins/datapicker/bootstrap-datepicker.js';
+                script.onload = function() {
+                    initDatePicker();
+                    initMainScript();
+                };
+                document.head.appendChild(script);
+            } else {
+                initDatePicker();
+                initMainScript();
+            }
+            
+            function initDatePicker() {
+                $(function() {
+                    $('#datetimepicker').datetimepicker({
+                        pickTime: false
+                    });
+                });
+            }
+            
+            function initMainScript() {
+                $(document).ready(function() {
 
 
 
@@ -351,5 +373,9 @@ if (isset($message) && !empty($message)) {
 
 
 
-    });
+                });
+            }
+        }
+        initScripts();
+    })();
 </script>

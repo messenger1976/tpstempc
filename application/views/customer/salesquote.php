@@ -154,12 +154,18 @@ if (isset($message) && !empty($message)) {
 <?php echo form_close(); ?>
 <script src="<?php echo base_url() ?>media/js/chosen.jquery.js"></script>
 <script src="<?php echo base_url() ?>media/js/script/moment.js"></script>
-<script src="<?php echo base_url() ?>media/js/plugins/datapicker/bootstrap-datepicker.js"></script>
 <script type="text/javascript">
-                        var config = {
-                            no_results_text: 'Oops, nothing found!'
-                        }
-                        $("#customerid").chosen(config);
+                        (function() {
+                            function initScripts() {
+                                if (typeof jQuery === 'undefined') {
+                                    setTimeout(initScripts, 50);
+                                    return;
+                                }
+                                
+                                var config = {
+                                    no_results_text: 'Oops, nothing found!'
+                                }
+                                $("#customerid").chosen(config);
 
                         function fill_other(val, index) {
                             // var row_object = $("#quotetable  tr").eq(index);
@@ -266,6 +272,10 @@ if (isset($message) && !empty($message)) {
 
                                 $('#quotetable tr:last').before(newRow);
                                 return false;
-                            });
-                        });
+                                        });
+                                    });
+                                }
+                            }
+                            initScripts();
+                        })();
 </script>

@@ -216,7 +216,14 @@ $(document).ready(function(){
     </div>
 </div>
 <script>
-    $(function(){
+    (function() {
+        function initScripts() {
+            if (typeof jQuery === 'undefined') {
+                setTimeout(initScripts, 50);
+                return;
+            }
+            
+            $(function(){
         $('#btnprocessbalances').on('click', function(e){
             e.preventDefault();
             $('#ibox-main').children('.ibox-content').addClass('sk-loading');
@@ -250,7 +257,11 @@ $(document).ready(function(){
 
         }
         return true;
-    } 
+    }
+        });
+    }
+    initScripts();
+})();
 </script>
 
 

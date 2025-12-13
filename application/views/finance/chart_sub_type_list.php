@@ -43,7 +43,14 @@
 </div>
 
 <script>
-$(document).ready(function() {
+(function() {
+    function initScripts() {
+        if (typeof jQuery === 'undefined') {
+            setTimeout(initScripts, 50);
+            return;
+        }
+        
+        $(document).ready(function() {
     $('.btn-delete-chart-sub-type').click(function() {
         var chartSubTypeId = $(this).data('id');
         var chartSubTypeName = $(this).data('name');
@@ -65,6 +72,9 @@ $(document).ready(function() {
             }
         });
     });
-});
+        });
+    }
+    initScripts();
+})();
 </script>
 

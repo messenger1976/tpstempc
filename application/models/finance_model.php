@@ -295,7 +295,13 @@ $pin=current_user()->PIN;
     }
 
     function saving_account_balance($account) {
-        $this->db->where('account', $account);
+        // Ensure account is treated as string for consistent comparison
+        // This handles cases where account might be numeric like "18" or string like "Account#1"
+        $account_str = trim((string)$account);
+        
+        // Compare account - use string comparison to handle both numeric and string accounts
+        // CodeIgniter will properly escape this value
+        $this->db->where('account', $account_str);
         return $this->db->get('members_account')->row();
     }
 

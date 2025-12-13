@@ -100,18 +100,28 @@ $_GET['key'] = $jxy['key'];
 <script src="<?php echo base_url() ?>media/js/script/moment.js"></script>
 <script src="<?php echo base_url() ?>media/js/plugins/datapicker/bootstrap-datepicker.js"></script>
 <script type="text/javascript">
-    $(document).ready(function(){
-        $("#accountno").autocomplete("<?php echo site_url(current_lang() . '/saving/autosuggest_member_id_all/'); ?>",{
-            matchContains:true
-        });
-        });
-        
-    $(function () {
-        $('#from').datetimepicker({
-            pickTime: false
-        });
-        $('#upto').datetimepicker({
-            pickTime: false
-        });
-    });
+    (function() {
+        function initScripts() {
+            if (typeof jQuery === 'undefined') {
+                setTimeout(initScripts, 50);
+                return;
+            }
+            
+            $(document).ready(function(){
+                $("#accountno").autocomplete("<?php echo site_url(current_lang() . '/saving/autosuggest_member_id_all/'); ?>",{
+                    matchContains:true
+                });
+            });
+                
+            $(function () {
+                $('#from').datetimepicker({
+                    pickTime: false
+                });
+                $('#upto').datetimepicker({
+                    pickTime: false
+                });
+            });
+        }
+        initScripts();
+    })();
 </script>

@@ -99,11 +99,21 @@ if (isset($message) && !empty($message)) {
 <script src="<?php echo base_url() ?>media/js/script/moment.js"></script>
 <script src="<?php echo base_url() ?>media/js/plugins/datapicker/bootstrap-datepicker.js"></script>
 <script type="text/javascript">
-    $(function() {
+    (function() {
+        function initScripts() {
+            if (typeof jQuery === 'undefined') {
+                setTimeout(initScripts, 50);
+                return;
+            }
+            
+            $(function() {
 
-        $('#datetimepicker').datetimepicker({
-            pickTime: false
-        });
+                $('#datetimepicker').datetimepicker({
+                    pickTime: false
+                });
 
-    });
+            });
+        }
+        initScripts();
+    })();
 </script>

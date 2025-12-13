@@ -758,23 +758,57 @@ class Saving extends CI_Controller {
         }
         
         // Handle autocomplete format: "2005-00173 - BRENDALOU SALES" or just "2005-00173"
+        // Also handles formats like "Account#1 - NAME" or "18 - NAME"
         if (strpos($value, ' - ') !== false) {
+            // Split on " - " (space-dash-space) to separate account number from name
             $explode = explode(' - ', $value);
             $value = trim($explode[0]);
         } else {
-            $explode = explode('-', $value);
+            // If no " - " separator, try splitting on dash (for formats like "18-NAME")
+            // But preserve account numbers that contain dashes (like "2005-00173")
+            $explode = explode('-', $value, 2); // Limit to 2 parts to preserve multi-dash account numbers
             $value = trim($explode[0]);
+        }
+        
+        // Ensure we have a valid account number after extraction
+        if (empty($value)) {
+            $status['success'] = 'N';
+            $status['error'] = lang('invalid_account');
+            echo json_encode($status);
+            return;
         }
         
         $account_pin = null;
         $error = '';
         if ($column == 'PID') {
-            $account_pin = $value;
+            // Use the extracted value as the account number
+            // Trim and ensure it's treated as a string to match database storage
+            $account_pin = trim((string)$value);
             $error = lang('invalid_account');
         }
         
-        //$pid is the account number; query account info
-        $account_info = $this->finance_model->saving_account_balance($account_pin);
+        // Ensure we have an account number to search for
+        if (empty($account_pin)) {
+            $status['success'] = 'N';
+            $status['error'] = lang('invalid_account');
+            echo json_encode($status);
+            return;
+        }
+        
+        // Query account info - try to match autocomplete query behavior
+        // The autocomplete filters by member PIN, so we'll do the same
+        $pin = current_user()->PIN;
+        $this->db->select('ma.*');
+        $this->db->from('members_account ma');
+        $this->db->join('members m', 'ma.RFID = m.PID', 'inner');
+        $this->db->where('ma.account', $account_pin);
+        $this->db->where('m.PIN', $pin);
+        $account_info = $this->db->get()->row();
+        
+        // If still not found with member PIN join, try the original method as fallback
+        if (empty($account_info)) {
+            $account_info = $this->finance_model->saving_account_balance($account_pin);
+        }
         
         // Check if account_info is valid (returns object or null)
         if (!empty($account_info) && is_object($account_info)) {

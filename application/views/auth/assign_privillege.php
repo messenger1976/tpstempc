@@ -264,7 +264,14 @@ else:
 
 <script>
 // Ensure form submission works properly
-$(document).ready(function() {
+(function() {
+    function initScripts() {
+        if (typeof jQuery === 'undefined') {
+            setTimeout(initScripts, 50);
+            return;
+        }
+        
+        $(document).ready(function() {
     var form = $('form').has('.assign-role-container');
     
     if (form.length === 0) {
@@ -477,5 +484,8 @@ $(document).ready(function() {
         console.log('Form action:', form.attr('action'));
         console.log('Form method:', form.attr('method') || 'GET (default)');
     }
-});
+        });
+    }
+    initScripts();
+})();
 </script>

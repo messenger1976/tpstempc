@@ -98,20 +98,43 @@ $_GET['upto'] = format_date($jxy['upto'],FALSE);
     
 </div>
 <script src="<?php echo base_url() ?>media/js/script/moment.js"></script>
-<script src="<?php echo base_url() ?>media/js/plugins/datapicker/bootstrap-datepicker.js"></script>
 <script type="text/javascript">
-    $(document).ready(function(){
-        $("#accountno").autocomplete("<?php echo site_url(current_lang() . '/saving/autosuggest_member_id_all/'); ?>",{
-            matchContains:true
-        });
-        });
-        
-    $(function () {
-        $('#from').datetimepicker({
-            pickTime: false
-        });
-        $('#upto').datetimepicker({
-            pickTime: false
-        });
-    });
+    (function() {
+        function initScripts() {
+            if (typeof jQuery === 'undefined') {
+                setTimeout(initScripts, 50);
+                return;
+            }
+            
+            // Load bootstrap-datepicker after jQuery is available
+            if (typeof $.fn.datetimepicker === 'undefined') {
+                var script = document.createElement('script');
+                script.src = '<?php echo base_url() ?>media/js/plugins/datapicker/bootstrap-datepicker.js';
+                script.onload = function() {
+                    initDatePickers();
+                };
+                document.head.appendChild(script);
+            } else {
+                initDatePickers();
+            }
+            
+            function initDatePickers() {
+                $(document).ready(function(){
+                    $("#accountno").autocomplete("<?php echo site_url(current_lang() . '/saving/autosuggest_member_id_all/'); ?>",{
+                        matchContains:true
+                    });
+                });
+                    
+                $(function () {
+                    $('#from').datetimepicker({
+                        pickTime: false
+                    });
+                    $('#upto').datetimepicker({
+                        pickTime: false
+                    });
+                });
+            }
+        }
+        initScripts();
+    })();
 </script>

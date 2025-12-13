@@ -129,10 +129,28 @@ if (isset($message) && !empty($message)) {
 
 <script src="<?php echo base_url() ?>media/js/chosen.jquery.js"></script>
 <script src="<?php echo base_url() ?>media/js/script/moment.js"></script>
-<script src="<?php echo base_url() ?>media/js/plugins/datapicker/bootstrap-datepicker.js"></script>
 <script type="text/javascript">
-
-                    var diff = 0;
+    (function() {
+        function initScripts() {
+            if (typeof jQuery === 'undefined') {
+                setTimeout(initScripts, 50);
+                return;
+            }
+            
+            // Load bootstrap-datepicker after jQuery is available
+            if (typeof $.fn.datetimepicker === 'undefined') {
+                var script = document.createElement('script');
+                script.src = '<?php echo base_url() ?>media/js/plugins/datapicker/bootstrap-datepicker.js';
+                script.onload = function() {
+                    initMainScript();
+                };
+                document.head.appendChild(script);
+            } else {
+                initMainScript();
+            }
+            
+            function initMainScript() {
+                var diff = 0;
                     function credit_sum(val, index) {
                         var sum = 0;
                         //iterate through each textboxes and add the values
@@ -267,6 +285,10 @@ if (isset($message) && !empty($message)) {
 
 
                     });
+            }
+        }
+        initScripts();
+    })();
 
 
 </script>

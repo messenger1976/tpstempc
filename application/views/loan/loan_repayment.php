@@ -67,16 +67,24 @@ if (isset($message) && !empty($message)) {
 <script src="<?php echo base_url() ?>media/js/plugins/datapicker/bootstrap-datepicker.js"></script>
 
 <script type="text/javascript">
+    (function() {
+        function initScripts() {
+            if (typeof jQuery === 'undefined') {
+                setTimeout(initScripts, 50);
+                return;
+            }
+            
+            $(function() {
+                $('#datetimepicker').datetimepicker({
+                    pickTime: false
+                });
 
-    $(function() {
-        $('#datetimepicker').datetimepicker({
-            pickTime: false
-        });
-
-        var config = {
-            no_results_text: 'Oops, nothing found!'
+                var config = {
+                    no_results_text: 'Oops, nothing found!'
+                }
+                $("#loanid").chosen(config);
+            });
         }
-        $("#loanid").chosen(config);
-    });
-
+        initScripts();
+    })();
 </script>

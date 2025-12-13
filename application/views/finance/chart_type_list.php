@@ -40,7 +40,14 @@
 </div>
 
 <script>
-$(document).ready(function() {
+(function() {
+    function initScripts() {
+        if (typeof jQuery === 'undefined') {
+            setTimeout(initScripts, 50);
+            return;
+        }
+        
+        $(document).ready(function() {
     $('.btn-delete-chart-type').click(function() {
         var chartTypeId = $(this).data('id');
         var chartTypeName = $(this).data('name');
@@ -62,6 +69,9 @@ $(document).ready(function() {
             }
         });
     });
-});
+        });
+    }
+    initScripts();
+})();
 </script>
 

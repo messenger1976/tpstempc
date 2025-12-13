@@ -1,4 +1,3 @@
-<script type="text/javascript" src="<?php echo base_url(); ?>media/js/jquery.autocomplete_contribution.js" ></script>
 <link href="<?php echo base_url(); ?>media/css/jquery.autocomplete.css" rel="stylesheet">
 <?php echo form_open_multipart(current_lang() . "/contribution/contribution_payment", 'class="form-horizontal"'); ?>
 
@@ -112,7 +111,27 @@ if (isset($message) && !empty($message)) {
 <?php echo form_close(); ?>
 
 <script type="text/javascript">
-    $(document).ready(function(){
+    (function() {
+        function initScripts() {
+            if (typeof jQuery === 'undefined') {
+                setTimeout(initScripts, 50);
+                return;
+            }
+            
+            // Load jquery.autocomplete_contribution.js after jQuery is available
+            if (typeof $.fn.autocomplete === 'undefined' || typeof $.fn.autocomplete_contribution === 'undefined') {
+                var script = document.createElement('script');
+                script.src = '<?php echo base_url(); ?>media/js/jquery.autocomplete_contribution.js';
+                script.onload = function() {
+                    initMainScript();
+                };
+                document.head.appendChild(script);
+            } else {
+                initMainScript();
+            }
+            
+            function initMainScript() {
+                $(document).ready(function(){
         
            function addCommas(nStr)
         {
@@ -346,5 +365,9 @@ if (isset($message) && !empty($message)) {
         
         
         
-    });
+                });
+            }
+        }
+        initScripts();
+    })();
 </script>

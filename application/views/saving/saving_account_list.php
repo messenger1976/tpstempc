@@ -144,11 +144,98 @@ $account_type_filter = isset($account_type_filter) ? $account_type_filter : (iss
     <div style="margin-right: 20px; text-align: right;"> <?php page_selector(); ?></div>
 </div>
 
-<script type="text/javascript" src="<?php echo base_url(); ?>media/js/jquery.autocomplete_origin.js" ></script>
 <script type="text/javascript">
-    $(document).ready(function(){
-        $("#accountno").autocomplete("<?php echo site_url(current_lang() . '/saving/autosuggest_member_id_all/'); ?>",{
-            matchContains:true
-        });
-    });
+    (function() {
+        function initScripts() {
+            if (typeof jQuery === 'undefined') {
+                setTimeout(initScripts, 50);
+                return;
+            }
+            
+            // jQuery UI is loaded in template and also defines autocomplete
+            // We need to load our custom autocomplete plugin AFTER jQuery UI
+            // and ensure it overwrites jQuery UI's autocomplete
+            var autocompleteScriptLoaded = false;
+            
+            // Check if script is already in the DOM
+            var existingScript = document.querySelector('script[src*="jquery.autocomplete_origin.js"]');
+            if (existingScript) {
+                // Script already exists, just wait a bit and initialize
+                setTimeout(function() {
+                    checkAndInitAutocomplete();
+                }, 200);
+                return;
+            }
+            
+            var autocompleteScript = document.createElement('script');
+            autocompleteScript.src = '<?php echo base_url(); ?>media/js/jquery.autocomplete_origin.js';
+            autocompleteScript.onload = function() {
+                autocompleteScriptLoaded = true;
+                // Wait longer to ensure the plugin fully registers and overwrites jQuery UI's autocomplete
+                setTimeout(function() {
+                    checkAndInitAutocomplete();
+                }, 300);
+            };
+            autocompleteScript.onerror = function() {
+                console.error('Failed to load autocomplete plugin');
+            };
+            document.head.appendChild(autocompleteScript);
+            
+            function checkAndInitAutocomplete() {
+                // Check that jQuery and autocomplete are available
+                if (typeof jQuery === 'undefined' || typeof $.fn.autocomplete === 'undefined') {
+                    setTimeout(checkAndInitAutocomplete, 50);
+                    return;
+                }
+                
+                $(document).ready(function(){
+                    // Ensure the element exists
+                    var $elem = $("#accountno");
+                    if ($elem.length === 0) {
+                        return;
+                    }
+                    
+                    // Destroy any existing jQuery UI autocomplete
+                    try {
+                        if ($elem.data('ui-autocomplete')) {
+                            $elem.autocomplete('destroy');
+                        }
+                    } catch(e) {
+                        // Ignore errors
+                    }
+                    
+                    // Wait a bit more to ensure cleanup is complete
+                    setTimeout(function() {
+                        try {
+                            // The custom autocomplete expects (url, options) format
+                            // If jQuery UI's autocomplete is still active, this will fail
+                            // So we need to ensure our custom plugin has overwritten it
+                            $elem.autocomplete("<?php echo site_url(current_lang() . '/saving/autosuggest_member_id_all/'); ?>",{
+                                matchContains:true
+                            });
+                        } catch(e) {
+                            console.error('Autocomplete initialization error:', e);
+                            // If it fails, the custom plugin might not have loaded properly
+                            // Try reloading the script
+                            var retryScript = document.createElement('script');
+                            retryScript.src = '<?php echo base_url(); ?>media/js/jquery.autocomplete_origin.js';
+                            retryScript.onload = function() {
+                                setTimeout(function() {
+                                    try {
+                                        $elem.autocomplete("<?php echo site_url(current_lang() . '/saving/autosuggest_member_id_all/'); ?>",{
+                                            matchContains:true
+                                        });
+                                    } catch(e2) {
+                                        console.error('Autocomplete retry failed:', e2);
+                                    }
+                                }, 200);
+                            };
+                            document.head.appendChild(retryScript);
+                        }
+                    }, 150);
+                });
+            }
+        }
+        initScripts();
+    })();
 </script>

@@ -67,8 +67,14 @@ $html.=$account_name.'</b><br/></td>
             <td>Teller Name<br/><b>   ';
         $use = current_user($trans->createdby);
         $html.=$use->first_name.' '.$use->last_name.'</b></td>
-        </tr>
-         <tr>
+        </tr>';
+        if (!empty($trans->refno)) {
+            $html.='<tr>
+            <td>Ref. No.<br/><b> '. $trans->refno.'</b><br/></td>
+            <td>&nbsp;</td>
+        </tr>';
+        }
+        $html.=' <tr>
             <td colspan="2" style="height: 30px;"></td>
         </tr>
         

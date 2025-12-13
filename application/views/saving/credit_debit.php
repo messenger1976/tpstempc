@@ -56,6 +56,13 @@ if (isset($message) && !empty($message)) {
             </div>
         </div>
 
+        <div class="form-group"><label class="col-lg-4 control-label">Ref. No.  : </label>
+            <div class="col-lg-7">
+                <input type="text" name="refno" value="<?php echo set_value('refno'); ?>" class="form-control"/> 
+                <?php echo form_error('refno'); ?>
+            </div>
+        </div>
+
         <div class="form-group"><label class="col-lg-4 control-label"><?php echo lang('amount'); ?>  : <span class="required">*</span></label>
             <div class="col-lg-7">
                 <input type="text"  name="amount" value="<?php echo set_value('amount'); ?>"  class="form-control amountformat"/> 

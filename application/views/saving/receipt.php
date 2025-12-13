@@ -89,7 +89,12 @@
             <td>Transaction Number <br/><b> <?php echo $trans->receipt; ?></b></td>
             <td>Teller Name<br/><b>   <?php $use = current_user($trans->createdby); echo $use->first_name.' '.$use->last_name;  ?></b></td>
         </tr>
-        
+        <?php if (!empty($trans->refno)) { ?>
+        <tr>
+            <td>Ref. No.<br/><b> <?php echo $trans->refno; ?></b></td>
+            <td>&nbsp;</td>
+        </tr>
+        <?php } ?>
         <tr>
             <td colspan="2" style="height: 30px;"></td>
         </tr>

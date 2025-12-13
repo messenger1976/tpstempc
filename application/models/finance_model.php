@@ -275,7 +275,7 @@ $pin=current_user()->PIN;
         return FALSE;
     }
 
-    function add_saving_transaction($trans_type = null, $account = null, $amount = 0, $paymethod = null, $comment = '', $cheque_num = '', $customer_name = '', $pid = null, $posted_date='') {
+    function add_saving_transaction($trans_type = null, $account = null, $amount = 0, $paymethod = null, $comment = '', $cheque_num = '', $customer_name = '', $pid = null, $posted_date='', $refno = '') {
         if (is_null($trans_type) || is_null($account) || $amount == 0 || is_null($paymethod)) {
             return false;
         }
@@ -283,11 +283,11 @@ $pin=current_user()->PIN;
         if ($trans_type == 'CR') {
             //deposit
             $systemcomment = 'NORMAL DEPOSIT';
-            return $this->credit($account, $amount, $paymethod, $comment, $cheque_num, $customer_name, $pid, $systemcomment,0, $posted_date);
+            return $this->credit($account, $amount, $paymethod, $comment, $cheque_num, $customer_name, $pid, $systemcomment,0, $posted_date, $refno);
         } else if ($trans_type == 'DR') {
             //with draw
             $systemcomment = 'NORMAL WITHDRAWAL';
-            return $this->debit($account, $amount, $paymethod, $comment, $cheque_num, $customer_name, $systemcomment, $pid,$posted_date);
+            return $this->debit($account, $amount, $paymethod, $comment, $cheque_num, $customer_name, $systemcomment, $pid,$posted_date, $refno);
         }
 
 
@@ -331,7 +331,7 @@ $pin=current_user()->PIN;
         return $this->db->query("SELECT * FROM savings_transaction WHERE $and ORDER BY trans_date DESC LIMIT $start,$limit")->result();
     }
 
-    function credit($account = null, $amount = 0, $paymethod = null, $comment = '', $cheque_num = '', $customer_name = '', $pid = null, $systemcomment = '', $start_up = 0, $posted_date='') {
+    function credit($account = null, $amount = 0, $paymethod = null, $comment = '', $cheque_num = '', $customer_name = '', $pid = null, $systemcomment = '', $start_up = 0, $posted_date='', $refno = '') {
         $pin = current_user()->PIN;
 
 
@@ -378,6 +378,7 @@ $pin=current_user()->PIN;
         $this->db->set('comment', $comment);
         $this->db->set('system_comment', $systemcomment);
         $this->db->set('customer_name', $customer_name);
+        $this->db->set('refno', $refno);
         $this->db->set('PIN', $pin);
         $this->db->set('createdby', $this->session->userdata('user_id'));
         $insert = $this->db->insert('savings_transaction');
@@ -388,7 +389,7 @@ $pin=current_user()->PIN;
         return FALSE;
     }
 
-    function debit($account = null, $amount = 0, $paymethod = null, $comment = '', $cheque_num = '', $customer_name = '', $systemcomment = '', $pid = null, $posted_date='') {
+    function debit($account = null, $amount = 0, $paymethod = null, $comment = '', $cheque_num = '', $customer_name = '', $systemcomment = '', $pid = null, $posted_date='', $refno = '') {
         $pin = current_user()->PIN;
         if ($amount == 0 || is_null($account) || is_null($paymethod)) {
             return FALSE;
@@ -422,6 +423,7 @@ $pin=current_user()->PIN;
         $this->db->set('customer_name', $customer_name);
         $this->db->set('comment', $comment);
         $this->db->set('system_comment', $systemcomment);
+        $this->db->set('refno', $refno);
         $this->db->set('PIN', $pin);
         $this->db->set('createdby', $this->session->userdata('user_id'));
         $insert = $this->db->insert('savings_transaction');

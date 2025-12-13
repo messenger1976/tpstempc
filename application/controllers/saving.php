@@ -536,6 +536,7 @@ class Saving extends CI_Controller {
             $amount = trim($this->input->post('amount'));
             $customer_name = trim($this->input->post('customer_name'));
             $posting_date = date("Y-m-d",strtotime($this->input->post('posting_date')));
+            $refno = trim($this->input->post('refno'));
 
             $continue = true;
             if ($trans_type == 'DR') {
@@ -552,7 +553,7 @@ class Saving extends CI_Controller {
 
             if ($continue) {
                 //now finalize
-                $receipt = $this->finance_model->add_saving_transaction($trans_type, $account_number, $amount, $paymethod, $comment, $check_number_received, $customer_name, $pid = null, $posting_date);
+                $receipt = $this->finance_model->add_saving_transaction($trans_type, $account_number, $amount, $paymethod, $comment, $check_number_received, $customer_name, $pid = null, $posting_date, $refno);
                 if ($receipt) {
                     $this->session->set_flashdata('next_customer', site_url(current_lang() . '/saving/credit_debit'));
                     $this->session->set_flashdata('next_customer_label', lang('next_deposit_withdrawal'));

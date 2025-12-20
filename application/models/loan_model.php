@@ -603,4 +603,182 @@ class Loan_Model extends CI_Model {
         return $installment;
     }
 
+    // Loan Beginning Balances Methods
+    function loan_beginning_balance_list($fiscal_year_id = null, $id = null) {
+        $pin = current_user()->PIN;
+        $this->db->where('PIN', $pin);
+        
+        if (!is_null($fiscal_year_id)) {
+            $this->db->where('fiscal_year_id', $fiscal_year_id);
+        }
+        
+        if (!is_null($id)) {
+            $this->db->where('id', $id);
+        }
+        
+        $this->db->order_by('created_at', 'DESC');
+        return $this->db->get('loan_beginning_balances');
+    }
+
+    function loan_beginning_balance_create($data) {
+        $pin = current_user()->PIN;
+        $data['PIN'] = $pin;
+        $data['created_by'] = current_user()->id;
+        return $this->db->insert('loan_beginning_balances', $data);
+    }
+
+    function loan_beginning_balance_update($data, $id) {
+        $pin = current_user()->PIN;
+        $this->db->where('id', $id);
+        $this->db->where('PIN', $pin);
+        return $this->db->update('loan_beginning_balances', $data);
+    }
+
+    function loan_beginning_balance_delete($id) {
+        $pin = current_user()->PIN;
+        $this->db->where('id', $id);
+        $this->db->where('PIN', $pin);
+        
+        // Check if already posted
+        $balance = $this->loan_beginning_balance_list(null, $id)->row();
+        if ($balance && $balance->posted == 1) {
+            return false; // Cannot delete if already posted
+        }
+        
+        return $this->db->delete('loan_beginning_balances');
+    }
+
+    function loan_beginning_balance_post_to_ledger($id) {
+        $pin = current_user()->PIN;
+        $balance = $this->loan_beginning_balance_list(null, $id)->row();
+        
+        if (!$balance || $balance->posted == 1) {
+            return false; // Already posted or doesn't exist
+        }
+        
+        // Get fiscal year info
+        $fiscal_year = $this->db->where('id', $balance->fiscal_year_id)->get('fiscal_year')->row();
+        if (!$fiscal_year) {
+            return false;
+        }
+        
+        // Get loan product info
+        $product = $this->db->where('id', $balance->loan_product_id)->where('PIN', $pin)->get('loan_product')->row();
+        if (!$product) {
+            return false;
+        }
+        
+        $this->db->trans_start();
+        
+        // Create ledger entry
+        $ledger_entry = array(
+            'date' => $fiscal_year->start_date,
+            'PIN' => $pin
+        );
+        $this->db->insert('general_ledger_entry', $ledger_entry);
+        $ledger_entry_id = $this->db->insert_id();
+        
+        // Post principal balance if exists
+        if ($balance->principal_balance > 0) {
+            $ledger = array(
+                'journalID' => 8, // Journal ID for Beginning Balance
+                'refferenceID' => $id,
+                'entryid' => $ledger_entry_id,
+                'date' => $fiscal_year->start_date,
+                'description' => 'Loan Beginning Balance - Principal - ' . $balance->member_id,
+                'linkto' => 'loan_beginning_balances.id',
+                'fromtable' => 'loan_beginning_balances',
+                'account' => $product->loan_principle_account,
+                'debit' => $balance->principal_balance,
+                'credit' => 0,
+                'member_id' => $balance->member_id,
+                'PIN' => $pin
+            );
+            
+            $infoaccount = account_row_info($product->loan_principle_account);
+            if ($infoaccount) {
+                $ledger['account_type'] = $infoaccount->account_type;
+                $ledger['sub_account_type'] = isset($infoaccount->sub_account_type) ? $infoaccount->sub_account_type : null;
+            }
+            
+            $this->db->insert('general_ledger', $ledger);
+        }
+        
+        // Post interest balance if exists
+        if ($balance->interest_balance > 0) {
+            $ledger = array(
+                'journalID' => 8,
+                'refferenceID' => $id,
+                'entryid' => $ledger_entry_id,
+                'date' => $fiscal_year->start_date,
+                'description' => 'Loan Beginning Balance - Interest - ' . $balance->member_id,
+                'linkto' => 'loan_beginning_balances.id',
+                'fromtable' => 'loan_beginning_balances',
+                'account' => $product->loan_interest_account,
+                'debit' => $balance->interest_balance,
+                'credit' => 0,
+                'member_id' => $balance->member_id,
+                'PIN' => $pin
+            );
+            
+            $infoaccount = account_row_info($product->loan_interest_account);
+            if ($infoaccount) {
+                $ledger['account_type'] = $infoaccount->account_type;
+                $ledger['sub_account_type'] = isset($infoaccount->sub_account_type) ? $infoaccount->sub_account_type : null;
+            }
+            
+            $this->db->insert('general_ledger', $ledger);
+        }
+        
+        // Post penalty balance if exists
+        if ($balance->penalty_balance > 0) {
+            $ledger = array(
+                'journalID' => 8,
+                'refferenceID' => $id,
+                'entryid' => $ledger_entry_id,
+                'date' => $fiscal_year->start_date,
+                'description' => 'Loan Beginning Balance - Penalty - ' . $balance->member_id,
+                'linkto' => 'loan_beginning_balances.id',
+                'fromtable' => 'loan_beginning_balances',
+                'account' => $product->loan_penalt_account,
+                'debit' => $balance->penalty_balance,
+                'credit' => 0,
+                'member_id' => $balance->member_id,
+                'PIN' => $pin
+            );
+            
+            $infoaccount = account_row_info($product->loan_penalt_account);
+            if ($infoaccount) {
+                $ledger['account_type'] = $infoaccount->account_type;
+                $ledger['sub_account_type'] = isset($infoaccount->sub_account_type) ? $infoaccount->sub_account_type : null;
+            }
+            
+            $this->db->insert('general_ledger', $ledger);
+        }
+        
+        // Update loan beginning balance as posted
+        $update_data = array(
+            'posted' => 1,
+            'posted_date' => date('Y-m-d H:i:s'),
+            'posted_by' => current_user()->id
+        );
+        $this->db->where('id', $id);
+        $this->db->where('PIN', $pin);
+        $this->db->update('loan_beginning_balances', $update_data);
+        
+        $this->db->trans_complete();
+        
+        return $this->db->trans_status();
+    }
+
+    function check_loan_beginning_balance_exists($fiscal_year_id, $member_id, $loan_product_id) {
+        $pin = current_user()->PIN;
+        $this->db->where('PIN', $pin);
+        $this->db->where('fiscal_year_id', $fiscal_year_id);
+        $this->db->where('member_id', $member_id);
+        $this->db->where('loan_product_id', $loan_product_id);
+        $result = $this->db->get('loan_beginning_balances');
+        return $result->num_rows() > 0;
+    }
+
 }

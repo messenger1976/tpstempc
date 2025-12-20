@@ -55,7 +55,7 @@
                 $i = 1;
                 if (count($loan_beginning_balances) > 0) {
                     foreach ($loan_beginning_balances as $balance) {
-                        $member_info = member_name_byid($balance->member_id);
+                        $member_info = $this->member_model->member_name($balance->member_id);
                         $product_info = $this->setting_model->loanproduct($balance->loan_product_id)->row();
                         ?>
                         <tr>

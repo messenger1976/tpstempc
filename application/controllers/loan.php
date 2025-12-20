@@ -1293,9 +1293,32 @@ break;
         if ($selected_fiscal_year_id) {
             $this->data['selected_fiscal_year_id'] = $selected_fiscal_year_id;
             $this->data['fiscal_year'] = $this->finance_model->get_fiscal_year($selected_fiscal_year_id)->row();
-            $this->data['loan_beginning_balances'] = $this->loan_model->loan_beginning_balance_list($selected_fiscal_year_id)->result();
+            $balances = $this->loan_model->loan_beginning_balance_list($selected_fiscal_year_id)->result();
+            
+            // Pre-fetch member names and product info to avoid N+1 queries
+            $member_names = array();
+            $product_info = array();
+            foreach ($balances as $balance) {
+                if (!isset($member_names[$balance->member_id])) {
+                    try {
+                        $member_names[$balance->member_id] = $this->member_model->member_name($balance->member_id);
+                    } catch (Exception $e) {
+                        $member_names[$balance->member_id] = 'Unknown';
+                    }
+                }
+                if (!isset($product_info[$balance->loan_product_id])) {
+                    $product = $this->setting_model->loanproduct($balance->loan_product_id)->row();
+                    $product_info[$balance->loan_product_id] = $product ? $product->name : '-';
+                }
+            }
+            
+            $this->data['loan_beginning_balances'] = $balances;
+            $this->data['member_names'] = $member_names;
+            $this->data['product_info'] = $product_info;
         } else {
             $this->data['loan_beginning_balances'] = array();
+            $this->data['member_names'] = array();
+            $this->data['product_info'] = array();
         }
         
         $this->data['content'] = 'loan/loan_beginning_balance_list';

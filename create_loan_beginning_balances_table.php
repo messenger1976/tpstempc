@@ -2,8 +2,22 @@
 // Simple script to create loan beginning balances table
 echo "<h1>Creating Loan Beginning Balances Table</h1>";
 
-// Include the CodeIgniter bootstrap
-require_once 'index.php';
+// Database configuration - adjust these values
+$db_host = 'localhost';
+$db_user = 'root';
+$db_pass = '';
+$db_name = 'your_database_name';
+
+// Note: You can also include CodeIgniter's database config
+if (file_exists('application/config/database.php')) {
+    include('application/config/database.php');
+    if (isset($db['default'])) {
+        $db_host = $db['default']['hostname'];
+        $db_user = $db['default']['username'];
+        $db_pass = $db['default']['password'];
+        $db_name = $db['default']['database'];
+    }
+}
 
 $sql = "-- Loan Beginning Balances Table
 -- This table stores beginning balances for Existing Loans by Fiscal Year
@@ -38,13 +52,25 @@ CREATE TABLE IF NOT EXISTS `loan_beginning_balances` (
 
 echo "<pre>Executing SQL:\n$sql</pre>";
 
-if ($this->db->query($sql)) {
-    echo "<p style='color: green; font-weight: bold;'>✓ SUCCESS: Loan beginning balances table created successfully!</p>";
-    echo "<p>You can now access the Loan Beginning Balances module from the Loan Management menu.</p>";
-    echo "<p><a href='" . site_url() . "'>← Back to Application</a></p>";
-} else {
+try {
+    $conn = new mysqli($db_host, $db_user, $db_pass, $db_name);
+    
+    if ($conn->connect_error) {
+        throw new Exception("Connection failed: " . $conn->connect_error);
+    }
+    
+    if ($conn->query($sql)) {
+        echo "<p style='color: green; font-weight: bold;'>✓ SUCCESS: Loan beginning balances table created successfully!</p>";
+        echo "<p>You can now access the Loan Beginning Balances module from the Loan Management menu.</p>";
+        echo "<p><a href='index.php'>← Back to Application</a></p>";
+    } else {
+        throw new Exception("Error: " . $conn->error);
+    }
+    
+    $conn->close();
+} catch (Exception $e) {
     echo "<p style='color: red; font-weight: bold;'>✗ ERROR: Failed to create table</p>";
-    echo "<p>Error: " . $this->db->error()['message'] . "</p>";
+    echo "<p>Error: " . $e->getMessage() . "</p>";
     echo "<p>Please run this SQL manually in phpMyAdmin or your database management tool.</p>";
 }
 ?>

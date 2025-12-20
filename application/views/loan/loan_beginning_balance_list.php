@@ -55,14 +55,14 @@
                 $i = 1;
                 if (count($loan_beginning_balances) > 0) {
                     foreach ($loan_beginning_balances as $balance) {
-                        $member_info = $this->member_model->member_name($balance->member_id);
-                        $product_info = $this->setting_model->loanproduct($balance->loan_product_id)->row();
+                        $member_info = isset($member_names[$balance->member_id]) ? $member_names[$balance->member_id] : 'Unknown';
+                        $product_name = isset($product_info[$balance->loan_product_id]) ? $product_info[$balance->loan_product_id] : '-';
                         ?>
                         <tr>
                             <td><?php echo $i++; ?></td>
                             <td><?php echo $balance->member_id; ?></td>
                             <td><?php echo $member_info; ?></td>
-                            <td><?php echo $product_info ? $product_info->name : '-'; ?></td>
+                            <td><?php echo $product_name; ?></td>
                             <td><?php echo $balance->loan_id ? $balance->loan_id : '-'; ?></td>
                             <td style="text-align: right;"><?php echo number_format($balance->principal_balance, 2); ?></td>
                             <td style="text-align: right;"><?php echo number_format($balance->interest_balance, 2); ?></td>

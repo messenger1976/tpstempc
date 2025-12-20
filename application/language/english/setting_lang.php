@@ -129,4 +129,36 @@ $lang['payment_method_not_found'] = 'Payment method not found';
 
 $lang['app_name'] = 'COOP';
 
+// Fiscal Year
+$lang['fiscal_year_list'] = 'Fiscal Year Management';
+$lang['fiscal_year_create'] = 'Create Fiscal Year';
+$lang['fiscal_year_edit'] = 'Edit Fiscal Year';
+$lang['fiscal_year_name'] = 'Fiscal Year Name';
+$lang['fiscal_year_start_date'] = 'Start Date';
+$lang['fiscal_year_end_date'] = 'End Date';
+$lang['fiscal_year_status'] = 'Status';
+$lang['fiscal_year_active'] = 'Active';
+$lang['fiscal_year_inactive'] = 'Inactive';
+$lang['fiscal_year_created_at'] = 'Created At';
+$lang['fiscal_year_current_active'] = 'Currently Active';
+$lang['fiscal_year_save_btn'] = 'Save Fiscal Year';
+$lang['fiscal_year_success'] = 'Fiscal year saved successfully';
+$lang['fiscal_year_fail'] = 'Failed to save fiscal year';
+$lang['fiscal_year_exist'] = 'Fiscal year with this name already exists';
+$lang['fiscal_year_no_data'] = 'No fiscal years found';
+$lang['fiscal_year_invalid_id'] = 'Invalid fiscal year ID';
+$lang['fiscal_year_not_found'] = 'Fiscal year not found';
+$lang['fiscal_year_end_date_before_start'] = 'End date must be after start date';
+$lang['fiscal_year_set_active_confirm_title'] = 'Set Active Fiscal Year';
+$lang['fiscal_year_set_active_confirm_text'] = 'Are you sure you want to set this fiscal year as active?';
+$lang['fiscal_year_yes_set_active'] = 'Yes, Set Active';
+$lang['fiscal_year_set_active_success'] = 'Fiscal year set as active successfully';
+$lang['fiscal_year_set_active_fail'] = 'Failed to set fiscal year as active';
+$lang['fiscal_year_delete_confirm_title'] = 'Delete Fiscal Year';
+$lang['fiscal_year_delete_confirm_text'] = 'Are you sure you want to delete this fiscal year?';
+$lang['fiscal_year_yes_delete'] = 'Yes, Delete';
+$lang['fiscal_year_delete_success'] = 'Fiscal year deleted successfully';
+$lang['fiscal_year_delete_fail'] = 'Failed to delete fiscal year';
+$lang['fiscal_year_cannot_delete_active'] = 'Cannot delete active fiscal year';
+
 ?>

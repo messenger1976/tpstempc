@@ -127,7 +127,18 @@ if (isset($message) && !empty($message)) {
 
 <?php echo form_close(); ?>
 
-<script src="<?php echo base_url() ?>media/js/chosen.jquery.js"></script>
+<?php
+// Build account options HTML for JavaScript
+$account_options_html = '<option value="">' . htmlspecialchars(lang('select_default_text'), ENT_QUOTES) . '</option>';
+foreach ($account_list as $key1 => $value1) {
+    $account_options_html .= '<optgroup label="' . htmlspecialchars($value1['info']->name, ENT_QUOTES) . '">';
+    foreach ($value1['data'] as $key => $value) {
+        $account_options_html .= '<option value="' . htmlspecialchars($value->account, ENT_QUOTES) . '">' . htmlspecialchars($value->name, ENT_QUOTES) . '</option>';
+    }
+    $account_options_html .= '</optgroup>';
+}
+?>
+
 <script src="<?php echo base_url() ?>media/js/script/moment.js"></script>
 <script type="text/javascript">
     (function() {
@@ -137,21 +148,37 @@ if (isset($message) && !empty($message)) {
                 return;
             }
             
-            // Load bootstrap-datepicker after jQuery is available
-            if (typeof $.fn.datetimepicker === 'undefined') {
-                var script = document.createElement('script');
-                script.src = '<?php echo base_url() ?>media/js/plugins/datapicker/bootstrap-datepicker.js';
-                script.onload = function() {
-                    initMainScript();
+            // Load chosen.jquery.js after jQuery is available
+            if (typeof $.fn.chosen === 'undefined') {
+                var chosenScript = document.createElement('script');
+                chosenScript.src = '<?php echo base_url() ?>media/js/chosen.jquery.js';
+                chosenScript.onload = function() {
+                    loadDatePicker();
                 };
-                document.head.appendChild(script);
+                document.head.appendChild(chosenScript);
             } else {
-                initMainScript();
+                loadDatePicker();
+            }
+            
+            function loadDatePicker() {
+                // Load bootstrap-datepicker after jQuery and chosen are available
+                if (typeof $.fn.datetimepicker === 'undefined') {
+                    var script = document.createElement('script');
+                    script.src = '<?php echo base_url() ?>media/js/plugins/datapicker/bootstrap-datepicker.js';
+                    script.onload = function() {
+                        initMainScript();
+                    };
+                    document.head.appendChild(script);
+                } else {
+                    initMainScript();
+                }
             }
             
             function initMainScript() {
                 var diff = 0;
-                    function credit_sum(val, index) {
+                    
+                    // Make functions globally accessible for inline event handlers
+                    window.credit_sum = function(val, index) {
                         var sum = 0;
                         //iterate through each textboxes and add the values
                         $("input.credit").each(function() {
@@ -183,9 +210,9 @@ if (isset($message) && !empty($message)) {
                             $("#quotetable  tr:eq(" + index + ") td:eq(2) input").show();
                         }
                         difference();
-                    }
+                    };
 
-                    function debit_sum(val, index) {
+                    window.debit_sum = function(val, index) {
                         var sum = 0;
 
                         //iterate through each textboxes and add the values
@@ -214,7 +241,7 @@ if (isset($message) && !empty($message)) {
                             $("#quotetable  tr:eq(" + index + ") td:eq(3) input").show();
                         }
                         difference();
-                    }
+                    };
 
 
 
@@ -269,14 +296,13 @@ if (isset($message) && !empty($message)) {
                         });
                         $("#addrow").click(function() {
                             var rowindex = ($('#quotetable  tbody tr').eq(-1).index() + 1);
-                            var newRow = '<tr><td ><select class = "form-control"  name = "account[]" >';
-                            newRow += '<option miltone = "" value = "" ><?php echo lang('select_default_text'); ?> </option><?php foreach ($account_list as $key1 => $value1) { ?><optgroup label = "<?php echo $value1['info']->name; ?>" >';
-                                newRow += ' <?php foreach ($value1['data'] as $key => $value) { ?>            <option value = "<?php echo $value->account; ?>" ><?php echo $value->name; ?> </option> <?php } ?>';
-                                newRow += ' </optgroup><?php } ?></select></td> <td> <input type = "text" name = "description[]" class = "form-control" /> </td> <td> <input onchange="debit_sum(this,' + rowindex + ')" onkeyup="debit_sum(this, ' + rowindex + ')" type = "text" name = "debit[]" class = "form-control amountformat debit" /> </td><td> <input onchange="credit_sum(this,' + rowindex + ')" onkeyup="credit_sum(this, ' + rowindex + ')" type = "text" name = "credit[]" class = "form-control amountformat credit" /> </td>';
-
-
-                            newRow += '                                         </tr> ';
-
+                            var accountOptionsHtml = <?php echo json_encode($account_options_html); ?>;
+                            var newRow = '<tr><td><select class="form-control" name="account[]">';
+                            newRow += accountOptionsHtml;
+                            newRow += '</select></td><td><input type="text" name="description[]" class="form-control" /></td>';
+                            newRow += '<td><input onchange="debit_sum(this,' + rowindex + ')" onkeyup="debit_sum(this, ' + rowindex + ')" type="text" name="debit[]" class="form-control amountformat debit" /></td>';
+                            newRow += '<td><input onchange="credit_sum(this,' + rowindex + ')" onkeyup="credit_sum(this, ' + rowindex + ')" type="text" name="credit[]" class="form-control amountformat credit" /></td>';
+                            newRow += '</tr>';
 
                             $('#quotetable tr:last').before(newRow);
                             return false;

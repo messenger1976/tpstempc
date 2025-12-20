@@ -356,6 +356,66 @@ $this->db->where('PIN',  current_user()->PIN);
         return FALSE;
     }
 
+    // Fiscal Year Methods
+    function fiscal_year_list($id = null) {
+        $pin = current_user()->PIN;
+        $this->db->where('PIN', $pin);
+        if (!is_null($id)) {
+            $this->db->where('id', $id);
+        }
+        $this->db->order_by('start_date', 'DESC');
+        return $this->db->get('fiscal_year');
+    }
+
+    function fiscal_year_create($data, $id = null) {
+        if (is_null($id)) {
+            return $this->db->insert('fiscal_year', $data);
+        } else {
+            return $this->db->update('fiscal_year', $data, array('id' => $id));
+        }
+    }
+
+    function fiscal_year_delete($id) {
+        $pin = current_user()->PIN;
+        $this->db->where('id', $id);
+        $this->db->where('PIN', $pin);
+        return $this->db->delete('fiscal_year');
+    }
+
+    function fiscal_year_set_active($id) {
+        $pin = current_user()->PIN;
+        // First, set all fiscal years to inactive
+        $this->db->where('PIN', $pin);
+        $this->db->update('fiscal_year', array('status' => 0));
+
+        // Then set the selected fiscal year to active
+        $this->db->where('id', $id);
+        $this->db->where('PIN', $pin);
+        return $this->db->update('fiscal_year', array('status' => 1));
+    }
+
+    function is_fiscal_year_exist($name, $exclude_id = null) {
+        $pin = current_user()->PIN;
+        $this->db->where('name', $name);
+        $this->db->where('PIN', $pin);
+        if (!is_null($exclude_id)) {
+            $this->db->where('id !=', $exclude_id);
+        }
+        $check = $this->db->get('fiscal_year')->row();
+
+        if (!empty($check)) {
+            return TRUE;
+        }
+        return FALSE;
+    }
+
+    function get_active_fiscal_year() {
+        $pin = current_user()->PIN;
+        $this->db->where('PIN', $pin);
+        $this->db->where('status', 1);
+        return $this->db->get('fiscal_year')->row();
+    }
+
 }
 
 ?>

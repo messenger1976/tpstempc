@@ -947,7 +947,7 @@ class Setting extends CI_Controller {
             echo json_encode(array('success' => false, 'message' => lang('access_denied')));
             return;
         }
-        
+
         if (!is_null($id)) {
             $id = decode_id($id);
             $id = (int) $id;
@@ -961,7 +961,7 @@ class Setting extends CI_Controller {
             if ($result) {
                 $payment_method = $this->setting_model->payment_method_list($id)->row();
                 echo json_encode(array(
-                    'success' => true, 
+                    'success' => true,
                     'message' => lang('payment_method_status_updated'),
                     'status' => $payment_method->status,
                     'status_text' => $payment_method->status == 1 ? lang('payment_method_active') : lang('payment_method_inactive')
@@ -972,6 +972,148 @@ class Setting extends CI_Controller {
         } else {
             echo json_encode(array('success' => false, 'message' => lang('payment_method_invalid_id')));
         }
+    }
+
+    // Fiscal Year Methods
+    function fiscal_year_list() {
+        $this->data['title'] = lang('fiscal_year_list');
+        $this->data['fiscal_years'] = $this->setting_model->fiscal_year_list()->result();
+        $this->data['active_fiscal_year'] = $this->setting_model->get_active_fiscal_year();
+        $this->data['content'] = 'setting/fiscal_year_list';
+        $this->load->view('template', $this->data);
+    }
+
+    function fiscal_year_create($id = null) {
+        $this->data['id'] = $id;
+        if (!is_null($id)) {
+            $id = decode_id($id);
+        }
+
+        if (is_null($id)) {
+            $this->data['title'] = lang('fiscal_year_create');
+        } else {
+            $this->data['title'] = lang('fiscal_year_edit');
+        }
+
+        $this->form_validation->set_rules('name', lang('fiscal_year_name'), 'xss_clean|required');
+        $this->form_validation->set_rules('start_date', lang('fiscal_year_start_date'), 'xss_clean|required|valid_date');
+        $this->form_validation->set_rules('end_date', lang('fiscal_year_end_date'), 'xss_clean|required|valid_date');
+
+        if ($this->form_validation->run() == TRUE) {
+            $start_date = date('Y-m-d', strtotime($this->input->post('start_date')));
+            $end_date = date('Y-m-d', strtotime($this->input->post('end_date')));
+
+            // Validate date range
+            if (strtotime($end_date) <= strtotime($start_date)) {
+                $this->data['warning'] = lang('fiscal_year_end_date_before_start');
+            } else {
+                $fiscal_year_info = array(
+                    'name' => trim($this->input->post('name')),
+                    'start_date' => $start_date,
+                    'end_date' => $end_date,
+                    'created_by' => current_user()->id,
+                    'PIN' => current_user()->PIN
+                );
+
+                $error = 0;
+                // Check if fiscal year name already exists
+                if ($this->setting_model->is_fiscal_year_exist(trim($this->input->post('name')), $id)) {
+                    $error = 1;
+                }
+
+                if ($error == 0) {
+                    $create = $this->setting_model->fiscal_year_create($fiscal_year_info, $id);
+                    if ($create) {
+                        $this->session->set_flashdata('message', lang('fiscal_year_success'));
+                        redirect(current_lang() . '/setting/fiscal_year_list', 'refresh');
+                    } else {
+                        $this->data['warning'] = lang('fiscal_year_fail');
+                    }
+                } else {
+                    $this->data['warning'] = lang('fiscal_year_exist');
+                }
+            }
+        }
+
+        if (!is_null($id)) {
+            $this->data['fiscal_year'] = $this->setting_model->fiscal_year_list($id)->row();
+        }
+
+        $this->data['content'] = 'setting/fiscal_year_create';
+        $this->load->view('template', $this->data);
+    }
+
+    function fiscal_year_delete($id) {
+        if (empty($id)) {
+            $this->session->set_flashdata('warning', lang('fiscal_year_invalid_id'));
+            redirect(current_lang() . '/setting/fiscal_year_list', 'refresh');
+            return;
+        }
+
+        $id = decode_id($id);
+        $id = (int) $id;
+
+        if (!$id || $id <= 0) {
+            $this->session->set_flashdata('warning', lang('fiscal_year_invalid_id'));
+            redirect(current_lang() . '/setting/fiscal_year_list', 'refresh');
+            return;
+        }
+
+        // Check if record exists before deleting
+        $fiscal_year = $this->setting_model->fiscal_year_list($id)->row();
+        if (!$fiscal_year) {
+            $this->session->set_flashdata('warning', lang('fiscal_year_not_found'));
+            redirect(current_lang() . '/setting/fiscal_year_list', 'refresh');
+            return;
+        }
+
+        // Check if trying to delete active fiscal year
+        if ($fiscal_year->status == 1) {
+            $this->session->set_flashdata('warning', lang('fiscal_year_cannot_delete_active'));
+            redirect(current_lang() . '/setting/fiscal_year_list', 'refresh');
+            return;
+        }
+
+        $result = $this->setting_model->fiscal_year_delete($id);
+        if ($result) {
+            $this->session->set_flashdata('message', lang('fiscal_year_delete_success'));
+        } else {
+            $this->session->set_flashdata('warning', lang('fiscal_year_delete_fail'));
+        }
+
+        redirect(current_lang() . '/setting/fiscal_year_list', 'refresh');
+    }
+
+    function fiscal_year_set_active($id) {
+        if (!is_null($id)) {
+            $id = decode_id($id);
+            $id = (int) $id;
+
+            if (!$id) {
+                $this->session->set_flashdata('warning', lang('fiscal_year_invalid_id'));
+                redirect(current_lang() . '/setting/fiscal_year_list', 'refresh');
+                return;
+            }
+
+            // Check if fiscal year exists
+            $fiscal_year = $this->setting_model->fiscal_year_list($id)->row();
+            if (!$fiscal_year) {
+                $this->session->set_flashdata('warning', lang('fiscal_year_not_found'));
+                redirect(current_lang() . '/setting/fiscal_year_list', 'refresh');
+                return;
+            }
+
+            $result = $this->setting_model->fiscal_year_set_active($id);
+            if ($result) {
+                $this->session->set_flashdata('message', lang('fiscal_year_set_active_success'));
+            } else {
+                $this->session->set_flashdata('warning', lang('fiscal_year_set_active_fail'));
+            }
+        } else {
+            $this->session->set_flashdata('warning', lang('fiscal_year_invalid_id'));
+        }
+
+        redirect(current_lang() . '/setting/fiscal_year_list', 'refresh');
     }
 
 }

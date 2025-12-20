@@ -65,6 +65,21 @@ $account_info = isset($account_info) ? $account_info : null;
         </div>
 
         <div class="form-group">
+            <label class="col-lg-4 control-label"><?php echo lang('account_status'); ?>: <span class="required">*</span></label>
+            <div class="col-lg-7">
+                <select name="status" class="form-control" required>
+                    <option value=""><?php echo lang('select_default_text'); ?></option>
+                    <?php
+                    $selected_status = set_value('status', $account_info && isset($account_info->status) ? $account_info->status : '1');
+                    ?>
+                    <option value="1" <?php echo ($selected_status == '1' || $selected_status === 1) ? 'selected="selected"' : ''; ?>><?php echo lang('account_status_active'); ?></option>
+                    <option value="0" <?php echo ($selected_status == '0' || $selected_status === 0) ? 'selected="selected"' : ''; ?>><?php echo lang('account_status_inactive'); ?></option>
+                </select>
+                <?php echo form_error('status'); ?>
+            </div>
+        </div>
+
+        <div class="form-group">
             <label class="col-lg-3 control-label">&nbsp;</label>
             <div class="col-lg-6">
                 <input class="btn btn-primary" value="<?php echo lang('button_update'); ?>" type="submit"/>
@@ -92,6 +107,13 @@ $account_info = isset($account_info) ? $account_info : null;
                 <div style="border-bottom:1px dashed #ccc; padding:5px 0;">
                     <strong><?php echo lang('member_virtual_balance'); ?>:</strong> 
                     <?php echo number_format($account_info->virtual_balance, 2, '.', ','); ?>
+                </div>
+                <div style="border-bottom:1px dashed #ccc; padding:5px 0;">
+                    <strong><?php echo lang('account_status'); ?>:</strong> 
+                    <?php 
+                    $status_value = isset($account_info->status) ? $account_info->status : '1';
+                    echo ($status_value == '1' || $status_value === 1) ? lang('account_status_active') : lang('account_status_inactive');
+                    ?>
                 </div>
                 <?php if ($account_info->createdon) { ?>
                 <div style="border-bottom:1px dashed #ccc; padding:5px 0;">

@@ -284,6 +284,10 @@ $pin=current_user()->PIN;
             //deposit
             $systemcomment = 'NORMAL DEPOSIT';
             return $this->credit($account, $amount, $paymethod, $comment, $cheque_num, $customer_name, $pid, $systemcomment,0, $posted_date, $refno);
+        } else if ($trans_type == 'INT') {
+            //interest
+            $systemcomment = 'INTEREST';
+            return $this->credit($account, $amount, $paymethod, $comment, $cheque_num, $customer_name, $pid, $systemcomment,0, $posted_date, $refno);
         } else if ($trans_type == 'DR') {
             //with draw
             $systemcomment = 'NORMAL WITHDRAWAL';
@@ -521,7 +525,7 @@ $pin=current_user()->PIN;
         return count($this->db->get('members_account')->result());
     }
 
-    function count_saving_account($key=null, $account_type_filter=null) {
+    function count_saving_account($key=null, $account_type_filter=null, $status_filter=null) {
         $pin = current_user()->PIN;
         $this->db->from('members_account ma');
         $this->db->join('saving_account_type sat', 'ma.account_cat = sat.account AND sat.PIN = ' . $this->db->escape($pin), 'left');
@@ -540,6 +544,20 @@ $pin=current_user()->PIN;
             }
         }
         
+        // Filter by status
+        if (!is_null($status_filter) && $status_filter != '') {
+            if ($status_filter == 'all') {
+                // Show all statuses - no filter
+            } else {
+                // Handle NULL status as Active (1) by default
+                if ($status_filter == '1') {
+                    $this->db->where("(ma.status = '1' OR ma.status IS NULL)", NULL, FALSE);
+                } else {
+                    $this->db->where('ma.status', $status_filter);
+                }
+            }
+        }
+        
         if (!is_null($key) && $key != '') {
             $key_escaped = $this->db->escape_like_str($key);
             $this->db->where("(ma.account LIKE '%{$key_escaped}%' OR ma.member_id LIKE '%{$key_escaped}%' OR ma.RFID = " . $this->db->escape($key) . ")", NULL, FALSE);
@@ -548,7 +566,7 @@ $pin=current_user()->PIN;
         return $this->db->count_all_results();
     }
 
-    function search_saving_account($key=null, $limit=40, $start=0, $account_type_filter=null) {
+    function search_saving_account($key=null, $limit=40, $start=0, $account_type_filter=null, $status_filter=null) {
         $pin = current_user()->PIN;
         $this->db->select('ma.*, m.firstname, m.middlename, m.lastname, m.member_id as member_id_display, mg.name as group_name, sat.description as account_type_name, sat.account as account_type_code, sat.name as account_type_name_display');
         $this->db->from('members_account ma');
@@ -570,6 +588,18 @@ $pin=current_user()->PIN;
             }
         }
         
+        // Filter by status
+        if (!is_null($status_filter) && $status_filter != '') {
+            if ($status_filter != 'all') {
+                // Handle NULL status as Active (1) by default
+                if ($status_filter == '1') {
+                    $this->db->where("(ma.status = '1' OR ma.status IS NULL)", NULL, FALSE);
+                } else {
+                    $this->db->where('ma.status', $status_filter);
+                }
+            }
+        }
+        
         if (!is_null($key) && $key != '') {
             $key_escaped = $this->db->escape_like_str($key);
             $this->db->where("(ma.account LIKE '%{$key_escaped}%' OR ma.member_id LIKE '%{$key_escaped}%' OR ma.RFID = " . $this->db->escape($key) . " OR m.firstname LIKE '%{$key_escaped}%' OR m.lastname LIKE '%{$key_escaped}%')", NULL, FALSE);
@@ -580,7 +610,7 @@ $pin=current_user()->PIN;
         return $this->db->get()->result();
     }
 
-    function get_total_savings_amount($key=null, $account_type_filter=null) {
+    function get_total_savings_amount($key=null, $account_type_filter=null, $status_filter=null) {
         $pin = current_user()->PIN;
         $this->db->select_sum('ma.balance');
         $this->db->from('members_account ma');
@@ -597,6 +627,18 @@ $pin=current_user()->PIN;
                 // MSO accounts: check account_setup prefix, account_type, or name/description contains "mso"
                 $this->db->join('account_chart ac', 'sat.account_setup = ac.account AND ac.PIN = ' . $this->db->escape($pin), 'left');
                 $this->db->where("((sat.account_setup IS NOT NULL AND sat.account_setup != '' AND (LEFT(sat.account_setup, 2) = '40' OR ac.account_type = 40 OR ac.account_type = '40')) OR LOWER(sat.name) LIKE '%mso%' OR LOWER(sat.description) LIKE '%mso%')", NULL, FALSE);
+            }
+        }
+        
+        // Filter by status
+        if (!is_null($status_filter) && $status_filter != '') {
+            if ($status_filter != 'all') {
+                // Handle NULL status as Active (1) by default
+                if ($status_filter == '1') {
+                    $this->db->where("(ma.status = '1' OR ma.status IS NULL)", NULL, FALSE);
+                } else {
+                    $this->db->where('ma.status', $status_filter);
+                }
             }
         }
         

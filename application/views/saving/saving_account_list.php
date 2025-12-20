@@ -15,17 +15,25 @@ if (isset($message) && !empty($message)) {
 $sp = isset($jxy) ? $jxy : array();
 $search_key = isset($jxy['key']) ? $jxy['key'] : (isset($_GET['key']) ? $_GET['key'] : '');
 $account_type_filter = isset($account_type_filter) ? $account_type_filter : (isset($_GET['account_type_filter']) ? $_GET['account_type_filter'] : 'all');
+$status_filter = isset($status_filter) ? $status_filter : (isset($_GET['status_filter']) ? $_GET['status_filter'] : '1');
 ?>
 
 <div class="form-group col-lg-12">
     <div class="col-lg-3">
         <input type="text" class="form-control" id="accountno" name="key" placeholder="<?php echo lang('search_account_member'); ?>" value="<?php echo htmlspecialchars($search_key, ENT_QUOTES, 'UTF-8'); ?>"/> 
     </div>
-    <div class="col-lg-3">
+    <div class="col-lg-2">
         <select name="account_type_filter" class="form-control">
             <option value="all" <?php echo ($account_type_filter == 'all' ? 'selected="selected"' : ''); ?>>All</option>
             <option value="special" <?php echo ($account_type_filter == 'special' ? 'selected="selected"' : ''); ?>>Special</option>
             <option value="mso" <?php echo ($account_type_filter == 'mso' ? 'selected="selected"' : ''); ?>>MSO</option>
+        </select>
+    </div>
+    <div class="col-lg-2">
+        <select name="status_filter" class="form-control">
+            <option value="all" <?php echo ($status_filter == 'all' ? 'selected="selected"' : ''); ?>><?php echo lang('all_status'); ?></option>
+            <option value="1" <?php echo ($status_filter == '1' ? 'selected="selected"' : ''); ?>><?php echo lang('account_status_active'); ?></option>
+            <option value="0" <?php echo ($status_filter == '0' ? 'selected="selected"' : ''); ?>><?php echo lang('account_status_inactive'); ?></option>
         </select>
     </div>
     <div class="col-lg-2">
@@ -41,6 +49,13 @@ $account_type_filter = isset($account_type_filter) ? $account_type_filter : (iss
         }
         if (!empty($account_type_filter) && $account_type_filter != 'all') {
             $export_params['account_type_filter'] = $account_type_filter;
+        }
+        // Always pass status_filter to export (including 'all' or default '1')
+        if (isset($status_filter) && $status_filter != '') {
+            $export_params['status_filter'] = $status_filter;
+        } else {
+            // If not set, default to '1' (Active) for export
+            $export_params['status_filter'] = '1';
         }
         if (!empty($export_params)) {
             $export_url .= '?' . http_build_query($export_params);
@@ -74,6 +89,7 @@ $account_type_filter = isset($account_type_filter) ? $account_type_filter : (iss
                 <th><?php echo lang('account_type_name'); ?></th>
                 <th style="text-align: right; width: 120px;"><?php echo lang('balance'); ?></th>
                 <th style="text-align: right; width: 120px;"><?php echo lang('virtual_balance'); ?></th>
+                <th style="text-align: center; width: 100px;"><?php echo lang('account_status'); ?></th>
                 <th style="text-align: center; width: 200px;"><?php echo lang('index_action_th'); ?></th>
             </tr>
         </thead>
@@ -109,6 +125,16 @@ $account_type_filter = isset($account_type_filter) ? $account_type_filter : (iss
                         <td><?php echo htmlspecialchars($value->account_type_name_display ? $value->account_type_name_display : '-', ENT_QUOTES, 'UTF-8'); ?></td>
                         <td style="text-align: right;"><?php echo number_format($value->balance, 2, '.', ','); ?></td>
                         <td style="text-align: right;"><?php echo number_format($value->virtual_balance, 2, '.', ','); ?></td>
+                        <td style="text-align: center;">
+                            <?php 
+                            $status_value = isset($value->status) ? $value->status : '1';
+                            $status_class = ($status_value == '1' || $status_value === 1) ? 'btn-success' : 'btn-danger';
+                            $status_text = ($status_value == '1' || $status_value === 1) ? lang('account_status_active') : lang('account_status_inactive');
+                            ?>
+                            <span class="btn <?php echo $status_class; ?> btn-xs" style="cursor: default;">
+                                <?php echo htmlspecialchars($status_text, ENT_QUOTES, 'UTF-8'); ?>
+                            </span>
+                        </td>
                         <td style="text-align: center; white-space: nowrap;">
                             <?php 
                             // Find the most recent report for saving account list (link=1) with matching account type

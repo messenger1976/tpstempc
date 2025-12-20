@@ -49,7 +49,7 @@ class MY_Lang extends CI_Lang {
     $this->default_uri = $RTR->default_controller;
 
     $uri_segment = $this->get_uri_lang($this->uri);
-    $this->lang_code = $uri_segment['lang'] ;
+    $this->lang_code = (is_array($uri_segment) && isset($uri_segment['lang'])) ? $uri_segment['lang'] : null;
 
     $url_ok = false;
     if ((!empty($this->lang_code)) && (array_key_exists($this->lang_code, $this->languages)))
@@ -59,7 +59,8 @@ class MY_Lang extends CI_Lang {
         $url_ok = true;
     }
 
-    if ((!$url_ok) && (!$this->is_special($uri_segment['parts'][0]))) // special URI -> no redirect
+    $first_part = (is_array($uri_segment) && isset($uri_segment['parts'][0])) ? $uri_segment['parts'][0] : '';
+    if ((!$url_ok) && (!$this->is_special($first_part))) // special URI -> no redirect
     { 
       // set default language
       $CFG->set_item('language', $this->languages[$this->default_lang()]);
@@ -111,7 +112,8 @@ class MY_Lang extends CI_Lang {
     if ((!empty($this->uri)) && (array_key_exists($lang, $this->languages)))
     {
 
-      if ($uri_segment = $this->get_uri_lang($this->uri))
+      $uri_segment = $this->get_uri_lang($this->uri);
+      if (is_array($uri_segment) && isset($uri_segment['parts'][0]))
       {
         $uri_segment['parts'][0] = $lang;
         $uri = implode('/',$uri_segment['parts']);
@@ -168,10 +170,10 @@ class MY_Lang extends CI_Lang {
     if (!empty($uri))
     {
       $uri_segment = $this->get_uri_lang($uri);
-      if (!$uri_segment['lang'])
+      if (is_array($uri_segment) && !$uri_segment['lang'])
       {
-
-        if ((!$this->is_special($uri_segment['parts'][0])) && (!preg_match('/(.+)\.[a-zA-Z0-9]{2,4}$/', $uri)))
+        $first_part = isset($uri_segment['parts'][0]) ? $uri_segment['parts'][0] : '';
+        if ((!$this->is_special($first_part)) && (!preg_match('/(.+)\.[a-zA-Z0-9]{2,4}$/', $uri)))
         {
           $uri = $this->lang() . '/' . $uri;
         }

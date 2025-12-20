@@ -120,7 +120,7 @@ $lang['DR'] = 'CASH WITHDRAWAL';
 $lang['print_receipt'] = 'Print Receipt';
 $lang['transaction_type'] = 'Transaction Type';
 $lang['document_date'] = 'Document Date';
-$lang['saving_transaction_type_option'] = array('CR'=>'DEPOSIT','DR'=>'WITHDRAWAL');
+$lang['saving_transaction_type_option'] = array('CR'=>'DEPOSIT','DR'=>'WITHDRAWAL','INT'=>'INTEREST');
 $lang['balance'] = 'Balance';
 $lang['amount'] = 'Amount';
 $lang['customer_name'] = 'Customer Name';
@@ -299,5 +299,11 @@ $lang['all'] ='All';
 $lang['myclient_religion_structure']='Create Client Account';
 $lang['myclients_list']='Client List';
 $lang['account_no']='Account#';
+
+// Application name
+$lang['app_name'] = 'COOP';
+
+// Payment Method
+$lang['payment_method_list'] = 'Payment Method List';
 
 ?>

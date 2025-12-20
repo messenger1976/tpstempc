@@ -46,6 +46,10 @@ $lang['saving_account_transactions'] = 'Saving Accounts Transactions';
 $lang['saving_account_transactions_summary'] = 'Saving  Transactions Summary';
 $lang['account_type_code'] = 'Account Type Code';
 $lang['account_type_name'] = 'Account Type Name';
+$lang['account_status'] = 'Status';
+$lang['account_status_active'] = 'Active';
+$lang['account_status_inactive'] = 'Inactive';
+$lang['all_status'] = 'All Status';
 
 
 // general journal

@@ -74,6 +74,14 @@ class Saving extends CI_Controller {
             $account_type_filter = $_GET['account_type_filter'];
         }
         
+        // Status filter - default to '1' (Active)
+        $status_filter = '1'; // Default to Active
+        if (isset($_POST['status_filter']) && $_POST['status_filter'] != '') {
+            $status_filter = $_POST['status_filter'];
+        } else if (isset($_GET['status_filter']) && $_GET['status_filter'] != '') {
+            $status_filter = $_GET['status_filter'];
+        }
+        
         $suffix_array = array();
 
         if (!is_null($key) && $key != '') {
@@ -84,8 +92,13 @@ class Saving extends CI_Controller {
             $suffix_array['account_type_filter'] = $account_type_filter;
         }
         
+        if ($status_filter != '') {
+            $suffix_array['status_filter'] = $status_filter;
+        }
+        
         $this->data['jxy'] = $suffix_array;
         $this->data['account_type_filter'] = $account_type_filter;
+        $this->data['status_filter'] = $status_filter;
         if (count($suffix_array) > 0) {
             $query_string = http_build_query($suffix_array, '', '&');
             $config['suffix'] = '?' . $query_string;
@@ -93,7 +106,7 @@ class Saving extends CI_Controller {
         
         
         $config["base_url"] = site_url(current_lang() . '/saving/saving_account_list');
-        $config["total_rows"] = $this->finance_model->count_saving_account($key, $account_type_filter);
+        $config["total_rows"] = $this->finance_model->count_saving_account($key, $account_type_filter, $status_filter);
         $config["uri_segment"] = 4;
         
         $config['full_tag_open'] = '<div class="pagination" style="background-color:#fff; margin-left:0px;">';
@@ -127,8 +140,8 @@ class Saving extends CI_Controller {
         $page = ($this->uri->segment(4) ? $this->uri->segment(4) : 0);
         $this->data['links'] = $this->pagination->create_links();
         
-        $this->data['saving_accounts'] = $this->finance_model->search_saving_account($key, $config["per_page"], $page, $account_type_filter);
-        $this->data['total_savings_amount'] = $this->finance_model->get_total_savings_amount($key, $account_type_filter);
+        $this->data['saving_accounts'] = $this->finance_model->search_saving_account($key, $config["per_page"], $page, $account_type_filter, $status_filter);
+        $this->data['total_savings_amount'] = $this->finance_model->get_total_savings_amount($key, $account_type_filter, $status_filter);
         
         $this->data['content'] = 'saving/saving_account_list';
         $this->load->view('template', $this->data);
@@ -173,14 +186,21 @@ class Saving extends CI_Controller {
             $account_type_filter = $_GET['account_type_filter'];
         }
         
+        // Status filter - must match saving_account_list logic exactly
+        // Default to '1' (Active) if not provided
+        $status_filter = '1'; // Default to Active
+        if (isset($_GET['status_filter']) && $_GET['status_filter'] != '') {
+            $status_filter = $_GET['status_filter'];
+        }
+        
         // Get total count first to use as limit for export (get all records)
-        $total_count = $this->finance_model->count_saving_account($key, $account_type_filter);
+        $total_count = $this->finance_model->count_saving_account($key, $account_type_filter, $status_filter);
         
         // Get all accounts (use total count + 1000 as limit to ensure we get all records)
         // If total_count is 0, use a reasonable default limit
         $limit = ($total_count > 0) ? $total_count + 1000 : 10000;
-        $saving_accounts = $this->finance_model->search_saving_account($key, $limit, 0, $account_type_filter);
-        $total_savings_amount = $this->finance_model->get_total_savings_amount($key, $account_type_filter);
+        $saving_accounts = $this->finance_model->search_saving_account($key, $limit, 0, $account_type_filter, $status_filter);
+        $total_savings_amount = $this->finance_model->get_total_savings_amount($key, $account_type_filter, $status_filter);
         
         // Check if we have data
         if (!$saving_accounts || !is_array($saving_accounts) || count($saving_accounts) == 0) {
@@ -211,19 +231,21 @@ class Saving extends CI_Controller {
         
         // Set column headers
         $sheet->setCellValue('A1', 'S/No');
-        $sheet->setCellValue('B1', lang('member_member_id'));
-        $sheet->setCellValue('C1', lang('member_fullname'));
-        $sheet->setCellValue('D1', lang('member_old_account_no'));
-        $sheet->setCellValue('E1', lang('account_type_name'));
-        $sheet->setCellValue('F1', lang('balance'));
-        $sheet->setCellValue('G1', lang('virtual_balance'));
+        $sheet->setCellValue('B1', lang('account_number'));
+        $sheet->setCellValue('C1', lang('member_member_id'));
+        $sheet->setCellValue('D1', lang('member_fullname'));
+        $sheet->setCellValue('E1', lang('member_old_account_no'));
+        $sheet->setCellValue('F1', lang('account_type_name'));
+        $sheet->setCellValue('G1', lang('balance'));
+        $sheet->setCellValue('H1', lang('virtual_balance'));
+        $sheet->setCellValue('I1', lang('account_status'));
         
         // Style header row
-        $sheet->getStyle('A1:G1')->getFont()->setBold(true);
-        $sheet->getStyle('A1:G1')->getFill()->setFillType(PHPExcel_Style_Fill::FILL_SOLID);
-        $sheet->getStyle('A1:G1')->getFill()->getStartColor()->setARGB('FFCCCCCC');
-        $sheet->getStyle('A1:G1')->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_CENTER);
-        $sheet->getStyle('A1:G1')->applyFromArray(array(
+        $sheet->getStyle('A1:I1')->getFont()->setBold(true);
+        $sheet->getStyle('A1:I1')->getFill()->setFillType(PHPExcel_Style_Fill::FILL_SOLID);
+        $sheet->getStyle('A1:I1')->getFill()->getStartColor()->setARGB('FFCCCCCC');
+        $sheet->getStyle('A1:I1')->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_CENTER);
+        $sheet->getStyle('A1:I1')->applyFromArray(array(
             'borders' => array(
                 'allborders' => array(
                     'style' => PHPExcel_Style_Border::BORDER_THIN
@@ -234,11 +256,13 @@ class Saving extends CI_Controller {
         // Set column widths
         $sheet->getColumnDimension('A')->setWidth(10);
         $sheet->getColumnDimension('B')->setWidth(20);
-        $sheet->getColumnDimension('C')->setWidth(30);
-        $sheet->getColumnDimension('D')->setWidth(20);
-        $sheet->getColumnDimension('E')->setWidth(25);
-        $sheet->getColumnDimension('F')->setWidth(15);
+        $sheet->getColumnDimension('C')->setWidth(20);
+        $sheet->getColumnDimension('D')->setWidth(30);
+        $sheet->getColumnDimension('E')->setWidth(20);
+        $sheet->getColumnDimension('F')->setWidth(25);
         $sheet->getColumnDimension('G')->setWidth(15);
+        $sheet->getColumnDimension('H')->setWidth(15);
+        $sheet->getColumnDimension('I')->setWidth(15);
         
         // Populate data
         $row = 2;
@@ -252,14 +276,20 @@ class Saving extends CI_Controller {
                 $account_holder_name = trim($value->lastname . ', ' . $value->firstname . ' ' . $value->middlename);
             }
             
+            // Get status text
+            $status_value = isset($value->status) ? $value->status : '1';
+            $status_text = ($status_value == '1' || $status_value === 1) ? lang('account_status_active') : lang('account_status_inactive');
+            
             // Write data to cells
             $sheet->setCellValue('A' . $row, $i++);
-            $sheet->setCellValue('B' . $row, $value->member_id_display);
-            $sheet->setCellValue('C' . $row, $account_holder_name);
-            $sheet->setCellValue('D' . $row, $value->old_members_acct ? $value->old_members_acct : '-');
-            $sheet->setCellValue('E' . $row, $value->account_type_name_display ? $value->account_type_name_display : '-');
-            $sheet->setCellValue('F' . $row, number_format($value->balance, 2, '.', ''));
-            $sheet->setCellValue('G' . $row, number_format($value->virtual_balance, 2, '.', ''));
+            $sheet->setCellValue('B' . $row, $value->account);
+            $sheet->setCellValue('C' . $row, $value->member_id_display);
+            $sheet->setCellValue('D' . $row, $account_holder_name);
+            $sheet->setCellValue('E' . $row, $value->old_members_acct ? $value->old_members_acct : '-');
+            $sheet->setCellValue('F' . $row, $value->account_type_name_display ? $value->account_type_name_display : '-');
+            $sheet->setCellValue('G' . $row, number_format($value->balance, 2, '.', ''));
+            $sheet->setCellValue('H' . $row, number_format($value->virtual_balance, 2, '.', ''));
+            $sheet->setCellValue('I' . $row, $status_text);
             
             // Set alignment
             $sheet->getStyle('A' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_RIGHT);
@@ -267,11 +297,13 @@ class Saving extends CI_Controller {
             $sheet->getStyle('C' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_LEFT);
             $sheet->getStyle('D' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_LEFT);
             $sheet->getStyle('E' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_LEFT);
-            $sheet->getStyle('F' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_RIGHT);
+            $sheet->getStyle('F' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_LEFT);
             $sheet->getStyle('G' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_RIGHT);
+            $sheet->getStyle('H' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_RIGHT);
+            $sheet->getStyle('I' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_CENTER);
             
             // Add borders to cells
-            $sheet->getStyle('A' . $row . ':G' . $row)->applyFromArray(array(
+            $sheet->getStyle('A' . $row . ':I' . $row)->applyFromArray(array(
                 'borders' => array(
                     'allborders' => array(
                         'style' => PHPExcel_Style_Border::BORDER_THIN
@@ -283,10 +315,10 @@ class Saving extends CI_Controller {
         }
         
         // Add total row
-        $sheet->setCellValue('E' . $row, 'Total:');
-        $sheet->setCellValue('F' . $row, number_format($total_savings_amount, 2, '.', ''));
-        $sheet->getStyle('E' . $row . ':G' . $row)->getFont()->setBold(true);
-        $sheet->getStyle('E' . $row . ':G' . $row)->applyFromArray(array(
+        $sheet->setCellValue('F' . $row, 'Total:');
+        $sheet->setCellValue('G' . $row, number_format($total_savings_amount, 2, '.', ''));
+        $sheet->getStyle('F' . $row . ':G' . $row)->getFont()->setBold(true);
+        $sheet->getStyle('F' . $row . ':G' . $row)->applyFromArray(array(
             'borders' => array(
                 'allborders' => array(
                     'style' => PHPExcel_Style_Border::BORDER_THIN
@@ -364,6 +396,7 @@ class Saving extends CI_Controller {
         $this->form_validation->set_rules('account_cat', lang('account_type'), 'required');
         $this->form_validation->set_rules('balance', lang('balance'), 'required|numeric');
         $this->form_validation->set_rules('virtual_balance', lang('virtual_balance'), 'numeric');
+        $this->form_validation->set_rules('status', lang('account_status'), 'required|in_list[0,1]');
         
         if ($this->form_validation->run() == TRUE) {
             $update_data = array(
@@ -373,6 +406,7 @@ class Saving extends CI_Controller {
                 'account_cat' => trim($this->input->post('account_cat')),
                 'balance' => trim($this->input->post('balance')),
                 'virtual_balance' => trim($this->input->post('virtual_balance')) ? trim($this->input->post('virtual_balance')) : 0,
+                'status' => trim($this->input->post('status')),
             );
             
             $result = $this->finance_model->update_saving_account($update_data, $id);

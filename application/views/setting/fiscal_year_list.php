@@ -33,16 +33,13 @@
                         <td><?php echo date('M d, Y', strtotime($value->start_date)); ?></td>
                         <td><?php echo date('M d, Y', strtotime($value->end_date)); ?></td>
                         <td>
-                            <?php if ($status == 0): ?>
-                                <a href="javascript:void(0);"
-                                   class="set-active"
-                                   data-id="<?php echo encode_id($value->id); ?>"
-                                   data-name="<?php echo htmlspecialchars($value->name, ENT_QUOTES); ?>">
-                                    <span class="label <?php echo $status_class; ?>"><?php echo $status_text; ?></span>
-                                </a>
-                            <?php else: ?>
+                            <a href="javascript:void(0);"
+                               class="toggle-status"
+                               data-id="<?php echo encode_id($value->id); ?>"
+                               data-name="<?php echo htmlspecialchars($value->name, ENT_QUOTES); ?>"
+                               data-current-status="<?php echo $status; ?>">
                                 <span class="label <?php echo $status_class; ?>"><?php echo $status_text; ?></span>
-                            <?php endif; ?>
+                            </a>
                         </td>
                         <td><?php echo date('M d, Y H:i', strtotime($value->created_at)); ?></td>
                         <td>
@@ -67,27 +64,42 @@
     </table>
 </div>
 
+<!-- jQuery and SweetAlert JS -->
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+
 <script>
-$(document).ready(function() {
-    // SweetAlert for set active confirmation
-    $('.set-active').click(function(e) {
+(function() {
+    // Ensure jQuery is available
+    var $ = jQuery;
+
+    $(document).ready(function() {
+    // SweetAlert for status toggle confirmation
+    $('.toggle-status').click(function(e) {
         e.preventDefault();
         var fiscalYearId = $(this).data('id');
         var fiscalYearName = $(this).data('name');
+        var currentStatus = parseInt($(this).data('current-status'));
+
+        // Determine action based on current status
+        var isActivating = currentStatus === 0; // 0 = inactive, 1 = active
+        var action = isActivating ? 'activate' : 'deactivate';
+        var actionText = isActivating ? 'set as active' : 'deactivate';
+        var confirmButtonText = isActivating ? "<?php echo lang('fiscal_year_yes_set_active'); ?>" : 'Yes, Deactivate';
+        var confirmButtonColor = isActivating ? "#5cb85c" : "#f0ad4e";
 
         swal({
-            title: "<?php echo lang('fiscal_year_set_active_confirm_title'); ?>",
-            text: "<?php echo lang('fiscal_year_set_active_confirm_text'); ?>: " + fiscalYearName + "?",
+            title: "Confirm Status Change",
+            text: "Are you sure you want to " + actionText + " fiscal year: " + fiscalYearName + "?",
             type: "warning",
             showCancelButton: true,
-            confirmButtonColor: "#5cb85c",
-            confirmButtonText: "<?php echo lang('fiscal_year_yes_set_active'); ?>",
+            confirmButtonColor: confirmButtonColor,
+            confirmButtonText: confirmButtonText,
             cancelButtonText: "<?php echo lang('button_cancel'); ?>",
             closeOnConfirm: false,
             closeOnCancel: true
         }, function(isConfirm) {
             if (isConfirm) {
-                window.location.href = '<?php echo site_url(current_lang() . '/setting/fiscal_year_set_active'); ?>/' + fiscalYearId;
+                window.location.href = '<?php echo site_url(current_lang() . '/setting/fiscal_year_toggle_status'); ?>/' + fiscalYearId;
             }
         });
     });
@@ -115,5 +127,6 @@ $(document).ready(function() {
             }
         });
     });
-});
+    });
+})();
 </script>

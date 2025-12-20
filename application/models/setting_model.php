@@ -394,6 +394,21 @@ $this->db->where('PIN',  current_user()->PIN);
         return $this->db->update('fiscal_year', array('status' => 1));
     }
 
+    function fiscal_year_toggle_status($id, $status) {
+        $pin = current_user()->PIN;
+
+        // If activating (status = 1), first set all others to inactive
+        if ($status == 1) {
+            $this->db->where('PIN', $pin);
+            $this->db->update('fiscal_year', array('status' => 0));
+        }
+
+        // Update the specific fiscal year
+        $this->db->where('id', $id);
+        $this->db->where('PIN', $pin);
+        return $this->db->update('fiscal_year', array('status' => $status));
+    }
+
     function is_fiscal_year_exist($name, $exclude_id = null) {
         $pin = current_user()->PIN;
         $this->db->where('name', $name);

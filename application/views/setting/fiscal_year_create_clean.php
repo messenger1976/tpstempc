@@ -57,73 +57,44 @@ if (isset($message) && !empty($message)) {
     </div>
 </div>
 
-<!-- jQuery and Datepicker JS -->
-<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-<script src="<?php echo base_url(); ?>assets/js/plugins/datapicker/bootstrap-datepicker.js"></script>
-
+<!-- Datepicker JS -->
 <script>
 (function() {
-    // Ensure jQuery is available as $
-    var $ = jQuery;
-
     function initDatePickers() {
-        // Double-check jQuery is available
-        if (typeof $ === 'undefined' || typeof $.fn === 'undefined') {
-            console.warn('jQuery not available, retrying...');
-            setTimeout(initDatePickers, 100);
+        if (typeof jQuery === 'undefined') {
+            setTimeout(initDatePickers, 50);
             return;
         }
 
-        try {
-            // Initialize fiscal year date pickers using bootstrap-datepicker
-            if ($('#datetimepicker').length > 0) {
-                $('#datetimepicker').datepicker({
-                    format: 'mm/dd/yyyy',
-                    todayBtn: 'linked',
-                    todayHighlight: true,
-                    autoclose: true,
-                    clearBtn: false,
-                    orientation: 'bottom auto'
-                });
-                console.log('Start date picker initialized');
-            }
+        // Check if datetimepicker is available
+        if (typeof $.fn.datetimepicker === 'undefined') {
+            var datepickerScript = document.createElement('script');
+            datepickerScript.src = '<?php echo base_url() ?>assets/js/plugins/datapicker/bootstrap-datepicker.js';
+            datepickerScript.onload = function() {
+                initializePickers();
+            };
+            document.head.appendChild(datepickerScript);
+        } else {
+            initializePickers();
+        }
 
-            if ($('#datetimepicker2').length > 0) {
-                $('#datetimepicker2').datepicker({
-                    format: 'mm/dd/yyyy',
-                    todayBtn: 'linked',
-                    todayHighlight: true,
-                    autoclose: true,
-                    clearBtn: false,
-                    orientation: 'bottom auto'
-                });
-                console.log('End date picker initialized');
-            }
+        function initializePickers() {
+            // Initialize fiscal year date pickers (date only, no time)
+            $('#datetimepicker').datetimepicker({
+                pickTime: false
+            });
+            $('#datetimepicker2').datetimepicker({
+                pickTime: false
+            });
 
-            console.log('✅ Fiscal year date pickers initialized successfully');
-
-        } catch (error) {
-            console.error('❌ Error initializing date pickers:', error);
-            // Fallback: basic input without datepicker
-            console.log('📝 Falling back to manual date input');
-            $('#datetimepicker input, #datetimepicker2 input').attr('placeholder', 'MM/DD/YYYY');
+            console.log('Fiscal year date pickers initialized');
         }
     }
 
     // Initialize on document ready
     $(document).ready(function() {
-        console.log('Document ready, initializing date pickers...');
         initDatePickers();
     });
-
-    // Fallback: try to initialize after a delay
-    setTimeout(function() {
-        if (!$('#datetimepicker').hasClass('hasDatepicker')) {
-            console.log('Retrying date picker initialization...');
-            initDatePickers();
-        }
-    }, 1000);
-
 })();
 </script>
 

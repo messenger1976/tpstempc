@@ -607,6 +607,200 @@ class Finance extends CI_Controller {
         redirect(current_lang() . '/finance/chart_sub_type_list', 'refresh');
     }
 
+    // Beginning Balances Management
+    function beginning_balance_list() {
+        $this->data['title'] = lang('beginning_balance_list');
+        
+        // Get selected fiscal year from POST or GET
+        $selected_fiscal_year_id = $this->input->post('fiscal_year_id') ? $this->input->post('fiscal_year_id') : $this->input->get('fiscal_year_id');
+        
+        // Get all fiscal years
+        $this->data['fiscal_years'] = $this->setting_model->fiscal_year_list()->result();
+        
+        // Get beginning balances for selected fiscal year
+        if ($selected_fiscal_year_id) {
+            $this->data['selected_fiscal_year_id'] = $selected_fiscal_year_id;
+            $this->data['beginning_balances'] = $this->finance_model->beginning_balance_list($selected_fiscal_year_id)->result();
+            
+            // Get fiscal year info
+            $fiscal_year = $this->setting_model->fiscal_year_list($selected_fiscal_year_id)->row();
+            $this->data['fiscal_year'] = $fiscal_year;
+        } else {
+            $this->data['selected_fiscal_year_id'] = null;
+            $this->data['beginning_balances'] = array();
+        }
+        
+        $this->data['content'] = 'finance/beginning_balance_list';
+        $this->load->view('template', $this->data);
+    }
+
+    function beginning_balance_create($id = null) {
+        $this->data['id'] = $id;
+        if (!is_null($id)) {
+            $id = decode_id($id);
+        }
+
+        if (is_null($id)) {
+            $this->data['title'] = lang('beginning_balance_create');
+        } else {
+            $this->data['title'] = lang('beginning_balance_edit');
+            $this->data['balance'] = $this->finance_model->beginning_balance_list(null, $id)->row();
+            
+            if (!$this->data['balance']) {
+                $this->session->set_flashdata('warning', lang('beginning_balance_not_found'));
+                redirect(current_lang() . '/finance/beginning_balance_list', 'refresh');
+                return;
+            }
+            
+            // Check if already posted
+            if ($this->data['balance']->posted == 1) {
+                $this->session->set_flashdata('warning', lang('beginning_balance_already_posted'));
+                redirect(current_lang() . '/finance/beginning_balance_list?fiscal_year_id=' . $this->data['balance']->fiscal_year_id, 'refresh');
+                return;
+            }
+        }
+
+        $this->form_validation->set_rules('fiscal_year_id', lang('fiscal_year'), 'required');
+        $this->form_validation->set_rules('account', lang('finance_account_code'), 'required');
+        $this->form_validation->set_rules('debit', lang('beginning_balance_debit'), 'numeric');
+        $this->form_validation->set_rules('credit', lang('beginning_balance_credit'), 'numeric');
+        $this->form_validation->set_rules('description', lang('description'), '');
+
+        if ($this->form_validation->run() == TRUE) {
+            $fiscal_year_id = $this->input->post('fiscal_year_id');
+            $account = trim($this->input->post('account'));
+            $debit = floatval(str_replace(',', '', $this->input->post('debit')));
+            $credit = floatval(str_replace(',', '', $this->input->post('credit')));
+            $description = trim($this->input->post('description'));
+
+            // Validate that account exists
+            $account_info = account_row_info($account);
+            if (!$account_info) {
+                $this->data['warning'] = lang('beginning_balance_account_not_found');
+            } else {
+                // Check if debit and credit are both zero
+                if ($debit == 0 && $credit == 0) {
+                    $this->data['warning'] = lang('beginning_balance_amount_required');
+                } else {
+                    $data = array(
+                        'fiscal_year_id' => $fiscal_year_id,
+                        'account' => $account,
+                        'debit' => $debit,
+                        'credit' => $credit,
+                        'description' => $description
+                    );
+
+                    if (is_null($id)) {
+                        // Check if beginning balance already exists for this fiscal year and account
+                        if ($this->finance_model->check_beginning_balance_exists($fiscal_year_id, $account)) {
+                            $this->data['warning'] = lang('beginning_balance_already_exists');
+                        } else {
+                            $result = $this->finance_model->beginning_balance_create($data);
+                            if ($result) {
+                                $this->session->set_flashdata('message', lang('beginning_balance_create_success'));
+                                redirect(current_lang() . '/finance/beginning_balance_list?fiscal_year_id=' . $fiscal_year_id, 'refresh');
+                            } else {
+                                $this->data['warning'] = lang('beginning_balance_create_fail');
+                            }
+                        }
+                    } else {
+                        // Check if beginning balance already exists for another record
+                        $existing = $this->finance_model->beginning_balance_list($fiscal_year_id)->result();
+                        $exists = false;
+                        foreach ($existing as $existing_balance) {
+                            if ($existing_balance->account == $account && $existing_balance->id != $id) {
+                                $exists = true;
+                                break;
+                            }
+                        }
+                        
+                        if ($exists) {
+                            $this->data['warning'] = lang('beginning_balance_already_exists');
+                        } else {
+                            $result = $this->finance_model->beginning_balance_update($data, $id);
+                            if ($result) {
+                                $this->session->set_flashdata('message', lang('beginning_balance_update_success'));
+                                redirect(current_lang() . '/finance/beginning_balance_list?fiscal_year_id=' . $fiscal_year_id, 'refresh');
+                            } else {
+                                $this->data['warning'] = lang('beginning_balance_update_fail');
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Get fiscal years
+        $this->data['fiscal_years'] = $this->setting_model->fiscal_year_list()->result();
+        
+        // Get account list
+        $this->data['account_list'] = $this->finance_model->account_chart_by_accounttype();
+        
+        $this->data['content'] = 'finance/beginning_balance_form';
+        $this->load->view('template', $this->data);
+    }
+
+    function beginning_balance_edit($id) {
+        $this->beginning_balance_create($id);
+    }
+
+    function beginning_balance_delete($id) {
+        $id = decode_id($id);
+        
+        $balance = $this->finance_model->beginning_balance_list(null, $id)->row();
+        
+        if (!$balance) {
+            $this->session->set_flashdata('warning', lang('beginning_balance_not_found'));
+            redirect(current_lang() . '/finance/beginning_balance_list', 'refresh');
+            return;
+        }
+        
+        // Check if already posted
+        if ($balance->posted == 1) {
+            $this->session->set_flashdata('warning', lang('beginning_balance_cannot_delete_posted'));
+            redirect(current_lang() . '/finance/beginning_balance_list?fiscal_year_id=' . $balance->fiscal_year_id, 'refresh');
+            return;
+        }
+        
+        $result = $this->finance_model->beginning_balance_delete($id);
+        
+        if ($result) {
+            $this->session->set_flashdata('message', lang('beginning_balance_delete_success'));
+        } else {
+            $this->session->set_flashdata('warning', lang('beginning_balance_delete_fail'));
+        }
+        
+        redirect(current_lang() . '/finance/beginning_balance_list?fiscal_year_id=' . $balance->fiscal_year_id, 'refresh');
+    }
+
+    function beginning_balance_post($id) {
+        $id = decode_id($id);
+        
+        $balance = $this->finance_model->beginning_balance_list(null, $id)->row();
+        
+        if (!$balance) {
+            $this->session->set_flashdata('warning', lang('beginning_balance_not_found'));
+            redirect(current_lang() . '/finance/beginning_balance_list', 'refresh');
+            return;
+        }
+        
+        if ($balance->posted == 1) {
+            $this->session->set_flashdata('warning', lang('beginning_balance_already_posted'));
+            redirect(current_lang() . '/finance/beginning_balance_list?fiscal_year_id=' . $balance->fiscal_year_id, 'refresh');
+            return;
+        }
+        
+        $result = $this->finance_model->beginning_balance_post_to_ledger($id);
+        
+        if ($result) {
+            $this->session->set_flashdata('message', lang('beginning_balance_post_success'));
+        } else {
+            $this->session->set_flashdata('warning', lang('beginning_balance_post_fail'));
+        }
+        
+        redirect(current_lang() . '/finance/beginning_balance_list?fiscal_year_id=' . $balance->fiscal_year_id, 'refresh');
+    }
+
 }
 
 ?>

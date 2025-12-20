@@ -736,6 +736,124 @@ $pin=current_user()->PIN;
         return $this->db->delete('account_type_sub');
     }
 
+    // Beginning Balances Methods
+    function beginning_balance_list($fiscal_year_id = null, $id = null) {
+        $pin = current_user()->PIN;
+        $this->db->where('PIN', $pin);
+        
+        if (!is_null($fiscal_year_id)) {
+            $this->db->where('fiscal_year_id', $fiscal_year_id);
+        }
+        
+        if (!is_null($id)) {
+            $this->db->where('id', $id);
+        }
+        
+        $this->db->order_by('account', 'ASC');
+        return $this->db->get('beginning_balances');
+    }
+
+    function beginning_balance_create($data) {
+        $pin = current_user()->PIN;
+        $data['PIN'] = $pin;
+        $data['created_by'] = current_user()->id;
+        return $this->db->insert('beginning_balances', $data);
+    }
+
+    function beginning_balance_update($data, $id) {
+        $pin = current_user()->PIN;
+        $this->db->where('id', $id);
+        $this->db->where('PIN', $pin);
+        return $this->db->update('beginning_balances', $data);
+    }
+
+    function beginning_balance_delete($id) {
+        $pin = current_user()->PIN;
+        $this->db->where('id', $id);
+        $this->db->where('PIN', $pin);
+        
+        // Check if already posted
+        $balance = $this->beginning_balance_list(null, $id)->row();
+        if ($balance && $balance->posted == 1) {
+            return false; // Cannot delete if already posted
+        }
+        
+        return $this->db->delete('beginning_balances');
+    }
+
+    function beginning_balance_post_to_ledger($id) {
+        $pin = current_user()->PIN;
+        $balance = $this->beginning_balance_list(null, $id)->row();
+        
+        if (!$balance || $balance->posted == 1) {
+            return false; // Already posted or doesn't exist
+        }
+        
+        // Get fiscal year info
+        $fiscal_year = $this->db->where('id', $balance->fiscal_year_id)->get('fiscal_year')->row();
+        if (!$fiscal_year) {
+            return false;
+        }
+        
+        // Get account info
+        $account_info = account_row_info($balance->account);
+        if (!$account_info) {
+            return false;
+        }
+        
+        $this->db->trans_start();
+        
+        // Create ledger entry
+        $ledger_entry = array(
+            'date' => $fiscal_year->start_date,
+            'PIN' => $pin
+        );
+        $this->db->insert('general_ledger_entry', $ledger_entry);
+        $ledger_entry_id = $this->db->insert_id();
+        
+        // Create general ledger entry
+        $ledger = array(
+            'journalID' => 8, // Journal ID for Beginning Balance (adjust if needed)
+            'refferenceID' => $id,
+            'entryid' => $ledger_entry_id,
+            'date' => $fiscal_year->start_date,
+            'description' => 'Beginning Balance - ' . ($balance->description ? $balance->description : $account_info->name),
+            'linkto' => 'beginning_balances.id',
+            'fromtable' => 'beginning_balances',
+            'account' => $balance->account,
+            'debit' => $balance->debit,
+            'credit' => $balance->credit,
+            'account_type' => $account_info->account_type,
+            'sub_account_type' => isset($account_info->sub_account_type) ? $account_info->sub_account_type : null,
+            'PIN' => $pin
+        );
+        
+        $this->db->insert('general_ledger', $ledger);
+        
+        // Update beginning balance as posted
+        $update_data = array(
+            'posted' => 1,
+            'posted_date' => date('Y-m-d H:i:s'),
+            'posted_by' => current_user()->id
+        );
+        $this->db->where('id', $id);
+        $this->db->where('PIN', $pin);
+        $this->db->update('beginning_balances', $update_data);
+        
+        $this->db->trans_complete();
+        
+        return $this->db->trans_status();
+    }
+
+    function check_beginning_balance_exists($fiscal_year_id, $account) {
+        $pin = current_user()->PIN;
+        $this->db->where('PIN', $pin);
+        $this->db->where('fiscal_year_id', $fiscal_year_id);
+        $this->db->where('account', $account);
+        $result = $this->db->get('beginning_balances');
+        return $result->num_rows() > 0;
+    }
+
 }
 
 ?>

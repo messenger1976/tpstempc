@@ -154,11 +154,15 @@ $lang['fiscal_year_set_active_confirm_text'] = 'Are you sure you want to set thi
 $lang['fiscal_year_yes_set_active'] = 'Yes, Set Active';
 $lang['fiscal_year_set_active_success'] = 'Fiscal year set as active successfully';
 $lang['fiscal_year_set_active_fail'] = 'Failed to set fiscal year as active';
+$lang['fiscal_year_toggle_success'] = 'Fiscal year status updated successfully';
+$lang['fiscal_year_toggle_fail'] = 'Failed to update fiscal year status';
 $lang['fiscal_year_delete_confirm_title'] = 'Delete Fiscal Year';
 $lang['fiscal_year_delete_confirm_text'] = 'Are you sure you want to delete this fiscal year?';
 $lang['fiscal_year_yes_delete'] = 'Yes, Delete';
 $lang['fiscal_year_delete_success'] = 'Fiscal year deleted successfully';
 $lang['fiscal_year_delete_fail'] = 'Failed to delete fiscal year';
 $lang['fiscal_year_cannot_delete_active'] = 'Cannot delete active fiscal year';
+
+$lang['access_denied'] = 'Access Denied: You do not have permission to access this feature.';
 
 ?>

@@ -976,6 +976,13 @@ class Setting extends CI_Controller {
 
     // Fiscal Year Methods
     function fiscal_year_list() {
+        // Check if user is admin
+        if (!$this->ion_auth->is_admin()) {
+            $this->session->set_flashdata('warning', lang('access_denied'));
+            redirect('dashboard', 'refresh');
+            return;
+        }
+
         $this->data['title'] = lang('fiscal_year_list');
         $this->data['fiscal_years'] = $this->setting_model->fiscal_year_list()->result();
         $this->data['active_fiscal_year'] = $this->setting_model->get_active_fiscal_year();
@@ -984,6 +991,13 @@ class Setting extends CI_Controller {
     }
 
     function fiscal_year_create($id = null) {
+        // Check if user is admin
+        if (!$this->ion_auth->is_admin()) {
+            $this->session->set_flashdata('warning', lang('access_denied'));
+            redirect('dashboard', 'refresh');
+            return;
+        }
+
         $this->data['id'] = $id;
         if (!is_null($id)) {
             $id = decode_id($id);
@@ -996,8 +1010,8 @@ class Setting extends CI_Controller {
         }
 
         $this->form_validation->set_rules('name', lang('fiscal_year_name'), 'xss_clean|required');
-        $this->form_validation->set_rules('start_date', lang('fiscal_year_start_date'), 'xss_clean|required|valid_date');
-        $this->form_validation->set_rules('end_date', lang('fiscal_year_end_date'), 'xss_clean|required|valid_date');
+        $this->form_validation->set_rules('start_date', lang('fiscal_year_start_date'), 'xss_clean|required|callback_valid_date_mmddyyyy');
+        $this->form_validation->set_rules('end_date', lang('fiscal_year_end_date'), 'xss_clean|required|callback_valid_date_mmddyyyy');
 
         if ($this->form_validation->run() == TRUE) {
             $start_date = date('Y-m-d', strtotime($this->input->post('start_date')));
@@ -1044,6 +1058,13 @@ class Setting extends CI_Controller {
     }
 
     function fiscal_year_delete($id) {
+        // Check if user is admin
+        if (!$this->ion_auth->is_admin()) {
+            $this->session->set_flashdata('warning', lang('access_denied'));
+            redirect('dashboard', 'refresh');
+            return;
+        }
+
         if (empty($id)) {
             $this->session->set_flashdata('warning', lang('fiscal_year_invalid_id'));
             redirect(current_lang() . '/setting/fiscal_year_list', 'refresh');
@@ -1085,6 +1106,13 @@ class Setting extends CI_Controller {
     }
 
     function fiscal_year_set_active($id) {
+        // Check if user is admin
+        if (!$this->ion_auth->is_admin()) {
+            $this->session->set_flashdata('warning', lang('access_denied'));
+            redirect('dashboard', 'refresh');
+            return;
+        }
+
         if (!is_null($id)) {
             $id = decode_id($id);
             $id = (int) $id;
@@ -1114,6 +1142,82 @@ class Setting extends CI_Controller {
         }
 
         redirect(current_lang() . '/setting/fiscal_year_list', 'refresh');
+    }
+
+    function fiscal_year_toggle_status($id) {
+        // Check if user is admin
+        if (!$this->ion_auth->is_admin()) {
+            $this->session->set_flashdata('warning', lang('access_denied'));
+            redirect('dashboard', 'refresh');
+            return;
+        }
+
+        if (!is_null($id)) {
+            $id = decode_id($id);
+            $id = (int) $id;
+
+            if (!$id) {
+                $this->session->set_flashdata('warning', lang('fiscal_year_invalid_id'));
+                redirect(current_lang() . '/setting/fiscal_year_list', 'refresh');
+                return;
+            }
+
+            // Check if fiscal year exists
+            $fiscal_year = $this->setting_model->fiscal_year_list($id)->row();
+            if (!$fiscal_year) {
+                $this->session->set_flashdata('warning', lang('fiscal_year_not_found'));
+                redirect(current_lang() . '/setting/fiscal_year_list', 'refresh');
+                return;
+            }
+
+            // Toggle the status
+            $new_status = $fiscal_year->status == 1 ? 0 : 1;
+            $action_text = $new_status == 1 ? 'activated' : 'deactivated';
+
+            $result = $this->setting_model->fiscal_year_toggle_status($id, $new_status);
+            if ($result) {
+                $this->session->set_flashdata('message', "Fiscal year '{$fiscal_year->name}' has been {$action_text} successfully.");
+            } else {
+                $this->session->set_flashdata('warning', lang('fiscal_year_set_active_fail'));
+            }
+        } else {
+            $this->session->set_flashdata('warning', lang('fiscal_year_invalid_id'));
+        }
+
+        redirect(current_lang() . '/setting/fiscal_year_list', 'refresh');
+    }
+
+    // Custom validation callback for MM/DD/YYYY date format
+    function valid_date_mmddyyyy($date) {
+        if (empty($date)) {
+            $this->form_validation->set_message('valid_date_mmddyyyy', 'The %s field is required.');
+            return FALSE;
+        }
+
+        // Check MM/DD/YYYY format
+        if (!preg_match('/^(0[1-9]|1[0-2])\/(0[1-9]|[12][0-9]|3[01])\/\d{4}$/', $date)) {
+            $this->form_validation->set_message('valid_date_mmddyyyy', 'The %s must be in MM/DD/YYYY format.');
+            return FALSE;
+        }
+
+        // Validate the date is real
+        $parts = explode('/', $date);
+        $month = (int)$parts[0];
+        $day = (int)$parts[1];
+        $year = (int)$parts[2];
+
+        if (!checkdate($month, $day, $year)) {
+            $this->form_validation->set_message('valid_date_mmddyyyy', 'The %s contains an invalid date.');
+            return FALSE;
+        }
+
+        // Check reasonable year range
+        if ($year < 1900 || $year > 2100) {
+            $this->form_validation->set_message('valid_date_mmddyyyy', 'The %s year must be between 1900 and 2100.');
+            return FALSE;
+        }
+
+        return TRUE;
     }
 
 }

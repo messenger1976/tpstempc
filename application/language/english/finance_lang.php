@@ -93,4 +93,42 @@ $lang['chart_sub_type_delete_success'] = 'Chart Sub Type deleted successfully';
 $lang['chart_sub_type_delete_fail_in_use'] = 'Cannot delete Chart Sub Type. It is being used in account charts.';
 $lang['chart_sub_type_account_exists'] = 'Sub account number already exists for this chart type';
 
+// Beginning Balances
+$lang['beginning_balance_list'] = 'Beginning Balances';
+$lang['beginning_balance_create'] = 'Create Beginning Balance';
+$lang['beginning_balance_edit'] = 'Edit Beginning Balance';
+$lang['beginning_balance_debit'] = 'Debit';
+$lang['beginning_balance_credit'] = 'Credit';
+$lang['beginning_balance_btncreate'] = 'Create Beginning Balance';
+$lang['beginning_balance_create_success'] = 'Beginning balance created successfully';
+$lang['beginning_balance_create_fail'] = 'Failed to create beginning balance';
+$lang['beginning_balance_update_success'] = 'Beginning balance updated successfully';
+$lang['beginning_balance_update_fail'] = 'Failed to update beginning balance';
+$lang['beginning_balance_delete_success'] = 'Beginning balance deleted successfully';
+$lang['beginning_balance_delete_fail'] = 'Failed to delete beginning balance';
+$lang['beginning_balance_not_found'] = 'Beginning balance not found';
+$lang['beginning_balance_already_exists'] = 'Beginning balance already exists for this fiscal year and account';
+$lang['beginning_balance_account_not_found'] = 'Account not found in chart of accounts';
+$lang['beginning_balance_amount_required'] = 'Either debit or credit amount must be greater than zero';
+$lang['beginning_balance_posted'] = 'Posted';
+$lang['beginning_balance_not_posted'] = 'Not Posted';
+$lang['beginning_balance_post'] = 'Post to General Ledger';
+$lang['beginning_balance_post_success'] = 'Beginning balance posted to General Ledger successfully';
+$lang['beginning_balance_post_fail'] = 'Failed to post beginning balance to General Ledger';
+$lang['beginning_balance_already_posted'] = 'This beginning balance has already been posted to General Ledger';
+$lang['beginning_balance_cannot_delete_posted'] = 'Cannot delete beginning balance that has been posted to General Ledger';
+$lang['beginning_balance_no_edit'] = 'Cannot edit posted balance';
+$lang['beginning_balance_post_confirm'] = 'Are you sure you want to post this beginning balance to General Ledger? This action cannot be undone.';
+$lang['beginning_balance_delete_confirm'] = 'Are you sure you want to delete this beginning balance?';
+$lang['beginning_balance_select_fiscal_year'] = 'Please select a fiscal year to view beginning balances';
+$lang['select_fiscal_year'] = 'Select Fiscal Year';
+$lang['fiscal_year'] = 'Fiscal Year';
+$lang['status'] = 'Status';
+$lang['are_you_sure'] = 'Are you sure?';
+$lang['yes_delete'] = 'Yes, delete it!';
+$lang['cancel'] = 'Cancel';
+$lang['button_view'] = 'View';
+$lang['button_update'] = 'Update';
+$lang['button_cancel'] = 'Cancel';
+
 ?>

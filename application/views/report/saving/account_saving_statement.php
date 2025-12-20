@@ -108,7 +108,7 @@
                 <div class="form-group"><label>Remarks</label> <input type="text" placeholder="Enter Remarks" class="form-control" name="comment<?php echo $value->id; ?>" id="comment<?php echo $value->id; ?>" value="<?php echo $value->comment; ?>"></div>
                 <div class="form-group"><label>Payment Method</label> <input type="text" placeholder="Enter Payment Method" class="form-control" name="paymentmethod<?php echo $value->id; ?>" id="paymentmethod<?php echo $value->id; ?>" value="<?php echo $value->paymethod; ?>"></div>
                 <div class="form-group"><label>Trans Type</label> <input type="text" placeholder="Enter Transaction Type" class="form-control" name="trans_type<?php echo $value->id; ?>" id="trans_type<?php echo $value->id; ?>" value="<?php echo $value->trans_type; ?>"></div>
-                <div class="form-group"><label>Amount</label> <input type="text" placeholder="Enter Amount" class="form-control" name="amount<?php echo $value->id; ?>" id="amount<?php echo $value->id; ?>" value="<?php echo $value->amount; ?>"></div>
+                <div class="form-group"><label>Amount</label> <input type="number" step="any" placeholder="Enter Amount" class="form-control" name="amount<?php echo $value->id; ?>" id="amount<?php echo $value->id; ?>" value="<?php echo $value->amount; ?>"></div>
             </div>
             <div class="modal-footer">
                 <button type="submit" class="btn btn-primary">Save changes</button>

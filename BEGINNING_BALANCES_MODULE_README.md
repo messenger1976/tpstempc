@@ -21,9 +21,29 @@ Run the SQL script to create the `beginning_balances` table:
 ### 2. Set Up Permissions
 The module uses the permission: `Manage_beginning_balance` with module ID `6` (Finance module).
 
-You may need to add this permission to your role/permission system:
-- Permission Name: `Manage_beginning_balance`
-- Module ID: `6` (Finance)
+**Option A: Use the Automated Script (Recommended)**
+1. Navigate to: `http://your-domain/add_beginning_balance_permission.php`
+2. The script will:
+   - Check if the permission exists
+   - Add it to the `role` table if missing
+   - Optionally enable it for all user groups
+3. After running, assign the permission to specific groups through **User Management → Privileges**
+
+**Option B: Manual SQL**
+Run this SQL in your database:
+```sql
+-- Add permission to role table
+INSERT INTO role (Module_id, Name) VALUES (6, 'Manage_beginning_balance');
+
+-- Enable for a specific group (replace GROUP_ID with actual group ID)
+INSERT INTO access_level (group_id, Module, link, allow) VALUES (GROUP_ID, 6, 'Manage_beginning_balance', 1);
+```
+
+**Option C: Through User Interface**
+1. Go to **User Management → Privileges**
+2. Select a user group
+3. The permission should appear under the Finance module
+4. Check the box to enable it
 
 ### 3. Journal ID Configuration (Optional)
 The module uses Journal ID `8` for beginning balance entries. If you need to use a different Journal ID:

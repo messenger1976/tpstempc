@@ -134,6 +134,32 @@ When a loan beginning balance is posted to the General Ledger:
 ## Permission Required
 Users need the **Loan_beginning_balances** role permission under module 5 (Loan Management) to access this feature.
 
+### Setting Up the Permission
+
+**Option A: Use the Automated Script (Recommended)**
+1. Navigate to: `http://your-domain/add_loan_beginning_balance_permission.php`
+2. The script will:
+   - Check if the permission exists
+   - Add it to the `role` table if missing
+   - Optionally enable it for all user groups
+3. After running, assign the permission to specific groups through **User Management → Privileges**
+
+**Option B: Manual SQL**
+Run this SQL in your database:
+```sql
+-- Add permission to role table
+INSERT INTO role (Module_id, Name) VALUES (5, 'Loan_beginning_balances');
+
+-- Enable for a specific group (replace GROUP_ID with actual group ID)
+INSERT INTO access_level (group_id, Module, link, allow) VALUES (GROUP_ID, 5, 'Loan_beginning_balances', 1);
+```
+
+**Option C: Through User Interface**
+1. Go to **User Management → Privileges**
+2. Select a user group
+3. The permission should appear under the Loan Management module (Module 5)
+4. Check the box to enable it
+
 ## Notes
 - Each combination of fiscal year, member ID, and loan product can only have one beginning balance record
 - At least one balance amount (principal, interest, or penalty) must be greater than zero

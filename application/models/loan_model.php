@@ -635,17 +635,24 @@ class Loan_Model extends CI_Model {
     }
 
     function loan_beginning_balance_delete($id) {
-        $pin = current_user()->PIN;
-        $this->db->where('id', $id);
-        $this->db->where('PIN', $pin);
+        if (empty($id)) {
+            return false;
+        }
         
-        // Check if already posted
+        $pin = current_user()->PIN;
+        
+        // Check if already posted first
         $balance = $this->loan_beginning_balance_list(null, $id)->row();
         if ($balance && $balance->posted == 1) {
             return false; // Cannot delete if already posted
         }
         
-        return $this->db->delete('loan_beginning_balances');
+        // Now set WHERE clauses and delete (must set WHERE before delete)
+        $this->db->where('id', $id);
+        $this->db->where('PIN', $pin);
+        
+        $result = $this->db->delete('loan_beginning_balances');
+        return $result;
     }
 
     function loan_beginning_balance_post_to_ledger($id) {

@@ -172,7 +172,34 @@ if (!function_exists('encode_id')) {
 if (!function_exists('decode_id')) {
 
     function decode_id($string) {
-        $str = join(array_map('chr', str_split($string, 3)));
+        // Handle null or empty strings
+        if (is_null($string) || $string === '' || !is_string($string)) {
+            return NULL;
+        }
+        
+        // Split the string into chunks of 3 characters (each chunk is an ASCII code)
+        $chunks = str_split($string, 3);
+        if (empty($chunks)) {
+            return NULL;
+        }
+        
+        // Convert each 3-digit chunk to a character
+        $str = '';
+        foreach ($chunks as $chunk) {
+            // Each chunk should be a 3-digit number representing ASCII code
+            if (strlen($chunk) == 3 && is_numeric($chunk)) {
+                $ascii_code = (int)$chunk;
+                // Validate ASCII code range (0-255)
+                if ($ascii_code >= 0 && $ascii_code <= 255) {
+                    $str .= chr($ascii_code);
+                } else {
+                    return NULL; // Invalid ASCII code
+                }
+            } else {
+                return NULL; // Invalid chunk format
+            }
+        }
+        
         $exp = explode('_', $str);
         if (count($exp) == 3) {
             return $exp[1];

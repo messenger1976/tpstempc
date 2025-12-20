@@ -554,9 +554,11 @@ jQuery.autocomplete = function(input, options) {
                     }else{
                         var userdata = json['data'];
                         var contact = json['contact'];
-                        var account_balance = json['accountinfo'];
+                        var account_balance = json['accountinfo'] || null;
                         var customername = userdata["firstname"]+' '+userdata["middlename"]+' '+userdata["lastname"];
-                        $("#"+options.customerNameID).val(customername);
+                        if (options.customerNameID) {
+                            $("#"+options.customerNameID).val(customername);
+                        }
                         var output = '<div style="border:1px solid  #ccc;font-size:15px;"><table style="width:100%;"><tr><td style="width:70%;">';
                         output += '<div style="border-bottom:1px dashed #ccc;"><strong>'+options.Name+' : </strong> '+userdata["firstname"]+' '+userdata["middlename"]+' '+userdata["lastname"]+'</div>';
                         output += '<div style="border-bottom:1px dashed #ccc;"><strong>'+options.gender+' : </strong> '+userdata["gender"]+'</div>';
@@ -567,7 +569,10 @@ jQuery.autocomplete = function(input, options) {
                         output += '<div style="border-bottom:1px dashed #ccc;"><strong>'+options.email+' : </strong> '+contact["email"]+'</div>';
                         
                         output +='</td><td>  <img style=" height:120px;" src="'+options.photourl+userdata["photo"].toString()+'"/></td></tr></table>       </div>';
-                        output += '<div style="font-size:30px;"><strong>'+options.balance+' : </strong> '+  addCommas(parseFloat(account_balance["balance"]).toFixed(2))+'</div>';
+                        // Only show balance if account_balance exists and options.balance is set
+                        if (account_balance && account_balance["balance"] !== undefined && options.balance && options.balance !== '0' && options.balance !== 0) {
+                            output += '<div style="font-size:30px;"><strong>'+options.balance+' : </strong> '+  addCommas(parseFloat(account_balance["balance"]).toFixed(2))+'</div>';
+                        }
                         $('#member_info').html(output);   
                     }
                         

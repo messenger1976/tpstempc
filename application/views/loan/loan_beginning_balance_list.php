@@ -28,9 +28,16 @@
 
     <?php if (isset($selected_fiscal_year_id) && $selected_fiscal_year_id) { ?>
         <?php if (isset($fiscal_year)) { ?>
-            <div class="alert alert-info">
-                <strong><?php echo lang('fiscal_year'); ?>:</strong> <?php echo $fiscal_year->name; ?> 
-                (<?php echo date('M d, Y', strtotime($fiscal_year->start_date)) . ' - ' . date('M d, Y', strtotime($fiscal_year->end_date)); ?>)
+            <div class="alert alert-info" style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <strong><?php echo lang('fiscal_year'); ?>:</strong> <?php echo $fiscal_year->name; ?> 
+                    (<?php echo date('M d, Y', strtotime($fiscal_year->start_date)) . ' - ' . date('M d, Y', strtotime($fiscal_year->end_date)); ?>)
+                </div>
+                <div>
+                    <a class="btn btn-success" href="<?php echo site_url(current_lang() . '/loan/loan_beginning_balance_export?fiscal_year_id=' . $selected_fiscal_year_id); ?>">
+                        <i class="fa fa-file-excel-o"></i> Export to Excel
+                    </a>
+                </div>
             </div>
         <?php } ?>
         
@@ -42,6 +49,10 @@
                     <th><?php echo lang('member_name'); ?></th>
                     <th><?php echo lang('loan_beginning_balance_loan_product'); ?></th>
                     <th><?php echo lang('loan_beginning_balance_loan_id'); ?></th>
+                    <th style="text-align: right;"><?php echo lang('loan_beginning_balance_loan_amount'); ?></th>
+                    <th style="text-align: right;"><?php echo lang('loan_beginning_balance_monthly_amort'); ?></th>
+                    <th><?php echo lang('loan_beginning_balance_term'); ?></th>
+                    <th><?php echo lang('loan_beginning_balance_last_date_paid'); ?></th>
                     <th style="text-align: right;"><?php echo lang('loan_beginning_balance_principal'); ?></th>
                     <th style="text-align: right;"><?php echo lang('loan_beginning_balance_interest'); ?></th>
                     <th style="text-align: right;"><?php echo lang('loan_beginning_balance_penalty'); ?></th>
@@ -64,6 +75,10 @@
                             <td><?php echo $member_info; ?></td>
                             <td><?php echo $product_name; ?></td>
                             <td><?php echo $balance->loan_id ? $balance->loan_id : '-'; ?></td>
+                            <td style="text-align: right;"><?php echo $balance->loan_amount ? number_format($balance->loan_amount, 2) : '-'; ?></td>
+                            <td style="text-align: right;"><?php echo $balance->monthly_amort ? number_format($balance->monthly_amort, 2) : '-'; ?></td>
+                            <td><?php echo $balance->term ? $balance->term . ' months' : '-'; ?></td>
+                            <td><?php echo $balance->last_date_paid ? date('d-m-Y', strtotime($balance->last_date_paid)) : '-'; ?></td>
                             <td style="text-align: right;"><?php echo number_format($balance->principal_balance, 2); ?></td>
                             <td style="text-align: right;"><?php echo number_format($balance->interest_balance, 2); ?></td>
                             <td style="text-align: right;"><?php echo number_format($balance->penalty_balance, 2); ?></td>
@@ -100,7 +115,7 @@
                 } else {
                     ?>
                     <tr>
-                        <td colspan="11"><?php echo lang('data_not_found'); ?></td>
+                        <td colspan="15"><?php echo lang('data_not_found'); ?></td>
                     </tr>
                 <?php } ?>
             </tbody>

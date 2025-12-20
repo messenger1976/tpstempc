@@ -1,3 +1,6 @@
+<link href="<?php echo base_url(); ?>media/css/jquery.autocomplete.css" rel="stylesheet">
+<!-- Datepicker CSS -->
+<link href="<?php echo base_url(); ?>assets/css/plugins/datapicker/datepicker3.css" rel="stylesheet">
 <?php echo form_open_multipart(current_lang() . "/loan/loan_beginning_balance_create/" . (isset($id) ? $id : ''), 'class="form-horizontal"'); ?>
 
 <?php
@@ -30,9 +33,15 @@ if (isset($message) && !empty($message)) {
 <div class="form-group">
     <label class="col-lg-3 control-label"><?php echo lang('loan_beginning_balance_member_id'); ?> : <span class="required">*</span></label>
     <div class="col-lg-6">
-        <input type="text" name="member_id" id="member_id" value="<?php echo isset($balance) ? $balance->member_id : set_value('member_id'); ?>" class="form-control" required />
+        <div class="input-group">
+            <input type="text" name="member_id" id="member_id" value="<?php echo isset($balance) ? $balance->member_id : set_value('member_id'); ?>" class="form-control" required />
+            <span class="input-group-addon" id="search_mid" style="cursor: pointer;">
+                <span class="fa fa-search"></span>
+            </span>
+        </div>
         <?php echo form_error('member_id'); ?>
         <small class="help-block"><?php echo lang('member_id'); ?></small>
+        <div id="member_info" style="margin-top: 10px;"></div>
     </div>
 </div>
 
@@ -94,9 +103,55 @@ if (isset($message) && !empty($message)) {
 <div class="form-group">
     <label class="col-lg-3 control-label"><?php echo lang('loan_beginning_balance_disbursement_date'); ?> : </label>
     <div class="col-lg-6">
-        <input type="text" name="disbursement_date" id="disbursement_date" value="<?php echo isset($balance) && $balance->disbursement_date ? date('m/d/Y', strtotime($balance->disbursement_date)) : set_value('disbursement_date'); ?>" class="form-control datepicker" />
+        <div class="input-group date" id="datetimepicker_disbursement">
+            <input type="text" name="disbursement_date" id="disbursement_date" placeholder="<?php echo lang('hint_date'); ?>" value="<?php echo isset($balance) && $balance->disbursement_date ? date('d-m-Y', strtotime($balance->disbursement_date)) : set_value('disbursement_date'); ?>" data-date-format="DD-MM-YYYY" class="form-control"/>
+            <span class="input-group-addon">
+                <span class="fa fa-calendar"></span>
+            </span>
+        </div>
         <?php echo form_error('disbursement_date'); ?>
-        <small class="help-block">Optional - Original loan disbursement date (MM/DD/YYYY)</small>
+        <small class="help-block">Optional - Original loan disbursement date (DD-MM-YYYY)</small>
+    </div>
+</div>
+
+<div class="form-group">
+    <label class="col-lg-3 control-label"><?php echo lang('loan_beginning_balance_loan_amount'); ?> : </label>
+    <div class="col-lg-6">
+        <input type="text" name="loan_amount" id="loan_amount" value="<?php echo isset($balance) && $balance->loan_amount ? number_format($balance->loan_amount, 2) : set_value('loan_amount', ''); ?>" class="form-control" onkeyup="formatNumber(this);" />
+        <?php echo form_error('loan_amount'); ?>
+        <small class="help-block">Optional - Original loan amount</small>
+    </div>
+</div>
+
+<div class="form-group">
+    <label class="col-lg-3 control-label"><?php echo lang('loan_beginning_balance_monthly_amort'); ?> : </label>
+    <div class="col-lg-6">
+        <input type="text" name="monthly_amort" id="monthly_amort" value="<?php echo isset($balance) && $balance->monthly_amort ? number_format($balance->monthly_amort, 2) : set_value('monthly_amort', ''); ?>" class="form-control" onkeyup="formatNumber(this);" />
+        <?php echo form_error('monthly_amort'); ?>
+        <small class="help-block">Optional - Monthly amortization amount</small>
+    </div>
+</div>
+
+<div class="form-group">
+    <label class="col-lg-3 control-label"><?php echo lang('loan_beginning_balance_last_date_paid'); ?> : </label>
+    <div class="col-lg-6">
+        <div class="input-group date" id="datetimepicker_last_date_paid">
+            <input type="text" name="last_date_paid" id="last_date_paid" placeholder="<?php echo lang('hint_date'); ?>" value="<?php echo isset($balance) && $balance->last_date_paid ? date('d-m-Y', strtotime($balance->last_date_paid)) : set_value('last_date_paid'); ?>" data-date-format="DD-MM-YYYY" class="form-control"/>
+            <span class="input-group-addon">
+                <span class="fa fa-calendar"></span>
+            </span>
+        </div>
+        <?php echo form_error('last_date_paid'); ?>
+        <small class="help-block">Optional - Last payment date (DD-MM-YYYY)</small>
+    </div>
+</div>
+
+<div class="form-group">
+    <label class="col-lg-3 control-label"><?php echo lang('loan_beginning_balance_term'); ?> : </label>
+    <div class="col-lg-6">
+        <input type="number" name="term" id="term" value="<?php echo isset($balance) ? $balance->term : set_value('term', ''); ?>" class="form-control" min="1" step="1" />
+        <?php echo form_error('term'); ?>
+        <small class="help-block">Optional - Loan term in months</small>
     </div>
 </div>
 
@@ -145,24 +200,282 @@ function calculateTotal() {
     $('#total_balance').val(total.toFixed(2));
 }
 
-// Format on page load
-$(document).ready(function() {
-    $('#principal_balance, #interest_balance, #penalty_balance').on('blur', function() {
-        var value = parseFloat($(this).val().replace(/,/g, ''));
-        if (!isNaN(value)) {
-            $(this).val(value.toFixed(2));
+// Format on page load - wait for jQuery to be available
+(function() {
+    function initScripts() {
+        if (typeof jQuery === 'undefined') {
+            setTimeout(initScripts, 50);
+            return;
         }
-        calculateTotal();
-    });
-    
-    // Initialize datepicker
-    $('.datepicker').datepicker({
-        format: 'mm/dd/yyyy',
-        autoclose: true,
-        todayHighlight: true
-    });
-    
-    // Calculate total on page load
-    calculateTotal();
-});
+        
+        // Load autocomplete script dynamically if not already loaded
+        var autocompleteScriptLoaded = false;
+        var existingScript = document.querySelector('script[src*="jquery.autocomplete_saving.js"]');
+        
+        if (existingScript) {
+            // Script already exists, initialize after a short delay
+            setTimeout(function() {
+                initializePage();
+            }, 200);
+        } else {
+            // Load the autocomplete script
+            var autocompleteScript = document.createElement('script');
+            autocompleteScript.src = '<?php echo base_url(); ?>media/js/jquery.autocomplete_saving.js';
+            autocompleteScript.onload = function() {
+                autocompleteScriptLoaded = true;
+                setTimeout(function() {
+                    initializePage();
+                }, 300);
+            };
+            autocompleteScript.onerror = function() {
+                console.error('Failed to load autocomplete plugin');
+                // Still try to initialize without autocomplete
+                setTimeout(function() {
+                    initializePage();
+                }, 300);
+            };
+            document.head.appendChild(autocompleteScript);
+        }
+        
+        function initializePage() {
+            jQuery(document).ready(function($) {
+                $('#principal_balance, #interest_balance, #penalty_balance').on('blur', function() {
+                    var value = parseFloat($(this).val().replace(/,/g, ''));
+                    if (!isNaN(value)) {
+                        $(this).val(value.toFixed(2));
+                    }
+                    calculateTotal();
+                });
+                
+                // Calculate total on page load
+                calculateTotal();
+                
+                // Initialize member autocomplete
+                try {
+                    if ($("#member_id").data('ui-autocomplete')) {
+                        $("#member_id").autocomplete('destroy');
+                    }
+                } catch(e) {
+                    // Ignore errors
+                }
+                
+                // Wait a bit to ensure cleanup is complete before initializing
+                setTimeout(function() {
+                    try {
+                        if (typeof $.fn.autocomplete !== 'undefined') {
+                            $("#member_id").autocomplete("<?php echo site_url(current_lang() . '/loan/autosuggest_member/mid'); ?>", {
+                                pleasewait: '<?php echo lang("please_wait"); ?>',
+                                serverURLq: '<?php echo site_url(current_lang() . '/loan/search_member/'); ?>',
+                                Name: '<?php echo lang('member_fullname'); ?>',
+                                gender: '<?php echo lang('member_gender'); ?>',
+                                dob: '<?php echo lang('member_dob'); ?>',
+                                joindate: '<?php echo lang('member_join_date'); ?>',
+                                phone1: '<?php echo lang('member_contact_phone1'); ?> ',
+                                phone2: '<?php echo lang('member_contact_phone2'); ?>',
+                                email: '<?php echo lang('member_contact_email'); ?>',
+                                photourl: '<?php echo base_url(); ?>uploads/memberphoto/',
+                                matchContains: true,
+                                column: 'MID',
+                                balance: '', // Don't show balance for loan beginning balances
+                                customerNameID: '' // Don't set customer name field
+                            });
+                        }
+                    } catch(e) {
+                        console.error('Autocomplete initialization error:', e);
+                        // Retry once more after a longer delay
+                        setTimeout(function() {
+                            try {
+                                if (typeof $.fn.autocomplete !== 'undefined') {
+                                    $("#member_id").autocomplete("<?php echo site_url(current_lang() . '/loan/autosuggest_member/mid'); ?>", {
+                                        pleasewait: '<?php echo lang("please_wait"); ?>',
+                                        serverURLq: '<?php echo site_url(current_lang() . '/loan/search_member/'); ?>',
+                                        Name: '<?php echo lang('member_fullname'); ?>',
+                                        gender: '<?php echo lang('member_gender'); ?>',
+                                        dob: '<?php echo lang('member_dob'); ?>',
+                                        joindate: '<?php echo lang('member_join_date'); ?>',
+                                        phone1: '<?php echo lang('member_contact_phone1'); ?> ',
+                                        phone2: '<?php echo lang('member_contact_phone2'); ?>',
+                                        email: '<?php echo lang('member_contact_email'); ?>',
+                                        photourl: '<?php echo base_url(); ?>uploads/memberphoto/',
+                                        matchContains: true,
+                                        column: 'MID',
+                                        balance: '', // Don't show balance for loan beginning balances
+                                        customerNameID: '' // Don't set customer name field
+                                    });
+                                }
+                            } catch(e2) {
+                                console.error('Autocomplete retry failed:', e2);
+                            }
+                        }, 300);
+                    }
+                }, 150);
+                
+                // Load member info if member_id is already set
+                var member_id = '<?php echo isset($balance) ? $balance->member_id : set_value('member_id'); ?>';
+                if (member_id && member_id.length > 0) {
+                    $('#member_info').html('<?php echo lang("please_wait"); ?>');
+                    $.ajax({
+                        url: '<?php echo site_url(current_lang() . '/loan/search_member/'); ?>',
+                        type: 'POST',
+                        data: {
+                            value: member_id,
+                            column: 'MID'
+                        },
+                        success: function(data) {
+                            var json = JSON.parse(data);
+                            if (json['success'].toString() == 'N') {
+                                $('#member_info').html('<div style="color:red;">' + json['error'].toString() + '</div>');
+                            } else {
+                                var userdata = json['data'];
+                                var contact = json['contact'];
+                                var output = '<div style="border:1px solid #ccc;font-size:15px;"><table style="width:100%;"><tr><td style="width:70%;">';
+                                output += '<div style="border-bottom:1px dashed #ccc;"><strong><?php echo lang('member_fullname'); ?> : </strong> ' + userdata["firstname"] + ' ' + userdata["middlename"] + ' ' + userdata["lastname"] + '</div>';
+                                output += '<div style="border-bottom:1px dashed #ccc;"><strong><?php echo lang('member_gender'); ?> : </strong> ' + userdata["gender"] + '</div>';
+                                output += '<div style="border-bottom:1px dashed #ccc;"><strong><?php echo lang('member_dob'); ?> : </strong> ' + userdata["dob"] + '</div>';
+                                output += '<div style="border-bottom:1px dashed #ccc;"><strong><?php echo lang('member_join_date'); ?> : </strong> ' + userdata["joiningdate"] + '</div>';
+                                output += '<div style="border-bottom:1px dashed #ccc;"><strong><?php echo lang('member_contact_phone1'); ?> : </strong> ' + contact["phone1"] + '</div>';
+                                output += '<div style="border-bottom:1px dashed #ccc;"><strong><?php echo lang('member_contact_phone2'); ?> : </strong> ' + contact["phone2"] + '</div>';
+                                output += '<div style="border-bottom:1px dashed #ccc;"><strong><?php echo lang('member_contact_email'); ?> : </strong> ' + contact["email"] + '</div>';
+                                output += '</td><td>  <img style="height:120px;" src="<?php echo base_url(); ?>uploads/memberphoto/' + userdata["photo"].toString() + '"/></td></tr></table></div>';
+                                $('#member_info').html(output);
+                            }
+                        },
+                        error: function(xhr, textStatus, errorThrown) {
+                            $('#member_info').html('<div style="color:red;">Error loading member information</div>');
+                        }
+                    });
+                }
+                
+                // Search button click handler
+                $('#search_mid').click(function() {
+                    var member_id_val = $('#member_id').val();
+                    if (member_id_val && member_id_val.length > 0) {
+                        $('#member_info').html('<?php echo lang("please_wait"); ?>');
+                        $.ajax({
+                            url: '<?php echo site_url(current_lang() . '/loan/search_member/'); ?>',
+                            type: 'POST',
+                            data: {
+                                value: member_id_val,
+                                column: 'MID'
+                            },
+                            success: function(data) {
+                                var json = JSON.parse(data);
+                                if (json['success'].toString() == 'N') {
+                                    $('#member_info').html('<div style="color:red;">' + json['error'].toString() + '</div>');
+                                } else {
+                                    var userdata = json['data'];
+                                    var contact = json['contact'];
+                                    var output = '<div style="border:1px solid #ccc;font-size:15px;"><table style="width:100%;"><tr><td style="width:70%;">';
+                                    output += '<div style="border-bottom:1px dashed #ccc;"><strong><?php echo lang('member_fullname'); ?> : </strong> ' + userdata["firstname"] + ' ' + userdata["middlename"] + ' ' + userdata["lastname"] + '</div>';
+                                    output += '<div style="border-bottom:1px dashed #ccc;"><strong><?php echo lang('member_gender'); ?> : </strong> ' + userdata["gender"] + '</div>';
+                                    output += '<div style="border-bottom:1px dashed #ccc;"><strong><?php echo lang('member_dob'); ?> : </strong> ' + userdata["dob"] + '</div>';
+                                    output += '<div style="border-bottom:1px dashed #ccc;"><strong><?php echo lang('member_join_date'); ?> : </strong> ' + userdata["joiningdate"] + '</div>';
+                                    output += '<div style="border-bottom:1px dashed #ccc;"><strong><?php echo lang('member_contact_phone1'); ?> : </strong> ' + contact["phone1"] + '</div>';
+                                    output += '<div style="border-bottom:1px dashed #ccc;"><strong><?php echo lang('member_contact_phone2'); ?> : </strong> ' + contact["phone2"] + '</div>';
+                                    output += '<div style="border-bottom:1px dashed #ccc;"><strong><?php echo lang('member_contact_email'); ?> : </strong> ' + contact["email"] + '</div>';
+                                    output += '</td><td>  <img style="height:120px;" src="<?php echo base_url(); ?>uploads/memberphoto/' + userdata["photo"].toString() + '"/></td></tr></table></div>';
+                                    $('#member_info').html(output);
+                                }
+                            },
+                            error: function(xhr, textStatus, errorThrown) {
+                                $('#member_info').html('<div style="color:red;">Error loading member information</div>');
+                            }
+                        });
+                    }
+                });
+            });
+        }
+    }
+    initScripts();
+})();
 </script>
+
+<!-- jQuery and Datepicker JS - Same as fiscal year create page -->
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="<?php echo base_url(); ?>assets/js/plugins/datapicker/bootstrap-datepicker.js"></script>
+
+<script>
+(function() {
+    // Ensure jQuery is available as $
+    var $ = jQuery;
+
+    function initDatePickers() {
+        // Double-check jQuery is available
+        if (typeof $ === 'undefined' || typeof $.fn === 'undefined') {
+            console.warn('jQuery not available, retrying...');
+            setTimeout(initDatePickers, 100);
+            return;
+        }
+
+        try {
+            // Initialize datepicker for disbursement date - DD-MM-YYYY format
+            if ($('#datetimepicker_disbursement').length > 0) {
+                $('#datetimepicker_disbursement').datepicker({
+                    format: 'dd-mm-yyyy',  // This produces DD-MM-YYYY format (e.g., 15-01-2024)
+                    todayBtn: 'linked',
+                    todayHighlight: true,
+                    autoclose: true,
+                    clearBtn: false,
+                    orientation: 'bottom auto'
+                });
+                console.log('Disbursement date picker initialized with format: dd-mm-yyyy (displays as DD-MM-YYYY)');
+            }
+
+            // Initialize datepicker for last date paid - DD-MM-YYYY format
+            if ($('#datetimepicker_last_date_paid').length > 0) {
+                $('#datetimepicker_last_date_paid').datepicker({
+                    format: 'dd-mm-yyyy',  // This produces DD-MM-YYYY format (e.g., 15-01-2024)
+                    todayBtn: 'linked',
+                    todayHighlight: true,
+                    autoclose: true,
+                    clearBtn: false,
+                    orientation: 'bottom auto'
+                });
+                console.log('Last date paid picker initialized with format: dd-mm-yyyy (displays as DD-MM-YYYY)');
+            }
+
+            console.log('✅ Date pickers initialized successfully');
+
+        } catch (error) {
+            console.error('❌ Error initializing date picker:', error);
+            // Fallback: basic input without datepicker
+            console.log('📝 Falling back to manual date input');
+            $('#datetimepicker_disbursement input, #datetimepicker_last_date_paid input').attr('placeholder', 'DD-MM-YYYY');
+        }
+    }
+
+    // Initialize on document ready
+    $(document).ready(function() {
+        console.log('Document ready, initializing date pickers...');
+        initDatePickers();
+    });
+
+    // Fallback: try to initialize after a delay
+    setTimeout(function() {
+        if (($('#datetimepicker_disbursement').length > 0 && !$('#datetimepicker_disbursement').hasClass('hasDatepicker')) ||
+            ($('#datetimepicker_last_date_paid').length > 0 && !$('#datetimepicker_last_date_paid').hasClass('hasDatepicker'))) {
+            console.log('Retrying date picker initialization...');
+            initDatePickers();
+        }
+    }, 1000);
+
+})();
+</script>
+
+<style>
+/* Date picker styling consistent with fiscal year create page */
+.input-group.date .input-group-addon {
+    cursor: pointer;
+    background-color: #f8f9fa;
+    border: 1px solid #ced4da;
+    border-left: none;
+}
+.input-group.date .input-group-addon:hover {
+    background-color: #e9ecef;
+}
+.input-group.date .form-control:focus + .input-group-addon,
+.input-group.date .input-group-addon:focus {
+    border-color: #80bdff;
+    box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+}
+</style>

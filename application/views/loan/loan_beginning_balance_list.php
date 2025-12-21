@@ -9,7 +9,7 @@
             <h4><?php echo lang('select_fiscal_year'); ?></h4>
         </div>
         <div class="panel-body">
-            <form method="post" action="<?php echo site_url(current_lang() . '/loan/loan_beginning_balance_list'); ?>" class="form-inline">
+            <form method="post" action="<?php echo site_url(current_lang() . '/loan/loan_beginning_balance_list'); ?>" class="form-inline" id="filterForm">
                 <div class="form-group">
                     <label for="fiscal_year_id"><?php echo lang('fiscal_year'); ?>:</label>
                     <select name="fiscal_year_id" id="fiscal_year_id" class="form-control" style="margin-left: 10px; margin-right: 10px;">
@@ -17,6 +17,17 @@
                         <?php foreach ($fiscal_years as $fy) { ?>
                             <option value="<?php echo $fy->id; ?>" <?php echo (isset($selected_fiscal_year_id) && $selected_fiscal_year_id == $fy->id ? 'selected' : ''); ?>>
                                 <?php echo $fy->name . ' (' . date('M d, Y', strtotime($fy->start_date)) . ' - ' . date('M d, Y', strtotime($fy->end_date)) . ')'; ?>
+                            </option>
+                        <?php } ?>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="loan_product_id"><?php echo lang('loan_beginning_balance_loan_product'); ?>:</label>
+                    <select name="loan_product_id" id="loan_product_id" class="form-control" style="margin-left: 10px; margin-right: 10px;">
+                        <option value="all" <?php echo (isset($selected_loan_product_id) && $selected_loan_product_id == 'all' ? 'selected' : ''); ?>>All</option>
+                        <?php foreach ($loan_products as $product) { ?>
+                            <option value="<?php echo $product->id; ?>" <?php echo (isset($selected_loan_product_id) && $selected_loan_product_id == $product->id ? 'selected' : ''); ?>>
+                                <?php echo $product->name; ?>
                             </option>
                         <?php } ?>
                     </select>
@@ -34,7 +45,14 @@
                     (<?php echo date('M d, Y', strtotime($fiscal_year->start_date)) . ' - ' . date('M d, Y', strtotime($fiscal_year->end_date)); ?>)
                 </div>
                 <div>
-                    <a class="btn btn-success" href="<?php echo site_url(current_lang() . '/loan/loan_beginning_balance_export?fiscal_year_id=' . $selected_fiscal_year_id); ?>">
+                    <?php 
+                    $export_url = site_url(current_lang() . '/loan/loan_beginning_balance_export');
+                    $export_url .= '?fiscal_year_id=' . urlencode($selected_fiscal_year_id);
+                    if (isset($selected_loan_product_id) && $selected_loan_product_id != 'all') {
+                        $export_url .= '&loan_product_id=' . urlencode($selected_loan_product_id);
+                    }
+                    ?>
+                    <a class="btn btn-success" href="<?php echo $export_url; ?>">
                         <i class="fa fa-file-excel-o"></i> Export to Excel
                     </a>
                 </div>

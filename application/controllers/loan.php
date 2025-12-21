@@ -1284,16 +1284,29 @@ break;
         // Get all fiscal years
         $this->data['fiscal_years'] = $this->setting_model->fiscal_year_list()->result();
         
+        // Get all loan products for filter
+        $this->data['loan_products'] = $this->setting_model->loanproduct()->result();
+        
         // Handle fiscal year selection
         $selected_fiscal_year_id = $this->input->post('fiscal_year_id');
         if (!$selected_fiscal_year_id && $this->input->get('fiscal_year_id')) {
             $selected_fiscal_year_id = $this->input->get('fiscal_year_id');
         }
         
+        // Handle loan product filter
+        $selected_loan_product_id = $this->input->post('loan_product_id');
+        if (!$selected_loan_product_id && $this->input->get('loan_product_id')) {
+            $selected_loan_product_id = $this->input->get('loan_product_id');
+        }
+        if (!$selected_loan_product_id) {
+            $selected_loan_product_id = 'all'; // Default to 'all'
+        }
+        $this->data['selected_loan_product_id'] = $selected_loan_product_id;
+        
         if ($selected_fiscal_year_id) {
             $this->data['selected_fiscal_year_id'] = $selected_fiscal_year_id;
             $this->data['fiscal_year'] = $this->setting_model->fiscal_year_list($selected_fiscal_year_id)->row();
-            $balances = $this->loan_model->loan_beginning_balance_list($selected_fiscal_year_id)->result();
+            $balances = $this->loan_model->loan_beginning_balance_list($selected_fiscal_year_id, null, $selected_loan_product_id)->result();
             
             // Pre-fetch member names and product info to avoid N+1 queries
             $member_names = array();
@@ -1557,6 +1570,15 @@ break;
             exit();
         }
         
+        // Get loan product filter from GET or POST
+        $selected_loan_product_id = $this->input->get('loan_product_id');
+        if (!$selected_loan_product_id) {
+            $selected_loan_product_id = $this->input->post('loan_product_id');
+        }
+        if (!$selected_loan_product_id) {
+            $selected_loan_product_id = 'all'; // Default to 'all'
+        }
+        
         // Get fiscal year info
         $fiscal_year = $this->setting_model->fiscal_year_list($selected_fiscal_year_id)->row();
         if (!$fiscal_year) {
@@ -1569,8 +1591,8 @@ break;
             exit();
         }
         
-        // Get balances
-        $balances = $this->loan_model->loan_beginning_balance_list($selected_fiscal_year_id)->result();
+        // Get balances with loan product filter
+        $balances = $this->loan_model->loan_beginning_balance_list($selected_fiscal_year_id, null, $selected_loan_product_id)->result();
         
         // Pre-fetch member names and product info
         $member_names = array();
@@ -1680,17 +1702,28 @@ break;
             $sheet->getColumnDimension($col)->setAutoSize(true);
         }
         
-        // Set filename
-        $filename = 'Loan_Beginning_Balances_' . $fiscal_year->name . '_' . date('Y-m-d_His') . '.xls';
-        $filename = preg_replace('/[^a-zA-Z0-9_-]/', '_', $filename);
+        // Set filename - ensure .xls extension
+        $fiscal_year_name = preg_replace('/[^a-zA-Z0-9_-]/', '_', $fiscal_year->name);
+        $filename = 'Loan_Beginning_Balances_' . $fiscal_year_name . '_' . date('Y-m-d_His') . '.xls';
         
-        // Redirect output to a client's web browser (Excel5)
+        // Clear any remaining output buffers before sending headers
+        if (ob_get_level()) {
+            ob_end_clean();
+        }
+        while (@ob_end_clean());
+        
+        // Set headers - MUST be before any output
         header('Content-Type: application/vnd.ms-excel');
         header('Content-Disposition: attachment;filename="' . $filename . '"');
-        header('Cache-Control: max-age=0');
+        header('Cache-Control: must-revalidate, post-check=0, pre-check=0');
+        header('Pragma: public');
+        header('Expires: 0');
         
+        // Create writer and output directly
         $objWriter = PHPExcel_IOFactory::createWriter($objPHPExcel, 'Excel5');
         $objWriter->save('php://output');
+        
+        // Exit immediately to prevent any further output
         exit();
     }
 

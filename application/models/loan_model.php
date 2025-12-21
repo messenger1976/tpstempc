@@ -604,18 +604,22 @@ class Loan_Model extends CI_Model {
     }
 
     // Loan Beginning Balances Methods
-    function loan_beginning_balance_list($fiscal_year_id = null, $id = null) {
+    function loan_beginning_balance_list($fiscal_year_id = null, $id = null, $loan_product_id = null) {
         $pin = current_user()->PIN;
         $this->db->where('PIN', $pin);
-        
+
         if (!is_null($fiscal_year_id)) {
             $this->db->where('fiscal_year_id', $fiscal_year_id);
         }
-        
+
         if (!is_null($id)) {
             $this->db->where('id', $id);
         }
-        
+
+        if (!is_null($loan_product_id) && $loan_product_id != '' && $loan_product_id != 'all') {
+            $this->db->where('loan_product_id', $loan_product_id);
+        }
+
         $this->db->order_by('created_at', 'DESC');
         return $this->db->get('loan_beginning_balances');
     }

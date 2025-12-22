@@ -160,12 +160,16 @@ class Backup_Model extends CI_Model {
         $sql_content = file_get_contents($sql_file);
         
         // Split queries by semicolon - handles various line endings
+        // Note: This approach works for standard SQL dumps but may not handle
+        // edge cases like semicolons in quoted strings or complex stored procedures.
+        // For standard CodeIgniter database backups, this is sufficient.
         $queries = preg_split('/;\s*$/m', $sql_content);
         
         // Disable foreign key checks for restore
         $this->db->query('SET FOREIGN_KEY_CHECKS=0');
         
-        // Minimum length for a valid SQL statement (e.g., "USE x;")
+        // Minimum length for a valid SQL statement (e.g., "USE x;" is 6 chars)
+        // This filters out empty lines and SQL fragments
         $min_query_length = 5;
         
         try {

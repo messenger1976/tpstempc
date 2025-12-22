@@ -272,6 +272,7 @@ $activefunction = ($this->uri->segment(3)) ? $this->uri->segment(3) : 'X';
                         
                         <?php if ($this->ion_auth->is_admin()) { ?>
                             <li class="<?php echo (($active == 'activity_log' || $activefunction == 'index' || $activefunction == 'view') ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/activity_log/index'); ?>"><i class="fa fa-history"></i> Activity Logs</a></li>
+                            <li class="<?php echo ($active == 'backup' ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/backup/index'); ?>"><i class="fa fa-database"></i> Database Backup</a></li>
                         <?php } ?>
                       
                     </ul>

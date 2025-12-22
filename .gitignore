@@ -30,3 +30,5 @@ application/config/database.php
 .htaccess
 Wopxop.php
 .vscode/sftp.json
+backups/*
+!backups/.htaccess

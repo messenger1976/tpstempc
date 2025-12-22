@@ -51,8 +51,7 @@ if (isset($message) && !empty($message)) {
                                         <i class="fa fa-download"></i> Download
                                     </a>
                                     <a href="<?php echo site_url(current_lang() . '/backup/restore/' . $backup['filename']); ?>" 
-                                       class="btn btn-sm btn-warning" title="Restore"
-                                       onclick="return confirm('Are you sure you want to restore this backup? This will overwrite current database data.');">
+                                       class="btn btn-sm btn-warning" title="Restore">
                                         <i class="fa fa-refresh"></i> Restore
                                     </a>
                                     <a href="<?php echo site_url(current_lang() . '/backup/delete/' . $backup['filename']); ?>" 

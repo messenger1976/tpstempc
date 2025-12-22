@@ -16,9 +16,6 @@ class Backup_Model extends CI_Model {
      * @return string|false Path to backup file or false on failure
      */
     function create_backup() {
-        // Get database configuration
-        $db_config = $this->db->database;
-        
         // Set backup preferences
         $prefs = array(
             'format' => 'zip',
@@ -162,16 +159,20 @@ class Backup_Model extends CI_Model {
         // Read SQL file and execute queries
         $sql_content = file_get_contents($sql_file);
         
-        // Split queries by semicolon and newline to handle multi-line statements
-        $queries = preg_split('/;\s*\n/', $sql_content);
+        // Split queries by semicolon - handles various line endings
+        $queries = preg_split('/;\s*$/m', $sql_content);
         
         // Disable foreign key checks for restore
         $this->db->query('SET FOREIGN_KEY_CHECKS=0');
         
+        // Minimum length for a valid SQL statement (e.g., "USE x;")
+        $min_query_length = 5;
+        
         try {
             foreach ($queries as $query) {
                 $query = trim($query);
-                if (!empty($query) && strlen($query) > 5) {
+                // Skip empty queries and very short strings that can't be valid SQL
+                if (!empty($query) && strlen($query) >= $min_query_length) {
                     $this->db->query($query);
                 }
             }

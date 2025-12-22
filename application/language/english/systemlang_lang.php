@@ -275,6 +275,37 @@ $lang['ledger_trial_balance'] = 'Trial Balance';
 
 //Journal Entry
 $lang['journalentry'] = 'Journal Entry';
+
+// Cash Receipt Module
+$lang['page_cash_receipt'] = 'Cash Receipt';
+$lang['cash_receipt'] = 'Cash Receipt';
+$lang['cash_receipt_list'] = 'Cash Receipt List';
+$lang['cash_receipt_create'] = 'Create Cash Receipt';
+$lang['cash_receipt_edit'] = 'Edit Cash Receipt';
+$lang['cash_receipt_view'] = 'View Cash Receipt';
+$lang['cash_receipt_no'] = 'Receipt No';
+$lang['cash_receipt_date'] = 'Receipt Date';
+$lang['cash_receipt_received_from'] = 'Received From';
+$lang['cash_receipt_payment_method'] = 'Payment Method';
+$lang['cash_receipt_cheque_no'] = 'Cheque No';
+$lang['cash_receipt_bank_name'] = 'Bank Name';
+$lang['cash_receipt_description'] = 'Description';
+$lang['cash_receipt_total_amount'] = 'Total Amount';
+$lang['cash_receipt_line_items'] = 'Line Items';
+$lang['cash_receipt_account'] = 'Account';
+$lang['cash_receipt_line_description'] = 'Line Description';
+$lang['cash_receipt_amount'] = 'Amount';
+$lang['cash_receipt_information'] = 'Receipt Information';
+$lang['cash_receipt_create_success'] = 'Cash receipt created successfully';
+$lang['cash_receipt_create_fail'] = 'Failed to create cash receipt';
+$lang['cash_receipt_update_success'] = 'Cash receipt updated successfully';
+$lang['cash_receipt_update_fail'] = 'Failed to update cash receipt';
+$lang['cash_receipt_delete_success'] = 'Cash receipt deleted successfully';
+$lang['cash_receipt_delete_fail'] = 'Failed to delete cash receipt';
+$lang['cash_receipt_not_found'] = 'Cash receipt not found';
+$lang['cash_receipt_no_exists'] = 'This receipt number already exists';
+$lang['cash_receipt_no_items'] = 'Please add at least one line item';
+
 $lang['client_account'] = 'Client Account';
 $lang['reseller_account_list'] = 'Reseller Account List';
 
@@ -291,6 +322,21 @@ $lang['powered_by'] = 'Designed and Developed by';
 $lang['edit'] = 'Edit';
 $lang['delete'] = 'Delete';
 $lang['view'] = 'View';
+$lang['print'] = 'Print';
+$lang['save'] = 'Save';
+$lang['update'] = 'Update';
+$lang['back'] = 'Back';
+$lang['cancel'] = 'Cancel';
+$lang['total'] = 'Total';
+$lang['actions'] = 'Actions';
+$lang['export_excel'] = 'Export to Excel';
+$lang['add_row'] = 'Add Row';
+$lang['delete_confirm'] = 'Are you sure you want to delete this record?';
+$lang['no_records_found'] = 'No records found';
+$lang['created_by'] = 'Created By';
+$lang['created_at'] = 'Created At';
+$lang['updated_at'] = 'Updated At';
+$lang['additional_information'] = 'Additional Information';
 $lang['no'] ='No';
 $lang['yes'] ='Yes';
 $lang['all'] ='All';

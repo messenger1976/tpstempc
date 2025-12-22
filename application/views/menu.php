@@ -177,7 +177,7 @@ $activefunction = ($this->uri->segment(3)) ? $this->uri->segment(3) : 'X';
 
             <?php if (access_module(6)) { ?>
 
-                <li class="<?php echo (($active == 'finance' || $active == 'customer' || $active == 'supplier' ) ? 'active' : ''); ?>">
+                <li class="<?php echo (($active == 'finance' || $active == 'customer' || $active == 'supplier' || $active == 'cash_receipt') ? 'active' : ''); ?>">
                     <a href="#"><i class="fa fa-dollar"></i> <span class="nav-label"><?php echo lang('page_finance'); ?></span><span class="fa arrow"></span></a>
                     <ul class="nav nav-second-level">
                         <?php if (has_role(6, 'Manage_account_chart')) { ?>
@@ -191,6 +191,9 @@ $activefunction = ($this->uri->segment(3)) ? $this->uri->segment(3) : 'X';
                         <?php } ?>
                         <?php if (has_role(6, 'Manage_beginning_balance')) { ?>
                             <li class="<?php echo ($activefunction == 'beginning_balance_list' ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/finance/beginning_balance_list'); ?>"><?php echo lang('beginning_balance_list'); ?></a></li>
+                        <?php } ?>
+                        <?php if (has_role(6, 'View_cash_receipt')) { ?>
+                            <li class="<?php echo ($activefunction == 'cash_receipt_list' || $active == 'cash_receipt' ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/cash_receipt/cash_receipt_list'); ?>"><?php echo lang('cash_receipt_list'); ?></a></li>
                         <?php } ?>
                         <?php if (has_role(6, 'Manage_customer')) { ?>
                             <li class="<?php echo ($activefunction == 'customerlist' ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/customer/customerlist'); ?>"><?php echo lang('customer'); ?></a></li>

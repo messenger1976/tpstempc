@@ -34,9 +34,9 @@
                         <button type="button" class="btn btn-primary" onclick="createBackup()">
                             <i class="fa fa-plus"></i> Create New Backup
                         </button>
-                        <a href="<?php echo base_url('backups/'); ?>" target="_blank" class="btn btn-info">
-                            <i class="fa fa-folder-open"></i> Open Backup Folder
-                        </a>
+                        <span class="text-muted" style="margin-left: 15px;">
+                            <i class="fa fa-info-circle"></i> Backup files are stored in: <code>backups/</code> folder
+                        </span>
                     </div>
                 </div>
             </div>
@@ -171,7 +171,7 @@ function deleteBackup(filename) {
         cancelButtonText: "Cancel",
         closeOnConfirm: false
     }, function() {
-        window.location.href = "<?php echo site_url(current_lang() . '/backup/delete/'); ?>" + encodeURIComponent(filename);
+        window.location.href = "<?php echo site_url(current_lang() . '/backup/delete'); ?>/" + encodeURIComponent(filename);
     });
 }
 
@@ -199,7 +199,7 @@ function restoreBackup(filename) {
                 cancelButtonText: "Cancel"
             }, function(confirmed) {
                 if (confirmed) {
-                    window.location.href = "<?php echo site_url(current_lang() . '/backup/restore/'); ?>" + encodeURIComponent(filename);
+                    window.location.href = "<?php echo site_url(current_lang() . '/backup/restore'); ?>/" + encodeURIComponent(filename);
                 }
             });
         }

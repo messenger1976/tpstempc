@@ -43,12 +43,13 @@ class Backup extends CI_Controller {
         if (is_dir($backup_path)) {
             $files = scandir($backup_path);
             foreach ($files as $file) {
-                if ($file != '.' && $file != '..' && pathinfo($file, PATHINFO_EXTENSION) == 'sql') {
+                $file_path = $backup_path . $file;
+                if ($file != '.' && $file != '..' && is_file($file_path) && pathinfo($file, PATHINFO_EXTENSION) == 'sql') {
                     $backups[] = array(
                         'filename' => $file,
-                        'size' => $this->formatBytes(filesize($backup_path . $file)),
-                        'date' => date('Y-m-d H:i:s', filemtime($backup_path . $file)),
-                        'timestamp' => filemtime($backup_path . $file)
+                        'size' => $this->formatBytes(filesize($file_path)),
+                        'date' => date('Y-m-d H:i:s', filemtime($file_path)),
+                        'timestamp' => filemtime($file_path)
                     );
                 }
             }

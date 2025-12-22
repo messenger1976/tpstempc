@@ -162,20 +162,36 @@ class Backup_Model extends CI_Model {
         // Read SQL file and execute queries
         $sql_content = file_get_contents($sql_file);
         
-        // Split queries by semicolon
-        $queries = explode(';', $sql_content);
+        // Split queries by semicolon and newline to handle multi-line statements
+        $queries = preg_split('/;\s*\n/', $sql_content);
         
-        foreach ($queries as $query) {
-            $query = trim($query);
-            if (!empty($query)) {
-                $this->db->query($query);
+        // Disable foreign key checks for restore
+        $this->db->query('SET FOREIGN_KEY_CHECKS=0');
+        
+        try {
+            foreach ($queries as $query) {
+                $query = trim($query);
+                if (!empty($query) && strlen($query) > 5) {
+                    $this->db->query($query);
+                }
             }
+            
+            // Re-enable foreign key checks
+            $this->db->query('SET FOREIGN_KEY_CHECKS=1');
+            
+            // Clean up temp directory
+            $this->delete_directory($temp_path);
+            
+            return TRUE;
+        } catch (Exception $e) {
+            // Re-enable foreign key checks even on error
+            $this->db->query('SET FOREIGN_KEY_CHECKS=1');
+            
+            // Clean up temp directory
+            $this->delete_directory($temp_path);
+            
+            return FALSE;
         }
-
-        // Clean up temp directory
-        $this->delete_directory($temp_path);
-
-        return TRUE;
     }
 
     /**

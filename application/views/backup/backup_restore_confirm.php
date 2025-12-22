@@ -22,7 +22,7 @@
                             <i class="fa fa-arrow-left"></i> Cancel
                         </a>
                         <input type="hidden" name="confirm" value="1"/>
-                        <button type="submit" class="btn btn-danger" onclick="return confirm('Are you absolutely sure you want to restore this backup?');">
+                        <button type="submit" class="btn btn-danger">
                             <i class="fa fa-refresh"></i> Confirm Restore
                         </button>
                     </div>

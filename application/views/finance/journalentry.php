@@ -13,6 +13,14 @@ if (isset($message) && !empty($message)) {
 }
 ?>
 
+<div class="alert alert-info" style="margin-bottom: 20px;">
+    <i class="fa fa-info-circle"></i> <strong>Note:</strong> Journal entries require approval before being posted to General Ledger. 
+    After creating an entry, review and approve it from <a href="<?php echo site_url(current_lang() . '/finance/journal_entry_review'); ?>" style="text-decoration: underline; font-weight: bold;"><strong>Journal Entry Review & Approval</strong></a>.
+    <?php if (isset($unposted_count) && $unposted_count > 0): ?>
+        <br><strong><?php echo $unposted_count; ?> entry/entries</strong> pending approval.
+    <?php endif; ?>
+</div>
+
 <div class="form-group"><label class="col-lg-3 control-label"><?php echo lang('journalentry_date'); ?>  : <span class="required">*</span></label>
 
     <div class="col-lg-6">

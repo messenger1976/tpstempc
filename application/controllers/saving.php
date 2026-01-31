@@ -1119,8 +1119,423 @@ class Saving extends CI_Controller {
             echo json_encode($status);
         }
     }
-    
+
+    /**
+     * Savings Beginning Balance List
+     * Only accessible by admin users
+     */
+    function savings_beginning_balance_list() {
+        $this->load->library('pagination');
+        $this->data['title'] = lang('savings_beginning_balance_list');
+        
+        if (!$this->ion_auth->logged_in()) {
+            redirect('auth/login', 'refresh');
+        }
+        
+        // Check if user is admin - only admin can access this
+        if (!$this->ion_auth->is_admin()) {
+            $this->session->set_flashdata('warning', lang('access_denied'));
+            redirect('dashboard', 'refresh');
+            return;
+        }
+        
+        if (isset($_GET['row_per_pg'])) {
+            $this->session->set_userdata('PER_PAGE', $_GET['row_per_pg']);
+        } else if (!$this->session->userdata('PER_PAGE')) {
+            $this->session->set_userdata('PER_PAGE', 40);
+        }
+        
+        $config["per_page"] = $this->session->userdata('PER_PAGE');
+        
+        $key = null;
+        if (isset($_POST['key']) && $_POST['key'] != '') {
+            $explode = explode('-', $_POST['key']);
+            $key = trim($explode[0]);
+        } else if (isset($_GET['key']) && $_GET['key'] != '') {
+            $key = trim($_GET['key']);
+        }
+        
+        $account_type_filter = null;
+        if (isset($_POST['account_type_filter']) && $_POST['account_type_filter'] != '') {
+            $account_type_filter = $_POST['account_type_filter'];
+        } else if (isset($_GET['account_type_filter']) && $_GET['account_type_filter'] != '') {
+            $account_type_filter = $_GET['account_type_filter'];
+        }
+        
+        $status_filter = '1'; // Default to Active
+        if (isset($_POST['status_filter']) && $_POST['status_filter'] != '') {
+            $status_filter = $_POST['status_filter'];
+        } else if (isset($_GET['status_filter']) && $_GET['status_filter'] != '') {
+            $status_filter = $_GET['status_filter'];
+        }
+        
+        $suffix_array = array();
+        if (!is_null($key) && $key != '') {
+            $suffix_array['key'] = $key;
+        }
+        if (!is_null($account_type_filter) && $account_type_filter != '') {
+            $suffix_array['account_type_filter'] = $account_type_filter;
+        }
+        if ($status_filter != '') {
+            $suffix_array['status_filter'] = $status_filter;
+        }
+        
+        $this->data['jxy'] = $suffix_array;
+        $this->data['account_type_filter'] = $account_type_filter;
+        $this->data['status_filter'] = $status_filter;
+        
+        $config["base_url"] = site_url(current_lang() . '/saving/savings_beginning_balance_list');
+        // Count accounts with beginning balance transactions
+        $config["total_rows"] = $this->finance_model->count_saving_account_with_beginning_balance($key, $account_type_filter, $status_filter);
+        $config["per_page"] = $this->session->userdata('PER_PAGE');
+        $config["uri_segment"] = 4;
+        
+        $config['full_tag_open'] = '<div class="pagination">';
+        $config['full_tag_close'] = '</div>';
+        
+        $config['first_link'] = 'First';
+        $config['first_tag_open'] = '<div class="link-pagination">';
+        $config['first_tag_close'] = '</div>';
+        
+        $config['last_link'] = 'Last';
+        $config['last_tag_open'] = '<div class="link-pagination">';
+        $config['last_tag_close'] = '</div>';
+        
+        $config['next_link'] = 'Next';
+        $config['next_tag_open'] = '<div class="link-pagination">';
+        $config['next_tag_close'] = '</div>';
+        
+        $config['prev_link'] = 'Previous';
+        $config['prev_tag_open'] = '<div class="link-pagination">';
+        $config['prev_tag_close'] = '</div>';
+        
+        $config['cur_tag_open'] = '<div class="link-pagination current">';
+        $config['cur_tag_close'] = '</div>';
+        
+        $config["num_links"] = 10;
+        
+        $this->pagination->initialize($config);
+        $page = ($this->uri->segment(4) ? $this->uri->segment(4) : 0);
+        $this->data['links'] = $this->pagination->create_links();
+        
+        // Filter for beginning balance transactions only (system_comment contains 'BEGINNING BALANCE')
+        $this->data['saving_accounts'] = $this->finance_model->search_saving_account_with_beginning_balance($key, $config["per_page"], $page, $account_type_filter, $status_filter);
+        $this->data['total_savings_amount'] = $this->finance_model->get_total_savings_amount($key, $account_type_filter, $status_filter);
+        
+        // Load data for popup form
+        $this->data['account_list'] = $this->finance_model->saving_account_list()->result();
+        $this->data['paymenthod'] = $this->finance_model->paymentmenthod();
+        
+        $this->data['content'] = 'saving/savings_beginning_balance_list';
+        $this->load->view('template', $this->data);
+    }
+
+    /**
+     * Create Savings Beginning Balance (Popup)
+     * Only accessible by admin users
+     */
+    function create_savings_beginning_balance() {
+        // Check if user is admin - only admin can access this
+        if (!$this->ion_auth->is_admin()) {
+            // For AJAX requests, return JSON error
+            if ($this->input->is_ajax_request()) {
+                $this->output->set_content_type('application/json');
+                echo json_encode(array('success' => 'N', 'message' => lang('access_denied')));
+                return;
+            }
+            $this->session->set_flashdata('warning', lang('access_denied'));
+            redirect('dashboard', 'refresh');
+            return;
+        }
+        
+        // Set output content type for JSON response
+        $this->output->set_content_type('application/json');
+        
+        if ($this->input->post('beginning_balance')) {
+            $initial = $this->input->post('beginning_balance');
+            $_POST['beginning_balance'] = str_replace(',', '', $initial);
+        }
+        
+        $this->form_validation->set_rules('pid', lang('member_pid'), 'required');
+        $this->form_validation->set_rules('member_id', lang('member_member_id'), 'required');
+        $this->form_validation->set_rules('saving_account', lang('member_saccos_saving_account_type'), 'required');
+        $this->form_validation->set_rules('beginning_balance', lang('beginning_balance'), 'required|numeric');
+        $this->form_validation->set_rules('comment', lang('comment'), '');
+        $this->form_validation->set_rules('posting_date', lang('mortuary_transaction_date'), 'required|valid_date');
+        
+        // Beginning balances are adjustments, no payment method needed
+        $paymethod = 'ADJUSTMENT';
+        $check_number_received = '';
+        
+        if ($this->form_validation->run() == TRUE) {
+            $PID_initial = explode('-', trim($this->input->post('pid')));
+            $member_id_initial = explode('-', trim($this->input->post('member_id')));
+            $PID = $PID_initial[0];
+            $member_id = $member_id_initial[0].'-'.$member_id_initial[1];
+            $posting_date = date("Y-m-d", strtotime($this->input->post('posting_date')));
+            
+            $account_type = $this->input->post('saving_account');
+            $old_member_id = $this->input->post('old_member_id');
+            $account_selected = $this->finance_model->saving_account_list(null, $account_type)->row();
+            
+            if (!$account_selected) {
+                echo json_encode(array('success' => 'N', 'message' => lang('savings_beginning_balance_error')));
+                return;
+            }
+            
+            $beginning_balance = trim($this->input->post('beginning_balance'));
+            $comment = trim($this->input->post('comment'));
+            // Payment method is always 'ADJUSTMENT' for beginning balances (already set above)
+            
+            if ($account_selected->min_amount <= $beginning_balance) {
+                $balance = $beginning_balance - $account_selected->min_amount;
+                $virtual_balance = $account_selected->min_amount;
+                
+                // Use existing account if it exists, otherwise create new account
+                $existing_account = $this->finance_model->saving_account_balance_by_member($PID, $member_id, $account_type);
+                
+                if ($existing_account) {
+                    // Account exists - add beginning balance to existing account using credit directly with BEGINNING BALANCE comment
+                    $customer_name = $this->finance_model->saving_account_name($existing_account->account);
+                    $receipt = $this->finance_model->credit($existing_account->account, $beginning_balance, $paymethod, $comment ? $comment : 'Beginning Balance', $check_number_received, $customer_name, $PID, 'BEGINNING BALANCE', 0, $posting_date);
+                    
+                    if ($receipt) {
+                        $this->session->set_flashdata('message', lang('savings_beginning_balance_success'));
+                        echo json_encode(array('success' => 'Y', 'message' => lang('savings_beginning_balance_success'), 'receipt' => $receipt));
+                        return;
+                    } else {
+                        echo json_encode(array('success' => 'N', 'message' => lang('savings_beginning_balance_error')));
+                        return;
+                    }
+                } else {
+                    // Create new account with beginning balance
+                    $accountdata = $this->finance_model->create_account_with_beginning_balance($PID, $member_id, $account_type, $balance, $virtual_balance, $paymethod, $comment ? $comment : 'Beginning Balance', $check_number_received, $posting_date, $old_member_id);
+                    
+                    if ($accountdata) {
+                        $this->session->set_flashdata('message', lang('savings_beginning_balance_success'));
+                        echo json_encode(array('success' => 'Y', 'message' => lang('savings_beginning_balance_success'), 'receipt' => $accountdata));
+                        return;
+                    } else {
+                        echo json_encode(array('success' => 'N', 'message' => lang('savings_beginning_balance_error')));
+                        return;
+                    }
+                }
+            } else {
+                echo json_encode(array('success' => 'N', 'message' => lang('opening_balance_error') . ' ' . number_format($account_selected->min_amount, 2)));
+                return;
+            }
+        } else {
+            // Return validation errors
+            $errors = validation_errors();
+            echo json_encode(array('success' => 'N', 'message' => $errors));
+            return;
+        }
+    }
+
+    /**
+     * Convert existing OPEN ACCOUNT records to BEGINNING BALANCE
+     * This method converts savings_transaction records with 'OPEN ACCOUNT, NORMAL DEPOSIT'
+     * to 'BEGINNING BALANCE' and updates GL entries to use adjustment account instead of cash
+     * 
+     * Access: Admin only
+     * URL: /saving/convert_open_account_to_beginning_balance
+     */
+    function convert_open_account_to_beginning_balance() {
+        // Check if user is admin
+        if (!$this->ion_auth->is_admin()) {
+            $this->session->set_flashdata('warning', lang('access_denied'));
+            redirect('dashboard', 'refresh');
+            return;
+        }
+        
+        $pin = current_user()->PIN;
+        $results = array(
+            'total_found' => 0,
+            'converted' => 0,
+            'skipped' => 0,
+            'errors' => 0,
+            'error_messages' => array(),
+            'converted_receipts' => array(),
+            'skipped_receipts' => array()
+        );
+        
+        // Find adjustment/equity account for ADJUSTMENT payment method
+        $this->db->where('PIN', $pin);
+        $adjustment_names = array('Adjustment', 'Opening Balance', 'Beginning Balance', 'Equity', 'Retained Earnings');
+        $where_clause = "(";
+        foreach ($adjustment_names as $index => $name) {
+            if ($index > 0) {
+                $where_clause .= " OR ";
+            }
+            $escaped_name = $this->db->escape_like_str($name);
+            $where_clause .= "name LIKE '%" . $escaped_name . "%'";
+        }
+        $where_clause .= ")";
+        
+        $this->db->where($where_clause, NULL, FALSE);
+        $this->db->where_in('account_type', array(30, 40, 1)); // Equity (30, 40) or Asset (1)
+        $this->db->order_by('account', 'ASC');
+        $this->db->limit(1);
+        
+        $adjustment_account_obj = $this->db->get('account_chart')->row();
+        
+        if (!$adjustment_account_obj) {
+            // Fallback: try to find any equity account
+            $this->db->where('PIN', $pin);
+            $this->db->where_in('account_type', array(30, 40)); // Equity accounts
+            $this->db->order_by('account', 'ASC');
+            $this->db->limit(1);
+            $adjustment_account_obj = $this->db->get('account_chart')->row();
+        }
+        
+        if (!$adjustment_account_obj) {
+            $this->session->set_flashdata('warning', 'No adjustment/equity account found. Please create an adjustment or equity account in Chart of Accounts first.');
+            redirect('saving/savings_beginning_balance_list', 'refresh');
+            return;
+        }
+        
+        $adjustment_account = $adjustment_account_obj->account;
+        $adjustment_account_info = account_row_info($adjustment_account);
+        
+        if (!$adjustment_account_info) {
+            $this->session->set_flashdata('warning', 'Adjustment account not found in chart of accounts.');
+            redirect('saving/savings_beginning_balance_list', 'refresh');
+            return;
+        }
+        
+        // Find all savings_transaction records with 'OPEN ACCOUNT, NORMAL DEPOSIT'
+        $this->db->where('PIN', $pin);
+        $this->db->where('system_comment', 'OPEN ACCOUNT, NORMAL DEPOSIT');
+        $transactions = $this->db->get('savings_transaction')->result();
+        
+        $results['total_found'] = count($transactions);
+        
+        if ($results['total_found'] == 0) {
+            $this->session->set_flashdata('message', 'No OPEN ACCOUNT records found to convert.');
+            redirect('saving/savings_beginning_balance_list', 'refresh');
+            return;
+        }
+        
+        // Process each transaction
+        foreach ($transactions as $transaction) {
+            $this->db->trans_start();
+            
+            try {
+                $receipt = $transaction->receipt;
+                
+                // Find GL entries for this receipt
+                $this->db->where('refferenceID', $receipt);
+                $this->db->where('fromtable', 'savings_transaction');
+                $this->db->where('PIN', $pin);
+                $gl_entries = $this->db->get('general_ledger')->result();
+                
+                if (empty($gl_entries)) {
+                    // No GL entries found - skip this transaction
+                    $results['skipped']++;
+                    $results['skipped_receipts'][] = $receipt;
+                    $this->db->trans_complete();
+                    continue;
+                }
+                
+                // Find the debit entry (should have debit > 0)
+                $debit_entry = null;
+                foreach ($gl_entries as $entry) {
+                    if (floatval($entry->debit) > 0) {
+                        $debit_entry = $entry;
+                        break;
+                    }
+                }
+                
+                if (!$debit_entry) {
+                    // No debit entry found - skip
+                    $results['skipped']++;
+                    $results['skipped_receipts'][] = $receipt . ' (no debit entry)';
+                    $this->db->trans_complete();
+                    continue;
+                }
+                
+                // Get savings account info to get account_cat
+                $savings_account = $this->finance_model->saving_account_balance($transaction->account);
+                if (!$savings_account) {
+                    $results['errors']++;
+                    $results['error_messages'][] = "Receipt $receipt: Savings account not found";
+                    $this->db->trans_complete();
+                    continue;
+                }
+                
+                // Get savings account type for liability account
+                $savings_account_type = $this->finance_model->saving_account_list(null, $savings_account->account_cat)->row();
+                if (!$savings_account_type || empty($savings_account_type->account_setup)) {
+                    $results['errors']++;
+                    $results['error_messages'][] = "Receipt $receipt: Savings account type not configured";
+                    $this->db->trans_complete();
+                    continue;
+                }
+                
+                // Update GL debit entry: change account to adjustment account
+                $update_data = array(
+                    'account' => $adjustment_account,
+                    'account_type' => $adjustment_account_info->account_type,
+                    'sub_account_type' => isset($adjustment_account_info->sub_account_type) ? $adjustment_account_info->sub_account_type : null
+                );
+                
+                $this->db->where('id', $debit_entry->id);
+                $this->db->update('general_ledger', $update_data);
+                
+                // Update GL descriptions for all entries (both debit and credit)
+                $new_description = 'Savings Beginning Balance Adjustment - ' . ($transaction->customer_name ? $transaction->customer_name : 'Member ' . $transaction->member_id) . ' (Account: ' . $transaction->account . ', Receipt: ' . $receipt . ')';
+                
+                $this->db->where('refferenceID', $receipt);
+                $this->db->where('fromtable', 'savings_transaction');
+                $this->db->where('PIN', $pin);
+                $this->db->update('general_ledger', array('description' => $new_description));
+                
+                // Update savings_transaction record
+                $transaction_update = array(
+                    'system_comment' => 'BEGINNING BALANCE',
+                    'paymenthod' => 'ADJUSTMENT'
+                );
+                
+                $this->db->where('receipt', $receipt);
+                $this->db->where('PIN', $pin);
+                $this->db->update('savings_transaction', $transaction_update);
+                
+                if ($this->db->trans_status() === FALSE) {
+                    $results['errors']++;
+                    $results['error_messages'][] = "Receipt $receipt: Transaction failed";
+                    $this->db->trans_complete();
+                } else {
+                    $this->db->trans_complete();
+                    $results['converted']++;
+                    $results['converted_receipts'][] = $receipt;
+                }
+                
+            } catch (Exception $e) {
+                $results['errors']++;
+                $results['error_messages'][] = "Receipt " . (isset($receipt) ? $receipt : 'unknown') . ": " . $e->getMessage();
+                $this->db->trans_complete();
+            }
+        }
+        
+        // Set flash message with results
+        $message = "Conversion completed. ";
+        $message .= "Total found: {$results['total_found']}, ";
+        $message .= "Converted: {$results['converted']}, ";
+        $message .= "Skipped: {$results['skipped']}, ";
+        $message .= "Errors: {$results['errors']}";
+        
+        if ($results['errors'] > 0 && count($results['error_messages']) > 0) {
+            $message .= "<br>Errors: " . implode("<br>", array_slice($results['error_messages'], 0, 10));
+            if (count($results['error_messages']) > 10) {
+                $message .= "<br>... and " . (count($results['error_messages']) - 10) . " more errors";
+            }
+        }
+        
+        $this->session->set_flashdata('message', $message);
+        redirect('saving/savings_beginning_balance_list', 'refresh');
+    }
 
 }
+
 
 ?>

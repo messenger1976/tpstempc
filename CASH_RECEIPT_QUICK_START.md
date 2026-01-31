@@ -101,11 +101,20 @@ INSERT INTO access_level (group_id, Module, link, allow) VALUES
 3. Add line items (account + amount)
 4. Click **Save**
 
+### Filter Receipts by Date Range
+1. On the Cash Receipt List page, use the date filter section
+2. Select **Date From** (optional)
+3. Select **Date To** (optional)
+4. Click **Filter** button
+5. Click **Clear** to reset and show all records
+6. **Note:** If no dates are selected, all records are shown by default
+
 ### View/Print Receipts
 - Click the 👁️ icon to view details
 - Click the 🖨️ icon to print
 - Click the ✏️ icon to edit
 - Click the 🗑️ icon to delete
+- Click **Export to Excel** to export (respects current date filters)
 
 ---
 
@@ -129,8 +138,9 @@ INSERT INTO access_level (group_id, Module, link, allow) VALUES
 
 ✅ **Reporting**
 - Print receipts with letterhead
-- Export to Excel
+- Export to Excel (respects date filters)
 - Amount in words
+- Date range filtering on list view
 
 ---
 
@@ -139,7 +149,7 @@ INSERT INTO access_level (group_id, Module, link, allow) VALUES
 ```
 Cash Receipt Module
 ├── Frontend (Views)
-│   ├── List receipts (with DataTables)
+│   ├── List receipts (with DataTables + Date Range Filter)
 │   ├── Create receipt form
 │   ├── Edit receipt form
 │   ├── View receipt details

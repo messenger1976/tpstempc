@@ -131,6 +131,13 @@ $lang['transaction_fail'] = 'Transaction fail';
 $lang['next_deposit_withdrawal'] = 'Next Customer >>';
 $lang['saving_transaction_search'] ='Search Transaction';
 $lang['view_link'] ='View';
+$lang['savings_beginning_balance_list'] = 'Savings Beginning Balances';
+$lang['create_savings_beginning_balance'] = 'Create Savings Beginning Balance';
+$lang['beginning_balance'] = 'Beginning Balance';
+$lang['savings_beginning_balance_success'] = 'Savings beginning balance created successfully';
+$lang['savings_beginning_balance_error'] = 'Failed to create savings beginning balance';
+$lang['error_occurred'] = 'An error occurred';
+$lang['cancel'] = 'Cancel';
 
 //label
 $lang['index_account'] = 'Account No.';
@@ -305,6 +312,38 @@ $lang['cash_receipt_delete_fail'] = 'Failed to delete cash receipt';
 $lang['cash_receipt_not_found'] = 'Cash receipt not found';
 $lang['cash_receipt_no_exists'] = 'This receipt number already exists';
 $lang['cash_receipt_no_items'] = 'Please add at least one line item';
+
+// Cash Disbursement Module
+$lang['page_cash_disbursement'] = 'Cash Disbursement';
+$lang['cash_disbursement'] = 'Cash Disbursement';
+$lang['cash_disbursement_list'] = 'Cash Disbursement List';
+$lang['cash_disbursement_create'] = 'Create Cash Disbursement';
+$lang['cash_disbursement_edit'] = 'Edit Cash Disbursement';
+$lang['cash_disbursement_view'] = 'View Cash Disbursement';
+$lang['cash_disbursement_no'] = 'Disbursement No';
+$lang['cash_disbursement_date'] = 'Disbursement Date';
+$lang['cash_disbursement_paid_to'] = 'Paid To';
+$lang['cash_disbursement_payment_method'] = 'Payment Method';
+$lang['cash_disbursement_cheque_no'] = 'Cheque No';
+$lang['cash_disbursement_bank_name'] = 'Bank Name';
+$lang['cash_disbursement_description'] = 'Description';
+$lang['cash_disbursement_total_amount'] = 'Total Amount';
+$lang['cash_disbursement_line_items'] = 'Line Items';
+$lang['cash_disbursement_account'] = 'Account';
+$lang['cash_disbursement_line_description'] = 'Line Description';
+$lang['cash_disbursement_amount'] = 'Amount';
+$lang['cash_disbursement_information'] = 'Disbursement Information';
+$lang['cash_disbursement_create_success'] = 'Cash disbursement created successfully';
+$lang['cash_disbursement_create_fail'] = 'Failed to create cash disbursement';
+$lang['cash_disbursement_update_success'] = 'Cash disbursement updated successfully';
+$lang['cash_disbursement_update_fail'] = 'Failed to update cash disbursement';
+$lang['cash_disbursement_delete_success'] = 'Cash disbursement deleted successfully';
+$lang['cash_disbursement_delete_fail'] = 'Failed to delete cash disbursement';
+$lang['cash_disbursement_not_found'] = 'Cash disbursement not found';
+$lang['cash_disbursement_no_exists'] = 'This disbursement number already exists';
+$lang['cash_disbursement_no_items'] = 'Please add at least one line item';
+$lang['cash_disbursement_voucher'] = 'Cash Disbursement Voucher';
+$lang['cash_disbursement_statement'] = 'Cash Disbursement Statement';
 
 $lang['client_account'] = 'Client Account';
 $lang['reseller_account_list'] = 'Reseller Account List';

@@ -1,0 +1,20 @@
+REPLACE LINES 610-623 IN application/models/finance_model.php:
+
+OLD CODE (lines 610-623):
+        // Verify items were saved with correct entryid BEFORE committing transaction
+        $verify_before_commit = $this->db->query("SELECT COUNT(*) as cnt FROM general_journal WHERE entryid = ?", array(intval($jid)))->row();
+        $verify_count_before = $verify_before_commit ? intval($verify_before_commit->cnt) : 0;
+        
+        if ($verify_count_before != $items_inserted) {
+            log_message('error', 'CRITICAL: Journal entry ' . $jid . ': Verification failed BEFORE commit! Expected ' . $items_inserted . ' items with entryid=' . $jid . ', but found ' . $verify_count_before);
+            // Check what entryid values actually exist
+            $wrong_entryids = $this->db->query("SELECT DISTINCT entryid, COUNT(*) as cnt FROM general_journal WHERE entryid != ? GROUP BY entryid ORDER BY id DESC LIMIT 5", array(intval($jid)))->result();
+            log_message('error', 'Found items with different entryids: ' . json_encode($wrong_entryids));
+        } else {
+            log_message('error', 'Journal entry ' . $jid . ': Verification passed BEFORE commit. Found ' . $verify_count_before . ' items with entryid=' . $jid);
+        }
+        
+        log_message('error', 'Journal entry ' . $jid . ': Successfully inserted ' . $items_inserted . ' line items (expected: ' . count($array_items) . ')');
+
+NEW CODE:
+        log_message('error', 'Journal entry ' . $jid . ': Successfully inserted ' . $items_inserted . ' line items (expected: ' . count($array_items) . '). Committing transaction...');

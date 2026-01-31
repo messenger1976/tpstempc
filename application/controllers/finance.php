@@ -421,10 +421,14 @@ class Finance extends CI_Controller {
                     'description' => $out_description
                 );
                 
-                $insert = $this->finance_model->enter_journal($main_array,$array_items);
+                // Create journal entry (NOT auto-posted - requires approval)
+                $insert = $this->finance_model->enter_journal($main_array,$array_items, false);
                 if($insert){
-                    $this->session->set_flashdata('message','Journal Recorded');
+                    $this->session->set_flashdata('message','Journal Entry Created Successfully. It will be posted to General Ledger after approval.');
                     redirect(current_lang().'/finance/journalentry','refresh');
+                } else {
+                    $this->data['warning'] = 'Failed to create journal entry. Please check the error logs for details.';
+                    log_message('error', 'Journal entry creation failed from controller. Array items count: ' . count($array_items));
                 }
                 
             } else {
@@ -436,13 +440,160 @@ class Finance extends CI_Controller {
 
         $this->data['taxcode_list'] = $this->setting_model->tax_info()->result();
         $this->data['account_list'] = $this->finance_model->account_chart_by_accounttype();
-
-
-
-
+        
+        // Get count of unposted entries for display
+        $this->data['unposted_count'] = count($this->finance_model->get_unposted_journal_entries());
 
         $this->data['content'] = 'finance/journalentry';
         $this->load->view('template', $this->data);
+    }
+
+    // Journal Entry Review and Approval
+    function journal_entry_review() {
+        $this->data['title'] = 'Journal Entry Review & Approval';
+        
+        if (!has_role(6, 'Journal_entry')) {
+            $this->session->set_flashdata('warning', 'You do not have permission to access this page.');
+            redirect(current_lang() . '/dashboard', 'refresh');
+            return;
+        }
+        
+        // Get unposted journal entries
+        $this->data['unposted_entries'] = $this->finance_model->get_unposted_journal_entries();
+        
+        $this->data['content'] = 'finance/journal_entry_review';
+        $this->load->view('template', $this->data);
+    }
+
+    function journal_entry_view($id) {
+        $encoded_id = $id; // Store original encoded ID for logging
+        $id = decode_id($id);
+        log_message('debug', 'journal_entry_view: Encoded ID=' . $encoded_id . ', Decoded ID=' . $id);
+        $this->data['title'] = 'Journal Entry Details';
+        
+        if (!has_role(6, 'Journal_entry')) {
+            $this->session->set_flashdata('warning', 'You do not have permission to access this page.');
+            redirect(current_lang() . '/dashboard', 'refresh');
+            return;
+        }
+        
+        // Get journal entry details
+        $entry = $this->finance_model->get_journal_entry_details($id);
+        
+        if (!$entry) {
+            $this->session->set_flashdata('warning', 'Journal entry not found.');
+            redirect(current_lang() . '/finance/journal_entry_review', 'refresh');
+            return;
+        }
+        
+        $this->data['entry'] = $entry;
+        $this->data['id'] = encode_id($id);
+        $this->data['content'] = 'finance/journal_entry_view';
+        $this->load->view('template', $this->data);
+    }
+
+    function journal_entry_approve($id) {
+        $id = decode_id($id);
+        
+        if (!has_role(6, 'Journal_entry')) {
+            $this->session->set_flashdata('warning', 'You do not have permission to approve journal entries.');
+            redirect(current_lang() . '/dashboard', 'refresh');
+            return;
+        }
+        
+        // Check if entry exists and is not posted
+        $entry = $this->finance_model->get_journal_entry_details($id);
+        
+        if (!$entry) {
+            $this->session->set_flashdata('warning', 'Journal entry not found.');
+            redirect(current_lang() . '/finance/journal_entry_review', 'refresh');
+            return;
+        }
+        
+        if ($entry->is_posted) {
+            $this->session->set_flashdata('warning', 'This journal entry has already been posted.');
+            redirect(current_lang() . '/finance/journal_entry_review', 'refresh');
+            return;
+        }
+        
+        // Verify debits equal credits
+        if (abs($entry->total_debit - $entry->total_credit) > 0.01) {
+            $this->session->set_flashdata('warning', 'Journal entry is not balanced. Debits: ' . number_format($entry->total_debit, 2) . ', Credits: ' . number_format($entry->total_credit, 2));
+            redirect(current_lang() . '/finance/journal_entry_view/' . encode_id($id), 'refresh');
+            return;
+        }
+        
+        // Post to general ledger
+        $result = $this->finance_model->post_journal_to_general_ledger($id, 5);
+        
+        if ($result) {
+            $this->session->set_flashdata('message', 'Journal Entry #' . $id . ' has been approved and posted to General Ledger successfully.');
+        } else {
+            $this->session->set_flashdata('warning', 'Failed to post journal entry. Please check error logs.');
+        }
+        
+        redirect(current_lang() . '/finance/journal_entry_review', 'refresh');
+    }
+
+    function journal_entry_batch_approve() {
+        if (!has_role(6, 'Journal_entry')) {
+            $this->session->set_flashdata('warning', 'You do not have permission to approve journal entries.');
+            redirect(current_lang() . '/dashboard', 'refresh');
+            return;
+        }
+        
+        $entry_ids = $this->input->post('entry_ids');
+        
+        if (empty($entry_ids) || !is_array($entry_ids)) {
+            $this->session->set_flashdata('warning', 'No journal entries selected.');
+            redirect(current_lang() . '/finance/journal_entry_review', 'refresh');
+            return;
+        }
+        
+        $success_count = 0;
+        $failed_count = 0;
+        
+        foreach ($entry_ids as $entry_id) {
+            $id = decode_id($entry_id);
+            
+            // Check if already posted
+            if ($this->finance_model->is_journal_posted($id)) {
+                continue;
+            }
+            
+            // Get entry details
+            $entry = $this->finance_model->get_journal_entry_details($id);
+            
+            if (!$entry) {
+                $failed_count++;
+                continue;
+            }
+            
+            // Verify balance
+            if (abs($entry->total_debit - $entry->total_credit) > 0.01) {
+                $failed_count++;
+                continue;
+            }
+            
+            // Post to general ledger
+            $result = $this->finance_model->post_journal_to_general_ledger($id, 5);
+            
+            if ($result) {
+                $success_count++;
+            } else {
+                $failed_count++;
+            }
+        }
+        
+        if ($success_count > 0) {
+            $this->session->set_flashdata('message', $success_count . ' journal entry/entries approved and posted successfully.');
+        }
+        
+        if ($failed_count > 0) {
+            $this->session->set_flashdata('warning', $failed_count . ' journal entry/entries failed to post. Please check for errors.');
+        }
+        
+        redirect(current_lang() . '/finance/journal_entry_review', 'refresh');
     }
 
     // Chart Type Management

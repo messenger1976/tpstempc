@@ -90,6 +90,42 @@ if (isset($message) && !empty($message)) {
         <?php echo form_error('account_setup'); ?>
     </div>
 </div>
+<div class="form-group"><label class="col-lg-3 control-label">Account Setup for Interest Rate  : <span class="required">*</span></label>
+    <div class="col-lg-6">
+        <select name="account_setup_interest_rate" id="account_setup_interest_rate" class="form-control select2-account">
+            <option value=""><?php echo lang('select_default_text'); ?></option>
+            <?php
+            $selected_interest = set_value('account_setup_interest_rate') ? set_value('account_setup_interest_rate') : (isset($account->account_setup_interest_rate) ? $account->account_setup_interest_rate : '');
+            if (isset($account_list) && !empty($account_list)) {
+                foreach ($account_list as $key => $value) {
+                    ?>
+                    <optgroup label="<?php echo $value['info']->name; ?>">
+                        <?php foreach ($value['data'] as $key1 => $value1) { 
+                            $level = isset($value1->display_level) ? (int)$value1->display_level : 0;
+                            // Get chart type name
+                            $chart_type_name = isset($value['info']->name) ? strtoupper($value['info']->name) : '';
+                            // Store data attributes for Select2 HTML formatting
+                            $data_chart_type = htmlspecialchars($chart_type_name, ENT_QUOTES);
+                            $data_account_name = htmlspecialchars($value1->name, ENT_QUOTES);
+                            $data_level = $level;
+                            ?>
+                            <option 
+                                <?php echo ($value1->account == $selected_interest ? 'selected="selected"' : ''); ?> 
+                                value="<?php echo $value1->account; ?>"
+                                data-chart-type="<?php echo $data_chart_type; ?>"
+                                data-account-name="<?php echo $data_account_name; ?>"
+                                data-level="<?php echo $data_level; ?>"
+                            >
+                                <?php echo $value1->account . ' - ' . $chart_type_name . ' - ' . htmlspecialchars($value1->name); ?>
+                            </option>
+                        <?php } ?>
+                    </optgroup>
+                <?php } ?>
+            <?php } ?>
+        </select>
+        <?php echo form_error('account_setup_interest_rate'); ?>
+    </div>
+</div>
 
 <div class="form-group">
     <label class="col-lg-3 control-label">&nbsp;</label>
@@ -175,9 +211,10 @@ $(document).ready(function() {
 </script>
 
 <!-- 
-Note: Make sure the database table 'saving_account_type' has the column 'account_setup'.
-If the column doesn't exist, run this SQL:
+Note: Make sure the database table 'saving_account_type' has the columns 'account_setup' and 'account_setup_interest_rate'.
+If the columns don't exist, run this SQL:
 ALTER TABLE `saving_account_type` ADD COLUMN `account_setup` VARCHAR(50) NULL AFTER `min_deposit`;
+ALTER TABLE `saving_account_type` ADD COLUMN `account_setup_interest_rate` VARCHAR(50) NULL AFTER `account_setup`;
 -->
 
 <?php echo form_close(); ?>

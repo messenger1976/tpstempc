@@ -122,7 +122,7 @@ CREATE TABLE IF NOT EXISTS `loan_beginning_balances` (
 ## General Ledger Posting Details
 
 When a loan beginning balance is posted to the General Ledger:
-- A general ledger entry is created with the fiscal year start date
+- A general ledger entry header is created with the fiscal year start date
 - Separate ledger entries are created for principal, interest, and penalty (if > 0)
 - The accounts used are from the loan product configuration:
   - `loan_principle_account` for principal
@@ -130,6 +130,61 @@ When a loan beginning balance is posted to the General Ledger:
   - `loan_penalt_account` for penalty
 - Journal ID 8 is used (Beginning Balance journal)
 - The balance is marked as posted and cannot be edited or deleted
+
+### Accounting Entries Created
+
+**Current Implementation (As of 2026-01-10):**
+
+For each balance type (principal, interest, penalty), the following entry is created:
+- **DEBIT**: Loan account (principal/interest/penalty receivable account)
+- **CREDIT**: 0 (no credit entry is created)
+
+**Example Entry:**
+```
+DEBIT:  Loan Principal Account    $1,000.00
+DEBIT:  Loan Interest Account     $100.00
+DEBIT:  Loan Penalty Account      $50.00
+CREDIT: (none)                    $0.00
+```
+
+**⚠️ Important Limitation - Unbalanced Entries:**
+
+The current implementation creates **DEBIT-only entries** with no corresponding CREDIT entries. This violates double-entry accounting principles and will result in:
+
+- Unbalanced general ledger entries
+- Incorrect trial balances
+- Financial reports showing errors
+- The accounting equation (Assets = Liabilities + Equity) not balancing
+
+**Comparison with Other Modules:**
+- **Regular Beginning Balances**: Creates balanced entries with both debit and credit as specified in the beginning_balances table
+- **Journal Entries**: Requires debits to equal credits before posting
+- **Loan Repayments**: Creates balanced entries (e.g., DEBIT Cash, CREDIT Loan Principal/Interest accounts)
+
+**Recommendation for Future Enhancement:**
+
+To properly balance these entries, a corresponding CREDIT entry should be added. Options include:
+
+1. **Credit to Equity/Retained Earnings Account** (e.g., account 3000002, similar to loan interest income processing)
+   - This represents the opening equity position for existing loan receivables
+
+2. **Credit to Opening Balance Equity Account**
+   - A dedicated account for fiscal year opening balances
+
+3. **Credit to a Liability Account**
+   - If the loan receivables are funded from a specific liability source
+
+**Code Location:** `application/models/loan_model.php` → `loan_beginning_balance_post_to_ledger($id)`
+
+**Error Handling:**
+
+The function includes comprehensive error checking:
+- Verifies `general_ledger_entry` header creation
+- Validates `insert_id()` and uses `LAST_INSERT_ID()` as fallback
+- Checks `affected_rows()` after each insert
+- Validates account existence before posting
+- Verifies transaction status before marking as posted
+- Logs detailed error messages for troubleshooting
 
 ## Permission Required
 Users need the **Loan_beginning_balances** role permission under module 5 (Loan Management) to access this feature.
@@ -165,3 +220,23 @@ INSERT INTO access_level (group_id, Module, link, allow) VALUES (GROUP_ID, 5, 'L
 - At least one balance amount (principal, interest, or penalty) must be greater than zero
 - Once posted to General Ledger, balances cannot be edited or deleted
 - The total balance is automatically calculated as the sum of principal, interest, and penalty balances
+
+## Known Issues and Limitations
+
+### Unbalanced General Ledger Entries ⚠️
+
+**Issue:** Loan beginning balance postings create DEBIT-only entries without corresponding CREDIT entries, resulting in unbalanced accounting entries.
+
+**Impact:**
+- General ledger entries do not balance (debits ≠ credits)
+- Trial balance will show discrepancies
+- Financial statements may be inaccurate
+- Violates fundamental double-entry accounting principles
+
+**Status:** Known limitation as of 2026-01-10. Enhancement required to add credit entries for proper double-entry accounting.
+
+**Workaround:** Manual adjustment entries may be required to balance the general ledger after posting loan beginning balances.
+
+**Related Documentation:**
+- See "General Ledger Posting Details" section above for detailed explanation
+- Compare with `HOW_TO_POST_JOURNAL_TO_GENERAL_LEDGER.md` for standard posting practices

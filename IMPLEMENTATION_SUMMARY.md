@@ -203,7 +203,7 @@ Full testing requires a live environment. A comprehensive testing guide has been
 
 When posting a loan beginning balance:
 
-1. Creates a general ledger entry with fiscal year start date
+1. Creates a general ledger entry header with fiscal year start date
 2. For each non-zero balance component:
    - Principal → Debit to `loan_principle_account`
    - Interest → Debit to `loan_interest_account`
@@ -212,14 +212,29 @@ When posting a loan beginning balance:
 4. Marks balance as posted
 5. Records posted date and user
 
+**⚠️ Known Limitation (As of 2026-01-10):**
+
+The current implementation creates **DEBIT-only entries** without corresponding CREDIT entries. This violates double-entry accounting principles:
+
+- **Current Behavior**: Only debits are created (loan receivable accounts)
+- **Missing**: Corresponding credit entries to balance the debits
+- **Impact**: Results in unbalanced general ledger entries, incorrect trial balances, and potential financial statement errors
+- **Status**: Known limitation requiring enhancement
+
+**Recommendation**: Add credit entries to an equity/retained earnings account (e.g., account 3000002) or a dedicated opening balance equity account to properly balance the entries.
+
+See `LOAN_BEGINNING_BALANCES_MODULE.md` section "Known Issues and Limitations" for detailed information.
+
 ## Benefits
 
 1. **Accurate Migration** - Properly captures existing loan balances
-2. **GL Integrity** - Ensures proper accounting period balances
+2. **GL Integration** - Posts balances to general ledger for accounting period start
 3. **Audit Trail** - Tracks who created and posted balances
 4. **Data Quality** - Validation prevents errors
 5. **User Friendly** - Intuitive interface with helpful messages
 6. **Secure** - Role-based access and data isolation
+
+**Note**: While the module posts balances to GL, there is a known limitation regarding unbalanced entries (see "General Ledger Posting Logic" section above).
 
 ## Future Enhancements (Recommended)
 
@@ -234,11 +249,14 @@ When posting a loan beginning balance:
 
 ## Notes
 
-- The module is production-ready for use
-- All syntax and logical errors have been addressed
+- The module is functional and operational for posting loan beginning balances
+- All syntax errors have been addressed
 - Code follows existing patterns and conventions
+- Comprehensive error handling and logging implemented
 - Comprehensive documentation provided
 - Testing guide available for QA team
+
+**Important**: The module has a known limitation regarding unbalanced general ledger entries (see "General Ledger Posting Logic" section). Manual adjustments may be required to balance the general ledger after posting. This should be addressed in a future enhancement.
 
 ## Support Files
 
@@ -248,7 +266,7 @@ When posting a loan beginning balance:
 
 ## Conclusion
 
-The Loan Beginning Balances module has been successfully implemented with all requested features:
+The Loan Beginning Balances module has been successfully implemented with core requested features:
 - ✅ Create loan beginning balances
 - ✅ Edit unposted balances
 - ✅ Delete unposted balances
@@ -256,6 +274,9 @@ The Loan Beginning Balances module has been successfully implemented with all re
 - ✅ Integrated under Loan Management menu
 - ✅ Uses loan products for GL account mapping
 - ✅ Proper validation and security
+- ✅ Comprehensive error handling and logging
 - ✅ Comprehensive documentation
 
-The implementation is complete and ready for deployment to a test environment for final verification.
+**⚠️ Known Issue**: The GL posting creates unbalanced entries (debits without credits). This is documented and should be addressed in a future enhancement.
+
+The implementation is functional and ready for deployment to a test environment. However, accounting staff should be aware of the unbalanced entries limitation and may need to create manual adjustment entries to balance the general ledger after posting loan beginning balances.

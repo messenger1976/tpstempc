@@ -116,6 +116,9 @@ $activefunction = ($this->uri->segment(3)) ? $this->uri->segment(3) : 'X';
                         <?php if (has_role(3, 'Savings_transactions')) { ?>
                             <li class="<?php echo ($activefunction == 'transaction_search' ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/saving/transaction_search'); ?>"><?php echo lang('saving_transaction_search'); ?></a></li>
                         <?php } ?>
+                        <?php if ($this->ion_auth->is_admin()) { ?>
+                            <li class="<?php echo ($activefunction == 'savings_beginning_balance_list' ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/saving/savings_beginning_balance_list'); ?>"><?php echo lang('savings_beginning_balance_list'); ?></a></li>
+                        <?php } ?>
                     </ul>
                 </li>
 
@@ -177,7 +180,7 @@ $activefunction = ($this->uri->segment(3)) ? $this->uri->segment(3) : 'X';
 
             <?php if (access_module(6)) { ?>
 
-                <li class="<?php echo (($active == 'finance' || $active == 'customer' || $active == 'supplier' || $active == 'cash_receipt') ? 'active' : ''); ?>">
+                <li class="<?php echo (($active == 'finance' || $active == 'customer' || $active == 'supplier' || $active == 'cash_receipt' || $active == 'cash_disbursement') ? 'active' : ''); ?>">
                     <a href="#"><i class="fa fa-dollar"></i> <span class="nav-label"><?php echo lang('page_finance'); ?></span><span class="fa arrow"></span></a>
                     <ul class="nav nav-second-level">
                         <?php if (has_role(6, 'Manage_account_chart')) { ?>
@@ -194,6 +197,9 @@ $activefunction = ($this->uri->segment(3)) ? $this->uri->segment(3) : 'X';
                         <?php } ?>
                         <?php if (has_role(6, 'View_cash_receipt')) { ?>
                             <li class="<?php echo ($activefunction == 'cash_receipt_list' || $active == 'cash_receipt' ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/cash_receipt/cash_receipt_list'); ?>"><?php echo lang('cash_receipt_list'); ?></a></li>
+                        <?php } ?>
+                        <?php if (has_role(6, 'View_cash_disbursement')) { ?>
+                            <li class="<?php echo ($activefunction == 'cash_disbursement_list' || $active == 'cash_disbursement' ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/cash_disbursement/cash_disbursement_list'); ?>"><?php echo lang('cash_disbursement_list'); ?></a></li>
                         <?php } ?>
                         <?php if (has_role(6, 'Manage_customer')) { ?>
                             <li class="<?php echo ($activefunction == 'customerlist' ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/customer/customerlist'); ?>"><?php echo lang('customer'); ?></a></li>
@@ -215,6 +221,9 @@ $activefunction = ($this->uri->segment(3)) ? $this->uri->segment(3) : 'X';
                         <?php } ?>
                         <?php if (has_role(6, 'Journal_entry')) { ?>
                             <li class="<?php echo ($activefunction == 'journalentry' ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/finance/journalentry'); ?>"><?php echo lang('journalentry'); ?></a></li>
+                        <?php } ?>
+                        <?php if (has_role(6, 'Journal_entry')) { ?>
+                            <li class="<?php echo ($activefunction == 'journal_entry_review' ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/finance/journal_entry_review'); ?>"><i class="fa fa-check-circle"></i> Journal Entry Review & Approval</a></li>
                         <?php } ?>
                     </ul>
                 </li>

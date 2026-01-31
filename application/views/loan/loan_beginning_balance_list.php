@@ -119,8 +119,10 @@
                                     <a href="javascript:void(0);" class="btn-delete-balance" data-id="<?php echo encode_id($balance->id); ?>" data-member="<?php echo htmlspecialchars($balance->member_id); ?>" style="color: red; margin-left: 10px;">
                                         <i class="fa fa-trash"></i> <?php echo lang('button_delete'); ?>
                                     </a>
-                                    <a href="<?php echo site_url(current_lang() . '/loan/loan_beginning_balance_post/' . encode_id($balance->id)); ?>" 
-                                       onclick="return confirm('<?php echo lang('loan_beginning_balance_post_confirm'); ?>');" 
+                                    <a href="javascript:void(0);" 
+                                       class="btn-post-balance" 
+                                       data-id="<?php echo encode_id($balance->id); ?>" 
+                                       data-member="<?php echo htmlspecialchars($balance->member_id); ?>"
                                        style="color: green; margin-left: 10px;">
                                         <i class="fa fa-check"></i> <?php echo lang('loan_beginning_balance_post'); ?>
                                     </a>
@@ -154,6 +156,7 @@
         }
         
         $(document).ready(function() {
+            // Delete confirmation using SweetAlert
             $('.btn-delete-balance').click(function() {
                 var balanceId = $(this).data('id');
                 var member = $(this).data('member');
@@ -172,6 +175,29 @@
                 }, function(isConfirm) {
                     if (isConfirm) {
                         window.location.href = deleteUrl;
+                    }
+                });
+            });
+            
+            // Post to General Ledger confirmation using SweetAlert
+            $('.btn-post-balance').click(function() {
+                var balanceId = $(this).data('id');
+                var member = $(this).data('member');
+                var postUrl = '<?php echo site_url(current_lang() . '/loan/loan_beginning_balance_post/'); ?>/' + balanceId;
+                
+                swal({
+                    title: "<?php echo lang('are_you_sure'); ?>",
+                    text: "<?php echo lang('loan_beginning_balance_post_confirm'); ?>" + (member ? " (Member: " + member + ")" : ""),
+                    type: "warning",
+                    showCancelButton: true,
+                    confirmButtonColor: "#5cb85c",
+                    confirmButtonText: "<?php echo lang('loan_beginning_balance_post'); ?>",
+                    cancelButtonText: "<?php echo lang('cancel'); ?>",
+                    closeOnConfirm: false,
+                    closeOnCancel: true
+                }, function(isConfirm) {
+                    if (isConfirm) {
+                        window.location.href = postUrl;
                     }
                 });
             });

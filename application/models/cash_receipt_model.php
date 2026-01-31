@@ -8,12 +8,13 @@ class Cash_receipt_model extends CI_Model {
 
     function __construct() {
         parent::__construct();
+        $this->load->model('payment_method_config_model');
     }
 
     /**
      * Get all cash receipts
      */
-    function get_cash_receipts($id = null, $receipt_no = null) {
+    function get_cash_receipts($id = null, $receipt_no = null, $date_from = null, $date_to = null) {
         $this->db->where('PIN', current_user()->PIN);
         
         if (!is_null($id)) {
@@ -22,6 +23,15 @@ class Cash_receipt_model extends CI_Model {
         
         if (!is_null($receipt_no)) {
             $this->db->where('receipt_no', $receipt_no);
+        }
+        
+        // Apply date range filter if provided
+        if (!empty($date_from)) {
+            $this->db->where('receipt_date >=', $date_from);
+        }
+        
+        if (!empty($date_to)) {
+            $this->db->where('receipt_date <=', $date_to);
         }
         
         $this->db->order_by('receipt_date', 'DESC');
@@ -44,36 +54,40 @@ class Cash_receipt_model extends CI_Model {
      * Get receipt items/line items
      */
     function get_receipt_items($receipt_id) {
-        $this->db->where('receipt_id', $receipt_id);
-        $this->db->order_by('id', 'ASC');
+        // Use raw query to avoid query builder state issues
+        $sql = "SELECT cri.*, ac.name as account_name 
+                FROM cash_receipt_items cri
+                LEFT JOIN account_chart ac ON ac.account = cri.account AND ac.PIN = ?
+                WHERE cri.receipt_id = ?
+                ORDER BY cri.id ASC";
         
-        $items = $this->db->get('cash_receipt_items')->result();
-        
-        // Get account names for each item
-        foreach ($items as $item) {
-            $account = $this->db->where('account', $item->account)
-                                ->where('PIN', current_user()->PIN)
-                                ->get('account_chart')
-                                ->row();
-            $item->account_name = $account ? $account->name : 'Unknown Account';
-        }
-        
-        return $items;
+        return $this->db->query($sql, array(current_user()->PIN, $receipt_id))->result();
     }
 
     /**
      * Create new cash receipt
      */
     function create_cash_receipt($receipt_data, $line_items) {
-        // Start transaction
-        $this->db->trans_start();
-        
         // Insert receipt header
         $this->db->insert('cash_receipts', $receipt_data);
-        $receipt_id = $this->db->insert_id();
+        
+        // Get actual insert ID by querying the last inserted record for this PIN
+        // (Workaround for persistent connection stale insert_id issue)
+        $receipt = $this->db->where('PIN', current_user()->PIN)
+                            ->order_by('id', 'DESC')
+                            ->limit(1)
+                            ->get('cash_receipts')
+                            ->row();
+        
+        if (!$receipt) {
+            return false;
+        }
+        
+        $receipt_id = $receipt->id;
+        $receipt_data['id'] = $receipt_id;
         
         // Insert receipt items
-        if ($receipt_id && !empty($line_items)) {
+        if (!empty($line_items)) {
             foreach ($line_items as $item) {
                 $item['receipt_id'] = $receipt_id;
                 $item['PIN'] = current_user()->PIN;
@@ -81,15 +95,8 @@ class Cash_receipt_model extends CI_Model {
             }
         }
         
-        // Create journal entry
+        // Create journal entry (journal_entry table only, not GL)
         $this->create_journal_entry($receipt_id, $receipt_data, $line_items);
-        
-        // Complete transaction
-        $this->db->trans_complete();
-        
-        if ($this->db->trans_status() === FALSE) {
-            return false;
-        }
         
         return $receipt_id;
     }
@@ -140,6 +147,14 @@ class Cash_receipt_model extends CI_Model {
         // Start transaction
         $this->db->trans_start();
         
+        // Resolve PIN safely
+        $pin = (is_object(current_user()) && isset(current_user()->PIN)) ? current_user()->PIN : $this->session->userdata('PIN');
+        if (!$pin) {
+            log_message('error', 'delete_cash_receipt: missing PIN, aborting delete for id ' . $id);
+            $this->db->trans_complete();
+            return false;
+        }
+        
         // Delete receipt items
         $this->db->where('receipt_id', $id);
         $this->db->delete('cash_receipt_items');
@@ -151,7 +166,7 @@ class Cash_receipt_model extends CI_Model {
         
         // Delete receipt header
         $this->db->where('id', $id);
-        $this->db->where('PIN', current_user()->PIN);
+        $this->db->where('PIN', $pin);
         $this->db->delete('cash_receipts');
         
         // Complete transaction
@@ -207,8 +222,11 @@ class Cash_receipt_model extends CI_Model {
         $cash_account = $this->get_cash_account($receipt_data['payment_method']);
         
         if (!$cash_account) {
+            log_message('error', 'Journal entry failed: No cash account found for payment method: ' . $receipt_data['payment_method']);
             return false;
         }
+        
+        log_message('debug', 'Creating journal entry for receipt_id: ' . $receipt_id . ', cash_account: ' . $cash_account);
         
         $entry_date = isset($receipt_data['receipt_date']) ? $receipt_data['receipt_date'] : date('Y-m-d');
         
@@ -227,8 +245,12 @@ class Cash_receipt_model extends CI_Model {
         $journal_id = $this->db->insert_id();
         
         if (!$journal_id) {
+            $db_error = $this->db->error();
+            log_message('error', 'Journal entry header insert failed: ' . json_encode($db_error));
             return false;
         }
+        
+        log_message('debug', 'Journal entry created with ID: ' . $journal_id);
         
         // Debit Cash/Bank Account (increase asset)
         $this->db->insert('journal_entry_items', array(
@@ -240,6 +262,11 @@ class Cash_receipt_model extends CI_Model {
             'PIN' => current_user()->PIN
         ));
         
+        if ($this->db->affected_rows() <= 0) {
+            $db_error = $this->db->error();
+            log_message('error', 'Journal entry debit item insert failed: ' . json_encode($db_error));
+        }
+        
         // Credit Revenue/Other Accounts (based on line items)
         foreach ($line_items as $item) {
             $this->db->insert('journal_entry_items', array(
@@ -250,6 +277,11 @@ class Cash_receipt_model extends CI_Model {
                 'description' => $item['description'],
                 'PIN' => current_user()->PIN
             ));
+            
+            if ($this->db->affected_rows() <= 0) {
+                $db_error = $this->db->error();
+                log_message('error', 'Journal entry credit item insert failed for account ' . $item['account'] . ': ' . json_encode($db_error));
+            }
         }
         
         return true;
@@ -269,13 +301,17 @@ class Cash_receipt_model extends CI_Model {
         
         $account_name = isset($account_mapping[$payment_method]) ? $account_mapping[$payment_method] : 'Cash';
         
-        // Find the account
+        // Find the account - check for asset type 10000 (or 1 for legacy)
         $this->db->where('PIN', current_user()->PIN);
         $this->db->like('name', $account_name);
-        $this->db->where('account_type', 1); // Asset type
+        $this->db->where_in('account_type', array(1, 10000)); // Asset type
         $this->db->limit(1);
         
         $account = $this->db->get('account_chart')->row();
+        
+        if (!$account) {
+            log_message('error', 'No cash/bank account found for payment method: ' . $payment_method . ', searched for name like: ' . $account_name);
+        }
         
         return $account ? $account->account : null;
     }

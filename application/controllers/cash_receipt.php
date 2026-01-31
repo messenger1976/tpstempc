@@ -17,6 +17,7 @@ class Cash_receipt extends CI_Controller {
         $this->data['current_title'] = lang('page_cash_receipt');
         $this->lang->load('setting');
         $this->lang->load('finance');
+        $this->load->helper('text');
         $this->load->model('cash_receipt_model');
         $this->load->model('finance_model');
         $this->load->model('member_model');
@@ -36,8 +37,16 @@ class Cash_receipt extends CI_Controller {
     function cash_receipt_list() {
         $this->data['title'] = lang('cash_receipt_list');
         
-        // Get all cash receipts
-        $this->data['cash_receipts'] = $this->cash_receipt_model->get_cash_receipts()->result();
+        // Get date range filters
+        $date_from = $this->input->get('date_from');
+        $date_to = $this->input->get('date_to');
+        
+        // Pass date filters to view for form persistence
+        $this->data['date_from'] = $date_from;
+        $this->data['date_to'] = $date_to;
+        
+        // Get cash receipts with optional date range filter
+        $this->data['cash_receipts'] = $this->cash_receipt_model->get_cash_receipts(null, null, $date_from, $date_to)->result();
         
         $this->data['content'] = 'cash_receipt/cash_receipt_list';
         $this->load->view('template', $this->data);
@@ -114,13 +123,13 @@ class Cash_receipt extends CI_Controller {
         // Get account list for dropdown
         $this->data['account_list'] = $this->finance_model->account_chart_by_accounttype();
         
-        // Get payment methods
-        $this->data['payment_methods'] = array(
-            'Cash' => 'Cash',
-            'Cheque' => 'Cheque',
-            'Bank Transfer' => 'Bank Transfer',
-            'Mobile Money' => 'Mobile Money'
-        );
+        // Get payment methods from paymentmenthod table
+        $this->load->model('payment_method_config_model');
+        $payment_methods = $this->payment_method_config_model->get_all_payment_methods();
+        $this->data['payment_methods'] = array();
+        foreach ($payment_methods as $method) {
+            $this->data['payment_methods'][$method->name] = $method->name;
+        }
 
         $this->data['content'] = 'cash_receipt/cash_receipt_form';
         $this->load->view('template', $this->data);
@@ -206,13 +215,13 @@ class Cash_receipt extends CI_Controller {
         // Get account list for dropdown
         $this->data['account_list'] = $this->finance_model->account_chart_by_accounttype();
         
-        // Get payment methods
-        $this->data['payment_methods'] = array(
-            'Cash' => 'Cash',
-            'Cheque' => 'Cheque',
-            'Bank Transfer' => 'Bank Transfer',
-            'Mobile Money' => 'Mobile Money'
-        );
+        // Get payment methods from paymentmenthod table
+        $this->load->model('payment_method_config_model');
+        $payment_methods = $this->payment_method_config_model->get_all_payment_methods();
+        $this->data['payment_methods'] = array();
+        foreach ($payment_methods as $method) {
+            $this->data['payment_methods'][$method->name] = $method->name;
+        }
 
         $this->data['content'] = 'cash_receipt/cash_receipt_edit';
         $this->load->view('template', $this->data);
@@ -237,6 +246,13 @@ class Cash_receipt extends CI_Controller {
         
         $this->data['receipt'] = $receipt;
         $this->data['line_items'] = $this->cash_receipt_model->get_receipt_items($id);
+        
+        // Render a minimal layout when opened inside a popup iframe
+        if ($this->input->get('popup')) {
+            $this->data['is_popup'] = true;
+            $this->load->view('cash_receipt/cash_receipt_view_popup', $this->data);
+            return;
+        }
         
         $this->data['content'] = 'cash_receipt/cash_receipt_view';
         $this->load->view('template', $this->data);
@@ -295,8 +311,12 @@ class Cash_receipt extends CI_Controller {
         // Load Excel library
         $this->load->library('excel');
         
-        // Get cash receipts data
-        $cash_receipts = $this->cash_receipt_model->get_cash_receipts()->result();
+        // Get date range filters from GET parameters
+        $date_from = $this->input->get('date_from');
+        $date_to = $this->input->get('date_to');
+        
+        // Get cash receipts data with optional date range filter
+        $cash_receipts = $this->cash_receipt_model->get_cash_receipts(null, null, $date_from, $date_to)->result();
         
         if (empty($cash_receipts)) {
             if (ob_get_level()) {
@@ -380,5 +400,81 @@ class Cash_receipt extends CI_Controller {
             return FALSE;
         }
         return TRUE;
+    }
+
+    /**
+     * Search members for cash receipt form
+     * Returns JSON response with member data
+     */
+    function search_member() {
+        $key = trim($this->input->get('key'));
+        $limit = 20;
+        $start = 0;
+        
+        $status = array();
+        
+        if (empty($key)) {
+            $status['success'] = 'N';
+            $status['error'] = 'Please enter search keyword';
+            echo json_encode($status);
+            return;
+        }
+        
+        // Search members
+        $members = $this->member_model->search_member($key, 1, 1, $limit, $start); // status=1 (active), member=1 (members only)
+        
+        if (!empty($members)) {
+            $status['success'] = 'Y';
+            $status['data'] = array();
+            
+            foreach ($members as $member) {
+                $status['data'][] = array(
+                    'PID' => $member->PID,
+                    'member_id' => $member->member_id,
+                    'fullname' => trim($member->firstname . ' ' . $member->middlename . ' ' . $member->lastname),
+                    'firstname' => $member->firstname,
+                    'middlename' => $member->middlename,
+                    'lastname' => $member->lastname
+                );
+            }
+        } else {
+            $status['success'] = 'N';
+            $status['error'] = 'No members found';
+        }
+        
+        echo json_encode($status);
+    }
+
+    /**
+     * Get Accounts Receivable account code
+     * Returns JSON response with AR account
+     */
+    function get_ar_account() {
+        $this->load->model('finance_model');
+        
+        // Search for Accounts Receivable account
+        $this->db->where('PIN', current_user()->PIN);
+        $this->db->group_start();
+        $this->db->like('name', 'Accounts Receivable', 'both');
+        $this->db->or_like('name', 'Account Receivable', 'both');
+        $this->db->or_like('name', 'AR', 'both');
+        $this->db->or_like('name', 'Receivable', 'both');
+        $this->db->group_end();
+        $this->db->where_in('account_type', array(1, 10000)); // Asset type
+        $this->db->limit(1);
+        
+        $account = $this->db->get('account_chart')->row();
+        
+        $status = array();
+        if ($account) {
+            $status['success'] = 'Y';
+            $status['account'] = $account->account;
+            $status['name'] = $account->name;
+        } else {
+            $status['success'] = 'N';
+            $status['error'] = 'Accounts Receivable account not found in chart of accounts';
+        }
+        
+        echo json_encode($status);
     }
 }

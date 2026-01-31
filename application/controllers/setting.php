@@ -227,6 +227,7 @@ class Setting extends CI_Controller {
         $this->form_validation->set_rules('interest_rate', lang('account_interest_rate'), 'xss_clean|required|numeric');
         $this->form_validation->set_rules('min_deposit', lang('account_min_deposit'), 'xss_clean|numeric');
         $this->form_validation->set_rules('account_setup', 'Account Setup', 'xss_clean|required');
+        $this->form_validation->set_rules('account_setup_interest_rate', 'Account Setup for Interest Rate', 'xss_clean|required');
         if ($this->form_validation->run() == TRUE) {
             $account_info = array(
                 'name' => trim($this->input->post('account_name')),
@@ -236,6 +237,7 @@ class Setting extends CI_Controller {
                 'interest_rate' => trim($this->input->post('interest_rate')),
                 'min_deposit' => trim($this->input->post('min_deposit')),
                 'account_setup' => trim($this->input->post('account_setup')),
+                'account_setup_interest_rate' => trim($this->input->post('account_setup_interest_rate')),
                 'PIN' =>  current_user()->PIN
             );
 
@@ -253,7 +255,7 @@ class Setting extends CI_Controller {
         }
         
         // Get account list and build hierarchical structure with indentation
-        $account_list_raw = $this->finance_model->account_chart_by_accounttype(array(10, 40));
+        $account_list_raw = $this->finance_model->account_chart_by_accounttype(array(10, 40, 50));
         
         // Build hierarchical tree structure with indentation based on account number
         $account_tree = array();

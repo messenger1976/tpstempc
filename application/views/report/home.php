@@ -38,6 +38,7 @@
                 <div class="inside_content">
                     <a href="<?php echo site_url(current_lang().'/report/general_leger_transaction/5'); ?>">Balance Sheet</a>
                     <a href="<?php echo site_url(current_lang().'/report/general_leger_transaction/4'); ?>">Income Statement</a>
+                    <a href="<?php echo site_url(current_lang().'/report/cash_flow_report'); ?>">Cash Flow Report</a>
                     <a href="<?php echo site_url(current_lang().'/report/general_leger_transaction/3'); ?>">Trial Balance</a>
                     <a href="<?php echo site_url(current_lang().'/report/general_leger_transaction/2'); ?>">General Ledger Summary</a>
                     <a href="<?php echo site_url(current_lang().'/report/general_leger_transaction/1'); ?>">General Ledger Transactions</a>

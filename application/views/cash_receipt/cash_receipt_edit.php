@@ -1,4 +1,11 @@
-<link href="<?php echo base_url(); ?>media/css/plugins/datapicker/datepicker3.css" rel="stylesheet">
+<link href="<?php echo base_url(); ?>assets/css/plugins/datapicker/datepicker3.css" rel="stylesheet">
+<link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-datepicker/1.9.0/css/bootstrap-datepicker.min.css" rel="stylesheet" crossorigin="anonymous" referrerpolicy="no-referrer">
+<style>
+.datepicker-dropdown,.datepicker{z-index:9999!important;width:auto;min-width:0;}
+.datepicker-dropdown.dropdown-menu{background:#fff;border:1px solid #e7eaec;box-shadow:0 2px 8px rgba(0,0,0,0.12);padding:8px;width:auto;min-width:220px;max-width:280px;}
+.datepicker table{width:auto;margin:0;table-layout:fixed;}
+.datepicker td,.datepicker th{text-align:center;width:auto;}
+</style>
 
 <?php echo form_open_multipart(current_lang() . "/cash_receipt/cash_receipt_edit/" . $id, 'class="form-horizontal" id="cashReceiptForm"'); ?>
 
@@ -47,9 +54,9 @@ if (isset($message) && !empty($message)) {
                                 <label class="col-lg-4 control-label"><?php echo lang('cash_receipt_date'); ?> : <span class="required">*</span></label>
                                 <div class="col-lg-8">
                                     <div class="input-group date" id="datetimepicker">
-                                        <input type="text" name="receipt_date" placeholder="<?php echo lang('hint_date'); ?>" 
-                                               value="<?php echo set_value('receipt_date', date('d-m-Y', strtotime($receipt->receipt_date))); ?>" 
-                                               data-date-format="DD-MM-YYYY" class="form-control" required/> 
+                                             <input type="text" name="receipt_date" placeholder="<?php echo lang('hint_date'); ?>" 
+                                                 value="<?php echo set_value('receipt_date', date('d-m-Y', strtotime($receipt->receipt_date))); ?>" 
+                                                 data-date-format="dd-mm-yyyy" class="form-control" required/> 
                                         <span class="input-group-addon">
                                             <span class="fa fa-calendar"></span>
                                         </span>
@@ -65,7 +72,16 @@ if (isset($message) && !empty($message)) {
                             <div class="form-group">
                                 <label class="col-lg-4 control-label"><?php echo lang('cash_receipt_received_from'); ?> : <span class="required">*</span></label>
                                 <div class="col-lg-8">
-                                    <input type="text" name="received_from" value="<?php echo set_value('received_from', $receipt->received_from); ?>" class="form-control" required/>
+                                    <div class="input-group">
+                                        <input type="text" name="received_from" id="received_from" value="<?php echo set_value('received_from', $receipt->received_from); ?>" class="form-control" required/>
+                                        <span class="input-group-btn">
+                                            <button type="button" class="btn btn-info" id="searchMemberBtn" data-toggle="modal" data-target="#memberSearchModal">
+                                                <i class="fa fa-search"></i> Search Member
+                                            </button>
+                                        </span>
+                                    </div>
+                                    <input type="hidden" name="member_pid" id="member_pid" value=""/>
+                                    <input type="hidden" name="member_id" id="member_id" value=""/>
                                     <?php echo form_error('received_from'); ?>
                                 </div>
                             </div>
@@ -198,79 +214,243 @@ if (isset($message) && !empty($message)) {
 
 <?php echo form_close(); ?>
 
-<!-- Date Picker -->
-<script src="<?php echo base_url(); ?>media/js/plugins/datapicker/bootstrap-datepicker.js"></script>
+<!-- Member Search Modal -->
+<div class="modal fade" id="memberSearchModal" tabindex="-1" role="dialog" aria-labelledby="memberSearchModalLabel">
+    <div class="modal-dialog modal-lg" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+                <h4 class="modal-title" id="memberSearchModalLabel">Search Member</h4>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Search by Member ID, PID, or Name:</label>
+                    <div class="input-group">
+                        <input type="text" class="form-control" id="memberSearchKey" placeholder="Enter member ID, PID, or name...">
+                        <span class="input-group-btn">
+                            <button class="btn btn-primary" type="button" id="doMemberSearch">
+                                <i class="fa fa-search"></i> Search
+                            </button>
+                        </span>
+                    </div>
+                </div>
+                <div id="memberSearchResults" style="max-height: 400px; overflow-y: auto;">
+                    <p class="text-muted text-center">Enter search keyword and click Search</p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-default" data-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
 
 <script>
-$(document).ready(function(){
-    
-    // Initialize date picker
-    $('#datetimepicker').datepicker({
-        todayBtn: "linked",
-        keyboardNavigation: false,
-        forceParse: false,
-        calendarWeeks: true,
-        autoclose: true,
-        format: 'dd-mm-yyyy'
-    });
+(function(){
+    function loadScript(src, cb, fallback){ var s=document.createElement('script'); s.src=src; s.onload=cb; if(fallback){ s.onerror=function(){ loadScript(fallback, cb); }; } document.head.appendChild(s); }
+    function initOnceReady(){
+        if(!window.jQuery){ setTimeout(initOnceReady, 50); return; }
+        var $=window.jQuery;
+        function boot(){
+            function ensureBootstrapDP(cb){
+                function wrapBootstrapDP(){
+                    if ($.fn.datepicker && $.fn.datepicker.DPGlobal){
+                        var bootstrapDP = $.fn.datepicker;
+                        if ($.fn.datepicker.noConflict){
+                            $.fn.datepicker.noConflict();
+                        }
+                        $.fn.bootstrapDP = bootstrapDP;
+                        cb();
+                    } else {
+                        cb();
+                    }
+                }
 
-    // Show/hide cheque details based on payment method
-    $('#payment_method').change(function(){
-        if($(this).val() == 'Cheque'){
-            $('#cheque_details').show();
-        } else {
-            $('#cheque_details').hide();
-        }
-    });
-
-    // Add line item
-    $('#addLineItem').click(function(){
-        var newRow = $('.line-item:first').clone();
-        newRow.find('input, select').val('');
-        newRow.find('.remove-line').prop('disabled', false);
-        $('#lineItemsTable tbody').append(newRow);
-        calculateTotal();
-    });
-
-    // Remove line item
-    $(document).on('click', '.remove-line', function(){
-        if($('.line-item').length > 1){
-            $(this).closest('tr').remove();
-            calculateTotal();
-        }
-    });
-
-    // Calculate total when amount changes
-    $(document).on('keyup change', '.amount-input', function(){
-        calculateTotal();
-    });
-
-    // Calculate total function
-    function calculateTotal(){
-        var total = 0;
-        $('.amount-input').each(function(){
-            var amount = parseFloat($(this).val()) || 0;
-            total += amount;
-        });
-        $('#total_amount').val(total.toFixed(2));
-    }
-
-    // Form validation
-    $('#cashReceiptForm').submit(function(e){
-        var hasItems = false;
-        $('.amount-input').each(function(){
-            if(parseFloat($(this).val()) > 0){
-                hasItems = true;
+                if(!($.fn.datepicker && $.fn.datepicker.DPGlobal)){
+                    loadScript(
+                        '<?php echo base_url(); ?>assets/js/plugins/datapicker/bootstrap-datepicker.js',
+                        wrapBootstrapDP,
+                        'https://cdnjs.cloudflare.com/ajax/libs/bootstrap-datepicker/1.9.0/js/bootstrap-datepicker.min.js'
+                    );
+                } else {
+                    wrapBootstrapDP();
+                }
             }
-        });
 
-        if(!hasItems){
-            alert('<?php echo lang('cash_receipt_no_items'); ?>');
-            e.preventDefault();
-            return false;
+            function initPicker(){
+                var picker = $.fn.bootstrapDP || $.fn.datepicker;
+                if (!picker){ return; }
+                picker.call($('#datetimepicker'), {
+                    todayBtn:'linked', keyboardNavigation:false, forceParse:false,
+                    calendarWeeks:true, autoclose:true, format:'dd-mm-yyyy',
+                    orientation:'bottom auto', todayHighlight:true, container:'body'
+                });
+            }
+
+            ensureBootstrapDP(initPicker);
+
+            $('#payment_method').on('change', function(){
+                if($(this).val()==='Cheque'){ $('#cheque_details').show(); } else { $('#cheque_details').hide(); }
+            });
+
+            $('#addLineItem').on('click', function(){
+                var newRow=$('.line-item:first').clone();
+                newRow.find('input, select').val('');
+                newRow.find('.remove-line').prop('disabled', false);
+                $('#lineItemsTable tbody').append(newRow);
+                calculateTotal();
+            });
+
+            $(document).on('click', '.remove-line', function(){
+                if($('.line-item').length>1){ $(this).closest('tr').remove(); calculateTotal(); }
+            });
+
+            $(document).on('keyup change', '.amount-input', function(){ calculateTotal(); });
+
+            function calculateTotal(){
+                var total=0; $('.amount-input').each(function(){ total += parseFloat($(this).val()) || 0; });
+                $('#total_amount').val(total.toFixed(2));
+            }
+
+            $('#cashReceiptForm').on('submit', function(e){
+                var hasItems=false; $('.amount-input').each(function(){ if(parseFloat($(this).val())>0){ hasItems=true; } });
+                if(!hasItems){ alert('<?php echo lang('cash_receipt_no_items'); ?>'); e.preventDefault(); return false; }
+                return true;
+            });
+
+            // Member Search functionality
+            var memberSearchUrl = '<?php echo site_url(current_lang() . '/cash_receipt/search_member'); ?>';
+            var arAccountUrl = '<?php echo site_url(current_lang() . '/cash_receipt/get_ar_account'); ?>';
+
+            // Search on button click
+            $('#doMemberSearch').on('click', function(){
+                var key = $('#memberSearchKey').val().trim();
+                if(key.length < 2){
+                    alert('Please enter at least 2 characters to search');
+                    return;
+                }
+                searchMembers(key);
+            });
+
+            // Search on Enter key
+            $('#memberSearchKey').on('keypress', function(e){
+                if(e.which === 13){
+                    e.preventDefault();
+                    $('#doMemberSearch').click();
+                }
+            });
+
+            function searchMembers(key){
+                $('#memberSearchResults').html('<p class="text-center"><i class="fa fa-spinner fa-spin"></i> Searching...</p>');
+                
+                $.ajax({
+                    url: memberSearchUrl,
+                    type: 'GET',
+                    data: { key: key },
+                    dataType: 'json',
+                    success: function(response){
+                        if(response.success === 'Y' && response.data && response.data.length > 0){
+                            var html = '<table class="table table-bordered table-hover">';
+                            html += '<thead><tr><th>Member ID</th><th>PID</th><th>Full Name</th><th>Action</th></thead>';
+                            html += '<tbody>';
+                            
+                            $.each(response.data, function(index, member){
+                                html += '<tr>';
+                                html += '<td>' + (member.member_id || '') + '</td>';
+                                html += '<td>' + (member.PID || '') + '</td>';
+                                html += '<td>' + (member.fullname || '') + '</td>';
+                                html += '<td><button type="button" class="btn btn-sm btn-primary select-member" ';
+                                html += 'data-pid="' + (member.PID || '') + '" ';
+                                html += 'data-member-id="' + (member.member_id || '') + '" ';
+                                html += 'data-fullname="' + (member.fullname || '') + '">';
+                                html += '<i class="fa fa-check"></i> Select</button></td>';
+                                html += '</tr>';
+                            });
+                            
+                            html += '</tbody></table>';
+                            $('#memberSearchResults').html(html);
+                        } else {
+                            $('#memberSearchResults').html('<p class="text-danger text-center">' + (response.error || 'No members found') + '</p>');
+                        }
+                    },
+                    error: function(){
+                        $('#memberSearchResults').html('<p class="text-danger text-center">Error searching members. Please try again.</p>');
+                    }
+                });
+            }
+
+            // Handle member selection
+            $(document).on('click', '.select-member', function(){
+                var pid = $(this).data('pid');
+                var memberId = $(this).data('member-id');
+                var fullname = $(this).data('fullname');
+                
+                // Populate received from field
+                $('#received_from').val(fullname);
+                $('#member_pid').val(pid);
+                $('#member_id').val(memberId);
+                
+                // Close modal
+                $('#memberSearchModal').modal('hide');
+                
+                // Get AR account and auto-add to line items
+                addARAccountEntry(fullname);
+            });
+
+            // Function to add AR account entry
+            function addARAccountEntry(memberName){
+                $.ajax({
+                    url: arAccountUrl,
+                    type: 'GET',
+                    dataType: 'json',
+                    success: function(response){
+                        if(response.success === 'Y' && response.account){
+                            // Check if AR account already exists in line items
+                            var arExists = false;
+                            $('.account-select').each(function(){
+                                if($(this).val() === response.account){
+                                    arExists = true;
+                                    return false;
+                                }
+                            });
+                            
+                            if(!arExists){
+                                // Add new line item with AR account
+                                var newRow = $('.line-item:first').clone();
+                                newRow.find('input, select').val('');
+                                newRow.find('.remove-line').prop('disabled', false);
+                                
+                                // Set AR account
+                                newRow.find('.account-select').val(response.account);
+                                
+                                // Set description with member name
+                                var description = 'AR - ' + memberName;
+                                newRow.find('input[name="line_description[]"]').val(description);
+                                
+                                // Add to table
+                                $('#lineItemsTable tbody').append(newRow);
+                                calculateTotal();
+                                
+                                // Show message
+                                alert('Accounts Receivable account (' + response.name + ') has been added. Please enter the amount.');
+                            } else {
+                                alert('Accounts Receivable account already exists in line items.');
+                            }
+                        } else {
+                            // AR account not found, just show info
+                            console.log('AR account not found: ' + (response.error || ''));
+                        }
+                    },
+                    error: function(){
+                        console.log('Error fetching AR account');
+                    }
+                });
+            }
         }
-
-        return true;
-    });
-});
+        $(boot);
+    }
+    initOnceReady();
+})();
 </script>

@@ -57,6 +57,7 @@ $lang['journalentry_date'] ='Date';
 $lang['journalentry_description'] ='Description';
 $lang['journalentry_account'] ='Account';
 $lang['journalentry_account_description'] ='Description';
+$lang['description'] ='Description'; // Generic description key for beginning balances
 $lang['journalentry_credit'] ='Credit';
 $lang['journalentry_debit'] ='Debit';
 $lang['journalentry_total'] ='Total';
@@ -130,5 +131,8 @@ $lang['cancel'] = 'Cancel';
 $lang['button_view'] = 'View';
 $lang['button_update'] = 'Update';
 $lang['button_cancel'] = 'Cancel';
+
+// Loan beginning balances (referenced in finance views)
+$lang['loan_beginning_balance_list'] = 'Loan Beginning Balances';
 
 ?>

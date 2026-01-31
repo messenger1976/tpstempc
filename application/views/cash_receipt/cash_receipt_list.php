@@ -1,4 +1,4 @@
-<link href="<?php echo base_url(); ?>media/css/plugins/dataTables/datatables.min.css" rel="stylesheet">
+<link href="<?php echo base_url(); ?>assets/css/plugins/dataTables/datatables.min.css" rel="stylesheet">
 
 <?php
 if (isset($message) && !empty($message)) {
@@ -24,12 +24,44 @@ if (isset($message) && !empty($message)) {
                                 <i class="fa fa-plus"></i> <?php echo lang('cash_receipt_create'); ?>
                             </a>
                         <?php } ?>
-                        <a href="<?php echo site_url(current_lang() . '/cash_receipt/cash_receipt_export'); ?>" class="btn btn-success btn-xs">
+                        <?php
+                        $export_url = site_url(current_lang() . '/cash_receipt/cash_receipt_export');
+                        if (isset($date_from) && !empty($date_from)) {
+                            $export_url .= '?date_from=' . urlencode($date_from);
+                            if (isset($date_to) && !empty($date_to)) {
+                                $export_url .= '&date_to=' . urlencode($date_to);
+                            }
+                        } elseif (isset($date_to) && !empty($date_to)) {
+                            $export_url .= '?date_to=' . urlencode($date_to);
+                        }
+                        ?>
+                        <a href="<?php echo $export_url; ?>" class="btn btn-success btn-xs">
                             <i class="fa fa-file-excel-o"></i> <?php echo lang('export_excel'); ?>
                         </a>
                     </div>
                 </div>
                 <div class="ibox-content">
+                    <!-- Date Range Filter -->
+                    <form method="get" action="<?php echo site_url(current_lang() . '/cash_receipt/cash_receipt_list'); ?>" class="form-horizontal" style="margin-bottom: 20px;">
+                        <div class="row">
+                            <div class="col-md-3">
+                                <label>Date From:</label>
+                                <input type="date" class="form-control" name="date_from" value="<?php echo isset($date_from) ? htmlspecialchars($date_from) : ''; ?>"/>
+                            </div>
+                            <div class="col-md-3">
+                                <label>Date To:</label>
+                                <input type="date" class="form-control" name="date_to" value="<?php echo isset($date_to) ? htmlspecialchars($date_to) : ''; ?>"/>
+                            </div>
+                            <div class="col-md-3" style="padding-top: 25px;">
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="fa fa-filter"></i> Filter
+                                </button>
+                                <a href="<?php echo site_url(current_lang() . '/cash_receipt/cash_receipt_list'); ?>" class="btn btn-default">
+                                    <i class="fa fa-times"></i> Clear
+                                </a>
+                            </div>
+                        </div>
+                    </form>
                     <div class="table-responsive">
                         <table class="table table-striped table-bordered table-hover dataTables-example">
                             <thead>
@@ -55,8 +87,8 @@ if (isset($message) && !empty($message)) {
                                             <td class="text-right"><?php echo number_format($receipt->total_amount, 2); ?></td>
                                             <td>
                                                 <div class="btn-group">
-                                                    <a href="<?php echo site_url(current_lang() . '/cash_receipt/cash_receipt_view/' . encode_id($receipt->id)); ?>" 
-                                                       class="btn btn-info btn-xs" title="<?php echo lang('view'); ?>">
+                                                    <a href="<?php echo site_url(current_lang() . '/cash_receipt/cash_receipt_view/' . encode_id($receipt->id) . '?popup=1'); ?>" 
+                                                       class="btn btn-info btn-xs view-popup" title="<?php echo lang('view'); ?>" data-url="<?php echo site_url(current_lang() . '/cash_receipt/cash_receipt_view/' . encode_id($receipt->id) . '?popup=1'); ?>">
                                                         <i class="fa fa-eye"></i>
                                                     </a>
                                                     <?php if (has_role(6, 'Edit_cash_receipt')) { ?>
@@ -79,10 +111,6 @@ if (isset($message) && !empty($message)) {
                                             </td>
                                         </tr>
                                     <?php endforeach; ?>
-                                <?php else: ?>
-                                    <tr>
-                                        <td colspan="7" class="text-center"><?php echo lang('no_records_found'); ?></td>
-                                    </tr>
                                 <?php endif; ?>
                             </tbody>
                         </table>
@@ -93,38 +121,116 @@ if (isset($message) && !empty($message)) {
     </div>
 </div>
 
-<!-- DataTables -->
-<script src="<?php echo base_url(); ?>media/js/plugins/dataTables/datatables.min.js"></script>
+<!-- Modal for popup view -->
+<div class="modal fade" id="receiptModal" tabindex="-1" role="dialog" aria-hidden="true">
+    <div class="modal-dialog modal-lg" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+                <h4 class="modal-title"><?php echo lang('cash_receipt_view'); ?></h4>
+            </div>
+            <div class="modal-body" style="height:70vh; padding:0;">
+                <iframe id="receiptModalFrame" src="about:blank" style="border:0; width:100%; height:100%;"></iframe>
+            </div>
+        </div>
+    </div>
+</div>
 
 <script>
-$(document).ready(function(){
-    $('.dataTables-example').DataTable({
-        pageLength: 25,
-        responsive: true,
-        dom: '<"html5buttons"B>lTfgitp',
-        buttons: [
-            {extend: 'copy'},
-            {extend: 'csv'},
-            {extend: 'excel', title: 'CashReceipts'},
-            {extend: 'pdf', title: 'CashReceipts'},
-            {extend: 'print',
-             customize: function (win){
-                    $(win.document.body).addClass('white-bg');
-                    $(win.document.body).css('font-size', '10px');
-                    $(win.document.body).find('table')
-                            .addClass('compact')
-                            .css('font-size', 'inherit');
-            }
-            }
-        ]
-    });
+(function(init){
+    function loadScript(src, cb){
+        var s = document.createElement('script');
+        s.src = src;
+        s.onload = cb;
+        document.head.appendChild(s);
+    }
 
-    // Delete confirmation
-    $('.delete-confirm').click(function(e){
-        if(!confirm('<?php echo lang('delete_confirm'); ?>')){
-            e.preventDefault();
-            return false;
+    function loadSwal(cb){
+        if (window.Swal) { cb(); return; }
+        loadScript('https://cdn.jsdelivr.net/npm/sweetalert2@11', cb);
+    }
+    // expose globally so inner init can access
+    window.loadSwal = loadSwal;
+
+    function tryInit(){
+        if (window.jQuery) {
+            if (!window.jQuery.fn || !window.jQuery.fn.DataTable) {
+                loadScript('<?php echo base_url(); ?>assets/js/plugins/dataTables/datatables.min.js', function(){
+                    init();
+                });
+            } else {
+                init();
+            }
+        } else {
+            setTimeout(tryInit, 50);
         }
+    }
+
+    tryInit();
+})(function(){
+    jQuery(function($){
+        $('.dataTables-example').DataTable({
+            pageLength: 25,
+            responsive: true,
+            dom: 'lBfrtip',
+            buttons: [
+                {extend: 'copy'},
+                {extend: 'csv'},
+                {extend: 'excel', title: 'CashReceipts'},
+                {extend: 'pdf', title: 'CashReceipts'},
+                {extend: 'print',
+                 customize: function (win){
+                        jQuery(win.document.body).addClass('white-bg');
+                        jQuery(win.document.body).css('font-size', '10px');
+                        jQuery(win.document.body).find('table')
+                                .addClass('compact')
+                                .css('font-size', 'inherit');
+                }
+                }
+            ],
+            language: {
+                emptyTable: '<?php echo lang('no_records_found'); ?>'
+            }
+        });
+
+        // Delete confirmation using SweetAlert (delegated for DataTables redraw)
+        $(document).on('click', '.delete-confirm', function(e){
+            e.preventDefault();
+            var url = this.href;
+            var load = window.loadSwal || function(cb){ cb(); };
+            load(function(){
+                if (!window.Swal) {
+                    // Fallback to native confirm if CDN fails
+                    if (confirm('<?php echo lang('delete_confirm'); ?>')) {
+                        window.location.href = url;
+                    }
+                    return;
+                }
+                Swal.fire({
+                    title: '<?php echo lang('delete_confirm'); ?>',
+                    text: 'This will permanently delete the cash receipt and its items.',
+                    icon: 'warning',
+                    showCancelButton: true,
+                    confirmButtonColor: '#d33',
+                    cancelButtonColor: '#6c757d',
+                    confirmButtonText: '<?php echo lang('delete'); ?>',
+                    cancelButtonText: '<?php echo lang('cancel'); ?>'
+                }).then(function(result){
+                    if (result.isConfirmed) {
+                        // Use GET redirect (controller expects URL param)
+                        window.location.href = url;
+                    }
+                });
+            });
+        });
+
+        // View popup using iframe modal
+        $(document).on('click', '.view-popup', function(e){
+            e.preventDefault();
+            var url = $(this).data('url') || this.href;
+            $('#receiptModalFrame').attr('src', url);
+            $('#receiptModal').modal('show');
+        });
     });
 });
 </script>

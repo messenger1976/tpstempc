@@ -681,13 +681,35 @@ class Loan_Model extends CI_Model {
         
         $this->db->trans_start();
         
-        // Create ledger entry
+        // Create ledger entry header
         $ledger_entry = array(
             'date' => $fiscal_year->start_date,
             'PIN' => $pin
         );
-        $this->db->insert('general_ledger_entry', $ledger_entry);
+        $ledger_entry_result = $this->db->insert('general_ledger_entry', $ledger_entry);
+        $ledger_entry_affected = $this->db->affected_rows();
         $ledger_entry_id = $this->db->insert_id();
+        
+        // Verify ledger entry header was created
+        if (!$ledger_entry_result || $ledger_entry_affected != 1 || !$ledger_entry_id || $ledger_entry_id == 0) {
+            log_message('error', 'Failed to create general_ledger_entry header for loan beginning balance ID: ' . $id);
+            $this->db->trans_complete();
+            return false;
+        }
+        
+        // Use LAST_INSERT_ID() as fallback if needed
+        if (!$ledger_entry_id || $ledger_entry_id == 0) {
+            $last_id_result = $this->db->query("SELECT LAST_INSERT_ID() as id")->row();
+            if ($last_id_result && $last_id_result->id > 0) {
+                $ledger_entry_id = $last_id_result->id;
+            } else {
+                log_message('error', 'Failed to get ledger_entry_id for loan beginning balance ID: ' . $id);
+                $this->db->trans_complete();
+                return false;
+            }
+        }
+        
+        $ledger_items_inserted = 0;
         
         // Post principal balance if exists
         if ($balance->principal_balance > 0) {
@@ -710,9 +732,21 @@ class Loan_Model extends CI_Model {
             if ($infoaccount) {
                 $ledger['account_type'] = $infoaccount->account_type;
                 $ledger['sub_account_type'] = isset($infoaccount->sub_account_type) ? $infoaccount->sub_account_type : null;
+            } else {
+                log_message('error', 'Account not found for principal: ' . $product->loan_principle_account);
+                $this->db->trans_complete();
+                return false;
             }
             
-            $this->db->insert('general_ledger', $ledger);
+            $insert_result = $this->db->insert('general_ledger', $ledger);
+            $insert_affected = $this->db->affected_rows();
+            
+            if (!$insert_result || $insert_affected != 1) {
+                log_message('error', 'Failed to insert principal ledger entry for loan beginning balance ID: ' . $id);
+                $this->db->trans_complete();
+                return false;
+            }
+            $ledger_items_inserted++;
         }
         
         // Post interest balance if exists
@@ -736,9 +770,21 @@ class Loan_Model extends CI_Model {
             if ($infoaccount) {
                 $ledger['account_type'] = $infoaccount->account_type;
                 $ledger['sub_account_type'] = isset($infoaccount->sub_account_type) ? $infoaccount->sub_account_type : null;
+            } else {
+                log_message('error', 'Account not found for interest: ' . $product->loan_interest_account);
+                $this->db->trans_complete();
+                return false;
             }
             
-            $this->db->insert('general_ledger', $ledger);
+            $insert_result = $this->db->insert('general_ledger', $ledger);
+            $insert_affected = $this->db->affected_rows();
+            
+            if (!$insert_result || $insert_affected != 1) {
+                log_message('error', 'Failed to insert interest ledger entry for loan beginning balance ID: ' . $id);
+                $this->db->trans_complete();
+                return false;
+            }
+            $ledger_items_inserted++;
         }
         
         // Post penalty balance if exists
@@ -762,9 +808,40 @@ class Loan_Model extends CI_Model {
             if ($infoaccount) {
                 $ledger['account_type'] = $infoaccount->account_type;
                 $ledger['sub_account_type'] = isset($infoaccount->sub_account_type) ? $infoaccount->sub_account_type : null;
+            } else {
+                log_message('error', 'Account not found for penalty: ' . $product->loan_penalt_account);
+                $this->db->trans_complete();
+                return false;
             }
             
-            $this->db->insert('general_ledger', $ledger);
+            $insert_result = $this->db->insert('general_ledger', $ledger);
+            $insert_affected = $this->db->affected_rows();
+            
+            if (!$insert_result || $insert_affected != 1) {
+                log_message('error', 'Failed to insert penalty ledger entry for loan beginning balance ID: ' . $id);
+                $this->db->trans_complete();
+                return false;
+            }
+            $ledger_items_inserted++;
+        }
+        
+        // Verify at least one ledger item was inserted (if balances exist)
+        $expected_items = 0;
+        if ($balance->principal_balance > 0) $expected_items++;
+        if ($balance->interest_balance > 0) $expected_items++;
+        if ($balance->penalty_balance > 0) $expected_items++;
+        
+        if ($expected_items > 0 && $ledger_items_inserted != $expected_items) {
+            log_message('error', 'Loan beginning balance ID ' . $id . ': Expected ' . $expected_items . ' ledger items, but inserted ' . $ledger_items_inserted);
+            $this->db->trans_complete();
+            return false;
+        }
+        
+        // Check transaction status before updating posted status
+        if ($this->db->_trans_status === FALSE) {
+            log_message('error', 'Transaction status is FALSE before updating posted status for loan beginning balance ID: ' . $id);
+            $this->db->trans_complete();
+            return false;
         }
         
         // Update loan beginning balance as posted
@@ -775,11 +852,27 @@ class Loan_Model extends CI_Model {
         );
         $this->db->where('id', $id);
         $this->db->where('PIN', $pin);
-        $this->db->update('loan_beginning_balances', $update_data);
+        $update_result = $this->db->update('loan_beginning_balances', $update_data);
+        $update_affected = $this->db->affected_rows();
+        
+        if (!$update_result || $update_affected != 1) {
+            log_message('error', 'Failed to update loan beginning balance as posted for ID: ' . $id);
+            $this->db->trans_complete();
+            return false;
+        }
         
         $this->db->trans_complete();
         
-        return $this->db->trans_status();
+        $transaction_status = $this->db->trans_status();
+        
+        if ($transaction_status === FALSE) {
+            log_message('error', 'Loan beginning balance post to ledger failed - transaction rolled back for ID: ' . $id);
+            return false;
+        }
+        
+        log_message('info', 'Loan beginning balance ID ' . $id . ' posted to general ledger successfully with ' . $ledger_items_inserted . ' ledger entries');
+        
+        return true;
     }
 
     function check_loan_beginning_balance_exists($fiscal_year_id, $member_id, $loan_product_id) {

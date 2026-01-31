@@ -25,7 +25,8 @@ The Cash Receipt Module is a comprehensive accounting solution integrated into y
 - ✅ Automatic journal entry creation
 - ✅ Receipt numbering system with auto-increment
 - ✅ Print-ready receipt format
-- ✅ Export to Excel functionality
+- ✅ Export to Excel functionality (with date range filter support)
+- ✅ Date range filtering on list view (optional, shows all by default)
 - ✅ Full audit trail (created by, created at, updated at)
 - ✅ Integration with Chart of Accounts
 - ✅ Responsive design for all devices
@@ -36,6 +37,7 @@ The Cash Receipt Module is a comprehensive accounting solution integrated into y
    - Automatic receipt number generation
    - Support for multiple line items per receipt
    - Date-based receipt tracking
+   - Date range filtering on list view (shows all records by default)
 
 2. **Payment Methods**
    - Cash
@@ -51,9 +53,10 @@ The Cash Receipt Module is a comprehensive accounting solution integrated into y
 
 4. **Reporting & Export**
    - Print receipts with company letterhead
-   - Export receipts to Excel
+   - Export receipts to Excel (with date range filter support)
    - Amount in words conversion
    - Professional receipt format
+   - Date range filtering for viewing and exporting receipts
 
 ---
 
@@ -203,19 +206,19 @@ INSERT INTO access_level (group_id, Module, link, allow) VALUES
 Located: `application/controllers/cash_receipt.php`
 
 **Main Functions:**
-- `cash_receipt_list()` - Display all receipts
+- `cash_receipt_list()` - Display all receipts (with optional date range filtering)
 - `cash_receipt_create()` - Create new receipt
 - `cash_receipt_edit($id)` - Edit existing receipt
 - `cash_receipt_view($id)` - View receipt details
 - `cash_receipt_print($id)` - Print receipt
 - `cash_receipt_delete($id)` - Delete receipt
-- `cash_receipt_export()` - Export to Excel
+- `cash_receipt_export()` - Export to Excel (respects date range filters)
 
 ### Model (`cash_receipt_model.php`)
 Located: `application/models/cash_receipt_model.php`
 
 **Main Functions:**
-- `get_cash_receipts()` - Retrieve receipts
+- `get_cash_receipts($id, $receipt_no, $date_from, $date_to)` - Retrieve receipts with optional date range filtering
 - `get_cash_receipt($id)` - Get single receipt
 - `get_receipt_items($id)` - Get receipt line items
 - `create_cash_receipt()` - Create new receipt
@@ -226,7 +229,7 @@ Located: `application/models/cash_receipt_model.php`
 
 ### Views
 
-1. **cash_receipt_list.php** - Receipt listing with DataTables
+1. **cash_receipt_list.php** - Receipt listing with DataTables and date range filter
 2. **cash_receipt_form.php** - Create new receipt
 3. **cash_receipt_edit.php** - Edit receipt
 4. **cash_receipt_view.php** - View receipt details
@@ -245,6 +248,7 @@ Located: `application/models/cash_receipt_model.php`
 2. **Open Cash Receipt**
    - Click on "Finance" menu
    - Click on "Cash Receipt List"
+   - By default, all receipts are displayed
 
 ### Creating a New Cash Receipt
 
@@ -305,11 +309,34 @@ Located: `application/models/cash_receipt_model.php`
    - Amount in words
    - Signature sections
 
+### Filtering Receipts by Date Range
+
+1. **Access Date Filter**
+   - On the Cash Receipt List page, scroll to the date filter section
+   - The filter appears above the receipts table
+
+2. **Apply Date Filter**
+   - **Date From:** Select the start date (optional - leave empty to show from beginning)
+   - **Date To:** Select the end date (optional - leave empty to show to present)
+   - Click **Filter** button to apply the filter
+   - Only receipts within the selected date range will be displayed
+
+3. **Clear Filter**
+   - Click **Clear** button to remove all filters
+   - All receipts will be displayed again
+
+4. **Default Behavior**
+   - If no dates are selected, all records are shown by default
+   - The filter is optional and only applied when dates are provided
+
 ### Exporting to Excel
 
 1. From Cash Receipt List, click "Export to Excel" button
-2. Excel file will download automatically
-3. Contains all receipt information in spreadsheet format
+2. **Note:** The export will respect any active date range filters
+   - If you have filtered by date range, only those receipts will be exported
+   - If no filter is applied, all receipts will be exported
+3. Excel file will download automatically
+4. Contains all receipt information in spreadsheet format
 
 ### Deleting a Receipt
 
@@ -480,6 +507,11 @@ When updating the module:
 ---
 
 ## VERSION HISTORY
+
+**Version 1.1.0** - December 22, 2025
+- Added date range filtering on list view
+- Export function now respects date filters
+- Default behavior shows all records when no filter is applied
 
 **Version 1.0.0** - December 22, 2025
 - Initial release

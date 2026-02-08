@@ -395,20 +395,40 @@ class Report_Member extends CI_Controller {
     }
 
     function export_to_pdf($html, $filename, $page_orientation = null) {
-        //$html = "Tanzania";
-        //echo $var; exit;
+        // Clear output buffers to prevent corrupting PDF binary stream
+        if (ob_get_level()) {
+            ob_end_clean();
+        }
+        while (@ob_end_clean());
+
         $this->load->library('pdf1');
         $pdf = $this->pdf1->load($page_orientation);
+
+        // Use local filesystem path for logo - mPDF hangs when fetching images via HTTP/URL
+        $pdf->SetBasePath(str_replace('\\', '/', FCPATH));
+        $company = company_info();
+        $logo_img = '';
+        if ($company && !empty($company->logo)) {
+            $logo_path = FCPATH . 'logo/' . $company->logo;
+            if (file_exists($logo_path)) {
+                $logo_src = 'logo/' . str_replace(' ', '%20', $company->logo);
+                $logo_img = '<img style="height:50px; display:inline-block;" src="' . $logo_src . '"/>';
+            }
+        }
+        $company_name = $company ? $company->name : '';
+        $company_box = $company ? $company->box : '';
+        $company_mobile = $company ? $company->mobile : '';
+
         $header = '<div style="border-bottom:1px solid #000; text-align:center;">
-                <table style="display:inline-block;"><tr><td valign="top"><img style="height:50px; display:inline-block;" src="' . base_url() . 'logo/' . company_info()->logo . '"/></td>
-                    <td style="text-align:center;"><h2 style="padding: 0px; margin: 0px; font-size:18px; text-align:center;"><strong>' . company_info()->name . '</strong></h2>
-                        <h5 style="padding: 0px; margin: 0px; font-size:15px;text-align:center;"><strong> P.O.Box' . strtoupper(company_info()->box) . ' , ' . strtoupper(lang('clientaccount_label_phone')) . ':' . company_info()->mobile . '</strong></h5></td></tr></table> 
+                <table style="display:inline-block;"><tr><td valign="top">' . $logo_img . '</td>
+                    <td style="text-align:center;"><h2 style="padding: 0px; margin: 0px; font-size:18px; text-align:center;"><strong>' . $company_name . '</strong></h2>
+                        <h5 style="padding: 0px; margin: 0px; font-size:15px;text-align:center;"><strong> P.O.Box' . strtoupper($company_box) . ' , ' . strtoupper(lang('clientaccount_label_phone')) . ':' . $company_mobile . '</strong></h5></td></tr></table> 
                 </div>';
         $pdf->SetHTMLHeader($header, 'E', true);
         $pdf->SetHTMLHeader($header, 'O', true);
-        $pdf->SetFooter('SACCO PLUS' . '|{PAGENO}|' . date('d-m-Y H:i:s')); // Add a footer for good measure <img src="https://davidsimpson.me/wp-includes/images/smilies/icon_wink.gif" alt=";)" class="wp-smiley">
-        $pdf->WriteHTML($html); // write the HTML into the PDF   
-        $pdf->Output($filename, 'I'); // save to file because we can
+        $pdf->SetFooter('SACCO PLUS' . '|{PAGENO}|' . date('d-m-Y H:i:s'));
+        $pdf->WriteHTML($html);
+        $pdf->Output($filename, 'I');
         exit;
     }
 

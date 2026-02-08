@@ -42,6 +42,8 @@
             <div style="text-align: center">
                 <a href="<?php echo site_url(current_lang() . '/report_member/member_list_print/' . $link_cat . '/' . $id); ?>" class="btn btn-primary">Print</a>
                 &nbsp; &nbsp; &nbsp; &nbsp;
+                <a href="<?php echo site_url(current_lang() . '/report_member/member_list_export/' . $link_cat . '/' . $id); ?>" class="btn btn-success"><i class="fa fa-file-excel-o"></i> <?php echo lang('export_excel'); ?></a>
+                &nbsp; &nbsp; &nbsp; &nbsp;
                 <a href="<?php echo site_url(current_lang() . '/report_member/member_report_title/' . $link_cat . '/' . $id); ?>" class="btn btn-primary">Edit</a>
             </div>
         </div>

@@ -63,11 +63,22 @@ class Share extends CI_Controller {
 
         if ($this->form_validation->run() == TRUE) {
 
+            // Handle autocomplete format: "2005-00173 - Member Name" or plain "2005-00173"
+            $pid_value = trim($this->input->post('pid'));
+            $member_id_value = trim($this->input->post('member_id'));
+            if (strpos($pid_value, ' - ') !== false) {
+                $parts = explode(' - ', $pid_value, 2);
+                $pid = trim($parts[0]);
+            } else {
+                $pid = $pid_value;
+            }
+            if (strpos($member_id_value, ' - ') !== false) {
+                $parts = explode(' - ', $member_id_value, 2);
+                $member_id = trim($parts[0]);
+            } else {
+                $member_id = $member_id_value;
+            }
 
-            $PID_initial = explode('-', trim($this->input->post('pid')));
-            $member_id_initial = explode('-', trim($this->input->post('member_id')));
-            $pid = $PID_initial[0];
-            $member_id = $member_id_initial[0];
             $amount = trim($this->input->post('open_balance'));
             $real_amount = $amount;
             $comment = trim($this->input->post('comment'));
@@ -163,11 +174,22 @@ class Share extends CI_Controller {
 
         if ($this->form_validation->run() == TRUE) {
 
+            // Handle autocomplete format: "2005-00173 - Member Name" or plain "2005-00173"
+            $pid_value = trim($this->input->post('pid'));
+            $member_id_value = trim($this->input->post('member_id'));
+            if (strpos($pid_value, ' - ') !== false) {
+                $parts = explode(' - ', $pid_value, 2);
+                $pid = trim($parts[0]);
+            } else {
+                $pid = $pid_value;
+            }
+            if (strpos($member_id_value, ' - ') !== false) {
+                $parts = explode(' - ', $member_id_value, 2);
+                $member_id = trim($parts[0]);
+            } else {
+                $member_id = $member_id_value;
+            }
 
-            $PID_initial = explode('-', trim($this->input->post('pid')));
-            $member_id_initial = explode('-', trim($this->input->post('member_id')));
-            $pid = $PID_initial[0];
-            $member_id = $member_id_initial[0];
             $amount = trim($this->input->post('open_balance'));
             $real_amount = $amount;
             $comment = trim($this->input->post('comment'));

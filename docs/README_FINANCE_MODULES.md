@@ -21,7 +21,9 @@ Manage incoming cash payments from customers, members, or other sources
 ### 💸 **Cash Disbursement Module**
 Manage outgoing cash payments to suppliers, vendors, or expenses
 - Auto-generated disbursement numbers (CD-00001, CD-00002, etc.)
-- Multiple payment methods supported
+- Payment methods from **paymentmenthod** table (Cash, BANK DEPOSIT, Cheque, etc.)
+- Edit/delete with correct journal entry replacement or removal
+- Accounting entries on view always reflect **current** payment method and line items
 - Automatic journal entry creation
 - Professional disbursement vouchers
 - Excel export

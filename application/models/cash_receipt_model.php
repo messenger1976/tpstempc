@@ -102,77 +102,181 @@ class Cash_receipt_model extends CI_Model {
     }
 
     /**
-     * Update existing cash receipt
+     * Update existing cash receipt (header, line items, and journal entry).
+     * Changing payment method or line items replaces the accounting entry with a new one.
      */
     function update_cash_receipt($id, $receipt_data, $line_items) {
+        $id = (int) $id;
+        $pin = current_user()->PIN;
+        if ($id <= 0) {
+            return false;
+        }
+
         // Start transaction
         $this->db->trans_start();
-        
-        // Update receipt header
-        $this->db->where('id', $id);
-        $this->db->where('PIN', current_user()->PIN);
-        $this->db->update('cash_receipts', $receipt_data);
-        
-        // Delete existing items
-        $this->db->where('receipt_id', $id);
-        $this->db->delete('cash_receipt_items');
-        
-        // Insert new items
+
+        // Remove old journal entry FIRST (while header still has current receipt_no so description lookup works)
+        $this->_delete_journal_entries_for_receipt($id);
+
+        // Update payment_method in its own query so it always saves (avoids being skipped or lost in combined UPDATE)
+        $payment_val = isset($receipt_data['payment_method']) ? trim((string) $receipt_data['payment_method']) : '';
+        if ($payment_val !== '') {
+            $this->db->query(
+                'UPDATE cash_receipts SET payment_method = ?, updated_at = ? WHERE id = ? AND PIN = ?',
+                array($payment_val, isset($receipt_data['updated_at']) ? $receipt_data['updated_at'] : date('Y-m-d H:i:s'), $id, $pin)
+            );
+        }
+
+        // Update remaining receipt header fields (payment_method already done above)
+        $allowed = array('receipt_no', 'receipt_date', 'received_from', 'cheque_no', 'bank_name', 'description', 'total_amount', 'updated_at');
+        $set_parts = array();
+        $params = array();
+        foreach ($allowed as $col) {
+            if (!array_key_exists($col, $receipt_data)) {
+                continue;
+            }
+            $val = $receipt_data[$col];
+            if (is_string($val)) {
+                $val = trim($val);
+            }
+            $set_parts[] = '`' . $col . '` = ?';
+            $params[] = $val;
+        }
+        if (!empty($set_parts)) {
+            $params[] = $id;
+            $params[] = $pin;
+            $this->db->query(
+                'UPDATE cash_receipts SET ' . implode(', ', $set_parts) . ' WHERE id = ? AND PIN = ?',
+                $params
+            );
+        }
+
+        // Delete existing line items (direct query)
+        $this->db->query('DELETE FROM cash_receipt_items WHERE receipt_id = ?', array($id));
+
+        // Insert new line items
         if (!empty($line_items)) {
             foreach ($line_items as $item) {
                 $item['receipt_id'] = $id;
-                $item['PIN'] = current_user()->PIN;
+                $item['PIN'] = $pin;
                 $this->db->insert('cash_receipt_items', $item);
             }
         }
-        
-        // Delete old journal entries
-        $this->db->where('reference_type', 'cash_receipt');
-        $this->db->where('reference_id', $id);
-        $this->db->delete('journal_entry');
-        
-        // Create new journal entry
+
+        // Complete transaction so receipt + items are committed even if journal creation fails
+        $this->db->trans_complete();
+
+        if ($this->db->trans_status() === false) {
+            return false;
+        }
+
+        // Create journal entry after commit so a journal failure does not roll back the edit
         $this->create_journal_entry($id, $receipt_data, $line_items);
-        
+
+        return true;
+    }
+
+    /**
+     * Delete cash receipt (header, line items, and linked journal entry).
+     */
+    function delete_cash_receipt($id) {
+        $id = (int) $id;
+        $pin = current_user()->PIN;
+        if ($id <= 0) {
+            return false;
+        }
+
+        // Start transaction
+        $this->db->trans_start();
+
+        // Delete linked journal entry and its items first (may block FK or leave orphans)
+        $this->_delete_journal_entries_for_receipt($id);
+
+        // Delete receipt line items (direct query to avoid builder state)
+        $this->db->query('DELETE FROM cash_receipt_items WHERE receipt_id = ?', array($id));
+
+        // Delete receipt header (direct query so builder state from earlier deletes cannot affect it)
+        $this->db->query('DELETE FROM cash_receipts WHERE id = ? AND PIN = ?', array($id, $pin));
+
         // Complete transaction
         $this->db->trans_complete();
-        
+
         return $this->db->trans_status();
     }
 
     /**
-     * Delete cash receipt
+     * Delete journal entry (and its items) for a receipt. Works whether journal_entry
+     * has reference_type/reference_id or only description.
      */
-    function delete_cash_receipt($id) {
-        // Start transaction
-        $this->db->trans_start();
-        
-        // Resolve PIN safely
-        $pin = (is_object(current_user()) && isset(current_user()->PIN)) ? current_user()->PIN : $this->session->userdata('PIN');
-        if (!$pin) {
-            log_message('error', 'delete_cash_receipt: missing PIN, aborting delete for id ' . $id);
-            $this->db->trans_complete();
-            return false;
+    private function _delete_journal_entries_for_receipt($receipt_id) {
+        $pin = current_user()->PIN;
+        $receipt_id = (int) $receipt_id;
+        $entry_ids = array();
+
+        $has_ref_type = $this->db->query("SHOW COLUMNS FROM journal_entry LIKE 'reference_type'")->row();
+        $has_ref_id = $this->db->query("SHOW COLUMNS FROM journal_entry LIKE 'reference_id'")->row();
+        if ($has_ref_type && $has_ref_id) {
+            $rows = $this->db->query(
+                'SELECT id FROM journal_entry WHERE reference_type = ? AND reference_id = ? AND PIN = ?',
+                array('cash_receipt', $receipt_id, $pin)
+            )->result();
+            foreach ($rows as $r) {
+                $entry_ids[] = $r->id;
+            }
         }
-        
-        // Delete receipt items
-        $this->db->where('receipt_id', $id);
-        $this->db->delete('cash_receipt_items');
-        
-        // Delete journal entries
-        $this->db->where('reference_type', 'cash_receipt');
-        $this->db->where('reference_id', $id);
-        $this->db->delete('journal_entry');
-        
-        // Delete receipt header
-        $this->db->where('id', $id);
-        $this->db->where('PIN', $pin);
-        $this->db->delete('cash_receipts');
-        
-        // Complete transaction
-        $this->db->trans_complete();
-        
-        return $this->db->trans_status();
+        if (empty($entry_ids)) {
+            $r = $this->db->query('SELECT receipt_no FROM cash_receipts WHERE id = ? AND PIN = ? LIMIT 1', array($receipt_id, $pin))->row();
+            if ($r) {
+                $like = 'Cash Receipt: ' . $this->db->escape_like_str($r->receipt_no) . '%';
+                $rows = $this->db->query(
+                    'SELECT id FROM journal_entry WHERE description LIKE ? AND PIN = ?',
+                    array($like, $pin)
+                )->result();
+                foreach ($rows as $r) {
+                    $entry_ids[] = $r->id;
+                }
+            }
+        }
+        if (empty($entry_ids) && $has_ref_id) {
+            $rows = $this->db->query(
+                'SELECT id FROM journal_entry WHERE reference_id = ? AND PIN = ?',
+                array($receipt_id, $pin)
+            )->result();
+            foreach ($rows as $r) {
+                $entry_ids[] = $r->id;
+            }
+        }
+
+        if (empty($entry_ids)) {
+            return;
+        }
+
+        $has_journal_id = $this->db->query("SHOW COLUMNS FROM journal_entry_items LIKE 'journal_id'")->row();
+        $has_entry_id = $this->db->query("SHOW COLUMNS FROM journal_entry_items LIKE 'entry_id'")->row();
+        $link_col = $has_journal_id ? 'journal_id' : ($has_entry_id ? 'entry_id' : null);
+        if ($link_col && !empty($entry_ids)) {
+            $placeholders = implode(',', array_fill(0, count($entry_ids), '?'));
+            $this->db->query(
+                'DELETE FROM journal_entry_items WHERE ' . $link_col . ' IN (' . $placeholders . ')',
+                $entry_ids
+            );
+        }
+
+        if ($has_ref_type && $has_ref_id) {
+            $this->db->query(
+                'DELETE FROM journal_entry WHERE reference_type = ? AND reference_id = ? AND PIN = ?',
+                array('cash_receipt', $receipt_id, $pin)
+            );
+        } else {
+            if (!empty($entry_ids)) {
+                $placeholders = implode(',', array_fill(0, count($entry_ids), '?'));
+                $params = array_merge($entry_ids, array($pin));
+                $this->db->query(
+                    'DELETE FROM journal_entry WHERE id IN (' . $placeholders . ') AND PIN = ?',
+                    $params
+                );
+            }
+        }
     }
 
     /**
@@ -215,105 +319,222 @@ class Cash_receipt_model extends CI_Model {
     }
 
     /**
-     * Create journal entry for cash receipt
+     * Create journal entry for cash receipt (journal_entry table only, not GL).
+     * Handles both journal_id and entry_id columns in journal_entry_items.
      */
     private function create_journal_entry($receipt_id, $receipt_data, $line_items) {
-        // Get cash/bank account based on payment method
+        $pin = current_user()->PIN;
         $cash_account = $this->get_cash_account($receipt_data['payment_method']);
-        
+
+        // Final fallback if get_cash_account still returns null
         if (!$cash_account) {
-            log_message('error', 'Journal entry failed: No cash account found for payment method: ' . $receipt_data['payment_method']);
-            return false;
+            $fallback = $this->db->query(
+                'SELECT account FROM account_chart WHERE PIN = ? AND account_type IN (1, 10000) AND (name LIKE ? OR name LIKE ?) LIMIT 1',
+                array($pin, '%Cash%', '%Bank%')
+            )->row();
+            if ($fallback) {
+                $cash_account = $fallback->account;
+            } else {
+                log_message('error', 'Journal entry failed: No cash account found for payment method: ' . $receipt_data['payment_method']);
+                return false;
+            }
         }
-        
+
         log_message('debug', 'Creating journal entry for receipt_id: ' . $receipt_id . ', cash_account: ' . $cash_account);
-        
+
         $entry_date = isset($receipt_data['receipt_date']) ? $receipt_data['receipt_date'] : date('Y-m-d');
-        
-        // Create journal entry header
-        $journal_data = array(
-            'entry_date' => $entry_date,
-            'description' => 'Cash Receipt: ' . $receipt_data['receipt_no'] . ' - ' . $receipt_data['description'],
-            'reference_type' => 'cash_receipt',
-            'reference_id' => $receipt_id,
-            'createdby' => current_user()->id,
-            'PIN' => current_user()->PIN,
-            'created_at' => date('Y-m-d H:i:s')
-        );
-        
-        $this->db->insert('journal_entry', $journal_data);
+        $desc = 'Cash Receipt: ' . $receipt_data['receipt_no'] . ' - ' . (isset($receipt_data['description']) ? $receipt_data['description'] : '');
+
+        // Check if reference_type/reference_id columns exist
+        $has_ref_type = $this->db->query("SHOW COLUMNS FROM journal_entry LIKE 'reference_type'")->row();
+        $has_ref_id = $this->db->query("SHOW COLUMNS FROM journal_entry LIKE 'reference_id'")->row();
+
+        // Build INSERT for journal_entry header
+        if ($has_ref_type && $has_ref_id) {
+            $this->db->query(
+                'INSERT INTO journal_entry (entry_date, description, reference_type, reference_id, createdby, PIN, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                array($entry_date, $desc, 'cash_receipt', $receipt_id, current_user()->id, $pin, date('Y-m-d H:i:s'))
+            );
+        } else {
+            $this->db->query(
+                'INSERT INTO journal_entry (entry_date, description, createdby, PIN, created_at) VALUES (?, ?, ?, ?, ?)',
+                array($entry_date, $desc, current_user()->id, $pin, date('Y-m-d H:i:s'))
+            );
+        }
+
         $journal_id = $this->db->insert_id();
-        
         if (!$journal_id) {
             $db_error = $this->db->error();
             log_message('error', 'Journal entry header insert failed: ' . json_encode($db_error));
             return false;
         }
-        
+
         log_message('debug', 'Journal entry created with ID: ' . $journal_id);
-        
+
+        // Check which column journal_entry_items uses
+        $has_journal_id = $this->db->query("SHOW COLUMNS FROM journal_entry_items LIKE 'journal_id'")->row();
+        $has_entry_id = $this->db->query("SHOW COLUMNS FROM journal_entry_items LIKE 'entry_id'")->row();
+        $link_col = $has_journal_id ? 'journal_id' : ($has_entry_id ? 'entry_id' : 'journal_id'); // default to journal_id
+
+        // Check if description column exists
+        $has_desc = $this->db->query("SHOW COLUMNS FROM journal_entry_items LIKE 'description'")->row();
+
         // Debit Cash/Bank Account (increase asset)
-        $this->db->insert('journal_entry_items', array(
-            'journal_id' => $journal_id,
-            'account' => $cash_account,
-            'debit' => $receipt_data['total_amount'],
-            'credit' => 0,
-            'description' => 'Receipt from: ' . $receipt_data['received_from'],
-            'PIN' => current_user()->PIN
-        ));
-        
-        if ($this->db->affected_rows() <= 0) {
-            $db_error = $this->db->error();
-            log_message('error', 'Journal entry debit item insert failed: ' . json_encode($db_error));
+        $debit_desc = 'Receipt from: ' . (isset($receipt_data['received_from']) ? $receipt_data['received_from'] : '');
+        if ($has_desc) {
+            $debit_result = $this->db->query(
+                'INSERT INTO journal_entry_items (' . $link_col . ', account, debit, credit, description, PIN) VALUES (?, ?, ?, ?, ?, ?)',
+                array($journal_id, $cash_account, $receipt_data['total_amount'], 0, $debit_desc, $pin)
+            );
+        } else {
+            $debit_result = $this->db->query(
+                'INSERT INTO journal_entry_items (' . $link_col . ', account, debit, credit, PIN) VALUES (?, ?, ?, ?, ?)',
+                array($journal_id, $cash_account, $receipt_data['total_amount'], 0, $pin)
+            );
         }
         
+        if (!$debit_result) {
+            $error = $this->db->error();
+            log_message('error', 'Failed to insert debit item for cash receipt journal entry: ' . json_encode($error) . ' | journal_id: ' . $journal_id);
+            return false;
+        }
+
         // Credit Revenue/Other Accounts (based on line items)
         foreach ($line_items as $item) {
-            $this->db->insert('journal_entry_items', array(
-                'journal_id' => $journal_id,
-                'account' => $item['account'],
-                'debit' => 0,
-                'credit' => $item['amount'],
-                'description' => $item['description'],
-                'PIN' => current_user()->PIN
-            ));
+            if ($has_desc) {
+                $credit_result = $this->db->query(
+                    'INSERT INTO journal_entry_items (' . $link_col . ', account, debit, credit, description, PIN) VALUES (?, ?, ?, ?, ?, ?)',
+                    array($journal_id, $item['account'], 0, $item['amount'], isset($item['description']) ? $item['description'] : '', $pin)
+                );
+            } else {
+                $credit_result = $this->db->query(
+                    'INSERT INTO journal_entry_items (' . $link_col . ', account, debit, credit, PIN) VALUES (?, ?, ?, ?, ?)',
+                    array($journal_id, $item['account'], 0, $item['amount'], $pin)
+                );
+            }
             
-            if ($this->db->affected_rows() <= 0) {
-                $db_error = $this->db->error();
-                log_message('error', 'Journal entry credit item insert failed for account ' . $item['account'] . ': ' . json_encode($db_error));
+            if (!$credit_result) {
+                $error = $this->db->error();
+                log_message('error', 'Failed to insert credit item for cash receipt journal entry: ' . json_encode($error) . ' | journal_id: ' . $journal_id . ' | item: ' . json_encode($item));
+                return false;
             }
         }
-        
+
+        log_message('debug', 'Journal entry items created successfully for receipt ID: ' . $receipt_id . ', journal_id: ' . $journal_id . ', items count: ' . (count($line_items) + 1));
         return true;
     }
 
     /**
-     * Get cash/bank account based on payment method
+     * Get cash/bank account based on payment method.
+     * Priority: 1) paymentmenthod.gl_account_code, 2) account_chart by payment method name, 3) standard mapping, 4) generic Cash/Bank asset.
      */
     private function get_cash_account($payment_method) {
-        // Map payment methods to account types
-        $account_mapping = array(
+        $pin = current_user()->PIN;
+        $payment_method = trim((string) $payment_method);
+        if (empty($payment_method)) {
+            $payment_method = 'Cash';
+        }
+
+        // 1) Check paymentmenthod table for configured GL account
+        $pm_config = $this->payment_method_config_model->get_account_for_payment_method($payment_method);
+        if ($pm_config && !empty($pm_config->gl_account_code)) {
+            $acct = $this->db->query(
+                'SELECT account FROM account_chart WHERE account = ? AND PIN = ? LIMIT 1',
+                array($pm_config->gl_account_code, $pin)
+            )->row();
+            if ($acct) {
+                return $acct->account;
+            }
+        }
+
+        // 2) Try account_chart by payment method name (LIKE)
+        $acct = $this->db->query(
+            'SELECT account FROM account_chart WHERE PIN = ? AND name LIKE ? AND account_type IN (1, 10000) LIMIT 1',
+            array($pin, '%' . $this->db->escape_like_str($payment_method) . '%')
+        )->row();
+        if ($acct) {
+            return $acct->account;
+        }
+
+        // 3) Standard mapping fallback
+        $mapping = array(
             'Cash' => 'Cash',
             'Cheque' => 'Bank',
             'Bank Transfer' => 'Bank',
+            'BANK DEPOSIT' => 'Bank',
             'Mobile Money' => 'Mobile Money'
         );
+        $search_name = isset($mapping[$payment_method]) ? $mapping[$payment_method] : 'Cash';
+        $acct = $this->db->query(
+            'SELECT account FROM account_chart WHERE PIN = ? AND name LIKE ? AND account_type IN (1, 10000) LIMIT 1',
+            array($pin, '%' . $this->db->escape_like_str($search_name) . '%')
+        )->row();
+        if ($acct) {
+            return $acct->account;
+        }
+
+        // 4) Generic Cash or Bank asset account
+        $acct = $this->db->query(
+            'SELECT account FROM account_chart WHERE PIN = ? AND account_type IN (1, 10000) AND (name LIKE ? OR name LIKE ?) LIMIT 1',
+            array($pin, '%Cash%', '%Bank%')
+        )->row();
+        if ($acct) {
+            return $acct->account;
+        }
+
+        log_message('error', 'No cash/bank account found for payment method: ' . $payment_method);
+        return null;
+    }
+
+    /**
+     * Get journal/accounting entries for a cash receipt (for display on view page).
+     * Always built from current receipt + line items + current payment method so the
+     * displayed entries match the current payment method and accounts (they update when edited).
+     */
+    function get_journal_entries_by_receipt($receipt_id) {
+        $pin = current_user()->PIN;
+        $receipt_id = (int) $receipt_id;
+
+        $receipt = $this->get_cash_receipt($receipt_id);
+        if (!$receipt) {
+            return array('journal' => null, 'items' => array());
+        }
+
+        $line_items = $this->get_receipt_items($receipt_id);
+        $cash_account_code = $this->get_cash_account($receipt->payment_method);
+        $display_items = array();
         
-        $account_name = isset($account_mapping[$payment_method]) ? $account_mapping[$payment_method] : 'Cash';
-        
-        // Find the account - check for asset type 10000 (or 1 for legacy)
-        $this->db->where('PIN', current_user()->PIN);
-        $this->db->like('name', $account_name);
-        $this->db->where_in('account_type', array(1, 10000)); // Asset type
-        $this->db->limit(1);
-        
-        $account = $this->db->get('account_chart')->row();
-        
-        if (!$account) {
-            log_message('error', 'No cash/bank account found for payment method: ' . $payment_method . ', searched for name like: ' . $account_name);
+        // Debit entry: Cash/Bank Account
+        if ($cash_account_code) {
+            $cash_name = $this->db->query('SELECT name FROM account_chart WHERE account = ? AND PIN = ? LIMIT 1', array($cash_account_code, $pin))->row();
+            $display_items[] = (object) array(
+                'account' => $cash_account_code,
+                'account_name' => $cash_name ? $cash_name->name : $cash_account_code,
+                'debit' => floatval($receipt->total_amount),
+                'credit' => 0,
+                'description' => 'Receipt from: ' . (isset($receipt->received_from) ? $receipt->received_from : '')
+            );
         }
         
-        return $account ? $account->account : null;
+        // Credit entries: Revenue/Other Accounts (from line items)
+        foreach ($line_items as $item) {
+            $display_items[] = (object) array(
+                'account' => $item->account,
+                'account_name' => isset($item->account_name) ? $item->account_name : $item->account,
+                'debit' => 0,
+                'credit' => floatval($item->amount),
+                'description' => isset($item->description) ? $item->description : ''
+            );
+        }
+        
+        $journal_display = (object) array(
+            'id' => 0,
+            'description' => 'Cash Receipt: ' . $receipt->receipt_no . ' - ' . (isset($receipt->description) ? $receipt->description : ''),
+            'reference_type' => 'cash_receipt',
+            'reference_id' => $receipt_id
+        );
+        
+        return array('journal' => $journal_display, 'items' => $display_items);
     }
 
     /**

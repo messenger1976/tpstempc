@@ -8,11 +8,12 @@
 |------|----------|---------|
 | `install_cash_receipt.php` | Root directory | Standalone installer for Cash Receipt Module |
 | `install_cash_disbursement.php` | Root directory | Standalone installer for Cash Disbursement Module |
-| `CASH_RECEIPT_QUICK_START.md` | Root directory | User guide for Cash Receipt Module |
-| `CASH_DISBURSEMENT_QUICK_START.md` | Root directory | User guide for Cash Disbursement Module |
-| `CASH_RECEIPT_COMPLETION_REPORT.md` | Root directory | Technical implementation details (Receipt) |
-| `CASH_DISBURSEMENT_COMPLETION_REPORT.md` | Root directory | Technical implementation details (Disbursement) |
-| `FINANCE_MODULES_COMPLETE_SUMMARY.md` | Root directory | Comprehensive overview of both modules |
+| `sql/add_cash_disbursement_permissions.sql` | `sql/` | Adds Cash Disbursement permissions to access_level (run after schema so menu appears) |
+| `CASH_RECEIPT_QUICK_START.md` | `docs/` | User guide for Cash Receipt Module |
+| `CASH_DISBURSEMENT_QUICK_START.md` | `docs/` | User guide for Cash Disbursement Module |
+| `CASH_RECEIPT_COMPLETION_REPORT.md` | `docs/` | Technical implementation details (Receipt) |
+| `CASH_DISBURSEMENT_COMPLETION_REPORT.md` | `docs/` | Technical implementation details (Disbursement) |
+| `FINANCE_MODULES_COMPLETE_SUMMARY.md` | `docs/` | Comprehensive overview of both modules |
 
 ### 🔧 Controllers
 
@@ -116,12 +117,13 @@ application/views/cash_disbursement/
 | File | Location | Changes | Purpose |
 |------|----------|---------|---------|
 | `menu.php` | `application/views/` | Updated | Added both modules to Finance menu |
+| `newmenu.php` | `application/views/` | Updated | Added Cash Receipt List and Cash Disbursement List under Finance (same permission logic as menu.php) |
 | `systemlang_lang.php` | `application/language/english/` | +64 keys | Added translations |
 
 **Menu Changes:**
-- Added "Cash Receipt List" under Finance menu (with permission check)
-- Added "Cash Disbursement List" under Finance menu (with permission check)
-- Updated active menu highlighting logic
+- Added "Cash Receipt List" under Finance menu (with permission check) in `menu.php` and `newmenu.php`
+- Added "Cash Disbursement List" under Finance menu (with permission check) in `menu.php` and `newmenu.php`
+- Updated active menu highlighting logic (cash_receipt, cash_disbursement)
 
 **Language Keys Added:**
 - 32 for Cash Receipt Module
@@ -159,7 +161,11 @@ Navigate to: http://your-domain.com/install_cash_disbursement.php
 - Password: (your password)
 - Database: tapstemco
 
-# Step 3: Confirm success and assign permissions
+# Step 3: Click Install Module and confirm success
+
+# Step 4: Add permissions (required for menu to appear)
+Run: sql/add_cash_disbursement_permissions.sql
+(e.g. in phpMyAdmin or: mysql -u root -p tapstemco < sql/add_cash_disbursement_permissions.sql)
 ```
 
 ### For Manual Installation
@@ -218,11 +224,10 @@ Cash Disbursement:
 
 ### How to Assign
 
-1. Go to: **Admin Panel → Roles & Permissions**
-2. Select user role
-3. Find Module 6: **Finance**
-4. Check permissions
-5. Save changes
+- **SQL (Cash Disbursement):** Run `sql/add_cash_disbursement_permissions.sql` to add View/Create/Edit/Delete_cash_disbursement for group_id = 1. Edit the file for other group IDs.
+- **UI:** Go to **Admin Panel → Roles & Permissions** → select user role → Module 6 (Finance) → check the four permissions → Save.
+
+If the Cash Disbursement (or Cash Receipt) menu item does not appear, the corresponding permission is missing in `access_level` for your user's group.
 
 ---
 

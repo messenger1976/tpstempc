@@ -6,8 +6,10 @@
         <thead>
             <tr>
                 <th><?php echo lang('index_action_th'); ?></th>
-                <th><?php echo ($link_cat == 1 ? 'Member Joined From' : (($link_cat == 2 || $link_cat ==3) ? 'Disbursed From' : 'From')); ?></th>
+                <th><?php echo ($link_cat == 7 ? 'As of Date' : ($link_cat == 1 ? 'Member Joined From' : (($link_cat == 2 || $link_cat ==3) ? 'Disbursed From' : 'From'))); ?></th>
+                <?php if ($link_cat != 7) { ?>
                 <th><?php echo 'Until'; ?></th>
+                <?php } ?>
                 <th><?php echo 'Description'; ?></th>
                 <?php if($link_cat == 1){ ?>
                 <th>Loan Status</th>
@@ -35,10 +37,14 @@
                         echo anchor(current_lang() . "/report_loan/loan_transaction_summary_view/" . $link_cat . '/' . encode_id($value->id), ' <i class="fa fa-eye"></i> ' . lang('button_view'));    
                         }else if($link_cat == 6) {
                         echo anchor(current_lang() . "/report_loan/loan_processing_fee_collection_view/" . $link_cat . '/' . encode_id($value->id), ' <i class="fa fa-eye"></i> ' . lang('button_view'));    
+                        }else if($link_cat == 7) {
+                        echo anchor(current_lang() . "/report_loan/loan_aging_view/" . $link_cat . '/' . encode_id($value->id), ' <i class="fa fa-eye"></i> ' . lang('button_view'));    
                         }
                         ?></td>
                     <td><?php echo format_date($value->fromdate, false); ?></td>
+                    <?php if ($link_cat != 7) { ?>
                     <td><?php echo format_date($value->todate, false); ?></td>
+                    <?php } ?>
                     <td><?php echo $value->description; ?></td>
                      <?php if($link_cat == 1){ ?>
                     <td><?php echo loan_status($value->custom); ?></td>

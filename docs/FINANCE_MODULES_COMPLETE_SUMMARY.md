@@ -35,8 +35,9 @@ Both modules are fully integrated with the Finance menu, automatically create jo
 
 ### Cash Disbursement Module
 - **Installer:** `http://your-domain.com/install_cash_disbursement.php`
-- **Documentation:** `CASH_DISBURSEMENT_QUICK_START.md`
-- **SQL File:** `sql/cash_disbursement_module.sql`
+- **Documentation:** `docs/CASH_DISBURSEMENT_QUICK_START.md`
+- **SQL Schema:** `sql/cash_disbursement_module.sql`
+- **Permissions (run after schema):** `sql/add_cash_disbursement_permissions.sql` — adds View/Create/Edit/Delete_cash_disbursement so the Finance → Cash Disbursement menu appears
 
 ---
 
@@ -76,16 +77,19 @@ tapstemco/
 │       └── systemlang_lang.php .................... 64 new translations
 │
 ├── sql/
-│   ├── cash_receipt_module.sql .................... Database schema
-│   └── cash_disbursement_module.sql .............. Database schema
+│   ├── cash_receipt_module.sql ................... Database schema
+│   ├── cash_disbursement_module.sql .............. Database schema
+│   └── add_cash_disbursement_permissions.sql ...... Permissions for menu (run after disbursement schema)
 │
 ├── install_cash_receipt.php ...................... Installer script
-├── install_cash_disbursement.php ................ Installer script
+├── install_cash_disbursement.php ................. Installer script
 │
-├── CASH_RECEIPT_QUICK_START.md ................... User guide
-├── CASH_DISBURSEMENT_QUICK_START.md ............. User guide
-├── CASH_RECEIPT_COMPLETION_REPORT.md ............ Implementation details
-└── CASH_DISBURSEMENT_COMPLETION_REPORT.md ...... Implementation details
+└── docs/
+    ├── CASH_RECEIPT_QUICK_START.md ............... User guide
+    ├── CASH_DISBURSEMENT_QUICK_START.md .......... User guide
+    ├── CASH_RECEIPT_COMPLETION_REPORT.md ......... Implementation details
+    ├── CASH_DISBURSEMENT_COMPLETION_REPORT.md .... Implementation details
+    └── FINANCE_MODULES_COMPLETE_SUMMARY.md ....... This file
 ```
 
 ---
@@ -406,7 +410,7 @@ Solution: Ensure user role has appropriate Finance module permissions
 
 **Problem: "Disbursement not appearing in list"**
 ```
-Solution: Verify user has View_cash_receipt/View_cash_disbursement permission
+Solution: Verify user has View_cash_receipt/View_cash_disbursement permission. For Cash Disbursement, run `sql/add_cash_disbursement_permissions.sql` to add these to `access_level` for your group (e.g. group_id = 1).
 ```
 
 **Problem: "Journal entry not created"**

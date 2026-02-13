@@ -162,12 +162,20 @@ class Cash_receipt extends CI_Controller {
         $this->form_validation->set_rules('amount[]', lang('cash_receipt_amount'), 'required');
 
         if ($this->form_validation->run() == TRUE) {
+            // Normalize payment method (trim, fallback to existing value or 'Cash')
+            $posted_payment = trim($this->input->post('payment_method'));
+            if ($posted_payment === '' && isset($receipt->payment_method)) {
+                $posted_payment = trim($receipt->payment_method);
+            }
+            if ($posted_payment === '') {
+                $posted_payment = 'Cash';
+            }
             // Prepare receipt data
             $receipt_data = array(
                 'receipt_no' => $this->input->post('receipt_no'),
                 'receipt_date' => date('Y-m-d', strtotime($this->input->post('receipt_date'))),
                 'received_from' => $this->input->post('received_from'),
-                'payment_method' => $this->input->post('payment_method'),
+                'payment_method' => $posted_payment,
                 'cheque_no' => $this->input->post('cheque_no'),
                 'bank_name' => $this->input->post('bank_name'),
                 'description' => $this->input->post('description'),
@@ -222,6 +230,10 @@ class Cash_receipt extends CI_Controller {
         foreach ($payment_methods as $method) {
             $this->data['payment_methods'][$method->name] = $method->name;
         }
+        // If saved payment method is not in the table (e.g. was removed from config), still show it so it can be selected
+        if (!empty($receipt->payment_method) && !isset($this->data['payment_methods'][$receipt->payment_method])) {
+            $this->data['payment_methods'][$receipt->payment_method] = $receipt->payment_method;
+        }
 
         $this->data['content'] = 'cash_receipt/cash_receipt_edit';
         $this->load->view('template', $this->data);
@@ -246,6 +258,9 @@ class Cash_receipt extends CI_Controller {
         
         $this->data['receipt'] = $receipt;
         $this->data['line_items'] = $this->cash_receipt_model->get_receipt_items($id);
+        
+        // Get accounting entries (built from current receipt data, not from stored journal)
+        $this->data['accounting_entries'] = $this->cash_receipt_model->get_journal_entries_by_receipt($id);
         
         // Render a minimal layout when opened inside a popup iframe
         if ($this->input->get('popup')) {

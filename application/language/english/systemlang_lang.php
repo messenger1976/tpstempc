@@ -344,6 +344,11 @@ $lang['cash_disbursement_no_exists'] = 'This disbursement number already exists'
 $lang['cash_disbursement_no_items'] = 'Please add at least one line item';
 $lang['cash_disbursement_voucher'] = 'Cash Disbursement Voucher';
 $lang['cash_disbursement_statement'] = 'Cash Disbursement Statement';
+$lang['accounting_entries'] = 'Accounting Entries';
+$lang['no_accounting_entries'] = 'No accounting entries recorded for this disbursement.';
+$lang['journal_source_cash_receipt'] = 'Cash Receipt';
+$lang['journal_source_cash_disbursement'] = 'Cash Disbursement';
+$lang['journal_source_journal_entry'] = 'Journal Entry (JV)';
 
 $lang['client_account'] = 'Client Account';
 $lang['reseller_account_list'] = 'Reseller Account List';

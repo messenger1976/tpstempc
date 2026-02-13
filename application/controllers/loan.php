@@ -1286,11 +1286,44 @@ break;
         
         // Get all loan products for filter
         $this->data['loan_products'] = $this->setting_model->loanproduct()->result();
+       
+        // Handle fiscal year selection with session + active fiscal year logic
+        // Initialize variable
+        $selected_fiscal_year_id = null;
         
-        // Handle fiscal year selection
-        $selected_fiscal_year_id = $this->input->post('fiscal_year_id');
-        if (!$selected_fiscal_year_id && $this->input->get('fiscal_year_id')) {
-            $selected_fiscal_year_id = $this->input->get('fiscal_year_id');
+        // 1. First, check POST/GET (user explicitly selected a fiscal year)
+        $post_fiscal_year_id = $this->input->post('fiscal_year_id');
+        $get_fiscal_year_id = $this->input->get('fiscal_year_id');
+        
+        if ($post_fiscal_year_id) {
+            $selected_fiscal_year_id = $post_fiscal_year_id;
+        } elseif ($get_fiscal_year_id) {
+            $selected_fiscal_year_id = $get_fiscal_year_id;
+        }
+
+        // 2. If a fiscal year was selected via POST/GET, store it in session
+        if ($selected_fiscal_year_id) {
+            $this->session->set_userdata('loan_beginning_balance_fiscal_year_id', $selected_fiscal_year_id);
+        } else {
+            // 3. If nothing was selected in this request, try session value
+            $session_fiscal_year_id = $this->session->userdata('loan_beginning_balance_fiscal_year_id');
+
+            if ($session_fiscal_year_id) {
+                $selected_fiscal_year_id = $session_fiscal_year_id;
+            } else {
+                // 4. If session is empty, fall back to the active fiscal year
+                $active_fiscal_year = $this->setting_model->get_active_fiscal_year();
+                if ($active_fiscal_year) {
+                    $selected_fiscal_year_id = $active_fiscal_year->id;
+                    // Store active fiscal year in session for future use
+                    $this->session->set_userdata('loan_beginning_balance_fiscal_year_id', $selected_fiscal_year_id);
+                }
+            }
+        }
+        
+        // Ensure selected_fiscal_year_id is an integer for proper comparison
+        if ($selected_fiscal_year_id) {
+            $selected_fiscal_year_id = (int)$selected_fiscal_year_id;
         }
         
         // Handle loan product filter
@@ -1303,8 +1336,10 @@ break;
         }
         $this->data['selected_loan_product_id'] = $selected_loan_product_id;
         
+        // Always set selected_fiscal_year_id in data array so view can use it for dropdown selection
+        $this->data['selected_fiscal_year_id'] = $selected_fiscal_year_id;
+        
         if ($selected_fiscal_year_id) {
-            $this->data['selected_fiscal_year_id'] = $selected_fiscal_year_id;
             $this->data['fiscal_year'] = $this->setting_model->fiscal_year_list($selected_fiscal_year_id)->row();
             $balances = $this->loan_model->loan_beginning_balance_list($selected_fiscal_year_id, null, $selected_loan_product_id)->result();
             

@@ -237,17 +237,36 @@ class Loan_Model extends CI_Model {
 
     function count_loan($key = null) {
         $pin = current_user()->PIN;
+        
+        // Count regular loans from loan_contract
         $sql = "SELECT loan_contract.* FROM loan_contract INNER JOIN members ON members.PID=loan_contract.PID WHERE loan_contract.PIN='$pin'  ";
 
         if (!is_null($key)) {
             $sql .= "  AND (loan_contract.LID LIKE '$key%' OR loan_contract.member_id LIKE '$key%' OR members.firstname LIKE '$key%' OR members.lastname LIKE '$key%')";
         }
-
-        return count($this->db->query($sql)->result());
+        
+        $count = count($this->db->query($sql)->result());
+        
+        // Count loan beginning balances
+        $sql_bb = "SELECT loan_beginning_balances.* FROM loan_beginning_balances INNER JOIN members ON members.member_id=loan_beginning_balances.member_id WHERE loan_beginning_balances.PIN='$pin' AND members.PIN='$pin'";
+        
+        // Exclude beginning balances that already have corresponding loan_contract entries
+        $sql_bb .= " AND (loan_beginning_balances.loan_id IS NULL OR loan_beginning_balances.loan_id NOT IN (SELECT LID FROM loan_contract WHERE PIN='$pin'))";
+        
+        if (!is_null($key)) {
+            $sql_bb .= " AND (loan_beginning_balances.loan_id LIKE '$key%' OR loan_beginning_balances.member_id LIKE '$key%' OR members.firstname LIKE '$key%' OR members.lastname LIKE '$key%')";
+        }
+        
+        $count_bb = count($this->db->query($sql_bb)->result());
+        
+        return $count + $count_bb;
     }
 
     function search_loan($key, $limit, $start) {
         $pin = current_user()->PIN;
+        $results = array();
+        
+        // Get regular loans from loan_contract
         $sql = "SELECT loan_contract.*,loan_status.name FROM loan_contract INNER JOIN members ON members.PID=loan_contract.PID ";
         $sql .= " INNER JOIN loan_status ON loan_status.code=loan_contract.status WHERE loan_contract.PIN='$pin'";
 
@@ -255,9 +274,52 @@ class Loan_Model extends CI_Model {
             $sql .= "  AND ( loan_contract.LID LIKE '$key%' OR loan_contract.member_id LIKE '$key%' OR members.firstname LIKE '$key%' OR members.lastname LIKE '$key%')";
         }
 
-        $sql.= " ORDER BY loan_contract.applicationdate ASC LIMIT $start,$limit";
-
-        return $this->db->query($sql)->result();
+        $sql.= " ORDER BY loan_contract.applicationdate ASC";
+        
+        $regular_loans = $this->db->query($sql)->result();
+        
+        // Get loan beginning balances that don't have corresponding loan_contract entries
+        $sql_bb = "SELECT 
+                        COALESCE(loan_beginning_balances.loan_id, CONCAT('BB-', loan_beginning_balances.id)) as LID,
+                        members.PID,
+                        loan_beginning_balances.member_id,
+                        COALESCE(loan_beginning_balances.loan_amount, loan_beginning_balances.principal_balance) as basic_amount,
+                        loan_beginning_balances.term as number_istallment,
+                        loan_beginning_balances.monthly_amort as installment_amount,
+                        loan_beginning_balances.interest_balance as total_interest_amount,
+                        loan_beginning_balances.total_balance as total_loan,
+                        'Beginning Balance' as name,
+                        1 as edit,
+                        COALESCE(loan_product.`interval`, 1) as `interval`,
+                        loan_beginning_balances.disbursement_date as applicationdate
+                    FROM loan_beginning_balances 
+                    INNER JOIN members ON members.member_id=loan_beginning_balances.member_id 
+                    LEFT JOIN loan_product ON loan_product.id=loan_beginning_balances.loan_product_id AND loan_product.PIN='$pin'
+                    WHERE loan_beginning_balances.PIN='$pin' AND members.PIN='$pin'";
+        
+        // Exclude beginning balances that already have corresponding loan_contract entries
+        $sql_bb .= " AND (loan_beginning_balances.loan_id IS NULL OR loan_beginning_balances.loan_id NOT IN (SELECT LID FROM loan_contract WHERE PIN='$pin'))";
+        
+        if (!is_null($key)) {
+            $sql_bb .= " AND (loan_beginning_balances.loan_id LIKE '$key%' OR loan_beginning_balances.member_id LIKE '$key%' OR members.firstname LIKE '$key%' OR members.lastname LIKE '$key%')";
+        }
+        
+        $sql_bb .= " ORDER BY loan_beginning_balances.disbursement_date ASC, loan_beginning_balances.created_at ASC";
+        
+        $beginning_balances = $this->db->query($sql_bb)->result();
+        
+        // Combine results
+        $all_results = array_merge($regular_loans, $beginning_balances);
+        
+        // Sort by applicationdate
+        usort($all_results, function($a, $b) {
+            $dateA = isset($a->applicationdate) ? strtotime($a->applicationdate) : 0;
+            $dateB = isset($b->applicationdate) ? strtotime($b->applicationdate) : 0;
+            return $dateA - $dateB;
+        });
+        
+        // Apply pagination
+        return array_slice($all_results, $start, $limit);
     }
 
     function open_repayment_installment($LID) {

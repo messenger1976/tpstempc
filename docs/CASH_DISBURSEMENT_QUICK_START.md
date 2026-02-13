@@ -20,10 +20,12 @@ The Cash Disbursement Module is a complete accounting solution for managing outg
 2. Navigate to your TAPSTEMCO database
 3. Import the SQL file: `sql/cash_disbursement_module.sql`
 4. Execute all queries
+5. **Add permissions** (required for the menu to appear): run `sql/add_cash_disbursement_permissions.sql` (see [User Permissions](#user-permissions) below).
 
 ### Method 3: Using MySQL Command Line
 ```bash
-mysql -u root -p tapstemco < /path/to/sql/cash_disbursement_module.sql
+mysql -u root -p tapstemco < sql/cash_disbursement_module.sql
+mysql -u root -p tapstemco < sql/add_cash_disbursement_permissions.sql
 ```
 
 ## Module Files Created
@@ -39,7 +41,7 @@ mysql -u root -p tapstemco < /path/to/sql/cash_disbursement_module.sql
   - `cash_disbursement_view()` - View disbursement details
   - `cash_disbursement_print()` - Printable disbursement voucher
   - `cash_disbursement_delete()` - Delete disbursement
-  - `export_to_excel()` - Export to Excel format
+  - `cash_disbursement_export()` - Export to Excel format
 
 ### Models
 - **File:** `application/models/cash_disbursement_model.php`
@@ -74,7 +76,7 @@ mysql -u root -p tapstemco < /path/to/sql/cash_disbursement_module.sql
 - disburse_no (Unique, e.g., CD-00001)
 - disburse_date (Date of disbursement)
 - paid_to (Payee name)
-- payment_method (Cash/Cheque/Bank Transfer/Mobile Money)
+- payment_method (VARCHAR(100) – from paymentmenthod table, e.g. Cash, BANK DEPOSIT, Cheque)
 - cheque_no (For cheque payments)
 - bank_name (For cheque/bank transfer payments)
 - description (Payment description/notes)
@@ -84,6 +86,8 @@ mysql -u root -p tapstemco < /path/to/sql/cash_disbursement_module.sql
 - created_at (Timestamp)
 - updated_at (Update timestamp)
 ```
+
+**Payment method column:** The schema uses `VARCHAR(100)` so any method from the **paymentmenthod** table can be stored. If your database still has the old `ENUM`, run once: `sql/alter_cash_disbursement_payment_method_varchar.sql`.
 
 ### cash_disbursement_items Table
 ```sql
@@ -110,11 +114,18 @@ After installation, assign these permissions to your user roles:
 All permissions belong to **Module ID 6** (Finance).
 
 ### How to Assign Permissions
-1. Go to **Admin Panel → Roles & Permissions**
-2. Select the desired user role
-3. Find "Finance" module (ID: 6)
-4. Check the cash disbursement permissions
-5. Save changes
+
+**Option A – Run the permissions SQL (quick)**  
+Run `sql/add_cash_disbursement_permissions.sql` in phpMyAdmin or MySQL. This adds View/Create/Edit/Delete_cash_disbursement for **group_id = 1** (admin). Edit the script if your role uses a different group_id.
+
+**Option B – Via application UI**  
+1. Go to **Admin Panel → Roles & Permissions** (or your system’s access-level screen).
+2. Select the desired user role (group).
+3. Find **Finance** module (ID: 6).
+4. Enable: View_cash_disbursement, Create_cash_disbursement, Edit_cash_disbursement, Delete_cash_disbursement.
+5. Save changes.
+
+Without these entries in the `access_level` table, the **Cash Disbursement** menu item will not appear.
 
 ## How to Use
 
@@ -125,11 +136,7 @@ All permissions belong to **Module ID 6** (Finance).
 3. Fill in the form:
    - **Disbursement Date:** Select the date of payment
    - **Paid To:** Enter the payee name
-   - **Payment Method:** Choose from:
-     - Cash
-     - Cheque (requires cheque number and bank name)
-     - Bank Transfer
-     - Mobile Money
+   - **Payment Method:** Choose from the **paymentmenthod** table (e.g. Cash, BANK DEPOSIT, Cheque, Bank Transfer, Mobile Money). Options are loaded from Settings → Payment Method Config; only active methods with your PIN appear.
    - **Description:** Add any notes about the disbursement
 4. Add Line Items:
    - Click **"Add Item"** button
@@ -153,9 +160,10 @@ All permissions belong to **Module ID 6** (Finance).
 1. Go to **Finance → Cash Disbursement List**
 2. Find the disbursement in the table
 3. Click the **Edit** button (pencil icon)
-4. Modify the necessary fields
-5. Update line items as needed
-6. Click **"Update Disbursement"**
+4. Change **Payment Method**, line items (accounts/amounts), or any other fields as needed
+5. Click **"Update Disbursement"**
+
+**Behaviour:** The disbursement header and line items are updated; the old journal entry for that disbursement is removed and a new one is created with the current payment method and line items. The **Accounting entries** shown on the view page always reflect the **current** disbursement (payment method and line items), so they update as soon as you save.
 
 ### Viewing Disbursement Details
 
@@ -196,7 +204,7 @@ All permissions belong to **Module ID 6** (Finance).
 2. Find the disbursement to delete
 3. Click the **Delete** button (trash icon)
 4. Confirm deletion in the popup dialog
-5. Associated journal entry will also be deleted
+5. The disbursement, its line items, and any linked journal entry (and journal items) are deleted.
 
 ⚠️ **Warning:** Deletion is permanent. Use with caution in production environments.
 
@@ -214,20 +222,30 @@ When you save a cash disbursement, the system automatically creates a journal en
 | Cash/Bank Account | Credit | 5,000.00 |
 
 **Mapping Logic:**
-- **Cash Account:** Determined by payment method
-  - Cash → Bank Account (1200)
-  - Cheque → Bank Account (1200)
-  - Bank Transfer → Bank Account (1200)
-  - Mobile Money → Mobile Money Account (1205)
-- **Expense Account:** User-selected GL accounts
+- **Cash/Bank Account (credit):** From **paymentmenthod** table (`gl_account_code`) for the selected payment method; if not set, the system looks up an asset account by payment method name or uses a Cash/Bank fallback.
+- **Expense/Asset accounts (debits):** User-selected GL accounts per line item.
 
-### Viewing Related Journal Entries
+### Accounting Entries on the View Page
 
-1. View the disbursement details
-2. The related journal entry number is automatically recorded
-3. Access journal entries from **Finance → Journal Entry**
+The **Accounting entries** section on the disbursement view is always built from the **current** disbursement record (current payment method and current line items). When you edit and change the payment method or line items, the displayed entries update to match after save.
+
+### Posting to the General Ledger (Option 2 – batch post)
+
+Cash disbursement creates rows in **`journal_entry`** and **`journal_entry_items`** only. To have them appear in **`general_ledger`** (and in trial balance / GL reports):
+
+1. Go to **Finance → Journal Entry Review**.
+2. Find the entry with source **Cash Disbursement** (or Cash Receipt).
+3. Click **"Post to GL"** for that row.
+4. Confirm; the entry is then copied to **`general_ledger_entry`** and **`general_ledger`** with `fromtable = 'journal_entry'`.
+
+Entries that are already posted show a **"Posted to GL"** label instead of the button. Only balanced entries can be posted.
 
 ## Troubleshooting
+
+### Cash Disbursement menu item not visible
+The Finance menu shows **Cash Disbursement List** only when your user has the **View_cash_disbursement** permission. The module SQL does not add this automatically.
+
+**Fix:** Run `sql/add_cash_disbursement_permissions.sql` (adds permissions for group_id = 1), or assign **View_cash_disbursement** (Module 6) to your role in the application’s Roles & Permissions (access_level). Then refresh the page or log in again.
 
 ### "No direct script access allowed" Error
 This error occurs when the installer script cannot run. Solutions:
@@ -256,6 +274,14 @@ This error occurs when the installer script cannot run. Solutions:
 1. Clear application cache (if cached)
 2. Manually set the next disbursement number in database
 3. Contact system administrator for database reset
+
+### Payment Method Not Saving or Shows Blank After Edit
+If the **payment_method** column is still an ENUM (only Cash, Cheque, Bank Transfer, Mobile Money), values like "BANK DEPOSIT" from the paymentmenthod table will not save. **Fix:** Run once in your database (e.g. phpMyAdmin → SQL):
+```sql
+ALTER TABLE `cash_disbursements`
+  MODIFY COLUMN `payment_method` VARCHAR(100) NOT NULL DEFAULT 'Cash';
+```
+Or run the file: `sql/alter_cash_disbursement_payment_method_varchar.sql`
 
 ## Maintenance
 
@@ -293,8 +319,10 @@ tapstemco/
 │   └── language/english/
 │       └── systemlang_lang.php ← Translations
 ├── sql/
-│   └── cash_disbursement_module.sql ← Database schema
-└── install_cash_disbursement.php ← Installation script
+│   ├── cash_disbursement_module.sql .............. Database schema
+│   ├── add_cash_disbursement_permissions.sql ..... Permissions (run after schema)
+│   └── alter_cash_disbursement_payment_method_varchar.sql ... Optional: allow any payment method name (run if column is ENUM)
+└── install_cash_disbursement.php ................. Installation script
 ```
 
 ## Security Notes
@@ -314,11 +342,11 @@ For more information:
 
 ## Version Information
 
-- **Module Version:** 1.0
+- **Module Version:** 1.1
 - **Framework:** CodeIgniter 3.x
 - **Database:** MySQL/MariaDB
 - **Created:** 2024
-- **Last Updated:** 2024
+- **Last Updated:** 2025
 
 ---
 
@@ -326,7 +354,7 @@ For more information:
 
 ✅ Complete cash disbursement management system
 ✅ Automatic journal entry generation
-✅ Multi-payment method support (Cash, Cheque, Bank Transfer, Mobile Money)
+✅ Payment methods from **paymentmenthod** table (Cash, BANK DEPOSIT, Cheque, etc.)
 ✅ Professional disbursement vouchers (printable)
 ✅ Excel export functionality
 ✅ Role-based permission system

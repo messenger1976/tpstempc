@@ -14,8 +14,12 @@
                     <label for="fiscal_year_id"><?php echo lang('fiscal_year'); ?>:</label>
                     <select name="fiscal_year_id" id="fiscal_year_id" class="form-control" style="margin-left: 10px; margin-right: 10px;">
                         <option value=""><?php echo lang('select_default_text'); ?></option>
-                        <?php foreach ($fiscal_years as $fy) { ?>
-                            <option value="<?php echo $fy->id; ?>" <?php echo (isset($selected_fiscal_year_id) && $selected_fiscal_year_id == $fy->id ? 'selected' : ''); ?>>
+                        <?php foreach ($fiscal_years as $fy) { 
+                            // Ensure both values are compared as integers for proper matching
+                            $fy_id = (int)$fy->id;
+                            $is_selected = (isset($selected_fiscal_year_id) && (int)$selected_fiscal_year_id === $fy_id);
+                        ?>
+                            <option value="<?php echo $fy->id; ?>" <?php echo $is_selected ? 'selected="selected"' : ''; ?>>
                                 <?php echo $fy->name . ' (' . date('M d, Y', strtotime($fy->start_date)) . ' - ' . date('M d, Y', strtotime($fy->end_date)) . ')'; ?>
                             </option>
                         <?php } ?>

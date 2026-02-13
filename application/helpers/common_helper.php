@@ -229,6 +229,17 @@ if (!function_exists('account_row_info')) {
 }
 
 
+if (!function_exists('journal_source_label')) {
+    /** Return human-readable label for journal entry source (reference_type). */
+    function journal_source_label($reference_type) {
+        if (empty($reference_type)) return lang('journal_source_journal_entry');
+        $ref = strtolower(trim($reference_type));
+        if ($ref === 'cash_receipt') return lang('journal_source_cash_receipt');
+        if ($ref === 'cash_disbursement') return lang('journal_source_cash_disbursement');
+        return lang('journal_source_journal_entry');
+    }
+}
+
 if (!function_exists('current_user')) {
 
     function current_user($id = null) {

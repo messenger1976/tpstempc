@@ -8,7 +8,7 @@ The **Cash Disbursement Module** has been successfully created for the TAPSTEMCO
 
 ## Installation Instructions
 
-### Quick Start (3 Steps)
+### Quick Start (4 Steps)
 
 1. **Run the installer:**
    ```
@@ -23,18 +23,28 @@ The **Cash Disbursement Module** has been successfully created for the TAPSTEMCO
 
 3. **Click "Install Module"** and wait for success message
 
+4. **Add permissions** (required for the menu to appear):
+   ```bash
+   mysql -u root -p tapstemco < sql/add_cash_disbursement_permissions.sql
+   ```
+   Or run `sql/add_cash_disbursement_permissions.sql` in phpMyAdmin. This adds View/Create/Edit/Delete_cash_disbursement for group_id = 1; edit the file if your admin role uses another group_id.
+
 ### Manual Installation
 
-If the installer doesn't work, import the SQL file manually:
+If the installer doesn't work, import the SQL files manually:
 
 ```bash
 mysql -u root -p tapstemco < sql/cash_disbursement_module.sql
+mysql -u root -p tapstemco < sql/add_cash_disbursement_permissions.sql
 ```
 
 Or use phpMyAdmin:
 1. Select database "tapstemco"
 2. Import file: `sql/cash_disbursement_module.sql`
-3. Execute all queries
+3. Import file: `sql/add_cash_disbursement_permissions.sql`
+4. Execute all queries
+
+**Note:** The schema uses `createdby int(11) unsigned` to match `users.id` (foreign key). If you see errno 150 on create table, ensure the schema has not been changed to signed.
 
 ---
 
@@ -58,11 +68,14 @@ Or use phpMyAdmin:
 
 ### Supporting Files
 - ✅ `install_cash_disbursement.php` (Standalone installer)
-- ✅ `CASH_DISBURSEMENT_QUICK_START.md` (User guide)
-- ✅ `CASH_DISBURSEMENT_COMPLETION_REPORT.md` (This file)
+- ✅ `sql/add_cash_disbursement_permissions.sql` (Adds View/Create/Edit/Delete_cash_disbursement to access_level for group_id = 1; run after schema so the menu appears)
+- ✅ `sql/alter_cash_disbursement_payment_method_varchar.sql` (Optional: run once if payment_method column is ENUM, so any method from paymentmenthod can be saved)
+- ✅ `docs/CASH_DISBURSEMENT_QUICK_START.md` (User guide)
+- ✅ `docs/CASH_DISBURSEMENT_COMPLETION_REPORT.md` (This file)
 
 ### Menu Integration
 - ✅ Updated `application/views/menu.php` (Finance menu)
+- ✅ Updated `application/views/newmenu.php` (Finance menu; Cash Receipt + Cash Disbursement with same permission logic)
 
 ### Language Translations
 - ✅ Updated `application/language/english/systemlang_lang.php` (32 translations added)
@@ -73,8 +86,9 @@ Or use phpMyAdmin:
 
 ### Tables
 1. **cash_disbursements** - Main disbursement records
-   - Fields: id, disburse_no, disburse_date, paid_to, payment_method, cheque_no, bank_name, description, total_amount, createdby, PIN, created_at, updated_at
+   - Fields: id, disburse_no, disburse_date, paid_to, payment_method (VARCHAR(100) – from paymentmenthod table), cheque_no, bank_name, description, total_amount, createdby, PIN, created_at, updated_at
    - Indexes: unique_disburse_no, idx_disburse_date, idx_createdby, idx_payment_method
+   - **Optional migration:** If upgrading from ENUM, run `sql/alter_cash_disbursement_payment_method_varchar.sql` once so any payment method name (e.g. BANK DEPOSIT) can be saved.
 
 2. **cash_disbursement_items** - Line items for disbursements
    - Fields: id, disbursement_id, account, description, amount, PIN, created_at
@@ -92,7 +106,9 @@ Or use phpMyAdmin:
 ### Core Features
 - ✅ Create/Read/Update/Delete disbursements (Full CRUD)
 - ✅ Auto-generated disbursement numbering (CD-00001, CD-00002, etc.)
-- ✅ Multiple payment methods (Cash, Cheque, Bank Transfer, Mobile Money)
+- ✅ Payment methods loaded from **paymentmenthod** table only (e.g. Cash, BANK DEPOSIT, Cheque, Bank Transfer, Mobile Money)
+- ✅ Edit: payment method and line items update correctly; old journal removed and new one created with current data
+- ✅ Delete: disbursement, line items, and linked journal entry (and items) removed
 - ✅ Multi-line item support with dynamic add/remove
 - ✅ Automatic total calculation
 - ✅ Date picker for disbursement date selection
@@ -135,7 +151,7 @@ Or use phpMyAdmin:
 | `cash_disbursement_view()` | Display details | GET id |
 | `cash_disbursement_print()` | Print voucher | GET id |
 | `cash_disbursement_delete()` | Delete disbursement | GET/POST id |
-| `export_to_excel()` | Export to Excel | GET filters |
+| `cash_disbursement_export()` | Export to Excel | GET |
 
 ---
 
@@ -146,17 +162,18 @@ Or use phpMyAdmin:
 | Method | Purpose |
 |--------|---------|
 | `create_cash_disbursement()` | Create disbursement with items & journal entry |
-| `get_disbursements()` | Retrieve all disbursements with pagination |
-| `get_disbursement_by_id()` | Get single disbursement details |
-| `get_disbursement_items()` | Get line items for disbursement |
-| `update_cash_disbursement()` | Update existing disbursement |
-| `delete_cash_disbursement()` | Delete disbursement & journal entry |
+| `get_cash_disbursements()` | Retrieve disbursements (optional id/disburse_no filter) |
+| `get_cash_disbursement()` | Get single disbursement by id |
+| `get_disburse_items()` | Get line items for disbursement |
+| `update_cash_disbursement()` | Update disbursement, line items; replace journal entry with new one |
+| `delete_cash_disbursement()` | Delete disbursement, line items, and linked journal entry (and items) |
 | `get_next_disburse_no()` | Generate next disbursement number |
-| `check_disburse_no_exists()` | Validate unique disbursement number |
-| `create_journal_entry()` | Auto-create journal entry |
-| `get_cash_account()` | Map payment method to GL account |
-| `get_accounts()` | Retrieve all GL accounts |
-| `count_disbursements()` | Get total disbursement count |
+| `disburse_no_exists()` | Validate unique disbursement number |
+| `create_journal_entry()` | Auto-create journal entry (payment method → cash account via paymentmenthod/account_chart) |
+| `get_journal_entries_by_disbursement()` | Build accounting entries for view from **current** disbursement (payment method + line items) |
+| `get_cash_account()` | Resolve payment method to GL cash/bank account (paymentmenthod first, then account_chart) |
+| `get_disbursements_by_date()` | Disbursements in date range |
+| `get_total_disbursements()` | Total amount for period |
 
 ---
 
@@ -172,11 +189,10 @@ Users need these permissions to perform actions (Module ID: 6 - Finance):
 | `Delete_cash_disbursement` | Delete disbursements |
 
 ### How to Assign
-1. Go to Admin Panel → Roles & Permissions
-2. Find user role
-3. Select Module 6 (Finance)
-4. Check desired permissions
-5. Save changes
+- **SQL (recommended):** Run `sql/add_cash_disbursement_permissions.sql` to add all four permissions for group_id = 1. Edit the file to use another group_id if needed.
+- **UI:** Go to Admin Panel → Roles & Permissions → select user role → Module 6 (Finance) → check View/Create/Edit/Delete_cash_disbursement → Save.
+
+Without these in the `access_level` table, the Cash Disbursement menu item will not appear.
 
 ---
 
@@ -251,11 +267,7 @@ Disbursement Entry:
   CREDIT:  Cash/Bank Account (based on payment method)    3,000
 ```
 
-**Payment Method → GL Account Mapping:**
-- Cash → Bank Account (typically 1200)
-- Cheque → Bank Account (typically 1200)
-- Bank Transfer → Bank Account (typically 1200)
-- Mobile Money → Mobile Money Account (typically 1205)
+**Payment Method → GL Account:** From **paymentmenthod** table (`gl_account_code`) for the selected method; fallback to account_chart by name (Cash/Bank) or payment method name. Accounting entries shown on the view page are always built from the **current** disbursement (payment method + line items) so they update when the user edits.
 
 ---
 
@@ -406,8 +418,9 @@ This module is production-ready and follows all TAPSTEMCO system conventions:
 
 ---
 
-**Created:** 2024
-**Status:** ✅ COMPLETE AND READY FOR USE
-**Version:** 1.0
-**Framework:** CodeIgniter 3.x
+**Created:** 2024  
+**Last Updated:** 2025  
+**Status:** ✅ COMPLETE AND READY FOR USE  
+**Version:** 1.1  
+**Framework:** CodeIgniter 3.x  
 **Database:** MySQL/MariaDB

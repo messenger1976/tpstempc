@@ -458,8 +458,24 @@ class Finance extends CI_Controller {
             return;
         }
         
-        // Get unposted journal entries
-        $this->data['unposted_entries'] = $this->finance_model->get_unposted_journal_entries();
+        // Get unposted journal entries (manual JV from general_journal_entry)
+        $unposted = $this->finance_model->get_unposted_journal_entries();
+        foreach ($unposted as $e) {
+            $e->entry_source = 'general_journal';
+            $e->reference_id = null;
+        }
+        // Get journal entries from cash receipt & cash disbursement (journal_entry table)
+        $receipt_disburse = array();
+        if ($this->db->table_exists('journal_entry')) {
+            $receipt_disburse = $this->finance_model->get_receipt_disbursement_journal_entries();
+        }
+        $this->data['unposted_entries'] = array_merge($unposted, $receipt_disburse);
+        usort($this->data['unposted_entries'], function ($a, $b) {
+            $da = strtotime($a->entrydate);
+            $db = strtotime($b->entrydate);
+            if ($da !== $db) return $db - $da;
+            return $b->entryid - $a->entryid;
+        });
         
         $this->data['content'] = 'finance/journal_entry_review';
         $this->load->view('template', $this->data);
@@ -532,6 +548,35 @@ class Finance extends CI_Controller {
             $this->session->set_flashdata('warning', 'Failed to post journal entry. Please check error logs.');
         }
         
+        redirect(current_lang() . '/finance/journal_entry_review', 'refresh');
+    }
+
+    /**
+     * Post a single cash receipt or cash disbursement journal entry to General Ledger.
+     * Used for entries from journal_entry table (not general_journal_entry).
+     */
+    function journal_entry_post_to_gl($id) {
+        $id = decode_id($id);
+
+        if (!has_role(6, 'Journal_entry')) {
+            $this->session->set_flashdata('warning', 'You do not have permission to post journal entries to GL.');
+            redirect(current_lang() . '/finance/journal_entry_review', 'refresh');
+            return;
+        }
+
+        if ($this->finance_model->is_journal_entry_posted_to_gl($id)) {
+            $this->session->set_flashdata('warning', 'This entry has already been posted to the General Ledger.');
+            redirect(current_lang() . '/finance/journal_entry_review', 'refresh');
+            return;
+        }
+
+        $result = $this->finance_model->post_journal_entry_to_general_ledger($id, 5);
+
+        if ($result) {
+            $this->session->set_flashdata('message', 'Journal entry has been posted to General Ledger successfully.');
+        } else {
+            $this->session->set_flashdata('warning', 'Failed to post to General Ledger. Entry may be unbalanced or not found. Check error logs.');
+        }
         redirect(current_lang() . '/finance/journal_entry_review', 'refresh');
     }
 

@@ -20,18 +20,19 @@ The **Cash Disbursement Module** has been successfully completed and is ready fo
 
 ### Database & Installation
 ✅ **Database Schema** - `sql/cash_disbursement_module.sql`
+✅ **Permissions SQL** - `sql/add_cash_disbursement_permissions.sql` (run after schema so Finance → Cash Disbursement menu appears)
 ✅ **Installation Script** - `install_cash_disbursement.php`
 
 ### Integration Files
-✅ **Menu Integration** - Updated `application/views/menu.php`
+✅ **Menu Integration** - Updated `application/views/menu.php` and `application/views/newmenu.php`
 ✅ **Language Translations** - Added 32 translations to `systemlang_lang.php`
 
 ### Documentation
-✅ **Quick Start Guide** - `CASH_DISBURSEMENT_QUICK_START.md`
-✅ **Completion Report** - `CASH_DISBURSEMENT_COMPLETION_REPORT.md`
-✅ **Finance Modules Summary** - `FINANCE_MODULES_COMPLETE_SUMMARY.md`
-✅ **File Index & Reference** - `FILE_INDEX_AND_QUICK_REFERENCE.md`
-✅ **Main README** - `README_FINANCE_MODULES.md`
+✅ **Quick Start Guide** - `docs/CASH_DISBURSEMENT_QUICK_START.md`
+✅ **Completion Report** - `docs/CASH_DISBURSEMENT_COMPLETION_REPORT.md`
+✅ **Finance Modules Summary** - `docs/FINANCE_MODULES_COMPLETE_SUMMARY.md`
+✅ **File Index & Reference** - `docs/FILE_INDEX_AND_QUICK_REFERENCE.md`
+✅ **Main README** - `docs/README_FINANCE_MODULES.md`
 
 ---
 
@@ -98,6 +99,7 @@ Navigate to: http://your-domain.com/install_cash_disbursement.php
 ```
 
 **Step 2: Enter Database Credentials**
+(Then run sql/add_cash_disbursement_permissions.sql so the Cash Disbursement menu item appears.)
 - Database Host: `localhost`
 - Database Username: `root`
 - Database Password: `(your password)`

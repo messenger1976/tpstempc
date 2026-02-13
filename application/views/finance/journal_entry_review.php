@@ -38,9 +38,10 @@ if (isset($message) && !empty($message)) {
                                     <thead>
                                         <tr>
                                             <th style="width: 30px;">
-                                                <input type="checkbox" id="selectAll" title="Select All"/>
+                                                <input type="checkbox" id="selectAll" title="Select All (JV only)"/>
                                             </th>
                                             <th>Entry ID</th>
+                                            <th>Source</th>
                                             <th>Date</th>
                                             <th>Description</th>
                                             <th>Created By</th>
@@ -52,18 +53,33 @@ if (isset($message) && !empty($message)) {
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        <?php foreach ($unposted_entries as $entry): ?>
+                                        <?php foreach ($unposted_entries as $entry): 
+                                            $entry_source = isset($entry->entry_source) ? $entry->entry_source : 'general_journal';
+                                            $is_general = ($entry_source === 'general_journal');
+                                            $view_url = current_lang() . '/finance/journal_entry_view/' . encode_id($entry->entryid);
+                                            if ($entry_source === 'cash_disbursement' && isset($entry->reference_id)) {
+                                                $view_url = current_lang() . '/cash_disbursement/cash_disbursement_view/' . encode_id($entry->reference_id);
+                                            } elseif ($entry_source === 'cash_receipt' && isset($entry->reference_id)) {
+                                                $view_url = current_lang() . '/cash_receipt/cash_receipt_view/' . encode_id($entry->reference_id);
+                                            }
+                                            $source_label = function_exists('journal_source_label') ? journal_source_label($entry_source) : $entry_source;
+                                        ?>
                                             <tr>
                                                 <td>
-                                                    <input type="checkbox" name="entry_ids[]" value="<?php echo encode_id($entry->entryid); ?>" class="entry-checkbox"/>
+                                                    <?php if ($is_general): ?>
+                                                        <input type="checkbox" name="entry_ids[]" value="<?php echo encode_id($entry->entryid); ?>" class="entry-checkbox"/>
+                                                    <?php else: ?>
+                                                        —
+                                                    <?php endif; ?>
                                                 </td>
                                                 <td><?php echo $entry->entryid; ?></td>
+                                                <td><span class="label label-default"><?php echo htmlspecialchars($source_label); ?></span></td>
                                                 <td><?php echo date('M d, Y', strtotime($entry->entrydate)); ?></td>
                                                 <td><?php echo htmlspecialchars($entry->description); ?></td>
                                                 <td><?php echo htmlspecialchars($entry->created_by_name); ?></td>
-                                                <td style="text-align: center;"><?php echo $entry->line_count; ?></td>
-                                                <td style="text-align: right;"><?php echo number_format($entry->total_debit, 2); ?></td>
-                                                <td style="text-align: right;"><?php echo number_format($entry->total_credit, 2); ?></td>
+                                                <td style="text-align: center;"><?php echo isset($entry->line_count) ? $entry->line_count : 0; ?></td>
+                                                <td style="text-align: right;"><?php echo number_format(isset($entry->total_debit) ? $entry->total_debit : 0, 2); ?></td>
+                                                <td style="text-align: right;"><?php echo number_format(isset($entry->total_credit) ? $entry->total_credit : 0, 2); ?></td>
                                                 <td>
                                                     <?php if (abs($entry->total_debit - $entry->total_credit) <= 0.01): ?>
                                                         <span class="label label-success">Balanced</span>
@@ -72,15 +88,27 @@ if (isset($message) && !empty($message)) {
                                                     <?php endif; ?>
                                                 </td>
                                                 <td>
-                                                    <a href="<?php echo site_url(current_lang() . '/finance/journal_entry_view/' . encode_id($entry->entryid)); ?>" class="btn btn-info btn-xs" title="View Details">
+                                                    <a href="<?php echo site_url($view_url); ?>" class="btn btn-info btn-xs" title="View Details">
                                                         <i class="fa fa-eye"></i> View
                                                     </a>
-                                                    <?php if (abs($entry->total_debit - $entry->total_credit) <= 0.01): ?>
+                                                    <?php if ($is_general && abs($entry->total_debit - $entry->total_credit) <= 0.01): ?>
                                                         <a href="<?php echo site_url(current_lang() . '/finance/journal_entry_approve/' . encode_id($entry->entryid)); ?>" 
                                                            onclick="return confirm('Are you sure you want to approve and post this journal entry?');" 
                                                            class="btn btn-success btn-xs" title="Approve & Post">
                                                             <i class="fa fa-check"></i> Approve
                                                         </a>
+                                                    <?php endif; ?>
+                                                    <?php
+                                                    $is_receipt_disburse = in_array($entry_source, array('cash_receipt', 'cash_disbursement'), true);
+                                                    $can_post_to_gl = $is_receipt_disburse && !$entry->is_posted && abs($entry->total_debit - $entry->total_credit) <= 0.01;
+                                                    if ($can_post_to_gl): ?>
+                                                        <a href="<?php echo site_url(current_lang() . '/finance/journal_entry_post_to_gl/' . encode_id($entry->entryid)); ?>" 
+                                                           onclick="return confirm('Post this entry to the General Ledger?');" 
+                                                           class="btn btn-success btn-xs" title="Post to GL">
+                                                            <i class="fa fa-book"></i> Post to GL
+                                                        </a>
+                                                    <?php elseif ($is_receipt_disburse && !empty($entry->is_posted)): ?>
+                                                        <span class="label label-default">Posted to GL</span>
                                                     <?php endif; ?>
                                                 </td>
                                             </tr>

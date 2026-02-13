@@ -108,6 +108,8 @@ $lang['report_loan_balance'] = 'Loan Balance';
 $lang['report_loan_interest_penalty'] = 'Loan Interest && Penalty';
 $lang['report_loan_transaction'] = 'Loan Transactions';
 $lang['report_loan_transaction_summary'] = 'Loan Transactions Summary';
+$lang['report_loan_processing_fee_collection'] = 'Loan Processing Fee Collection';
+$lang['report_loan_aging'] = 'Loan Aging Report';
 
 // Loan Beginning Balances
 $lang['loan_beginning_balance_list'] = 'Loan Beginning Balances';

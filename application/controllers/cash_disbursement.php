@@ -17,6 +17,7 @@ class Cash_disbursement extends CI_Controller {
         $this->data['current_title'] = lang('page_cash_disbursement');
         $this->lang->load('setting');
         $this->lang->load('finance');
+        $this->load->helper('text');
         $this->load->model('cash_disbursement_model');
         $this->load->model('finance_model');
         $this->load->model('member_model');
@@ -114,13 +115,13 @@ class Cash_disbursement extends CI_Controller {
         // Get account list for dropdown
         $this->data['account_list'] = $this->finance_model->account_chart_by_accounttype();
         
-        // Get payment methods
-        $this->data['payment_methods'] = array(
-            'Cash' => 'Cash',
-            'Cheque' => 'Cheque',
-            'Bank Transfer' => 'Bank Transfer',
-            'Mobile Money' => 'Mobile Money'
-        );
+        // Get payment methods from paymentmenthod table only
+        $this->load->model('payment_method_config_model');
+        $payment_methods = $this->payment_method_config_model->get_all_payment_methods();
+        $this->data['payment_methods'] = array();
+        foreach ($payment_methods as $method) {
+            $this->data['payment_methods'][$method->name] = $method->name;
+        }
 
         $this->data['content'] = 'cash_disbursement/cash_disbursement_form';
         $this->load->view('template', $this->data);
@@ -153,12 +154,19 @@ class Cash_disbursement extends CI_Controller {
         $this->form_validation->set_rules('amount[]', lang('cash_disbursement_amount'), 'required');
 
         if ($this->form_validation->run() == TRUE) {
+            $posted_payment = trim((string) $this->input->post('payment_method'));
+            if ($posted_payment === '' && !empty($disburse->payment_method)) {
+                $posted_payment = trim((string) $disburse->payment_method);
+            }
+            if ($posted_payment === '') {
+                $posted_payment = 'Cash';
+            }
             // Prepare disbursement data
             $disburse_data = array(
                 'disburse_no' => $this->input->post('disburse_no'),
                 'disburse_date' => date('Y-m-d', strtotime($this->input->post('disburse_date'))),
                 'paid_to' => $this->input->post('paid_to'),
-                'payment_method' => $this->input->post('payment_method'),
+                'payment_method' => $posted_payment,
                 'cheque_no' => $this->input->post('cheque_no'),
                 'bank_name' => $this->input->post('bank_name'),
                 'description' => $this->input->post('description'),
@@ -206,13 +214,17 @@ class Cash_disbursement extends CI_Controller {
         // Get account list for dropdown
         $this->data['account_list'] = $this->finance_model->account_chart_by_accounttype();
         
-        // Get payment methods
-        $this->data['payment_methods'] = array(
-            'Cash' => 'Cash',
-            'Cheque' => 'Cheque',
-            'Bank Transfer' => 'Bank Transfer',
-            'Mobile Money' => 'Mobile Money'
-        );
+        // Get payment methods from paymentmenthod table only
+        $this->load->model('payment_method_config_model');
+        $payment_methods = $this->payment_method_config_model->get_all_payment_methods();
+        $this->data['payment_methods'] = array();
+        foreach ($payment_methods as $method) {
+            $this->data['payment_methods'][$method->name] = $method->name;
+        }
+        // If saved payment method is not in the table (e.g. was removed from config), still show it so it can be selected
+        if (!empty($disburse->payment_method) && !isset($this->data['payment_methods'][$disburse->payment_method])) {
+            $this->data['payment_methods'][$disburse->payment_method] = $disburse->payment_method;
+        }
 
         $this->data['content'] = 'cash_disbursement/cash_disbursement_edit';
         $this->load->view('template', $this->data);
@@ -237,6 +249,7 @@ class Cash_disbursement extends CI_Controller {
         
         $this->data['disburse'] = $disburse;
         $this->data['line_items'] = $this->cash_disbursement_model->get_disburse_items($id);
+        $this->data['accounting_entries'] = $this->cash_disbursement_model->get_journal_entries_by_disbursement($id);
         
         $this->data['content'] = 'cash_disbursement/cash_disbursement_view';
         $this->load->view('template', $this->data);
@@ -367,6 +380,48 @@ class Cash_disbursement extends CI_Controller {
         $objWriter = PHPExcel_IOFactory::createWriter($objPHPExcel, 'Excel5');
         $objWriter->save('php://output');
         exit();
+    }
+
+    /**
+     * Search members for cash disbursement form (paid_to)
+     * Returns JSON response with member data
+     */
+    function search_member() {
+        $key = trim($this->input->get('key'));
+        $limit = 20;
+        $start = 0;
+        
+        $status = array();
+        
+        if (empty($key)) {
+            $status['success'] = 'N';
+            $status['error'] = 'Please enter search keyword';
+            echo json_encode($status);
+            return;
+        }
+        
+        $members = $this->member_model->search_member($key, 1, 1, $limit, $start);
+        
+        if (!empty($members)) {
+            $status['success'] = 'Y';
+            $status['data'] = array();
+            
+            foreach ($members as $member) {
+                $status['data'][] = array(
+                    'PID' => $member->PID,
+                    'member_id' => $member->member_id,
+                    'fullname' => trim($member->firstname . ' ' . $member->middlename . ' ' . $member->lastname),
+                    'firstname' => $member->firstname,
+                    'middlename' => $member->middlename,
+                    'lastname' => $member->lastname
+                );
+            }
+        } else {
+            $status['success'] = 'N';
+            $status['error'] = 'No members found';
+        }
+        
+        echo json_encode($status);
     }
 
     /**

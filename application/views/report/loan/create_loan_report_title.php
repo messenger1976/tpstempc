@@ -37,7 +37,7 @@ if (isset($message) && !empty($message)) {
     </div>
 
 <?php } ?>
-<div class="form-group"><label class="col-lg-3 control-label"><?php echo ($link_cat == 1 ? 'Loan applied From' : (($link_cat == 2 || $link_cat == 3) ? 'Disbursed From':'From')); ?>  : <span class="required">*</span></label>
+<div class="form-group"><label class="col-lg-3 control-label"><?php echo ($link_cat == 7 ? 'As of Date' : ($link_cat == 1 ? 'Loan applied From' : (($link_cat == 2 || $link_cat == 3) ? 'Disbursed From':'From'))); ?>  : <span class="required">*</span></label>
     <div class=" col-lg-6">
         <div class="input-group date" id="datetimepicker" >
             <input type="text" name="fromdate" placeholder="<?php echo lang('hint_date'); ?>" value="<?php echo (isset($reportinfo) ? format_date($reportinfo->fromdate, false) : set_value('fromdate')); ?>"  data-date-format="DD-MM-YYYY" class="form-control"/> 
@@ -49,6 +49,7 @@ if (isset($message) && !empty($message)) {
     </div>
 </div>
 
+<?php if ($link_cat != 7) { ?>
 <div class="form-group"><label class="col-lg-3 control-label"><?php echo 'Until'; ?>  : <span class="required">*</span></label>
     <div class=" col-lg-6">
         <div class="input-group date" id="datetimepicker2" >
@@ -60,6 +61,9 @@ if (isset($message) && !empty($message)) {
         <?php echo form_error('todate'); ?>
     </div>
 </div>
+<?php } else { ?>
+    <input type="hidden" name="todate" value="<?php echo (isset($reportinfo) ? format_date($reportinfo->fromdate, false) : set_value('fromdate')); ?>" />
+<?php } ?>
 
 
     <div class="form-group"><label class="col-lg-3 control-label"><?php echo 'Description'; ?>  : <span class="required">*</span></label>

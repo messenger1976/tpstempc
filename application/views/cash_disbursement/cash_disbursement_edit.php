@@ -1,4 +1,11 @@
-<link href="<?php echo base_url(); ?>media/css/plugins/datapicker/datepicker3.css" rel="stylesheet">
+<link href="<?php echo base_url(); ?>assets/css/plugins/datapicker/datepicker3.css" rel="stylesheet">
+<link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-datepicker/1.9.0/css/bootstrap-datepicker.min.css" rel="stylesheet" crossorigin="anonymous" referrerpolicy="no-referrer">
+<style>
+.datepicker-dropdown,.datepicker{z-index:9999!important;width:auto;min-width:0;}
+.datepicker-dropdown.dropdown-menu{background:#fff;border:1px solid #e7eaec;box-shadow:0 2px 8px rgba(0,0,0,0.12);padding:8px;width:auto;min-width:220px;max-width:280px;}
+.datepicker table{width:auto;margin:0;table-layout:fixed;}
+.datepicker td,.datepicker th{text-align:center;width:auto;}
+</style>
 
 <?php echo form_open_multipart(current_lang() . "/cash_disbursement/cash_disbursement_edit/" . $id, 'class="form-horizontal" id="cashDisbursementForm"'); ?>
 
@@ -49,7 +56,7 @@ if (isset($message) && !empty($message)) {
                                     <div class="input-group date" id="datetimepicker">
                                         <input type="text" name="disburse_date" placeholder="<?php echo lang('hint_date'); ?>" 
                                                value="<?php echo set_value('disburse_date', date('d-m-Y', strtotime($disburse->disburse_date))); ?>" 
-                                               data-date-format="DD-MM-YYYY" class="form-control" required/> 
+                                               data-date-format="dd-mm-yyyy" class="form-control" required/> 
                                         <span class="input-group-addon">
                                             <span class="fa fa-calendar"></span>
                                         </span>
@@ -65,7 +72,16 @@ if (isset($message) && !empty($message)) {
                             <div class="form-group">
                                 <label class="col-lg-4 control-label"><?php echo lang('cash_disbursement_paid_to'); ?> : <span class="required">*</span></label>
                                 <div class="col-lg-8">
-                                    <input type="text" name="paid_to" value="<?php echo set_value('paid_to', $disburse->paid_to); ?>" class="form-control" required/>
+                                    <div class="input-group">
+                                        <input type="text" name="paid_to" id="paid_to" value="<?php echo set_value('paid_to', $disburse->paid_to); ?>" class="form-control" required/>
+                                        <span class="input-group-btn">
+                                            <button type="button" class="btn btn-info" id="searchMemberBtn" data-toggle="modal" data-target="#memberSearchModal">
+                                                <i class="fa fa-search"></i> Search Member
+                                            </button>
+                                        </span>
+                                    </div>
+                                    <input type="hidden" name="member_pid" id="member_pid" value=""/>
+                                    <input type="hidden" name="member_id" id="member_id" value=""/>
                                     <?php echo form_error('paid_to'); ?>
                                 </div>
                             </div>
@@ -78,7 +94,7 @@ if (isset($message) && !empty($message)) {
                                     <select name="payment_method" id="payment_method" class="form-control" required>
                                         <option value=""><?php echo lang('select_default_text'); ?></option>
                                         <?php foreach ($payment_methods as $key => $method): ?>
-                                            <option value="<?php echo $key; ?>" <?php echo set_select('payment_method', $key, ($disburse->payment_method == $key)); ?>><?php echo $method; ?></option>
+                                            <option value="<?php echo $key; ?>" <?php echo set_select('payment_method', $key, (strtolower(trim((string)$disburse->payment_method)) === strtolower(trim((string)$key)))); ?>><?php echo $method; ?></option>
                                         <?php endforeach; ?>
                                     </select>
                                     <?php echo form_error('payment_method'); ?>
@@ -198,79 +214,184 @@ if (isset($message) && !empty($message)) {
 
 <?php echo form_close(); ?>
 
-<!-- Date Picker -->
-<script src="<?php echo base_url(); ?>media/js/plugins/datapicker/bootstrap-datepicker.js"></script>
+<!-- Member Search Modal -->
+<div class="modal fade" id="memberSearchModal" tabindex="-1" role="dialog" aria-labelledby="memberSearchModalLabel">
+    <div class="modal-dialog modal-lg" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+                <h4 class="modal-title" id="memberSearchModalLabel">Search Member</h4>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Search by Member ID, PID, or Name:</label>
+                    <div class="input-group">
+                        <input type="text" class="form-control" id="memberSearchKey" placeholder="Enter member ID, PID, or name...">
+                        <span class="input-group-btn">
+                            <button class="btn btn-primary" type="button" id="doMemberSearch">
+                                <i class="fa fa-search"></i> Search
+                            </button>
+                        </span>
+                    </div>
+                </div>
+                <div id="memberSearchResults" style="max-height: 400px; overflow-y: auto;">
+                    <p class="text-muted text-center">Enter search keyword and click Search</p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-default" data-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
 
 <script>
-$(document).ready(function(){
-    
-    // Initialize date picker
-    $('#datetimepicker').datepicker({
-        todayBtn: "linked",
-        keyboardNavigation: false,
-        forceParse: false,
-        calendarWeeks: true,
-        autoclose: true,
-        format: 'dd-mm-yyyy'
-    });
-
-    // Show/hide cheque details based on payment method
-    $('#payment_method').change(function(){
-        if($(this).val() == 'Cheque'){
-            $('#cheque_details').show();
-        } else {
-            $('#cheque_details').hide();
-        }
-    });
-
-    // Add line item
-    $('#addLineItem').click(function(){
-        var newRow = $('.line-item:first').clone();
-        newRow.find('input, select').val('');
-        newRow.find('.remove-line').prop('disabled', false);
-        $('#lineItemsTable tbody').append(newRow);
-        calculateTotal();
-    });
-
-    // Remove line item
-    $(document).on('click', '.remove-line', function(){
-        if($('.line-item').length > 1){
-            $(this).closest('tr').remove();
-            calculateTotal();
-        }
-    });
-
-    // Calculate total when amount changes
-    $(document).on('keyup change', '.amount-input', function(){
-        calculateTotal();
-    });
-
-    // Calculate total function
-    function calculateTotal(){
-        var total = 0;
-        $('.amount-input').each(function(){
-            var amount = parseFloat($(this).val()) || 0;
-            total += amount;
-        });
-        $('#total_amount').val(total.toFixed(2));
+(function(){
+    function loadScript(src, cb, fallback){
+        var s = document.createElement('script');
+        s.src = src; s.onload = cb;
+        if (fallback) { s.onerror = function(){ loadScript(fallback, cb); }; }
+        document.head.appendChild(s);
     }
-
-    // Form validation
-    $('#cashDisbursementForm').submit(function(e){
-        var hasItems = false;
-        $('.amount-input').each(function(){
-            if(parseFloat($(this).val()) > 0){
-                hasItems = true;
+    function initOnceReady(){
+        if (!window.jQuery) { setTimeout(initOnceReady, 50); return; }
+        var $ = window.jQuery;
+        function boot(){
+            // Use same datepicker as create: standard bootstrap-datepicker (not datetimepicker)
+            function ensureBootstrapDP(cb){
+                function wrapBootstrapDP(){
+                    if ($.fn.datepicker && $.fn.datepicker.DPGlobal) {
+                        $.fn.bootstrapDP = $.fn.datepicker;
+                        if ($.fn.datepicker.noConflict) { $.fn.datepicker.noConflict(); }
+                    }
+                    cb();
+                }
+                if (!($.fn.datepicker && $.fn.datepicker.DPGlobal)) {
+                    loadScript(
+                        '<?php echo base_url(); ?>assets/js/plugins/datapicker/bootstrap-datepicker.js',
+                        wrapBootstrapDP,
+                        'https://cdnjs.cloudflare.com/ajax/libs/bootstrap-datepicker/1.9.0/js/bootstrap-datepicker.min.js'
+                    );
+                } else {
+                    wrapBootstrapDP();
+                }
             }
-        });
+            function initPicker(){
+                var picker = $.fn.bootstrapDP || $.fn.datepicker;
+                if (!picker) return;
+                picker.call($('#datetimepicker'), {
+                    todayBtn: 'linked', keyboardNavigation: false, forceParse: false,
+                    calendarWeeks: true, autoclose: true, format: 'dd-mm-yyyy',
+                    orientation: 'bottom auto', todayHighlight: true, container: 'body'
+                });
+            }
+            ensureBootstrapDP(initPicker);
 
-        if(!hasItems){
-            alert('<?php echo lang('cash_disbursement_no_items'); ?>');
-            e.preventDefault();
-            return false;
+            $('#payment_method').on('change', function(){
+                if ($(this).val() === 'Cheque') {
+                    $('#cheque_details').show();
+                } else {
+                    $('#cheque_details').hide();
+                }
+            });
+
+            var memberSearchUrl = '<?php echo site_url(current_lang() . '/cash_disbursement/search_member'); ?>';
+
+            $('#doMemberSearch').on('click', function(){
+                var key = $('#memberSearchKey').val().trim();
+                if (key.length < 2) {
+                    alert('Please enter at least 2 characters to search');
+                    return;
+                }
+                searchMembers(key);
+            });
+
+            $('#memberSearchKey').on('keypress', function(e){
+                if (e.which === 13) { e.preventDefault(); $('#doMemberSearch').click(); }
+            });
+
+            function searchMembers(key){
+                $('#memberSearchResults').html('<p class="text-center"><i class="fa fa-spinner fa-spin"></i> Searching...</p>');
+                $.ajax({
+                    url: memberSearchUrl,
+                    type: 'GET',
+                    data: { key: key },
+                    dataType: 'json',
+                    success: function(response){
+                        if (response.success === 'Y' && response.data && response.data.length > 0) {
+                            var html = '<table class="table table-bordered table-hover">';
+                            html += '<thead><tr><th>Member ID</th><th>PID</th><th>Full Name</th><th>Action</th></thead><tbody>';
+                            $.each(response.data, function(i, member){
+                                html += '<tr><td>' + (member.member_id || '') + '</td><td>' + (member.PID || '') + '</td><td>' + (member.fullname || '') + '</td>';
+                                html += '<td><button type="button" class="btn btn-sm btn-primary select-member" data-pid="' + (member.PID || '') + '" data-member-id="' + (member.member_id || '') + '" data-fullname="' + (member.fullname || '') + '"><i class="fa fa-check"></i> Select</button></td></tr>';
+                            });
+                            html += '</tbody></table>';
+                            $('#memberSearchResults').html(html);
+                        } else {
+                            $('#memberSearchResults').html('<p class="text-danger text-center">' + (response.error || 'No members found') + '</p>');
+                        }
+                    },
+                    error: function(){
+                        $('#memberSearchResults').html('<p class="text-danger text-center">Error searching members. Please try again.</p>');
+                    }
+                });
+            }
+
+            $(document).on('click', '.select-member', function(){
+                $('#paid_to').val($(this).data('fullname'));
+                $('#member_pid').val($(this).data('pid'));
+                $('#member_id').val($(this).data('member-id'));
+                $('#memberSearchModal').modal('hide');
+            });
+
+            $('#addLineItem').on('click', function(){
+                var newRow = $('.line-item:first').clone();
+                newRow.find('input, select').val('');
+                newRow.find('.remove-line').prop('disabled', false);
+                $('#lineItemsTable tbody').append(newRow);
+                calculateTotal();
+            });
+
+            $(document).on('click', '.remove-line', function(){
+                if ($('.line-item').length > 1) {
+                    $(this).closest('tr').remove();
+                    calculateTotal();
+                }
+            });
+
+            $(document).on('keyup change', '.amount-input', function(){
+                calculateTotal();
+            });
+
+            function calculateTotal(){
+                var total = 0;
+                $('.amount-input').each(function(){
+                    total += parseFloat($(this).val()) || 0;
+                });
+                $('#total_amount').val(total.toFixed(2));
+            }
+
+            $('#cashDisbursementForm').on('submit', function(e){
+                var hasItems = false;
+                $('.amount-input').each(function(){
+                    if (parseFloat($(this).val()) > 0) hasItems = true;
+                });
+                if (!hasItems) {
+                    alert('<?php echo lang('cash_disbursement_no_items'); ?>');
+                    e.preventDefault();
+                    return false;
+                }
+                return true;
+            });
         }
-
-        return true;
-    });
-});
+        $(document).ready(boot);
+    }
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initOnceReady);
+    } else {
+        initOnceReady();
+    }
+})();
 </script>

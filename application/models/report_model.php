@@ -571,6 +571,255 @@ FROM
         return $this->db->query($sql)->result();
     }
 
+    function loan_aging_report($as_of_date = null) {
+        $pin = current_user()->PIN;
+        
+        // Use current date if not provided
+        if (is_null($as_of_date)) {
+            $as_of_date = date('Y-m-d');
+        } else {
+            $as_of_date = date('Y-m-d', strtotime($as_of_date));
+        }
+        
+        // Get all active disbursed loans
+        $sql = "SELECT 
+                    lc.LID,
+                    lc.PID,
+                    lc.member_id,
+                    lc.basic_amount,
+                    lc.total_loan,
+                    lc.product_type,
+                    lcd.disbursedate,
+                    (SELECT SUM(lcr.amount) FROM loan_contract_repayment lcr WHERE lcr.LID = lc.LID) as total_repaid,
+                    (SELECT SUM(lcr.principle) FROM loan_contract_repayment lcr WHERE lcr.LID = lc.LID) as principle_paid,
+                    (SELECT SUM(lcr.interest) FROM loan_contract_repayment lcr WHERE lcr.LID = lc.LID) as interest_paid,
+                    (SELECT SUM(lcr.penalt) FROM loan_contract_repayment lcr WHERE lcr.LID = lc.LID) as penalty_paid,
+                    (SELECT MIN(lcrs.repaydate) FROM loan_contract_repayment_schedule lcrs 
+                     WHERE lcrs.LID = lc.LID AND lcrs.status = 0) as oldest_unpaid_due_date
+                FROM loan_contract lc
+                INNER JOIN loan_contract_disburse lcd ON lcd.LID = lc.LID
+                WHERE lc.PIN = '$pin' 
+                    AND lc.status = 4 
+                    AND lc.disburse = 1
+                    AND lcd.disbursedate <= '$as_of_date'
+                ORDER BY lc.LID";
+        
+        $loans = $this->db->query($sql)->result();
+        
+        $aging_data = array();
+        $aging_buckets = array(
+            'current' => array('label' => 'Current (0-30 days)', 'min' => 0, 'max' => 30, 'loans' => array(), 'total_balance' => 0, 'total_principal' => 0, 'total_interest' => 0, 'total_penalty' => 0),
+            '31_60' => array('label' => '31-60 days', 'min' => 31, 'max' => 60, 'loans' => array(), 'total_balance' => 0, 'total_principal' => 0, 'total_interest' => 0, 'total_penalty' => 0),
+            '61_90' => array('label' => '61-90 days', 'min' => 61, 'max' => 90, 'loans' => array(), 'total_balance' => 0, 'total_principal' => 0, 'total_interest' => 0, 'total_penalty' => 0),
+            '91_180' => array('label' => '91-180 days', 'min' => 91, 'max' => 180, 'loans' => array(), 'total_balance' => 0, 'total_principal' => 0, 'total_interest' => 0, 'total_penalty' => 0),
+            'over_180' => array('label' => 'Over 180 days', 'min' => 181, 'max' => 9999, 'loans' => array(), 'total_balance' => 0, 'total_principal' => 0, 'total_interest' => 0, 'total_penalty' => 0),
+        );
+        
+        foreach ($loans as $loan) {
+            $total_repaid = floatval($loan->total_repaid ? $loan->total_repaid : 0);
+            $outstanding_balance = floatval($loan->total_loan) - $total_repaid;
+            
+            // Skip loans with zero or negative balance
+            if ($outstanding_balance <= 0) {
+                continue;
+            }
+            
+            $days_overdue = 0;
+            $oldest_unpaid_due_date = null;
+            
+            if ($loan->oldest_unpaid_due_date) {
+                $oldest_unpaid_due_date = $loan->oldest_unpaid_due_date;
+                $due_date = new DateTime($oldest_unpaid_due_date);
+                $current_date = new DateTime($as_of_date);
+                $days_overdue = $current_date->diff($due_date)->days;
+                
+                // If due date is in the future, it's not overdue yet
+                if ($due_date > $current_date) {
+                    $days_overdue = 0;
+                }
+            }
+            
+            // Calculate outstanding principal, interest, and penalty
+            $principle_paid = floatval($loan->principle_paid ? $loan->principle_paid : 0);
+            $interest_paid = floatval($loan->interest_paid ? $loan->interest_paid : 0);
+            $penalty_paid = floatval($loan->penalty_paid ? $loan->penalty_paid : 0);
+            
+            $outstanding_principal = floatval($loan->basic_amount) - $principle_paid;
+            $outstanding_interest = 0; // Interest is typically paid first, so this might be 0
+            $outstanding_penalty = 0; // Penalty is calculated per installment
+            
+            // Get unpaid installments to calculate interest and penalty
+            $unpaid_sql = "SELECT 
+                            SUM(repayamount + balance) as total_due,
+                            SUM(interest) as total_interest,
+                            SUM(balance) as total_balance
+                           FROM loan_contract_repayment_schedule 
+                           WHERE LID = '{$loan->LID}' AND status = 0";
+            $unpaid_info = $this->db->query($unpaid_sql)->row();
+            
+            if ($unpaid_info) {
+                $outstanding_interest = floatval($unpaid_info->total_interest ? $unpaid_info->total_interest : 0);
+                $outstanding_balance = floatval($unpaid_info->total_due ? $unpaid_info->total_due : 0);
+            }
+            
+            // Determine aging bucket
+            $bucket_key = 'current';
+            if ($days_overdue > 180) {
+                $bucket_key = 'over_180';
+            } elseif ($days_overdue > 90) {
+                $bucket_key = '91_180';
+            } elseif ($days_overdue > 60) {
+                $bucket_key = '61_90';
+            } elseif ($days_overdue > 30) {
+                $bucket_key = '31_60';
+            }
+            
+            $loan_data = array(
+                'LID' => $loan->LID,
+                'PID' => $loan->PID,
+                'member_id' => $loan->member_id,
+                'basic_amount' => floatval($loan->basic_amount),
+                'total_loan' => floatval($loan->total_loan),
+                'total_repaid' => $total_repaid,
+                'outstanding_balance' => $outstanding_balance,
+                'outstanding_principal' => $outstanding_principal,
+                'outstanding_interest' => $outstanding_interest,
+                'outstanding_penalty' => $outstanding_penalty,
+                'days_overdue' => $days_overdue,
+                'oldest_unpaid_due_date' => $oldest_unpaid_due_date,
+                'disbursedate' => $loan->disbursedate,
+                'product_type' => $loan->product_type
+            );
+            
+            $aging_buckets[$bucket_key]['loans'][] = $loan_data;
+            $aging_buckets[$bucket_key]['total_balance'] += $outstanding_balance;
+            $aging_buckets[$bucket_key]['total_principal'] += $outstanding_principal;
+            $aging_buckets[$bucket_key]['total_interest'] += $outstanding_interest;
+            $aging_buckets[$bucket_key]['total_penalty'] += $outstanding_penalty;
+        }
+        
+        // Get loan beginning balances that don't have corresponding loan_contract entries
+        $sql_bb = "SELECT
+                        loan_beginning_balances.*,
+                        members.PID,
+                        COALESCE(loan_beginning_balances.loan_id, CONCAT('BB-', loan_beginning_balances.id)) as LID
+                    FROM loan_beginning_balances
+                    INNER JOIN members ON members.member_id = loan_beginning_balances.member_id
+                    WHERE loan_beginning_balances.PIN = '$pin'
+                        AND members.PIN = '$pin'
+                        AND loan_beginning_balances.total_balance > 0";
+        
+        // Exclude beginning balances that already have corresponding loan_contract entries
+        $sql_bb .= " AND (loan_beginning_balances.loan_id IS NULL
+                          OR loan_beginning_balances.loan_id NOT IN (SELECT LID FROM loan_contract WHERE PIN = '$pin' AND status = 4 AND disburse = 1))";
+        
+        // Only include beginning balances disbursed before or on the as_of_date
+        $sql_bb .= " AND (loan_beginning_balances.disbursement_date IS NULL
+                          OR loan_beginning_balances.disbursement_date <= '$as_of_date')";
+        
+        $beginning_balances = $this->db->query($sql_bb)->result();
+        
+        // Process beginning balances
+        foreach ($beginning_balances as $bb) {
+            $outstanding_balance = floatval($bb->total_balance);
+            $outstanding_principal = floatval($bb->principal_balance);
+            $outstanding_interest = floatval($bb->interest_balance);
+            $outstanding_penalty = floatval($bb->penalty_balance);
+            
+            // Skip if no balance
+            if ($outstanding_balance <= 0) {
+                continue;
+            }
+            
+            $days_overdue = 0;
+            $oldest_unpaid_due_date = null;
+            
+            // Calculate days overdue based on last_date_paid or disbursement_date
+            if ($bb->last_date_paid) {
+                // Use last_date_paid to calculate aging
+                $last_paid_date = new DateTime($bb->last_date_paid);
+                $current_date = new DateTime($as_of_date);
+                
+                // Estimate next due date (assuming monthly payments)
+                // If monthly_amort exists, we can estimate the next due date
+                if ($bb->monthly_amort && $bb->term) {
+                    // Estimate: last_date_paid + 1 month
+                    $last_paid_date->modify('+1 month');
+                    $oldest_unpaid_due_date = $last_paid_date->format('Y-m-d');
+                    
+                    $days_overdue = $current_date->diff($last_paid_date)->days;
+                    if ($last_paid_date > $current_date) {
+                        $days_overdue = 0;
+                    }
+                } else {
+                    // If no payment schedule info, use disbursement_date as reference
+                    if ($bb->disbursement_date) {
+                        $disbursement_date = new DateTime($bb->disbursement_date);
+                        $days_since_disbursement = $current_date->diff($disbursement_date)->days;
+                        // Estimate: if disbursed more than 30 days ago and has balance, consider it overdue
+                        if ($days_since_disbursement > 30) {
+                            $days_overdue = $days_since_disbursement - 30; // Assume first payment due 30 days after disbursement
+                            $oldest_unpaid_due_date = date('Y-m-d', strtotime($bb->disbursement_date . ' +30 days'));
+                        }
+                    }
+                }
+            } elseif ($bb->disbursement_date) {
+                // No last_date_paid, use disbursement_date
+                $disbursement_date = new DateTime($bb->disbursement_date);
+                $current_date = new DateTime($as_of_date);
+                $days_since_disbursement = $current_date->diff($disbursement_date)->days;
+                
+                // Estimate first payment due 30 days after disbursement
+                $estimated_first_due = clone $disbursement_date;
+                $estimated_first_due->modify('+30 days');
+                $oldest_unpaid_due_date = $estimated_first_due->format('Y-m-d');
+                
+                if ($estimated_first_due < $current_date) {
+                    $days_overdue = $current_date->diff($estimated_first_due)->days;
+                } else {
+                    $days_overdue = 0;
+                }
+            }
+            
+            // Determine aging bucket
+            $bucket_key = 'current';
+            if ($days_overdue > 180) {
+                $bucket_key = 'over_180';
+            } elseif ($days_overdue > 90) {
+                $bucket_key = '91_180';
+            } elseif ($days_overdue > 60) {
+                $bucket_key = '61_90';
+            } elseif ($days_overdue > 30) {
+                $bucket_key = '31_60';
+            }
+            
+            $loan_data = array(
+                'LID' => $bb->LID,
+                'PID' => $bb->PID,
+                'member_id' => $bb->member_id,
+                'basic_amount' => $outstanding_principal,
+                'total_loan' => $outstanding_balance,
+                'total_repaid' => 0, // No repayment info for beginning balances here
+                'outstanding_balance' => $outstanding_balance,
+                'outstanding_principal' => $outstanding_principal,
+                'outstanding_interest' => $outstanding_interest,
+                'outstanding_penalty' => $outstanding_penalty,
+                'days_overdue' => $days_overdue,
+                'oldest_unpaid_due_date' => $oldest_unpaid_due_date,
+                'disbursedate' => $bb->disbursement_date ? $bb->disbursement_date : null,
+                'product_type' => $bb->loan_product_id
+            );
+            
+            $aging_buckets[$bucket_key]['loans'][] = $loan_data;
+            $aging_buckets[$bucket_key]['total_balance'] += $outstanding_balance;
+            $aging_buckets[$bucket_key]['total_principal'] += $outstanding_principal;
+            $aging_buckets[$bucket_key]['total_interest'] += $outstanding_interest;
+            $aging_buckets[$bucket_key]['total_penalty'] += $outstanding_penalty;
+        }
+        
+        return $aging_buckets;
+    }
+
     function save_edit_entry($id,$trans_date,$description,$paymethod, $trans_type, $amount, $comment=''){
         $this->db->where("id", $id);
         $this->db->set("trans_date", date('Y-m-d',strtotime($trans_date)));
@@ -664,7 +913,7 @@ FROM
         if ($this->db->table_exists('cash_disbursements')) {
             $sql = "SELECT cd.*, COALESCE(SUM(cdi.amount), 0) as total_amount
                     FROM cash_disbursements cd
-                    LEFT JOIN cash_disbursement_items cdi ON cdi.disburse_id = cd.id
+                    LEFT JOIN cash_disbursement_items cdi ON cdi.disbursement_id = cd.id
                     WHERE cd.PIN = ?
                       AND cd.disburse_date >= ?
                       AND cd.disburse_date <= ?

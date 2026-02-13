@@ -401,6 +401,9 @@ class Report_Member extends CI_Controller {
         }
         while (@ob_end_clean());
 
+        // mPDF needs more memory for large reports (member lists, etc.)
+        @ini_set('memory_limit', '256M');
+
         $this->load->library('pdf1');
         $pdf = $this->pdf1->load($page_orientation);
 

@@ -1,4 +1,3 @@
-<script type="text/javascript" src="<?php echo base_url(); ?>media/js/jquery.autocomplete.js" ></script>
 <link href="<?php echo base_url(); ?>media/css/jquery.autocomplete.css" rel="stylesheet">
 <link href="<?php echo base_url(); ?>media/css/plugins/datapicker/datepicker3.css" rel="stylesheet"/>
 <?php echo form_open_multipart(current_lang() . "/loan/loan_application", 'class="form-horizontal"'); ?>
@@ -164,19 +163,38 @@ if (isset($message) && !empty($message)) {
                 return;
             }
             
-            // Load bootstrap-datepicker after jQuery is available
-            if (typeof $.fn.datetimepicker === 'undefined') {
-                var script = document.createElement('script');
-                script.src = '<?php echo base_url() ?>media/js/plugins/datapicker/bootstrap-datepicker.js';
-                script.onload = function() {
+            // Load custom autocomplete plugin AFTER jQuery (template loads jQuery at page bottom).
+            // Without this, our plugin would run before jQuery and jQuery UI would hijack .autocomplete().
+            function runInits() {
+                if (typeof $.fn.datetimepicker === 'undefined') {
+                    var dp = document.createElement('script');
+                    dp.src = '<?php echo base_url() ?>media/js/plugins/datapicker/bootstrap-datepicker.js';
+                    dp.onload = function() {
+                        initDatePicker();
+                        initMainScript();
+                    };
+                    document.head.appendChild(dp);
+                } else {
                     initDatePicker();
                     initMainScript();
-                };
-                document.head.appendChild(script);
-            } else {
-                initDatePicker();
-                initMainScript();
+                }
             }
+            
+            var existingScript = document.querySelector('script[src*="jquery.autocomplete.js"]');
+            if (existingScript) {
+                runInits();
+                return;
+            }
+            var autocompleteScript = document.createElement('script');
+            autocompleteScript.src = '<?php echo base_url(); ?>media/js/jquery.autocomplete.js';
+            autocompleteScript.onload = function() {
+                runInits();
+            };
+            autocompleteScript.onerror = function() {
+                console.error('Failed to load autocomplete plugin');
+                runInits();
+            };
+            document.head.appendChild(autocompleteScript);
             
             function initDatePicker() {
                 $(function() {

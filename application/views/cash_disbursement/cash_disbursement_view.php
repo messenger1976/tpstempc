@@ -167,6 +167,60 @@ if (isset($message) && !empty($message)) {
                         </div>
                     </div>
 
+                    <?php
+                    $ae = isset($accounting_entries) ? $accounting_entries : array('journal' => null, 'items' => array());
+                    $journal = isset($ae['journal']) ? $ae['journal'] : null;
+                    $journal_items = isset($ae['items']) ? $ae['items'] : array();
+                    ?>
+                    <?php
+                    $journal_source_label = (function_exists('journal_source_label'))
+                        ? journal_source_label($journal ? (isset($journal->reference_type) ? $journal->reference_type : 'cash_disbursement') : 'cash_disbursement')
+                        : lang('journal_source_cash_disbursement');
+                    ?>
+                    <div class="row">
+                        <div class="col-md-12">
+                            <div class="panel panel-info">
+                                <div class="panel-heading">
+                                    <strong><?php echo lang('accounting_entries'); ?></strong>
+                                    <?php if ($journal_source_label): ?>
+                                        <span class="label label-primary" style="margin-left:8px;"><?php echo htmlspecialchars($journal_source_label); ?></span>
+                                    <?php endif; ?>
+                                    <?php if ($journal && !empty($journal->description)): ?>
+                                        <span class="text-muted small"> — <?php echo htmlspecialchars($journal->description); ?></span>
+                                    <?php endif; ?>
+                                </div>
+                                <div class="panel-body">
+                                    <?php if (!empty($journal_items)): ?>
+                                    <div class="table-responsive">
+                                        <table class="table table-striped table-bordered">
+                                            <thead>
+                                                <tr>
+                                                    <th width="30%"><?php echo lang('cash_disbursement_account'); ?></th>
+                                                    <th width="35%"><?php echo lang('cash_disbursement_line_description'); ?></th>
+                                                    <th width="17.5%" class="text-right"><?php echo lang('journalentry_debit'); ?></th>
+                                                    <th width="17.5%" class="text-right"><?php echo lang('journalentry_credit'); ?></th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <?php foreach ($journal_items as $entry): ?>
+                                                <tr>
+                                                    <td><?php echo htmlspecialchars((isset($entry->account_name) ? $entry->account_name : '') . ' (' . (isset($entry->account) ? $entry->account : '') . ')'); ?></td>
+                                                    <td><?php echo htmlspecialchars(isset($entry->description) ? $entry->description : ''); ?></td>
+                                                    <td class="text-right"><?php echo (isset($entry->debit) && $entry->debit > 0) ? number_format($entry->debit, 2) : '—'; ?></td>
+                                                    <td class="text-right"><?php echo (isset($entry->credit) && $entry->credit > 0) ? number_format($entry->credit, 2) : '—'; ?></td>
+                                                </tr>
+                                                <?php endforeach; ?>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    <?php else: ?>
+                                    <p class="text-muted"><?php echo lang('no_accounting_entries'); ?></p>
+                                    <?php endif; ?>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                 </div>
             </div>
         </div>

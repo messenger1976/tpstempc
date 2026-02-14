@@ -135,13 +135,39 @@ class Loan_Model extends CI_Model {
         return $loanid;
     }
 
-    function add_newloan($data, $processingfee = 0) {
-        $loanid = $this->db->get('auto_inc')->row()->loan;
-        // increatent 1 next PIN
-        $this->db->set('loan', 'loan+1', FALSE);
-        $this->db->update('auto_inc');
+    /**
+     * Get next LN number for display (does not increment auto_inc)
+     */
+    function get_next_ln_number() {
+        $row = $this->db->get('auto_inc')->row();
+        $next = $row ? ($row->loan + 1) : 1;
+        return 'LN' . $next;
+    }
 
-        $data['LID'] = 'LN' . $loanid;
+    function add_newloan($data, $processingfee = 0) {
+        // Use LID from $data if provided and not empty; otherwise auto-generate
+        if (!empty($data['LID'])) {
+            $lid = trim($data['LID']);
+            // Check uniqueness
+            if ($this->is_loan_exist($lid)) {
+                return FALSE;
+            }
+            $data['LID'] = $lid;
+            // Ensure auto_inc stays ahead if LID is numeric (e.g. LN1234)
+            if (preg_match('/^LN(\d+)$/', $lid, $m)) {
+                $num = (int)$m[1];
+                $current = $this->db->get('auto_inc')->row()->loan;
+                if ($num >= $current) {
+                    $this->db->set('loan', $num + 1, FALSE);
+                    $this->db->update('auto_inc');
+                }
+            }
+        } else {
+            $loanid = $this->db->get('auto_inc')->row()->loan;
+            $this->db->set('loan', 'loan+1', FALSE);
+            $this->db->update('auto_inc');
+            $data['LID'] = 'LN' . $loanid;
+        }
 
         $insert = $this->db->insert('loan_contract', $data);
         if ($insert) {

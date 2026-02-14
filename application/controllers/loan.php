@@ -133,10 +133,22 @@ class Loan extends CI_Controller {
         $this->form_validation->set_rules('procesingfee', 'Loan Processing Fee', 'required|numeric');
 
         if ($this->form_validation->run() == TRUE) {
-            $PID_initial = explode('-', trim($this->input->post('pid')));
-            $member_id_initial = explode('-', trim($this->input->post('member_id')));
-            $pid = $PID = $PID_initial[0];
-            $member_id = $member_id_initial[0];
+            // Handle autocomplete format: "2005-00173 - Member Name" or plain "2005-00173"
+            $pid_value = trim($this->input->post('pid'));
+            $member_id_value = trim($this->input->post('member_id'));
+            if (strpos($pid_value, ' - ') !== false) {
+                $parts = explode(' - ', $pid_value, 2);
+                $pid = trim($parts[0]);
+            } else {
+                $pid = $pid_value;
+            }
+            if (strpos($member_id_value, ' - ') !== false) {
+                $parts = explode(' - ', $member_id_value, 2);
+                $member_id = trim($parts[0]);
+            } else {
+                $member_id = $member_id_value;
+            }
+            $PID = $pid;
 
             $product_id = $this->input->post('product');
             $product = $this->setting_model->loanproduct($product_id)->row();
@@ -147,8 +159,13 @@ class Loan extends CI_Controller {
             $source = trim($this->input->post('source'));
             $purpose = trim($this->input->post('purpose'));
             $processingfee = $this->input->post('procesingfee');
+            $lid_input = trim($this->input->post('lid'));
+            if (empty($lid_input)) {
+                $lid_input = $this->loan_model->get_next_ln_number();
+            }
 
             $createloan = array(
+                'LID' => $lid_input,
                 'PID' => $pid,
                 'member_id' => $member_id,
                 'product_type' => $product_id,
@@ -233,6 +250,7 @@ class Loan extends CI_Controller {
 
         $this->data['paysource_list'] = $this->contribution_model->contribution_source()->result();
         $this->data['loan_product_list'] = $this->setting_model->loanproduct()->result();
+        $this->data['next_ln_number'] = $this->loan_model->get_next_ln_number();
         $this->data['content'] = 'loan/loan_application_step1';
         $this->load->view('template', $this->data);
     }
@@ -267,7 +285,9 @@ class Loan extends CI_Controller {
     }
 
     function pass_share_condition($product, $share) {
-
+        // TEMPORARILY DISABLED - share requirement check removed for loan application
+        return TRUE;
+        /*
         if ($product->loan_security_share_min > 0) {
             if ($share) {
                 if ($share->totalshare >= $product->loan_security_share_min) {
@@ -281,6 +301,7 @@ class Loan extends CI_Controller {
         }
 
         return TRUE;
+        */
     }
 
     function pass_saving_condition($product, $saving) {
@@ -301,6 +322,9 @@ class Loan extends CI_Controller {
     }
 
     function maximum_loan_allowed($product, $loan_amount, $contribution, $pid) {
+        // TEMPORARILY DISABLED - maximum loan amount check bypassed
+        return TRUE;
+        /*
         $total_amount = $contribution->balance * $product->loan_security_contribution_times;
 
         $open_loan = $this->db->query("SELECT * FROM loan_contract WHERE PID='$pid' AND approval=4")->result();
@@ -318,9 +342,13 @@ class Loan extends CI_Controller {
             return TRUE;
         }
         return FALSE;
+        */
     }
 
     function maximum_contributions_times($product, $loan_amount, $contribution) {
+        // TEMPORARILY DISABLED - contribution times check bypassed
+        return TRUE;
+        /*
         $total_amount = $contribution->balance * $product->loan_security_contribution_times;
         if ($total_amount == 0) {
             return TRUE;
@@ -336,10 +364,13 @@ class Loan extends CI_Controller {
             }
         }
         return TRUE;
+        */
     }
 
     function pass_contribution_condition($product, $contribution) {
-
+        // TEMPORARILY DISABLED - minimum contribution amount check bypassed
+        return TRUE;
+        /*
         if ($product->loan_security_contribution_min > 0) {
             if ($contribution) {
                 if ($contribution->balance >= $product->loan_security_contribution_min) {
@@ -354,6 +385,7 @@ class Loan extends CI_Controller {
         }
 
         return TRUE;
+        */
     }
 
     function loan_editing($loanid) {

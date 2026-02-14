@@ -62,7 +62,14 @@ if (isset($message) && !empty($message)) {
 
         <div style="color: brown;margin: 20px; font-weight: bold; font-size: 13px; border-bottom: 1px solid #ccc;">
             <?php echo lang('loan_basic_info'); ?>
-        </div> 
+        </div>
+        <div class="form-group"><label class="col-lg-4 control-label"><?php echo lang('loan_LID'); ?> (LN Number) :</label>
+            <div class="col-lg-7">
+                <input type="text" name="lid" value="<?php echo set_value('lid', isset($next_ln_number) ? $next_ln_number : ''); ?>" class="form-control"/>
+                <small class="text-muted">Editable. Auto-generated if left empty.</small>
+                <?php echo form_error('lid'); ?>
+            </div>
+        </div>
         <div class="form-group"><label class="col-lg-4 control-label"><?php echo lang('loan_applicationdate'); ?>  : <span class="required">*</span></label>
             <div class=" col-lg-7">
                 <div class="input-group date" id="datetimepicker" >

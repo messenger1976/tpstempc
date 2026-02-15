@@ -613,29 +613,22 @@ class Cash_receipt_model extends CI_Model {
 
     /**
      * Get account summary for cash receipt module (Trial Balance style).
-     * Returns each account used in cash_receipt_items with total amount, optionally filtered by date.
+     * Aggregates from get_account_details (same logic as transaction view). Returns total_debit and total_credit per account.
+     * Excludes cancelled receipts.
      */
     function get_account_summary($date_from = null, $date_to = null) {
-        $pin = current_user()->PIN;
-        $sql = "SELECT cri.account,
-                COALESCE(ac.name, 'Unknown Account') AS account_name,
-                SUM(cri.amount) AS total_amount,
-                COUNT(cri.id) AS line_count
-                FROM cash_receipt_items cri
-                INNER JOIN cash_receipts cr ON cr.id = cri.receipt_id AND cr.PIN = ?
-                LEFT JOIN account_chart ac ON ac.account = cri.account AND ac.PIN = ?
-                WHERE cri.PIN = ?";
-        $params = array($pin, $pin, $pin);
-        if (!empty($date_from)) {
-            $sql .= " AND cr.receipt_date >= ?";
-            $params[] = $date_from;
+        $details = $this->get_account_details($date_from, $date_to);
+        $by_account = array();
+        foreach ($details as $row) {
+            $key = $row->account;
+            if (!isset($by_account[$key])) {
+                $by_account[$key] = (object) array('account' => $row->account, 'account_name' => $row->account_name, 'total_debit' => 0, 'total_credit' => 0);
+            }
+            $by_account[$key]->total_debit += isset($row->debit) ? floatval($row->debit) : 0;
+            $by_account[$key]->total_credit += isset($row->credit) ? floatval($row->credit) : 0;
         }
-        if (!empty($date_to)) {
-            $sql .= " AND cr.receipt_date <= ?";
-            $params[] = $date_to;
-        }
-        $sql .= " GROUP BY cri.account, ac.name ORDER BY cri.account ASC";
-        return $this->db->query($sql, $params)->result();
+        usort($by_account, function ($a, $b) { return strcmp($a->account, $b->account); });
+        return array_values($by_account);
     }
 
     /**

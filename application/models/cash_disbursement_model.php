@@ -600,29 +600,22 @@ class Cash_disbursement_model extends CI_Model {
 
     /**
      * Get account summary for cash disbursement module (Trial Balance style).
-     * Returns each account used in cash_disbursement_items with total amount (debit side), optionally filtered by date.
+     * Aggregates from get_account_details (same logic as transaction view). Returns total_debit and total_credit per account.
+     * Excludes cancelled disbursements.
      */
     function get_account_summary($date_from = null, $date_to = null) {
-        $pin = current_user()->PIN;
-        $sql = "SELECT cdi.account,
-                COALESCE(ac.name, 'Unknown Account') AS account_name,
-                SUM(cdi.amount) AS total_amount,
-                COUNT(cdi.id) AS line_count
-                FROM cash_disbursement_items cdi
-                INNER JOIN cash_disbursements cd ON cd.id = cdi.disbursement_id AND cd.PIN = ?
-                LEFT JOIN account_chart ac ON ac.account = cdi.account AND ac.PIN = ?
-                WHERE cdi.PIN = ?";
-        $params = array($pin, $pin, $pin);
-        if (!empty($date_from)) {
-            $sql .= " AND cd.disburse_date >= ?";
-            $params[] = $date_from;
+        $details = $this->get_account_details($date_from, $date_to);
+        $by_account = array();
+        foreach ($details as $row) {
+            $key = $row->account;
+            if (!isset($by_account[$key])) {
+                $by_account[$key] = (object) array('account' => $row->account, 'account_name' => $row->account_name, 'total_debit' => 0, 'total_credit' => 0);
+            }
+            $by_account[$key]->total_debit += isset($row->debit) ? floatval($row->debit) : 0;
+            $by_account[$key]->total_credit += isset($row->credit) ? floatval($row->credit) : 0;
         }
-        if (!empty($date_to)) {
-            $sql .= " AND cd.disburse_date <= ?";
-            $params[] = $date_to;
-        }
-        $sql .= " GROUP BY cdi.account, ac.name ORDER BY cdi.account ASC";
-        return $this->db->query($sql, $params)->result();
+        usort($by_account, function ($a, $b) { return strcmp($a->account, $b->account); });
+        return array_values($by_account);
     }
 
     /**

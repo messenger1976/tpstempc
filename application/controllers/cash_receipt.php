@@ -447,8 +447,12 @@ class Cash_receipt extends CI_Controller {
             redirect(current_lang() . '/cash_receipt/cash_receipt_list', 'refresh');
             exit();
         }
-        $grand_total = 0;
-        foreach ($summary as $row) { $grand_total += $row->total_amount; }
+        $grand_debit = 0;
+        $grand_credit = 0;
+        foreach ($summary as $r) {
+            $grand_debit += isset($r->total_debit) ? floatval($r->total_debit) : 0;
+            $grand_credit += isset($r->total_credit) ? floatval($r->total_credit) : 0;
+        }
         $objPHPExcel = new PHPExcel();
         $objPHPExcel->getProperties()->setCreator(company_info()->name)
             ->setTitle(lang('cash_receipt_report_summary'))
@@ -462,22 +466,20 @@ class Cash_receipt extends CI_Controller {
         $headerStyle = array('font' => array('bold' => true), 'fill' => array('type' => PHPExcel_Style_Fill::FILL_SOLID, 'color' => array('rgb' => 'E0E0E0')));
         $sheet->getStyle('A1:D1')->applyFromArray($headerStyle);
         $row = 2;
-        $sheet->setCellValue('A' . $row, '—');
-        $sheet->setCellValue('B' . $row, lang('cash_and_bank'));
-        $sheet->setCellValue('C' . $row, $grand_total);
-        $sheet->setCellValue('D' . $row, 0);
-        $row++;
         foreach ($summary as $r) {
+            $debit = isset($r->total_debit) ? floatval($r->total_debit) : 0;
+            $credit = isset($r->total_credit) ? floatval($r->total_credit) : 0;
+            if ($debit <= 0 && $credit <= 0) continue;
             $sheet->setCellValue('A' . $row, $r->account);
             $sheet->setCellValue('B' . $row, $r->account_name);
-            $sheet->setCellValue('C' . $row, 0);
-            $sheet->setCellValue('D' . $row, $r->total_amount);
+            $sheet->setCellValue('C' . $row, $debit);
+            $sheet->setCellValue('D' . $row, $credit);
             $row++;
         }
         $sheet->setCellValue('A' . $row, '');
         $sheet->setCellValue('B' . $row, lang('total'));
-        $sheet->setCellValue('C' . $row, $grand_total);
-        $sheet->setCellValue('D' . $row, $grand_total);
+        $sheet->setCellValue('C' . $row, $grand_debit);
+        $sheet->setCellValue('D' . $row, $grand_credit);
         $sheet->getStyle('C2:D' . $row)->getNumberFormat()->setFormatCode('#,##0.00');
         foreach (range('A', 'D') as $col) { $sheet->getColumnDimension($col)->setAutoSize(true); }
         header('Content-Type: application/vnd.ms-excel');

@@ -57,31 +57,29 @@
             </thead>
             <tbody>
                 <?php
-                $grand_total = 0;
+                $grand_debit = 0;
+                $grand_credit = 0;
                 if (!empty($summary)):
-                    // Debit side: Cash and Bank (total receipts = cash debited)
                     foreach ($summary as $row) {
-                        $grand_total += $row->total_amount;
+                        $grand_debit += isset($row->total_debit) ? floatval($row->total_debit) : 0;
+                        $grand_credit += isset($row->total_credit) ? floatval($row->total_credit) : 0;
                     }
+                    foreach ($summary as $row):
+                        $debit = isset($row->total_debit) ? floatval($row->total_debit) : 0;
+                        $credit = isset($row->total_credit) ? floatval($row->total_credit) : 0;
+                        if ($debit <= 0 && $credit <= 0) continue;
                 ?>
-                <tr>
-                    <td class="col-account-code">—</td>
-                    <td class="col-account-name"><?php echo lang('cash_and_bank'); ?></td>
-                    <td class="col-debit"><?php echo number_format($grand_total, 2); ?></td>
-                    <td class="col-credit"><?php echo number_format(0, 2); ?></td>
-                </tr>
-                <?php foreach ($summary as $row): ?>
                 <tr>
                     <td class="col-account-code"><?php echo htmlspecialchars($row->account); ?></td>
                     <td class="col-account-name"><?php echo htmlspecialchars($row->account_name); ?></td>
-                    <td class="col-debit"><?php echo number_format(0, 2); ?></td>
-                    <td class="col-credit"><?php echo number_format($row->total_amount, 2); ?></td>
+                    <td class="col-debit"><?php echo number_format($debit, 2); ?></td>
+                    <td class="col-credit"><?php echo number_format($credit, 2); ?></td>
                 </tr>
                 <?php endforeach; ?>
                 <tr class="total-row">
                     <td colspan="2" class="text-right"><?php echo lang('total'); ?></td>
-                    <td class="col-debit"><?php echo number_format($grand_total, 2); ?></td>
-                    <td class="col-credit"><?php echo number_format($grand_total, 2); ?></td>
+                    <td class="col-debit"><?php echo number_format($grand_debit, 2); ?></td>
+                    <td class="col-credit"><?php echo number_format($grand_credit, 2); ?></td>
                 </tr>
                 <?php else: ?>
                 <tr>

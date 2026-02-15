@@ -13,7 +13,7 @@ class Cash_disbursement_model extends CI_Model {
     /**
      * Get all cash disbursements
      */
-    function get_cash_disbursements($id = null, $disburse_no = null) {
+    function get_cash_disbursements($id = null, $disburse_no = null, $date_from = null, $date_to = null) {
         $this->db->where('PIN', current_user()->PIN);
         
         if (!is_null($id)) {
@@ -22,6 +22,14 @@ class Cash_disbursement_model extends CI_Model {
         
         if (!is_null($disburse_no)) {
             $this->db->where('disburse_no', $disburse_no);
+        }
+        
+        if (!empty($date_from)) {
+            $this->db->where('disburse_date >=', $date_from);
+        }
+        
+        if (!empty($date_to)) {
+            $this->db->where('disburse_date <=', $date_to);
         }
         
         $this->db->order_by('disburse_date', 'DESC');
@@ -561,5 +569,56 @@ class Cash_disbursement_model extends CI_Model {
         $result = $this->db->get('cash_disbursements')->row();
         
         return $result ? $result->total_amount : 0;
+    }
+
+    /**
+     * Get account summary for cash disbursement module (Trial Balance style).
+     * Returns each account used in cash_disbursement_items with total amount (debit side), optionally filtered by date.
+     */
+    function get_account_summary($date_from = null, $date_to = null) {
+        $pin = current_user()->PIN;
+        $sql = "SELECT cdi.account,
+                COALESCE(ac.name, 'Unknown Account') AS account_name,
+                SUM(cdi.amount) AS total_amount,
+                COUNT(cdi.id) AS line_count
+                FROM cash_disbursement_items cdi
+                INNER JOIN cash_disbursements cd ON cd.id = cdi.disbursement_id AND cd.PIN = ?
+                LEFT JOIN account_chart ac ON ac.account = cdi.account AND ac.PIN = ?
+                WHERE cdi.PIN = ?";
+        $params = array($pin, $pin, $pin);
+        if (!empty($date_from)) {
+            $sql .= " AND cd.disburse_date >= ?";
+            $params[] = $date_from;
+        }
+        if (!empty($date_to)) {
+            $sql .= " AND cd.disburse_date <= ?";
+            $params[] = $date_to;
+        }
+        $sql .= " GROUP BY cdi.account, ac.name ORDER BY cdi.account ASC";
+        return $this->db->query($sql, $params)->result();
+    }
+
+    /**
+     * Get detailed lines for cash disbursement report (all disbursement items with header info).
+     */
+    function get_account_details($date_from = null, $date_to = null) {
+        $pin = current_user()->PIN;
+        $sql = "SELECT cd.disburse_no, cd.disburse_date, cd.paid_to, cd.payment_method, cd.description AS disburse_description,
+                cdi.account, COALESCE(ac.name, 'Unknown Account') AS account_name, cdi.description AS line_description, cdi.amount
+                FROM cash_disbursement_items cdi
+                INNER JOIN cash_disbursements cd ON cd.id = cdi.disbursement_id AND cd.PIN = ?
+                LEFT JOIN account_chart ac ON ac.account = cdi.account AND ac.PIN = ?
+                WHERE cdi.PIN = ?";
+        $params = array($pin, $pin, $pin);
+        if (!empty($date_from)) {
+            $sql .= " AND cd.disburse_date >= ?";
+            $params[] = $date_from;
+        }
+        if (!empty($date_to)) {
+            $sql .= " AND cd.disburse_date <= ?";
+            $params[] = $date_to;
+        }
+        $sql .= " ORDER BY cd.disburse_date ASC, cd.id ASC, cdi.id ASC";
+        return $this->db->query($sql, $params)->result();
     }
 }

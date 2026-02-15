@@ -24,12 +24,65 @@ if (isset($message) && !empty($message)) {
                                 <i class="fa fa-plus"></i> <?php echo lang('cash_disbursement_create'); ?>
                             </a>
                         <?php } ?>
-                        <a href="<?php echo site_url(current_lang() . '/cash_disbursement/cash_disbursement_export'); ?>" class="btn btn-success btn-xs">
+                        <?php
+                        $export_url = site_url(current_lang() . '/cash_disbursement/cash_disbursement_export');
+                        if (isset($date_from) && !empty($date_from)) {
+                            $export_url .= '?date_from=' . urlencode($date_from);
+                            if (isset($date_to) && !empty($date_to)) {
+                                $export_url .= '&date_to=' . urlencode($date_to);
+                            }
+                        } elseif (isset($date_to) && !empty($date_to)) {
+                            $export_url .= '?date_to=' . urlencode($date_to);
+                        }
+                        ?>
+                        <a href="<?php echo $export_url; ?>" class="btn btn-success btn-xs">
                             <i class="fa fa-file-excel-o"></i> <?php echo lang('export_excel'); ?>
                         </a>
                     </div>
                 </div>
                 <div class="ibox-content">
+                    <!-- Date Range Filter -->
+                    <form method="get" action="<?php echo site_url(current_lang() . '/cash_disbursement/cash_disbursement_list'); ?>" class="form-horizontal" style="margin-bottom: 20px;">
+                        <div class="row">
+                            <div class="col-md-3">
+                                <label>Date From:</label>
+                                <input type="date" class="form-control" name="date_from" value="<?php echo isset($date_from) ? htmlspecialchars($date_from) : ''; ?>"/>
+                            </div>
+                            <div class="col-md-3">
+                                <label>Date To:</label>
+                                <input type="date" class="form-control" name="date_to" value="<?php echo isset($date_to) ? htmlspecialchars($date_to) : ''; ?>"/>
+                            </div>
+                            <div class="col-md-3" style="padding-top: 25px;">
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="fa fa-filter"></i> Filter
+                                </button>
+                                <a href="<?php echo site_url(current_lang() . '/cash_disbursement/cash_disbursement_list'); ?>" class="btn btn-default">
+                                    <i class="fa fa-times"></i> Clear
+                                </a>
+                                <?php
+                                $report_summary_url = site_url(current_lang() . '/cash_disbursement/cash_disbursement_report_summary');
+                                $report_details_url = site_url(current_lang() . '/cash_disbursement/cash_disbursement_report_details');
+                                if (isset($date_from) && !empty($date_from)) {
+                                    $report_summary_url .= '?date_from=' . urlencode($date_from);
+                                    $report_details_url .= '?date_from=' . urlencode($date_from);
+                                    if (isset($date_to) && !empty($date_to)) {
+                                        $report_summary_url .= '&date_to=' . urlencode($date_to);
+                                        $report_details_url .= '&date_to=' . urlencode($date_to);
+                                    }
+                                } elseif (isset($date_to) && !empty($date_to)) {
+                                    $report_summary_url .= '?date_to=' . urlencode($date_to);
+                                    $report_details_url .= '?date_to=' . urlencode($date_to);
+                                }
+                                ?>
+                                <a href="<?php echo $report_summary_url; ?>" class="btn btn-info" target="_blank">
+                                    <i class="fa fa-bar-chart"></i> <?php echo lang('cash_disbursement_report_summary'); ?>
+                                </a>
+                                <a href="<?php echo $report_details_url; ?>" class="btn btn-info" target="_blank">
+                                    <i class="fa fa-list"></i> <?php echo lang('cash_disbursement_report_details'); ?>
+                                </a>
+                            </div>
+                        </div>
+                    </form>
                     <div class="table-responsive">
                         <table class="table table-striped table-bordered table-hover dataTables-example">
                             <thead>

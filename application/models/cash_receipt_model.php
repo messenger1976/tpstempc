@@ -568,4 +568,55 @@ class Cash_receipt_model extends CI_Model {
         
         return $result ? $result->total_amount : 0;
     }
+
+    /**
+     * Get account summary for cash receipt module (Trial Balance style).
+     * Returns each account used in cash_receipt_items with total amount, optionally filtered by date.
+     */
+    function get_account_summary($date_from = null, $date_to = null) {
+        $pin = current_user()->PIN;
+        $sql = "SELECT cri.account,
+                COALESCE(ac.name, 'Unknown Account') AS account_name,
+                SUM(cri.amount) AS total_amount,
+                COUNT(cri.id) AS line_count
+                FROM cash_receipt_items cri
+                INNER JOIN cash_receipts cr ON cr.id = cri.receipt_id AND cr.PIN = ?
+                LEFT JOIN account_chart ac ON ac.account = cri.account AND ac.PIN = ?
+                WHERE cri.PIN = ?";
+        $params = array($pin, $pin, $pin);
+        if (!empty($date_from)) {
+            $sql .= " AND cr.receipt_date >= ?";
+            $params[] = $date_from;
+        }
+        if (!empty($date_to)) {
+            $sql .= " AND cr.receipt_date <= ?";
+            $params[] = $date_to;
+        }
+        $sql .= " GROUP BY cri.account, ac.name ORDER BY cri.account ASC";
+        return $this->db->query($sql, $params)->result();
+    }
+
+    /**
+     * Get detailed lines for cash receipt report (all receipt items with receipt header info).
+     */
+    function get_account_details($date_from = null, $date_to = null) {
+        $pin = current_user()->PIN;
+        $sql = "SELECT cr.receipt_no, cr.receipt_date, cr.received_from, cr.payment_method, cr.description AS receipt_description,
+                cri.account, COALESCE(ac.name, 'Unknown Account') AS account_name, cri.description AS line_description, cri.amount
+                FROM cash_receipt_items cri
+                INNER JOIN cash_receipts cr ON cr.id = cri.receipt_id AND cr.PIN = ?
+                LEFT JOIN account_chart ac ON ac.account = cri.account AND ac.PIN = ?
+                WHERE cri.PIN = ?";
+        $params = array($pin, $pin, $pin);
+        if (!empty($date_from)) {
+            $sql .= " AND cr.receipt_date >= ?";
+            $params[] = $date_from;
+        }
+        if (!empty($date_to)) {
+            $sql .= " AND cr.receipt_date <= ?";
+            $params[] = $date_to;
+        }
+        $sql .= " ORDER BY cr.receipt_date ASC, cr.id ASC, cri.id ASC";
+        return $this->db->query($sql, $params)->result();
+    }
 }

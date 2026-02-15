@@ -405,6 +405,163 @@ class Cash_receipt extends CI_Controller {
     }
 
     /**
+     * Report Summary: Trial Balance format - accounts used in cash receipt module with totals
+     */
+    function cash_receipt_report_summary() {
+        $date_from = $this->input->get('date_from');
+        $date_to = $this->input->get('date_to');
+        $this->data['date_from'] = $date_from;
+        $this->data['date_to'] = $date_to;
+        $this->data['summary'] = $this->cash_receipt_model->get_account_summary($date_from, $date_to);
+        $this->data['title'] = lang('cash_receipt_report_summary');
+        $this->load->view('cash_receipt/cash_receipt_report_summary', $this->data);
+    }
+
+    /**
+     * Export Report Summary to Excel (Trial Balance format)
+     */
+    function cash_receipt_report_summary_export() {
+        if (ob_get_level()) { ob_end_clean(); }
+        while (@ob_end_clean());
+        $this->load->library('excel');
+        $date_from = $this->input->get('date_from');
+        $date_to = $this->input->get('date_to');
+        $summary = $this->cash_receipt_model->get_account_summary($date_from, $date_to);
+        if (empty($summary)) {
+            $this->session->set_flashdata('warning', 'No data available to export');
+            redirect(current_lang() . '/cash_receipt/cash_receipt_list', 'refresh');
+            exit();
+        }
+        $grand_total = 0;
+        foreach ($summary as $row) { $grand_total += $row->total_amount; }
+        $objPHPExcel = new PHPExcel();
+        $objPHPExcel->getProperties()->setCreator(company_info()->name)
+            ->setTitle(lang('cash_receipt_report_summary'))
+            ->setSubject('Cash Receipt Report Summary');
+        $sheet = $objPHPExcel->setActiveSheetIndex(0);
+        $sheet->setTitle('Report Summary');
+        $sheet->setCellValue('A1', lang('account_code'));
+        $sheet->setCellValue('B1', lang('account_name'));
+        $sheet->setCellValue('C1', lang('journalentry_debit'));
+        $sheet->setCellValue('D1', lang('journalentry_credit'));
+        $headerStyle = array('font' => array('bold' => true), 'fill' => array('type' => PHPExcel_Style_Fill::FILL_SOLID, 'color' => array('rgb' => 'E0E0E0')));
+        $sheet->getStyle('A1:D1')->applyFromArray($headerStyle);
+        $row = 2;
+        $sheet->setCellValue('A' . $row, '—');
+        $sheet->setCellValue('B' . $row, lang('cash_and_bank'));
+        $sheet->setCellValue('C' . $row, $grand_total);
+        $sheet->setCellValue('D' . $row, 0);
+        $row++;
+        foreach ($summary as $r) {
+            $sheet->setCellValue('A' . $row, $r->account);
+            $sheet->setCellValue('B' . $row, $r->account_name);
+            $sheet->setCellValue('C' . $row, 0);
+            $sheet->setCellValue('D' . $row, $r->total_amount);
+            $row++;
+        }
+        $sheet->setCellValue('A' . $row, '');
+        $sheet->setCellValue('B' . $row, lang('total'));
+        $sheet->setCellValue('C' . $row, $grand_total);
+        $sheet->setCellValue('D' . $row, $grand_total);
+        $sheet->getStyle('C2:D' . $row)->getNumberFormat()->setFormatCode('#,##0.00');
+        foreach (range('A', 'D') as $col) { $sheet->getColumnDimension($col)->setAutoSize(true); }
+        header('Content-Type: application/vnd.ms-excel');
+        header('Content-Disposition: attachment;filename="cash_receipt_report_summary_' . date('Y-m-d') . '.xls"');
+        header('Cache-Control: max-age=0');
+        $objWriter = PHPExcel_IOFactory::createWriter($objPHPExcel, 'Excel5');
+        $objWriter->save('php://output');
+        exit();
+    }
+
+    /**
+     * Report Details: Line-by-line detail of all accounts used in cash receipt module
+     */
+    function cash_receipt_report_details() {
+        $date_from = $this->input->get('date_from');
+        $date_to = $this->input->get('date_to');
+        $this->data['date_from'] = $date_from;
+        $this->data['date_to'] = $date_to;
+        $this->data['details'] = $this->cash_receipt_model->get_account_details($date_from, $date_to);
+        $this->data['title'] = lang('cash_receipt_report_details');
+        $this->load->view('cash_receipt/cash_receipt_report_details', $this->data);
+    }
+
+    /**
+     * Export Report Details to Excel (grouped by transaction, trial balance layout)
+     */
+    function cash_receipt_report_details_export() {
+        if (ob_get_level()) { ob_end_clean(); }
+        while (@ob_end_clean());
+        $this->load->library('excel');
+        $date_from = $this->input->get('date_from');
+        $date_to = $this->input->get('date_to');
+        $details = $this->cash_receipt_model->get_account_details($date_from, $date_to);
+        if (empty($details)) {
+            $this->session->set_flashdata('warning', 'No data available to export');
+            redirect(current_lang() . '/cash_receipt/cash_receipt_list', 'refresh');
+            exit();
+        }
+        $grouped = array();
+        foreach ($details as $row) {
+            $key = $row->receipt_no;
+            if (!isset($grouped[$key])) {
+                $grouped[$key] = array('receipt_no' => $row->receipt_no, 'receipt_date' => $row->receipt_date, 'received_from' => $row->received_from, 'payment_method' => $row->payment_method, 'receipt_description' => isset($row->receipt_description) ? $row->receipt_description : '', 'lines' => array());
+            }
+            $grouped[$key]['lines'][] = $row;
+        }
+        $objPHPExcel = new PHPExcel();
+        $objPHPExcel->getProperties()->setCreator(company_info()->name)
+            ->setTitle(lang('cash_receipt_report_details'))
+            ->setSubject('Cash Receipt Report Details');
+        $sheet = $objPHPExcel->setActiveSheetIndex(0);
+        $sheet->setTitle('Report Details');
+        $sheet->setCellValue('A1', lang('cash_receipt_no'));
+        $sheet->setCellValue('B1', lang('cash_receipt_date'));
+        $sheet->setCellValue('C1', lang('cash_receipt_received_from'));
+        $sheet->setCellValue('D1', lang('cash_receipt_payment_method'));
+        $sheet->setCellValue('E1', lang('account_code'));
+        $sheet->setCellValue('F1', lang('account_name'));
+        $sheet->setCellValue('G1', lang('journalentry_debit'));
+        $sheet->setCellValue('H1', lang('journalentry_credit'));
+        $headerStyle = array('font' => array('bold' => true), 'fill' => array('type' => PHPExcel_Style_Fill::FILL_SOLID, 'color' => array('rgb' => 'E0E0E0')));
+        $sheet->getStyle('A1:H1')->applyFromArray($headerStyle);
+        $row = 2;
+        foreach ($grouped as $txn) {
+            $lines = $txn['lines'];
+            $txn_total = 0;
+            foreach ($lines as $l) { $txn_total += $l->amount; }
+            $sheet->setCellValue('A' . $row, $txn['receipt_no']);
+            $sheet->setCellValue('B' . $row, date('d-m-Y', strtotime($txn['receipt_date'])));
+            $sheet->setCellValue('C' . $row, $txn['received_from']);
+            $sheet->setCellValue('D' . $row, $txn['payment_method']);
+            $sheet->setCellValue('E' . $row, '—');
+            $sheet->setCellValue('F' . $row, lang('cash_and_bank'));
+            $sheet->setCellValue('G' . $row, $txn_total);
+            $sheet->setCellValue('H' . $row, 0);
+            $row++;
+            foreach ($lines as $l) {
+                $sheet->setCellValue('A' . $row, $txn['receipt_no']);
+                $sheet->setCellValue('B' . $row, date('d-m-Y', strtotime($txn['receipt_date'])));
+                $sheet->setCellValue('C' . $row, $txn['received_from']);
+                $sheet->setCellValue('D' . $row, $txn['payment_method']);
+                $sheet->setCellValue('E' . $row, $l->account);
+                $sheet->setCellValue('F' . $row, $l->account_name . (!empty($l->line_description) ? ' — ' . $l->line_description : ''));
+                $sheet->setCellValue('G' . $row, 0);
+                $sheet->setCellValue('H' . $row, $l->amount);
+                $row++;
+            }
+        }
+        $sheet->getStyle('G2:H' . ($row - 1))->getNumberFormat()->setFormatCode('#,##0.00');
+        foreach (range('A', 'H') as $col) { $sheet->getColumnDimension($col)->setAutoSize(true); }
+        header('Content-Type: application/vnd.ms-excel');
+        header('Content-Disposition: attachment;filename="cash_receipt_report_details_' . date('Y-m-d') . '.xls"');
+        header('Cache-Control: max-age=0');
+        $objWriter = PHPExcel_IOFactory::createWriter($objPHPExcel, 'Excel5');
+        $objWriter->save('php://output');
+        exit();
+    }
+
+    /**
      * Check if receipt number already exists
      */
     function check_receipt_no($receipt_no) {

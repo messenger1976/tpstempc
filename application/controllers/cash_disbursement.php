@@ -37,11 +37,172 @@ class Cash_disbursement extends CI_Controller {
     function cash_disbursement_list() {
         $this->data['title'] = lang('cash_disbursement_list');
         
-        // Get all cash disbursements
-        $this->data['cash_disbursements'] = $this->cash_disbursement_model->get_cash_disbursements()->result();
+        $date_from = $this->input->get('date_from');
+        $date_to = $this->input->get('date_to');
+        $this->data['date_from'] = $date_from;
+        $this->data['date_to'] = $date_to;
+        
+        $this->data['cash_disbursements'] = $this->cash_disbursement_model->get_cash_disbursements(null, null, $date_from, $date_to)->result();
         
         $this->data['content'] = 'cash_disbursement/cash_disbursement_list';
         $this->load->view('template', $this->data);
+    }
+
+    /**
+     * Report Summary: Trial Balance format - accounts used in cash disbursement module with totals
+     */
+    function cash_disbursement_report_summary() {
+        $date_from = $this->input->get('date_from');
+        $date_to = $this->input->get('date_to');
+        $this->data['date_from'] = $date_from;
+        $this->data['date_to'] = $date_to;
+        $this->data['summary'] = $this->cash_disbursement_model->get_account_summary($date_from, $date_to);
+        $this->data['title'] = lang('cash_disbursement_report_summary');
+        $this->load->view('cash_disbursement/cash_disbursement_report_summary', $this->data);
+    }
+
+    /**
+     * Export Report Summary to Excel (Trial Balance format)
+     */
+    function cash_disbursement_report_summary_export() {
+        if (ob_get_level()) { ob_end_clean(); }
+        while (@ob_end_clean());
+        $this->load->library('excel');
+        $date_from = $this->input->get('date_from');
+        $date_to = $this->input->get('date_to');
+        $summary = $this->cash_disbursement_model->get_account_summary($date_from, $date_to);
+        if (empty($summary)) {
+            $this->session->set_flashdata('warning', 'No data available to export');
+            redirect(current_lang() . '/cash_disbursement/cash_disbursement_list', 'refresh');
+            exit();
+        }
+        $grand_total = 0;
+        foreach ($summary as $row) { $grand_total += $row->total_amount; }
+        $objPHPExcel = new PHPExcel();
+        $objPHPExcel->getProperties()->setCreator(company_info()->name)
+            ->setTitle(lang('cash_disbursement_report_summary'))
+            ->setSubject('Cash Disbursement Report Summary');
+        $sheet = $objPHPExcel->setActiveSheetIndex(0);
+        $sheet->setTitle('Report Summary');
+        $sheet->setCellValue('A1', lang('account_code'));
+        $sheet->setCellValue('B1', lang('account_name'));
+        $sheet->setCellValue('C1', lang('journalentry_debit'));
+        $sheet->setCellValue('D1', lang('journalentry_credit'));
+        $headerStyle = array('font' => array('bold' => true), 'fill' => array('type' => PHPExcel_Style_Fill::FILL_SOLID, 'color' => array('rgb' => 'E0E0E0')));
+        $sheet->getStyle('A1:D1')->applyFromArray($headerStyle);
+        $row = 2;
+        foreach ($summary as $r) {
+            $sheet->setCellValue('A' . $row, $r->account);
+            $sheet->setCellValue('B' . $row, $r->account_name);
+            $sheet->setCellValue('C' . $row, $r->total_amount);
+            $sheet->setCellValue('D' . $row, 0);
+            $row++;
+        }
+        $sheet->setCellValue('A' . $row, '—');
+        $sheet->setCellValue('B' . $row, lang('cash_and_bank'));
+        $sheet->setCellValue('C' . $row, 0);
+        $sheet->setCellValue('D' . $row, $grand_total);
+        $row++;
+        $sheet->setCellValue('A' . $row, '');
+        $sheet->setCellValue('B' . $row, lang('total'));
+        $sheet->setCellValue('C' . $row, $grand_total);
+        $sheet->setCellValue('D' . $row, $grand_total);
+        $sheet->getStyle('C2:D' . $row)->getNumberFormat()->setFormatCode('#,##0.00');
+        foreach (range('A', 'D') as $col) { $sheet->getColumnDimension($col)->setAutoSize(true); }
+        header('Content-Type: application/vnd.ms-excel');
+        header('Content-Disposition: attachment;filename="cash_disbursement_report_summary_' . date('Y-m-d') . '.xls"');
+        header('Cache-Control: max-age=0');
+        $objWriter = PHPExcel_IOFactory::createWriter($objPHPExcel, 'Excel5');
+        $objWriter->save('php://output');
+        exit();
+    }
+
+    /**
+     * Report Details: Line-by-line detail grouped by transaction, trial balance layout
+     */
+    function cash_disbursement_report_details() {
+        $date_from = $this->input->get('date_from');
+        $date_to = $this->input->get('date_to');
+        $this->data['date_from'] = $date_from;
+        $this->data['date_to'] = $date_to;
+        $this->data['details'] = $this->cash_disbursement_model->get_account_details($date_from, $date_to);
+        $this->data['title'] = lang('cash_disbursement_report_details');
+        $this->load->view('cash_disbursement/cash_disbursement_report_details', $this->data);
+    }
+
+    /**
+     * Export Report Details to Excel (grouped by transaction, trial balance layout)
+     */
+    function cash_disbursement_report_details_export() {
+        if (ob_get_level()) { ob_end_clean(); }
+        while (@ob_end_clean());
+        $this->load->library('excel');
+        $date_from = $this->input->get('date_from');
+        $date_to = $this->input->get('date_to');
+        $details = $this->cash_disbursement_model->get_account_details($date_from, $date_to);
+        if (empty($details)) {
+            $this->session->set_flashdata('warning', 'No data available to export');
+            redirect(current_lang() . '/cash_disbursement/cash_disbursement_list', 'refresh');
+            exit();
+        }
+        $grouped = array();
+        foreach ($details as $row) {
+            $key = $row->disburse_no;
+            if (!isset($grouped[$key])) {
+                $grouped[$key] = array('disburse_no' => $row->disburse_no, 'disburse_date' => $row->disburse_date, 'paid_to' => $row->paid_to, 'payment_method' => $row->payment_method, 'disburse_description' => isset($row->disburse_description) ? $row->disburse_description : '', 'lines' => array());
+            }
+            $grouped[$key]['lines'][] = $row;
+        }
+        $objPHPExcel = new PHPExcel();
+        $objPHPExcel->getProperties()->setCreator(company_info()->name)
+            ->setTitle(lang('cash_disbursement_report_details'))
+            ->setSubject('Cash Disbursement Report Details');
+        $sheet = $objPHPExcel->setActiveSheetIndex(0);
+        $sheet->setTitle('Report Details');
+        $sheet->setCellValue('A1', lang('cash_disbursement_no'));
+        $sheet->setCellValue('B1', lang('cash_disbursement_date'));
+        $sheet->setCellValue('C1', lang('cash_disbursement_paid_to'));
+        $sheet->setCellValue('D1', lang('cash_disbursement_payment_method'));
+        $sheet->setCellValue('E1', lang('account_code'));
+        $sheet->setCellValue('F1', lang('account_name'));
+        $sheet->setCellValue('G1', lang('journalentry_debit'));
+        $sheet->setCellValue('H1', lang('journalentry_credit'));
+        $headerStyle = array('font' => array('bold' => true), 'fill' => array('type' => PHPExcel_Style_Fill::FILL_SOLID, 'color' => array('rgb' => 'E0E0E0')));
+        $sheet->getStyle('A1:H1')->applyFromArray($headerStyle);
+        $row = 2;
+        foreach ($grouped as $txn) {
+            $lines = $txn['lines'];
+            $txn_total = 0;
+            foreach ($lines as $l) { $txn_total += $l->amount; }
+            foreach ($lines as $l) {
+                $sheet->setCellValue('A' . $row, $txn['disburse_no']);
+                $sheet->setCellValue('B' . $row, date('d-m-Y', strtotime($txn['disburse_date'])));
+                $sheet->setCellValue('C' . $row, $txn['paid_to']);
+                $sheet->setCellValue('D' . $row, $txn['payment_method']);
+                $sheet->setCellValue('E' . $row, $l->account);
+                $sheet->setCellValue('F' . $row, $l->account_name . (!empty($l->line_description) ? ' — ' . $l->line_description : ''));
+                $sheet->setCellValue('G' . $row, $l->amount);
+                $sheet->setCellValue('H' . $row, 0);
+                $row++;
+            }
+            $sheet->setCellValue('A' . $row, $txn['disburse_no']);
+            $sheet->setCellValue('B' . $row, date('d-m-Y', strtotime($txn['disburse_date'])));
+            $sheet->setCellValue('C' . $row, $txn['paid_to']);
+            $sheet->setCellValue('D' . $row, $txn['payment_method']);
+            $sheet->setCellValue('E' . $row, '—');
+            $sheet->setCellValue('F' . $row, lang('cash_and_bank'));
+            $sheet->setCellValue('G' . $row, 0);
+            $sheet->setCellValue('H' . $row, $txn_total);
+            $row++;
+        }
+        $sheet->getStyle('G2:H' . ($row - 1))->getNumberFormat()->setFormatCode('#,##0.00');
+        foreach (range('A', 'H') as $col) { $sheet->getColumnDimension($col)->setAutoSize(true); }
+        header('Content-Type: application/vnd.ms-excel');
+        header('Content-Disposition: attachment;filename="cash_disbursement_report_details_' . date('Y-m-d') . '.xls"');
+        header('Cache-Control: max-age=0');
+        $objWriter = PHPExcel_IOFactory::createWriter($objPHPExcel, 'Excel5');
+        $objWriter->save('php://output');
+        exit();
     }
 
     /**
@@ -308,8 +469,9 @@ class Cash_disbursement extends CI_Controller {
         // Load Excel library
         $this->load->library('excel');
         
-        // Get cash disbursements data
-        $cash_disbursements = $this->cash_disbursement_model->get_cash_disbursements()->result();
+        $date_from = $this->input->get('date_from');
+        $date_to = $this->input->get('date_to');
+        $cash_disbursements = $this->cash_disbursement_model->get_cash_disbursements(null, null, $date_from, $date_to)->result();
         
         if (empty($cash_disbursements)) {
             if (ob_get_level()) {

@@ -59,6 +59,27 @@ if (isset($message) && !empty($message)) {
                                 <a href="<?php echo site_url(current_lang() . '/cash_receipt/cash_receipt_list'); ?>" class="btn btn-default">
                                     <i class="fa fa-times"></i> Clear
                                 </a>
+                                <?php
+                                $report_summary_url = site_url(current_lang() . '/cash_receipt/cash_receipt_report_summary');
+                                $report_details_url = site_url(current_lang() . '/cash_receipt/cash_receipt_report_details');
+                                if (isset($date_from) && !empty($date_from)) {
+                                    $report_summary_url .= '?date_from=' . urlencode($date_from);
+                                    $report_details_url .= '?date_from=' . urlencode($date_from);
+                                    if (isset($date_to) && !empty($date_to)) {
+                                        $report_summary_url .= '&date_to=' . urlencode($date_to);
+                                        $report_details_url .= '&date_to=' . urlencode($date_to);
+                                    }
+                                } elseif (isset($date_to) && !empty($date_to)) {
+                                    $report_summary_url .= '?date_to=' . urlencode($date_to);
+                                    $report_details_url .= '?date_to=' . urlencode($date_to);
+                                }
+                                ?>
+                                <a href="<?php echo $report_summary_url; ?>" class="btn btn-info" target="_blank">
+                                    <i class="fa fa-bar-chart"></i> <?php echo lang('cash_receipt_report_summary'); ?>
+                                </a>
+                                <a href="<?php echo $report_details_url; ?>" class="btn btn-info" target="_blank">
+                                    <i class="fa fa-list"></i> <?php echo lang('cash_receipt_report_details'); ?>
+                                </a>
                             </div>
                         </div>
                     </form>

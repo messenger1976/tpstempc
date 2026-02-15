@@ -312,6 +312,15 @@ $lang['cash_receipt_delete_fail'] = 'Failed to delete cash receipt';
 $lang['cash_receipt_not_found'] = 'Cash receipt not found';
 $lang['cash_receipt_no_exists'] = 'This receipt number already exists';
 $lang['cash_receipt_no_items'] = 'Please add at least one line item';
+$lang['cash_receipt_report_summary'] = 'Cash Receipt Report Summary';
+$lang['cash_receipt_report_details'] = 'Cash Receipt Report Details';
+$lang['cash_receipt_period'] = 'Period';
+$lang['cash_and_bank'] = 'Cash and Bank';
+$lang['cash_receipt_transactions'] = 'transactions';
+$lang['all_dates'] = 'All dates';
+$lang['account_code'] = 'Account Code';
+$lang['report_generated'] = 'Report Generated';
+$lang['close'] = 'Close';
 
 // Cash Disbursement Module
 $lang['page_cash_disbursement'] = 'Cash Disbursement';
@@ -342,6 +351,10 @@ $lang['cash_disbursement_delete_fail'] = 'Failed to delete cash disbursement';
 $lang['cash_disbursement_not_found'] = 'Cash disbursement not found';
 $lang['cash_disbursement_no_exists'] = 'This disbursement number already exists';
 $lang['cash_disbursement_no_items'] = 'Please add at least one line item';
+$lang['cash_disbursement_report_summary'] = 'Cash Disbursement Report Summary';
+$lang['cash_disbursement_report_details'] = 'Cash Disbursement Report Details';
+$lang['cash_disbursement_period'] = 'Period';
+$lang['cash_disbursement_transactions'] = 'transactions';
 $lang['cash_disbursement_voucher'] = 'Cash Disbursement Voucher';
 $lang['cash_disbursement_statement'] = 'Cash Disbursement Statement';
 $lang['accounting_entries'] = 'Accounting Entries';

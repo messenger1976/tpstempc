@@ -56,7 +56,7 @@ if (isset($message) && !empty($message)) {
                                 <button type="submit" class="btn btn-primary">
                                     <i class="fa fa-filter"></i> Filter
                                 </button>
-                                <a href="<?php echo site_url(current_lang() . '/cash_disbursement/cash_disbursement_list'); ?>" class="btn btn-default">
+                                <a href="<?php echo site_url(current_lang() . '/cash_disbursement/cash_disbursement_list?clear=1'); ?>" class="btn btn-default">
                                     <i class="fa fa-times"></i> Clear
                                 </a>
                                 <?php

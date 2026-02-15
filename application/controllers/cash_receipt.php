@@ -33,19 +33,40 @@ class Cash_receipt extends CI_Controller {
 
     /**
      * Display list of all cash receipts
+     * Defaults date_from/date_to to current date. Persists selected dates in session when navigating away and back.
      */
     function cash_receipt_list() {
         $this->data['title'] = lang('cash_receipt_list');
         
-        // Get date range filters
+        $today = date('Y-m-d');
         $date_from = $this->input->get('date_from');
         $date_to = $this->input->get('date_to');
+        $clear = $this->input->get('clear') === '1' || $this->input->get('clear') === 1;
+
+        if ($clear) {
+            $this->session->unset_userdata(array('cash_receipt_list_date_from', 'cash_receipt_list_date_to'));
+            redirect(current_lang() . '/cash_receipt/cash_receipt_list?date_from=' . $today . '&date_to=' . $today, 'refresh');
+            return;
+        } elseif (!empty($date_from) || !empty($date_to)) {
+            $date_from = !empty($date_from) ? $date_from : $today;
+            $date_to = !empty($date_to) ? $date_to : $today;
+            $this->session->set_userdata('cash_receipt_list_date_from', $date_from);
+            $this->session->set_userdata('cash_receipt_list_date_to', $date_to);
+        } else {
+            $stored_from = $this->session->userdata('cash_receipt_list_date_from');
+            $stored_to = $this->session->userdata('cash_receipt_list_date_to');
+            if (!empty($stored_from) || !empty($stored_to)) {
+                $date_from = !empty($stored_from) ? $stored_from : $today;
+                $date_to = !empty($stored_to) ? $stored_to : $today;
+            } else {
+                $date_from = $today;
+                $date_to = $today;
+            }
+        }
         
-        // Pass date filters to view for form persistence
         $this->data['date_from'] = $date_from;
         $this->data['date_to'] = $date_to;
         
-        // Get cash receipts with optional date range filter
         $this->data['cash_receipts'] = $this->cash_receipt_model->get_cash_receipts(null, null, $date_from, $date_to)->result();
         
         $this->data['content'] = 'cash_receipt/cash_receipt_list';

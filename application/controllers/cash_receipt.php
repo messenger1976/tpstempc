@@ -543,26 +543,17 @@ class Cash_receipt extends CI_Controller {
         $row = 2;
         foreach ($grouped as $txn) {
             $lines = $txn['lines'];
-            $txn_total = 0;
-            foreach ($lines as $l) { $txn_total += $l->amount; }
-            $sheet->setCellValue('A' . $row, $txn['receipt_no']);
-            $sheet->setCellValue('B' . $row, date('d-m-Y', strtotime($txn['receipt_date'])));
-            $sheet->setCellValue('C' . $row, $txn['received_from']);
-            $sheet->setCellValue('D' . $row, $txn['payment_method']);
-            $sheet->setCellValue('E' . $row, '—');
-            $sheet->setCellValue('F' . $row, lang('cash_and_bank'));
-            $sheet->setCellValue('G' . $row, $txn_total);
-            $sheet->setCellValue('H' . $row, 0);
-            $row++;
             foreach ($lines as $l) {
+                $debit = isset($l->debit) ? floatval($l->debit) : 0;
+                $credit = isset($l->credit) ? floatval($l->credit) : 0;
                 $sheet->setCellValue('A' . $row, $txn['receipt_no']);
                 $sheet->setCellValue('B' . $row, date('d-m-Y', strtotime($txn['receipt_date'])));
                 $sheet->setCellValue('C' . $row, $txn['received_from']);
                 $sheet->setCellValue('D' . $row, $txn['payment_method']);
                 $sheet->setCellValue('E' . $row, $l->account);
                 $sheet->setCellValue('F' . $row, $l->account_name . (!empty($l->line_description) ? ' — ' . $l->line_description : ''));
-                $sheet->setCellValue('G' . $row, 0);
-                $sheet->setCellValue('H' . $row, $l->amount);
+                $sheet->setCellValue('G' . $row, $debit);
+                $sheet->setCellValue('H' . $row, $credit);
                 $row++;
             }
         }

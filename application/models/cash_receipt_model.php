@@ -640,25 +640,46 @@ class Cash_receipt_model extends CI_Model {
 
     /**
      * Get detailed lines for cash receipt report (all receipt items with receipt header info).
+     * Uses same logic as get_journal_entries_by_receipt/transaction view: actual debit/credit per line,
+     * plus Cash/Bank debit when legacy (credits-only). Excludes cancelled receipts.
      */
     function get_account_details($date_from = null, $date_to = null) {
         $pin = current_user()->PIN;
-        $sql = "SELECT cr.receipt_no, cr.receipt_date, cr.received_from, cr.payment_method, cr.description AS receipt_description,
-                cri.account, COALESCE(ac.name, 'Unknown Account') AS account_name, cri.description AS line_description, cri.amount
-                FROM cash_receipt_items cri
-                INNER JOIN cash_receipts cr ON cr.id = cri.receipt_id AND cr.PIN = ?
-                LEFT JOIN account_chart ac ON ac.account = cri.account AND ac.PIN = ?
-                WHERE cri.PIN = ?";
-        $params = array($pin, $pin, $pin);
+        $this->db->select('id, receipt_no, receipt_date, received_from, payment_method, description');
+        $this->db->from('cash_receipts');
+        $this->db->where('PIN', $pin);
+        $this->db->where('cancelled', 0);
         if (!empty($date_from)) {
-            $sql .= " AND cr.receipt_date >= ?";
-            $params[] = $date_from;
+            $this->db->where('receipt_date >=', $date_from);
         }
         if (!empty($date_to)) {
-            $sql .= " AND cr.receipt_date <= ?";
-            $params[] = $date_to;
+            $this->db->where('receipt_date <=', $date_to);
         }
-        $sql .= " ORDER BY cr.receipt_date ASC, cr.id ASC, cri.id ASC";
-        return $this->db->query($sql, $params)->result();
+        $this->db->order_by('receipt_date ASC');
+        $this->db->order_by('id ASC');
+        $receipts = $this->db->get()->result();
+
+        $details = array();
+        foreach ($receipts as $cr) {
+            $ae = $this->get_journal_entries_by_receipt($cr->id);
+            $items = isset($ae['items']) ? $ae['items'] : array();
+            foreach ($items as $item) {
+                $row = (object) array(
+                    'receipt_no' => $cr->receipt_no,
+                    'receipt_date' => $cr->receipt_date,
+                    'received_from' => $cr->received_from,
+                    'payment_method' => $cr->payment_method,
+                    'receipt_description' => isset($cr->description) ? $cr->description : '',
+                    'account' => isset($item->account) ? $item->account : '',
+                    'account_name' => isset($item->account_name) ? $item->account_name : '',
+                    'line_description' => isset($item->description) ? $item->description : '',
+                    'debit' => isset($item->debit) ? floatval($item->debit) : 0,
+                    'credit' => isset($item->credit) ? floatval($item->credit) : 0,
+                    'amount' => (isset($item->debit) ? floatval($item->debit) : 0) + (isset($item->credit) ? floatval($item->credit) : 0)
+                );
+                $details[] = $row;
+            }
+        }
+        return $details;
     }
 }

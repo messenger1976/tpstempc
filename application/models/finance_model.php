@@ -174,6 +174,135 @@ class Finance_Model extends CI_Model {
     }
 
     /**
+     * Check if a journal entry (general_journal) has been posted to general ledger.
+     * Placed near top of class to avoid scope issues.
+     */
+    function is_journal_posted($journal_entry_id) {
+        $pin = current_user()->PIN;
+        $this->db->where('refferenceID', $journal_entry_id);
+        $this->db->where('fromtable', 'general_journal');
+        $this->db->where('PIN', $pin);
+        $count = $this->db->count_all_results('general_ledger');
+        return $count > 0;
+    }
+
+    /**
+     * Post journal entries from general_journal to general_ledger. Placed near top to avoid scope issues.
+     */
+    function post_journal_to_general_ledger($journal_entry_id = null, $journal_id = 5) {
+        $pin = current_user()->PIN;
+        $this->db->trans_start();
+        $this->db->select('gje.*');
+        $this->db->from('general_journal_entry gje');
+        $this->db->join('general_ledger gl', 'gl.refferenceID = gje.id AND gl.fromtable = "general_journal"', 'left');
+        $this->db->where('gl.id IS NULL');
+        $this->db->where('gje.PIN', $pin);
+        if ($journal_entry_id) {
+            $this->db->where('gje.id', $journal_entry_id);
+        }
+        $unposted_entries = $this->db->get()->result();
+        if (empty($unposted_entries)) {
+            $this->db->trans_complete();
+            return false;
+        }
+        foreach ($unposted_entries as $entry) {
+            if (!isset($entry->entryid)) {
+                $entry->entryid = $entry->id;
+            }
+            $line_items = $this->db->where('entryid', $entry->id)->get('general_journal')->result();
+            if (empty($line_items)) {
+                $line_items = $this->db->where('entryid', $entry->id)->where('PIN', $pin)->get('general_journal')->result();
+            }
+            if (empty($line_items)) {
+                continue;
+            }
+            $total_debit = 0;
+            $total_credit = 0;
+            foreach ($line_items as $item) {
+                $total_debit += floatval($item->debit);
+                $total_credit += floatval($item->credit);
+            }
+            if (abs($total_debit - $total_credit) > 0.01) {
+                log_message('error', 'Journal entry ' . $entry->entryid . ' does not balance.');
+                continue;
+            }
+            $ledger_entry = array('date' => $entry->entrydate, 'PIN' => $pin);
+            $this->db->insert('general_ledger_entry', $ledger_entry);
+            $ledger_entry_id = $this->db->insert_id();
+            if (!$ledger_entry_id) {
+                continue;
+            }
+            $ledger = array(
+                'journalID' => $journal_id,
+                'refferenceID' => $entry->id,
+                'entryid' => $ledger_entry_id,
+                'date' => $entry->entrydate,
+                'linkto' => 'general_journal.entryid',
+                'fromtable' => 'general_journal',
+                'PIN' => $pin
+            );
+            foreach ($line_items as $item) {
+                $account_info = account_row_info($item->account);
+                if (!$account_info) {
+                    continue;
+                }
+                $ledger['account'] = $item->account;
+                $ledger['debit'] = floatval($item->debit);
+                $ledger['credit'] = floatval($item->credit);
+                $ledger['description'] = isset($item->description) ? $item->description : '';
+                $ledger['account_type'] = $account_info->account_type;
+                $ledger['sub_account_type'] = isset($account_info->sub_account_type) ? $account_info->sub_account_type : null;
+                $this->db->insert('general_ledger', $ledger);
+            }
+        }
+        $this->db->trans_complete();
+        return $this->db->trans_status();
+    }
+
+    /**
+     * Get journal entry details with line items (general_journal_entry).
+     * Placed near top of class to avoid scope issues.
+     */
+    function get_journal_entry_details($entry_id) {
+        $pin = current_user()->PIN;
+        $entry = $this->db->where('id', $entry_id)->where('PIN', $pin)->get('general_journal_entry')->row();
+        if (!$entry) {
+            $entry = $this->db->where('id', $entry_id)->get('general_journal_entry')->row();
+        }
+        if (!$entry) {
+            return FALSE;
+        }
+        $actual_id = isset($entry->id) ? $entry->id : (isset($entry->entryid) ? $entry->entryid : $entry_id);
+        $entry->entryid = $actual_id;
+        $sql = "SELECT * FROM general_journal WHERE entryid = ? ORDER BY id ASC";
+        $entry->line_items = $this->db->query($sql, array(intval($actual_id)))->result();
+        if (empty($entry->line_items) && intval($actual_id) != intval($entry_id)) {
+            $entry->line_items = $this->db->query($sql, array(intval($entry_id)))->result();
+        }
+        if (empty($entry->line_items)) {
+            $entry->line_items = $this->db->query($sql, array($actual_id))->result();
+        }
+        if (empty($entry->line_items) && $actual_id != $entry_id) {
+            $entry->line_items = $this->db->query($sql, array($entry_id))->result();
+        }
+        if (!isset($entry->line_items) || !is_array($entry->line_items)) {
+            $entry->line_items = array();
+        }
+        $entry->is_posted = $this->is_journal_posted($actual_id);
+        $entry->total_debit = 0;
+        $entry->total_credit = 0;
+        foreach ($entry->line_items as $item) {
+            $entry->total_debit += floatval($item->debit);
+            $entry->total_credit += floatval($item->credit);
+        }
+        foreach ($entry->line_items as $item) {
+            $account_info = account_row_info($item->account);
+            $item->account_name = $account_info ? $account_info->name : 'Account not found';
+        }
+        return $entry;
+    }
+
+    /**
      * Get list of unposted journal entries from general_journal_entry
      * @return array List of unposted journal entries with details
      */
@@ -1904,270 +2033,6 @@ $pin=current_user()->PIN;
         $this->db->where('account', $account);
         $result = $this->db->get('beginning_balances');
         return $result->num_rows() > 0;
-    }
-
-    /**
-     * Post journal entries to general ledger
-     * 
-     * This function posts journal entries from general_journal to general_ledger
-     * 
-     * @param int $journal_entry_id Optional. Specific journal entry ID to post. If null, posts all unposted entries
-     * @param int $journal_id Optional. Journal type ID (from journal table). Default is 5 (Manual Journal Entry)
-     * @return bool True on success, False on failure
-     */
-    function post_journal_to_general_ledger($journal_entry_id = null, $journal_id = 5) {
-        $pin = current_user()->PIN;
-        $this->db->trans_start();
-
-        // Build query to find unposted journal entries
-        // Note: general_journal_entry uses 'id' as primary key, not 'entryid'
-        $this->db->select('gje.*');
-        $this->db->from('general_journal_entry gje');
-        $this->db->join('general_ledger gl', 'gl.refferenceID = gje.id AND gl.fromtable = "general_journal"', 'left');
-        $this->db->where('gl.id IS NULL'); // Not yet posted
-        $this->db->where('gje.PIN', $pin);
-        
-        if ($journal_entry_id) {
-            $this->db->where('gje.id', $journal_entry_id);
-        }
-        
-        $unposted_entries = $this->db->get()->result();
-
-        if (empty($unposted_entries)) {
-            $this->db->trans_complete();
-            return false; // No unposted entries found
-        }
-
-        foreach ($unposted_entries as $entry) {
-            // Ensure entryid property exists (for compatibility)
-            if (!isset($entry->entryid)) {
-                $entry->entryid = $entry->id;
-            }
-            
-            // Get line items for this entry - use entry's id (which is the primary key)
-            // Try without PIN first (more reliable)
-            $line_items = $this->db->where('entryid', $entry->id)
-                                   ->get('general_journal')
-                                   ->result();
-            
-            // If no results and PIN column exists, try with PIN filter
-            if (empty($line_items)) {
-                $line_items = $this->db->where('entryid', $entry->id)
-                                       ->where('PIN', $pin)
-                                       ->get('general_journal')
-                                       ->result();
-            }
-
-            if (empty($line_items)) {
-                continue; // Skip if no line items
-            }
-
-            // Verify debits equal credits
-            $total_debit = 0;
-            $total_credit = 0;
-            foreach ($line_items as $item) {
-                $total_debit += floatval($item->debit);
-                $total_credit += floatval($item->credit);
-            }
-
-            if (abs($total_debit - $total_credit) > 0.01) { // Allow small rounding differences
-                log_message('error', 'Journal entry ' . $entry->entryid . ' does not balance. Debit: ' . $total_debit . ', Credit: ' . $total_credit);
-                continue; // Skip unbalanced entries
-            }
-
-            // Create general ledger entry header
-            $ledger_entry = array(
-                'date' => $entry->entrydate,
-                'PIN' => $pin
-            );
-            $this->db->insert('general_ledger_entry', $ledger_entry);
-            $ledger_entry_id = $this->db->insert_id();
-
-            if (!$ledger_entry_id) {
-                log_message('error', 'Failed to create general_ledger_entry for journal entry ' . $entry->entryid);
-                continue;
-            }
-
-            // Base ledger data structure
-            $ledger = array(
-                'journalID' => $journal_id,
-                'refferenceID' => $entry->id, // Use id (primary key), not entryid
-                'entryid' => $ledger_entry_id,
-                'date' => $entry->entrydate,
-                'linkto' => 'general_journal.entryid',
-                'fromtable' => 'general_journal',
-                'PIN' => $pin
-            );
-
-            // Post each line item to general ledger
-            foreach ($line_items as $item) {
-                // Get account information
-                $account_info = account_row_info($item->account);
-                if (!$account_info) {
-                    log_message('error', 'Account not found: ' . $item->account . ' for journal entry ' . $entry->entryid);
-                    continue; // Skip if account doesn't exist
-                }
-
-                $ledger['account'] = $item->account;
-                $ledger['debit'] = floatval($item->debit);
-                $ledger['credit'] = floatval($item->credit);
-                $ledger['description'] = $item->description;
-                $ledger['account_type'] = $account_info->account_type;
-                $ledger['sub_account_type'] = isset($account_info->sub_account_type) ? $account_info->sub_account_type : null;
-
-                $this->db->insert('general_ledger', $ledger);
-            }
-        }
-
-        $this->db->trans_complete();
-        return $this->db->trans_status();
-    }
-
-    /**
-     * Check if a journal entry has been posted to general ledger
-     * 
-     * @param int $journal_entry_id Journal entry ID
-     * @return bool True if posted, False if not posted
-     */
-    function is_journal_posted($journal_entry_id) {
-        $pin = current_user()->PIN;
-        $this->db->where('refferenceID', $journal_entry_id);
-        $this->db->where('fromtable', 'general_journal');
-        $this->db->where('PIN', $pin);
-        $count = $this->db->count_all_results('general_ledger');
-        return $count > 0;
-    }
-
-    /**
-     * Get journal entry details with line items
-     * 
-     * @param int $entry_id Journal entry ID
-     * @return object Journal entry with line items
-     */
-    function get_journal_entry_details($entry_id) {
-        $pin = current_user()->PIN;
-        log_message('debug', 'get_journal_entry_details called with entry_id=' . $entry_id . ', PIN=' . $pin);
-        
-        // Get entry header - general_journal_entry uses 'id' as primary key (not 'entryid')
-        // First try with PIN filter
-        $entry = $this->db->where('id', $entry_id)
-                         ->where('PIN', $pin)
-                         ->get('general_journal_entry')
-                         ->row();
-        
-        // If not found with PIN, try without PIN (entry might have been created without PIN or with different PIN)
-        if (!$entry) {
-            log_message('error', 'Journal entry header NOT FOUND with PIN=' . $pin . ', trying without PIN filter');
-            $entry = $this->db->where('id', $entry_id)
-                             ->get('general_journal_entry')
-                             ->row();
-            
-            if ($entry) {
-                log_message('debug', 'Found journal entry header WITHOUT PIN filter: id=' . $entry->id);
-                // Check if PIN matches, if not log a warning
-                if (isset($entry->PIN) && $entry->PIN != $pin) {
-                    log_message('error', 'WARNING: Entry PIN (' . $entry->PIN . ') does not match current user PIN (' . $pin . ')');
-                }
-            } else {
-                log_message('error', 'Journal entry header NOT FOUND even without PIN filter for id=' . $entry_id);
-                // Check if entry exists with any PIN at all
-                $any_entry = $this->db->query("SELECT id, PIN, entrydate, description FROM general_journal_entry WHERE id = ?", array($entry_id))->row();
-                if ($any_entry) {
-                    log_message('error', 'Entry DOES exist but query failed: id=' . $any_entry->id . ', PIN=' . (isset($any_entry->PIN) ? $any_entry->PIN : 'NULL'));
-                } else {
-                    log_message('error', 'Entry with id=' . $entry_id . ' does not exist in database at all');
-                }
-            }
-        } else {
-            log_message('debug', 'Found journal entry header: id=' . $entry->id . ', entrydate=' . $entry->entrydate);
-        }
-        
-        if (!$entry) {
-            log_message('error', 'Returning FALSE - entry not found for id=' . $entry_id);
-            return FALSE;
-        }
-        
-        // Determine the actual ID to use for querying line items
-        // If entry has an 'id' field, use that; otherwise use 'entryid'
-        $actual_id = isset($entry->id) ? $entry->id : (isset($entry->entryid) ? $entry->entryid : $entry_id);
-        
-        // Add entryid property for compatibility
-        $entry->entryid = $actual_id;
-        
-        // Get line items - use exact same approach as test script
-        // Simple query without PIN filter (most reliable, matches test script)
-        $sql = "SELECT * FROM general_journal WHERE entryid = ? ORDER BY id ASC";
-        $entry->line_items = $this->db->query($sql, array(intval($actual_id)))->result();
-        
-        // If no results, try with original entry_id (in case decode_id changed it)
-        if (empty($entry->line_items) && intval($actual_id) != intval($entry_id)) {
-            log_message('debug', 'Trying with original entry_id: ' . $entry_id . ' (actual_id was: ' . $actual_id . ')');
-            $entry->line_items = $this->db->query($sql, array(intval($entry_id)))->result();
-        }
-        
-        // If still no results, try without any type casting (in case entryid is stored as string)
-        if (empty($entry->line_items)) {
-            $sql_str = "SELECT * FROM general_journal WHERE entryid = ? ORDER BY id ASC";
-            $entry->line_items = $this->db->query($sql_str, array($actual_id))->result();
-        }
-        
-        // Last resort: try with string entry_id
-        if (empty($entry->line_items) && $actual_id != $entry_id) {
-            $entry->line_items = $this->db->query($sql_str, array($entry_id))->result();
-        }
-        
-        // Log for debugging and store debug info in entry object for display
-        if (empty($entry->line_items)) {
-            // Debug: Check what entryid values actually exist in general_journal
-            $debug_sql = "SELECT entryid, COUNT(*) as cnt FROM general_journal WHERE entryid IN (?, ?) GROUP BY entryid";
-            $debug_result = $this->db->query($debug_sql, array(intval($actual_id), intval($entry_id)))->result();
-            
-            // Also check all recent entries to see what entryid values exist
-            $recent_sql = "SELECT DISTINCT entryid FROM general_journal ORDER BY id DESC LIMIT 10";
-            $recent_result = $this->db->query($recent_sql)->result();
-            
-            // Check if ANY items exist with this entryid (without type casting)
-            $any_items_sql = "SELECT COUNT(*) as cnt FROM general_journal WHERE entryid = " . intval($actual_id);
-            $any_items = $this->db->query($any_items_sql)->row();
-            
-            // Store debug info for display in view
-            $entry->debug_info = array(
-                'actual_id' => $actual_id,
-                'entry_id' => $entry_id,
-                'matching_entryids' => $debug_result,
-                'recent_entryids' => $recent_result,
-                'any_items_count' => $any_items ? $any_items->cnt : 0,
-                'query_used' => 'SELECT * FROM general_journal WHERE entryid = ' . intval($actual_id)
-            );
-            
-            log_message('error', 'No line items found for journal entry ID: ' . $actual_id . '. Matching entryids: ' . json_encode($debug_result));
-        } else {
-            log_message('debug', 'Found ' . count($entry->line_items) . ' line items for journal entry ID: ' . $actual_id);
-        }
-        
-        // Ensure line_items is always an array (even if empty)
-        if (!isset($entry->line_items) || !is_array($entry->line_items)) {
-            $entry->line_items = array();
-        }
-        
-        // Check if posted
-        $entry->is_posted = $this->is_journal_posted($actual_id);
-        
-        // Calculate totals
-        $entry->total_debit = 0;
-        $entry->total_credit = 0;
-        foreach ($entry->line_items as $item) {
-            $entry->total_debit += floatval($item->debit);
-            $entry->total_credit += floatval($item->credit);
-        }
-        
-        // Get account names
-        foreach ($entry->line_items as $item) {
-            $account_info = account_row_info($item->account);
-            $item->account_name = $account_info ? $account_info->name : 'Account not found';
-        }
-        
-        return $entry;
     }
 
 }

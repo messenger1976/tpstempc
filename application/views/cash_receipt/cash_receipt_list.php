@@ -100,7 +100,9 @@ if (isset($message) && !empty($message)) {
                                 <?php if (!empty($cash_receipts)): ?>
                                     <?php foreach ($cash_receipts as $receipt): ?>
                                         <tr>
-                                            <td><?php echo $receipt->receipt_no; ?></td>
+                                            <td><?php echo $receipt->receipt_no; ?>
+                                                <?php if (!empty($receipt->cancelled)): ?><span class="label label-default"><?php echo lang('cancelled'); ?></span><?php endif; ?>
+                                            </td>
                                             <td><?php echo date('d-m-Y', strtotime($receipt->receipt_date)); ?></td>
                                             <td><?php echo $receipt->received_from; ?></td>
                                             <td><?php echo $receipt->payment_method; ?></td>
@@ -194,6 +196,7 @@ if (isset($message) && !empty($message)) {
             pageLength: 25,
             responsive: true,
             dom: 'lBfrtip',
+            order: [[1, 'desc']], // Sort by receipt_date (column 1) newest first
             buttons: [
                 {extend: 'copy'},
                 {extend: 'csv'},

@@ -133,6 +133,22 @@ if (isset($message) && !empty($message)) {
                         </div>
                     </div>
 
+                    <div class="row">
+                        <div class="col-md-12">
+                            <div class="form-group">
+                                <div class="col-lg-offset-2 col-lg-10">
+                                    <div class="checkbox">
+                                        <label>
+                                            <input type="checkbox" name="cancelled" id="cancelled" value="1" <?php echo set_checkbox('cancelled', '1'); ?>/>
+                                            <?php echo lang('cancelled'); ?>
+                                        </label>
+                                    </div>
+                                    <p class="help-block text-muted" style="margin-left: 0;"><?php echo lang('cash_receipt_cancelled_help'); ?></p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                     <hr/>
 
                     <!-- Line Items Table (journal-entry style: Account | Description | Debit | Credit) -->
@@ -361,8 +377,11 @@ if (isset($message) && !empty($message)) {
                 }
             }
 
-            // Form validation - debits must equal credits
+            // Form validation - debits must equal credits (skip when cancelled)
             $('#cashReceiptForm').on('submit', function(e){
+                if ($('#cancelled').is(':checked')) {
+                    return true; // No line items validation when cancelled
+                }
                 var totalDebit = 0, totalCredit = 0, hasItems = false;
                 $('.debit-input').each(function(){
                     totalDebit += parseFloat($(this).val()) || 0;
@@ -383,6 +402,15 @@ if (isset($message) && !empty($message)) {
                     return false;
                 }
                 return true;
+            });
+
+            // Toggle line items required indicator when cancelled changes
+            $('#cancelled').on('change', function(){
+                if ($(this).is(':checked')) {
+                    $('#lineItemsTable th .required').hide();
+                } else {
+                    $('#lineItemsTable th .required').show();
+                }
             });
 
             // Member Search functionality

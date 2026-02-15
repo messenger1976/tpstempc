@@ -59,12 +59,15 @@ class Cash_receipt extends CI_Controller {
         $this->data['title'] = lang('cash_receipt_create');
         
         // Form validation rules
+        $cancelled = $this->input->post('cancelled') == '1';
         $this->form_validation->set_rules('receipt_date', lang('cash_receipt_date'), 'required');
         $this->form_validation->set_rules('receipt_no', lang('cash_receipt_no'), 'required|callback_check_receipt_no');
         $this->form_validation->set_rules('received_from', lang('cash_receipt_received_from'), 'required');
         $this->form_validation->set_rules('payment_method', lang('cash_receipt_payment_method'), 'required');
         $this->form_validation->set_rules('description', lang('cash_receipt_description'), 'required');
-        $this->form_validation->set_rules('account[]', lang('cash_receipt_account'), 'required');
+        if (!$cancelled) {
+            $this->form_validation->set_rules('account[]', lang('cash_receipt_account'), 'required');
+        }
 
         if ($this->form_validation->run() == TRUE) {
             // Prepare receipt data
@@ -77,39 +80,39 @@ class Cash_receipt extends CI_Controller {
                 'bank_name' => $this->input->post('bank_name'),
                 'description' => $this->input->post('description'),
                 'total_amount' => 0,
+                'cancelled' => $cancelled ? 1 : 0,
                 'createdby' => current_user()->id,
                 'PIN' => current_user()->PIN,
                 'created_at' => date('Y-m-d H:i:s')
             );
 
-            // Get line items (debit/credit style like journal entry)
-            $accounts = $this->input->post('account');
-            $debits = $this->input->post('debit');
-            $credits = $this->input->post('credit');
-            $line_descriptions = $this->input->post('line_description');
-            
+            // Get line items (skip when cancelled - just record document reference)
             $line_items = array();
             $total_debit = 0;
             $total_credit = 0;
-            
-            if (is_array($accounts)) {
-                foreach ($accounts as $key => $account) {
-                    $debit = isset($debits[$key]) ? floatval(str_replace(',', '', $debits[$key])) : 0;
-                    $credit = isset($credits[$key]) ? floatval(str_replace(',', '', $credits[$key])) : 0;
-                    if (!empty($account) && ($debit > 0 || $credit > 0)) {
-                        $line_items[] = array(
-                            'account' => $account,
-                            'debit' => $debit,
-                            'credit' => $credit,
-                            'amount' => $debit + $credit,
-                            'description' => isset($line_descriptions[$key]) ? $line_descriptions[$key] : ''
-                        );
-                        $total_debit += $debit;
-                        $total_credit += $credit;
+            if (!$cancelled) {
+                $accounts = $this->input->post('account');
+                $debits = $this->input->post('debit');
+                $credits = $this->input->post('credit');
+                $line_descriptions = $this->input->post('line_description');
+                if (is_array($accounts)) {
+                    foreach ($accounts as $key => $account) {
+                        $debit = isset($debits[$key]) ? floatval(str_replace(',', '', $debits[$key])) : 0;
+                        $credit = isset($credits[$key]) ? floatval(str_replace(',', '', $credits[$key])) : 0;
+                        if (!empty($account) && ($debit > 0 || $credit > 0)) {
+                            $line_items[] = array(
+                                'account' => $account,
+                                'debit' => $debit,
+                                'credit' => $credit,
+                                'amount' => $debit + $credit,
+                                'description' => isset($line_descriptions[$key]) ? $line_descriptions[$key] : ''
+                            );
+                            $total_debit += $debit;
+                            $total_credit += $credit;
+                        }
                     }
                 }
             }
-            
             $receipt_data['total_amount'] = max($total_debit, $total_credit);
 
             // Create cash receipt

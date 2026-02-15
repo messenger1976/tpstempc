@@ -100,7 +100,9 @@ if (isset($message) && !empty($message)) {
                                 <?php if (!empty($cash_disbursements)): ?>
                                     <?php foreach ($cash_disbursements as $disburse): ?>
                                         <tr>
-                                            <td><?php echo $disburse->disburse_no; ?></td>
+                                            <td><?php echo $disburse->disburse_no; ?>
+                                                <?php if (!empty($disburse->cancelled)): ?><span class="label label-default"><?php echo lang('cancelled'); ?></span><?php endif; ?>
+                                            </td>
                                             <td><?php echo date('d-m-Y', strtotime($disburse->disburse_date)); ?></td>
                                             <td><?php echo $disburse->paid_to; ?></td>
                                             <td><?php echo $disburse->payment_method; ?></td>
@@ -162,6 +164,7 @@ if (isset($message) && !empty($message)) {
             pageLength: 25,
             responsive: true,
             dom: 'lBfrtip',
+            order: [[1, 'desc']], // Sort by disburse_date (column 1) newest first
             buttons: [
                 {extend: 'copy'},
                 {extend: 'csv'},

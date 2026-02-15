@@ -2,13 +2,17 @@
 
 ## Overview
 
-The savings account creation feature now automatically posts transactions to the General Ledger (GL) when a new savings account is created with an opening balance. This ensures proper double-entry bookkeeping and maintains accurate financial records.
+The savings module automatically posts transactions to the General Ledger (GL) for account opening, deposits, withdrawals, and interest. This ensures proper double-entry bookkeeping and maintains accurate financial records.
 
 ## Features
 
-- ✅ **Automatic GL Posting**: When a savings account is created with an opening balance, the system automatically creates journal entries in the General Ledger
-- ✅ **Double-Entry Accounting**: Properly debits cash/bank account and credits savings liability account
-- ✅ **Payment Method Mapping**: Automatically maps payment methods (Cash, Cheque, Bank Transfer, Mobile Money) to appropriate GL accounts
+- ✅ **Automatic GL Posting**: Creates journal entries for opening balance, beginning balance, normal deposits, withdrawals, and interest
+- ✅ **Double-Entry Accounting**: Proper debit/credit treatment per transaction type
+- ✅ **Deposit (incl. Opening)**: Debit cash/bank, Credit savings liability
+- ✅ **Withdrawal**: Debit savings liability, Credit cash/bank
+- ✅ **Interest**: Debit interest expense account, Credit savings liability
+- ✅ **Payment Method Mapping**: Maps payment methods (Cash, Cheque, Bank Transfer, Mobile Money) to appropriate GL accounts
+- ✅ **Interest Expense Account**: Searches for expense account with "Interest" in name (account_type 50 or 70000)
 - ✅ **Duplicate Prevention**: Checks if entry already exists before posting to prevent duplicates
 - ✅ **Transaction Safety**: Uses database transactions to ensure data integrity
 - ✅ **Error Logging**: Comprehensive logging for troubleshooting
@@ -47,41 +51,59 @@ Ensure your chart of accounts has appropriate cash/bank accounts that match paym
 
 The system will automatically search for accounts matching these names in the Asset account type (account_type = 1 or 10000).
 
+### Step 4: Interest Expense Account (for interest postings)
+
+For interest transactions to post to GL, you need an **interest expense account** in your chart of accounts:
+
+1. Create an expense account (account_type 50 or 70000) with "Interest" in the name (e.g., "Savings Interest Expense", "Interest Expense")
+2. The system searches for accounts where `name` or `description` contains "Interest" and `account_type` is 50 or 70000
+3. If no interest expense account is found, interest GL posting will fail (transaction still succeeds; check logs)
+
 ## How It Works
 
-### Accounting Entries
+### Accounting Entries by Transaction Type
 
-When a savings account is created with an opening balance:
+| Transaction      | Debit                    | Credit                  |
+|------------------|--------------------------|-------------------------|
+| **Opening/Beginning** | Cash/Bank or Adjustment | Savings Liability       |
+| **Deposit**      | Cash/Bank                | Savings Liability       |
+| **Withdrawal**   | Savings Liability        | Cash/Bank               |
+| **Interest**     | Interest Expense         | Savings Liability       |
 
-**Example:**
-- Member deposits $1,000 cash to open a savings account
-- **Debit**: Cash Account (1010001) - $1,000
+**Example (Deposit):**
+- Member deposits $1,000 cash
+- **Debit**: Cash Account - $1,000
 - **Credit**: Savings Liability Account (from `account_setup`) - $1,000
+
+**Example (Withdrawal):**
+- Member withdraws $500 cash
+- **Debit**: Savings Liability Account - $500
+- **Credit**: Cash Account - $500
+
+**Example (Interest):**
+- Interest of $50 credited to member
+- **Debit**: Interest Expense Account - $50
+- **Credit**: Savings Liability Account - $50
 
 ### Implementation Flow
 
 ```
-create_saving_account() [Controller]
-    ↓
-create_account() [Model]
-    ↓
-credit() [Model] 
-    ↓
-    Detects: systemcomment = 'OPEN ACCOUNT, NORMAL DEPOSIT'
-    ↓
-post_savings_to_gl() [Model]
-    ↓
-    Creates GL Entry:
-    1. Creates general_ledger_entry header
-    2. Debits cash/bank account
-    3. Credits savings liability account
+Deposits (including Opening, Beginning Balance, Interest):
+  credit_debit / create_account / savings_beginning_balance
+    → credit() [Model]
+    → post_savings_to_gl() for OPEN ACCOUNT, BEGINNING BALANCE, NORMAL DEPOSIT, INTEREST
+
+Withdrawals:
+  credit_debit [Deposit/Withdrawal]
+    → debit() [Model]
+    → post_savings_to_gl() for NORMAL WITHDRAWAL
 ```
 
 ### Code Location
 
 - **Main Function**: `post_savings_to_gl()` in `application/models/finance_model.php`
-- **Helper Function**: `get_cash_account_for_savings()` in `application/models/finance_model.php`
-- **Integration Point**: `credit()` function in `application/models/finance_model.php`
+- **Helper Functions**: `get_cash_account_for_savings()`, `get_interest_expense_account_for_savings()` in `application/models/finance_model.php`
+- **Integration Points**: `credit()` and `debit()` in `application/models/finance_model.php`
 
 ## Configuration
 
@@ -202,6 +224,9 @@ ERROR: Cash account not found for payment method: Cash
 - ✅ Create account with zero opening balance (should skip GL posting)
 - ✅ Create account without `account_setup` configured (should log error)
 - ✅ Try creating same account twice (should prevent duplicate posting)
+- ✅ Deposit via Deposit/Withdrawal (NORMAL DEPOSIT → GL)
+- ✅ Withdrawal via Deposit/Withdrawal (NORMAL WITHDRAWAL → GL)
+- ✅ Interest posting (requires interest expense account in chart of accounts)
 
 ## Troubleshooting
 
@@ -218,6 +243,7 @@ ERROR: Cash account not found for payment method: Cash
 2. Run installation script to verify configuration
 3. Ensure savings account types have `account_setup` field populated
 4. Verify cash/bank accounts exist in chart of accounts
+5. For interest: create an expense account (account_type 50 or 70000) with "Interest" in the name
 
 ### Issue: Duplicate GL entries
 
@@ -274,4 +300,5 @@ If you encounter issues:
 
 ## Version History
 
-- **v1.0** (Current): Initial implementation of auto-posting to GL for savings account creation
+- **v1.1**: Extended GL posting to deposits, withdrawals, and interest (credit_debit transactions)
+- **v1.0**: Initial implementation of auto-posting to GL for savings account creation and beginning balance

@@ -18,6 +18,152 @@ class Finance_Model extends CI_Model {
         parent::__construct();
     }
 
+    /**
+     * Get list of unposted journal entries from general_journal_entry
+     * @return array List of unposted journal entries with details
+     */
+    function get_unposted_journal_entries() {
+        $pin = current_user()->PIN;
+        $this->db->select('gje.*, COUNT(gj.id) as line_count');
+        $this->db->from('general_journal_entry gje');
+        $this->db->join('general_journal gj', 'gj.entryid = gje.id', 'left');
+        $this->db->join('general_ledger gl', 'gl.refferenceID = gje.id AND gl.fromtable = "general_journal"', 'left');
+        $this->db->where('gl.id IS NULL');
+        $this->db->where('gje.PIN', $pin);
+        $this->db->group_by('gje.id');
+        $this->db->order_by('gje.entrydate', 'DESC');
+        $this->db->order_by('gje.id', 'DESC');
+        $results = $this->db->get()->result();
+        foreach ($results as $entry) {
+            $line_items = $this->db->where('entryid', $entry->id)->get('general_journal')->result();
+            if (empty($line_items)) {
+                $line_items = $this->db->where('entryid', $entry->id)->where('PIN', $pin)->get('general_journal')->result();
+            }
+            $entry->entryid = $entry->id;
+            $entry->line_count = count($line_items);
+            $entry->total_debit = 0.00;
+            $entry->total_credit = 0.00;
+            $entry->createdby = null;
+            foreach ($line_items as $item) {
+                $entry->total_debit += floatval($item->debit);
+                $entry->total_credit += floatval($item->credit);
+                if (empty($entry->createdby) && !empty($item->createdby)) {
+                    $entry->createdby = $item->createdby;
+                }
+            }
+            $entry->line_count = isset($entry->line_count) ? intval($entry->line_count) : 0;
+            $entry->total_debit = isset($entry->total_debit) ? floatval($entry->total_debit) : 0.00;
+            $entry->total_credit = isset($entry->total_credit) ? floatval($entry->total_credit) : 0.00;
+            if (!empty($entry->createdby)) {
+                $user = $this->db->where('id', $entry->createdby)->get('users')->row();
+                $entry->created_by_name = $user ? $user->username : 'Unknown';
+            } else {
+                $entry->created_by_name = 'Unknown';
+            }
+        }
+        return $results;
+    }
+
+    function get_total_savings_amount($key=null, $account_type_filter=null, $status_filter=null) {
+        $pin = current_user()->PIN;
+        $this->db->select_sum('ma.balance');
+        $this->db->from('members_account ma');
+        $this->db->join('saving_account_type sat', 'ma.account_cat = sat.account AND sat.PIN = ' . $this->db->escape($pin), 'left');
+        $this->db->where('ma.PIN', $pin);
+        if (!is_null($account_type_filter) && $account_type_filter != '' && $account_type_filter != 'all') {
+            if ($account_type_filter == 'special') {
+                $this->db->join('account_chart ac', 'sat.account_setup = ac.account AND ac.PIN = ' . $this->db->escape($pin), 'left');
+                $this->db->where("((sat.account_setup IS NOT NULL AND sat.account_setup != '' AND (LEFT(sat.account_setup, 2) = '10' OR ac.account_type = 10 OR ac.account_type = '10')) OR LOWER(sat.name) LIKE '%special%' OR LOWER(sat.description) LIKE '%special%')", NULL, FALSE);
+            } else if ($account_type_filter == 'mso') {
+                $this->db->join('account_chart ac', 'sat.account_setup = ac.account AND ac.PIN = ' . $this->db->escape($pin), 'left');
+                $this->db->where("((sat.account_setup IS NOT NULL AND sat.account_setup != '' AND (LEFT(sat.account_setup, 2) = '40' OR ac.account_type = 40 OR ac.account_type = '40')) OR LOWER(sat.name) LIKE '%mso%' OR LOWER(sat.description) LIKE '%mso%')", NULL, FALSE);
+            }
+        }
+        if (!is_null($status_filter) && $status_filter != '') {
+            if ($status_filter != 'all') {
+                if ($status_filter == '1') {
+                    $this->db->where("(ma.status = '1' OR ma.status IS NULL)", NULL, FALSE);
+                } else {
+                    $this->db->where('ma.status', $status_filter);
+                }
+            }
+        }
+        if (!is_null($key) && $key != '') {
+            $key_escaped = $this->db->escape_like_str($key);
+            $this->db->where("(ma.account LIKE '%{$key_escaped}%' OR ma.member_id LIKE '%{$key_escaped}%' OR ma.RFID = " . $this->db->escape($key) . ")", NULL, FALSE);
+        }
+        $result = $this->db->get()->row();
+        return $result->balance ? $result->balance : 0;
+    }
+
+    function is_journal_entry_posted_to_gl($journal_entry_id) {
+        $pin = current_user()->PIN;
+        $this->db->where('refferenceID', $journal_entry_id);
+        $this->db->where('fromtable', 'journal_entry');
+        $this->db->where('PIN', $pin);
+        $count = $this->db->count_all_results('general_ledger');
+        return $count > 0;
+    }
+
+    function get_receipt_disbursement_journal_entries() {
+        $pin = current_user()->PIN;
+        $entries = array();
+        $col = $this->db->query("SHOW COLUMNS FROM journal_entry LIKE 'reference_type'")->row();
+        if (!$col) {
+            return $entries;
+        }
+        $has_pin_col = $this->db->query("SHOW COLUMNS FROM journal_entry_items LIKE 'PIN'")->row();
+        $sql = "SELECT je.id, je.entry_date, je.description, je.reference_type, je.reference_id, je.createdby, je.PIN, je.created_at 
+                FROM journal_entry je
+                LEFT JOIN general_ledger gl ON gl.refferenceID = je.id AND gl.fromtable = 'journal_entry' AND gl.PIN = je.PIN
+                WHERE je.PIN = ? AND je.reference_type IN ('cash_receipt', 'cash_disbursement') AND gl.id IS NULL
+                ORDER BY je.entry_date DESC, je.id DESC";
+        $rows = $this->db->query($sql, array($pin))->result();
+        if (empty($rows)) {
+            return $entries;
+        }
+        foreach ($rows as $row) {
+            $line_items = $this->db->query(
+                "SELECT debit, credit FROM journal_entry_items WHERE journal_id = ?",
+                array($row->id)
+            )->result();
+            if (empty($line_items) && $has_pin_col) {
+                $line_items = $this->db->query(
+                    "SELECT debit, credit FROM journal_entry_items WHERE journal_id = ? AND PIN = ?",
+                    array($row->id, $pin)
+                )->result();
+            }
+            $total_debit = 0.00;
+            $total_credit = 0.00;
+            $line_count = 0;
+            if (!empty($line_items)) {
+                $line_count = count($line_items);
+                foreach ($line_items as $item) {
+                    $total_debit += floatval($item->debit);
+                    $total_credit += floatval($item->credit);
+                }
+            }
+            $total_debit = floatval($total_debit);
+            $total_credit = floatval($total_credit);
+            $line_count = intval($line_count);
+            $user = $this->db->where('id', $row->createdby)->get('users')->row();
+            $entries[] = (object) array(
+                'entryid' => $row->id,
+                'entrydate' => $row->entry_date,
+                'description' => $row->description,
+                'total_debit' => $total_debit,
+                'total_credit' => $total_credit,
+                'line_count' => $line_count,
+                'createdby' => $row->createdby,
+                'created_by_name' => $user ? $user->username : 'Unknown',
+                'entry_source' => $row->reference_type,
+                'reference_id' => isset($row->reference_id) ? $row->reference_id : null,
+                'is_posted' => $this->is_journal_entry_posted_to_gl($row->id),
+            );
+        }
+        return $entries;
+    }
+
     function account_type($id = null, $account = null) {
         if (!is_null($id)) {
             $this->db->where('id', $id);
@@ -478,10 +624,33 @@ $pin=current_user()->PIN;
     }
 
     /**
-     * Post savings account creation to General Ledger
-     * 
+     * Get interest expense account for savings interest GL posting
+     * Searches account_chart for expense account (account_type 50 or 70000) with "Interest" in name
+     *
+     * @return string|null GL account code or null if not found
+     */
+    private function get_interest_expense_account_for_savings() {
+        $pin = current_user()->PIN;
+        $this->db->where('PIN', $pin);
+        $escaped = $this->db->escape_like_str('Interest');
+        $this->db->where("(name LIKE '%" . $escaped . "%' OR description LIKE '%" . $escaped . "%')", NULL, FALSE);
+        $this->db->where_in('account_type', array(50, 70000)); // Expense account types
+        $this->db->order_by('account', 'ASC');
+        $this->db->limit(1);
+        $account = $this->db->get('account_chart')->row();
+        if (!$account) {
+            log_message('error', 'No interest expense account found in chart of accounts. Create an account with "Interest" in name and expense type (50/70000).');
+            return null;
+        }
+        return $account->account;
+    }
+
+    /**
+     * Post savings transaction to General Ledger
+     * Handles: account opening, beginning balance, deposit, withdrawal, interest
+     *
      * @param string $account Savings account number
-     * @param float $amount Opening balance amount
+     * @param float $amount Transaction amount
      * @param string $paymethod Payment method
      * @param string $account_cat Savings account type (from saving_account_type.account)
      * @param string $receipt Receipt number
@@ -489,9 +658,10 @@ $pin=current_user()->PIN;
      * @param string $pid Member PID
      * @param string $member_id Member ID
      * @param string $customer_name Customer name
+     * @param string $systemcomment Transaction type: OPEN ACCOUNT, BEGINNING BALANCE, NORMAL DEPOSIT, NORMAL WITHDRAWAL, INTEREST
      * @return bool True if successful, False otherwise
      */
-    function post_savings_to_gl($account, $amount, $paymethod, $account_cat, $receipt, $trans_date, $pid, $member_id, $customer_name = '') {
+    function post_savings_to_gl($account, $amount, $paymethod, $account_cat, $receipt, $trans_date, $pid, $member_id, $customer_name = '', $systemcomment = '') {
         $pin = current_user()->PIN;
         
         // Skip if amount is zero
@@ -527,11 +697,19 @@ $pin=current_user()->PIN;
             return false;
         }
         
-        // Get debit account based on payment method (cash/bank for normal transactions, adjustment/equity for ADJUSTMENT)
-        $debit_account = $this->get_cash_account_for_savings($paymethod);
+        $sys_upper = strtoupper(trim($systemcomment));
+        $is_withdrawal = (strpos($sys_upper, 'NORMAL WITHDRAWAL') !== FALSE);
+        $is_interest = (strpos($sys_upper, 'INTEREST') !== FALSE);
+        
+        // For INTEREST: debit = interest expense account; for deposit/withdrawal: debit/credit = cash or liability
+        if ($is_interest) {
+            $debit_account = $this->get_interest_expense_account_for_savings();
+        } else {
+            $debit_account = $this->get_cash_account_for_savings($paymethod);
+        }
         
         if (!$debit_account) {
-            log_message('error', 'Debit account not found for payment method: ' . $paymethod);
+            log_message('error', 'Debit account not found for payment method: ' . $paymethod . ', type: ' . $systemcomment);
             return false;
         }
         
@@ -542,9 +720,21 @@ $pin=current_user()->PIN;
             return false;
         }
         
-        // Determine description based on payment method
+        // Determine description prefix based on transaction type
         $is_adjustment = (strtoupper(trim($paymethod)) == 'ADJUSTMENT');
-        $description_prefix = $is_adjustment ? 'Savings Beginning Balance Adjustment' : 'Savings Account Opening';
+        if ($is_withdrawal) {
+            $description_prefix = 'Savings Withdrawal';
+        } elseif ($is_interest) {
+            $description_prefix = 'Savings Interest';
+        } elseif ($is_adjustment) {
+            $description_prefix = 'Savings Beginning Balance Adjustment';
+        } elseif (strpos($sys_upper, 'OPEN ACCOUNT') !== FALSE) {
+            $description_prefix = 'Savings Account Opening';
+        } elseif (strpos($sys_upper, 'BEGINNING BALANCE') !== FALSE) {
+            $description_prefix = 'Savings Beginning Balance';
+        } else {
+            $description_prefix = 'Savings Deposit';
+        }
         
         // Check if Journal ID 9 exists, if not use 5 as fallback
         $this->db->where('id', 9);
@@ -585,30 +775,58 @@ $pin=current_user()->PIN;
                 'PIN' => $pin,
             );
             
-            // Debit: Adjustment/Equity Account (for beginning balances) or Cash/Bank Account (for opening balances)
-            $ledger_debit = $ledger_base;
-            $ledger_debit['account'] = $debit_account;
-            $ledger_debit['debit'] = floatval($amount);
-            $ledger_debit['credit'] = 0;
-            $ledger_debit['account_type'] = $debit_account_info->account_type;
-            $ledger_debit['sub_account_type'] = isset($debit_account_info->sub_account_type) ? $debit_account_info->sub_account_type : null;
-            
-            $this->db->insert('general_ledger', $ledger_debit);
-            
-            if ($this->db->affected_rows() <= 0) {
-                $db_error = $this->db->error();
-                log_message('error', 'Failed to insert debit entry to general_ledger: ' . json_encode($db_error));
-                $this->db->trans_complete();
-                return false;
+            // Deposit/Interest: Debit cash/expense, Credit liability
+            // Withdrawal: Debit liability, Credit cash
+            if ($is_withdrawal) {
+                // Entry 1: Debit Savings Liability (decrease liability)
+                $ledger_debit = $ledger_base;
+                $ledger_debit['account'] = $savings_liability_account;
+                $ledger_debit['debit'] = floatval($amount);
+                $ledger_debit['credit'] = 0;
+                $ledger_debit['account_type'] = $savings_account_info->account_type;
+                $ledger_debit['sub_account_type'] = isset($savings_account_info->sub_account_type) ? $savings_account_info->sub_account_type : null;
+                
+                $this->db->insert('general_ledger', $ledger_debit);
+                
+                if ($this->db->affected_rows() <= 0) {
+                    $db_error = $this->db->error();
+                    log_message('error', 'Failed to insert debit entry to general_ledger: ' . json_encode($db_error));
+                    $this->db->trans_complete();
+                    return false;
+                }
+                
+                // Entry 2: Credit Cash/Bank (cash goes out)
+                $ledger_credit = $ledger_base;
+                $ledger_credit['account'] = $debit_account;
+                $ledger_credit['debit'] = 0;
+                $ledger_credit['credit'] = floatval($amount);
+                $ledger_credit['account_type'] = $debit_account_info->account_type;
+                $ledger_credit['sub_account_type'] = isset($debit_account_info->sub_account_type) ? $debit_account_info->sub_account_type : null;
+            } else {
+                // Deposit/Interest: Debit cash or expense, Credit liability
+                $ledger_debit = $ledger_base;
+                $ledger_debit['account'] = $debit_account;
+                $ledger_debit['debit'] = floatval($amount);
+                $ledger_debit['credit'] = 0;
+                $ledger_debit['account_type'] = $debit_account_info->account_type;
+                $ledger_debit['sub_account_type'] = isset($debit_account_info->sub_account_type) ? $debit_account_info->sub_account_type : null;
+                
+                $this->db->insert('general_ledger', $ledger_debit);
+                
+                if ($this->db->affected_rows() <= 0) {
+                    $db_error = $this->db->error();
+                    log_message('error', 'Failed to insert debit entry to general_ledger: ' . json_encode($db_error));
+                    $this->db->trans_complete();
+                    return false;
+                }
+                
+                $ledger_credit = $ledger_base;
+                $ledger_credit['account'] = $savings_liability_account;
+                $ledger_credit['debit'] = 0;
+                $ledger_credit['credit'] = floatval($amount);
+                $ledger_credit['account_type'] = $savings_account_info->account_type;
+                $ledger_credit['sub_account_type'] = isset($savings_account_info->sub_account_type) ? $savings_account_info->sub_account_type : null;
             }
-            
-            // Credit: Savings Liability Account (increase liability)
-            $ledger_credit = $ledger_base;
-            $ledger_credit['account'] = $savings_liability_account;
-            $ledger_credit['debit'] = 0;
-            $ledger_credit['credit'] = floatval($amount);
-            $ledger_credit['account_type'] = $savings_account_info->account_type;
-            $ledger_credit['sub_account_type'] = isset($savings_account_info->sub_account_type) ? $savings_account_info->sub_account_type : null;
             
             $this->db->insert('general_ledger', $ledger_credit);
             
@@ -627,7 +845,8 @@ $pin=current_user()->PIN;
                 return false;
             }
             
-            log_message('info', 'Savings account posted to GL successfully: Account ' . $account . ', Receipt ' . $receipt . ', Debit: ' . $debit_account . ' (' . $amount . '), Credit: ' . $savings_liability_account . ' (' . $amount . '), Type: ' . ($is_adjustment ? 'Adjustment' : 'Opening'));
+            $type_label = $is_withdrawal ? 'Withdrawal' : ($is_interest ? 'Interest' : ($is_adjustment ? 'Adjustment' : 'Deposit/Opening'));
+            log_message('info', 'Savings posted to GL: Account ' . $account . ', Receipt ' . $receipt . ', Amount ' . $amount . ', Type: ' . $type_label);
             return true;
             
         } catch (Exception $e) {
@@ -715,20 +934,18 @@ $pin=current_user()->PIN;
         $this->db->set('createdby', $this->session->userdata('user_id'));
         $insert = $this->db->insert('savings_transaction');
         if ($insert) {
-            // Auto-post to GL if this is a new account creation (opening balance) or beginning balance
-            if (strpos($systemcomment, 'OPEN ACCOUNT') !== FALSE || strpos($systemcomment, 'BEGINNING BALANCE') !== FALSE) {
+            // Auto-post to GL for: opening balance, beginning balance, normal deposit, interest
+            $post_to_gl = (strpos($systemcomment, 'OPEN ACCOUNT') !== FALSE || strpos($systemcomment, 'BEGINNING BALANCE') !== FALSE
+                || strpos($systemcomment, 'NORMAL DEPOSIT') !== FALSE || strpos($systemcomment, 'INTEREST') !== FALSE);
+            if ($post_to_gl) {
                 // Get member_id for GL posting
                 $member_id = isset($account_info->member_id) ? $account_info->member_id : '';
                 
                 // Post to General Ledger
-                $gl_post_result = $this->post_savings_to_gl($account, $amount, $paymethod, $account_info->account_cat, $receipt, $posted_date ? $posted_date : date('Y-m-d'), $pid, $member_id, $customer_name);
+                $gl_post_result = $this->post_savings_to_gl($account, $amount, $paymethod, $account_info->account_cat, $receipt, $posted_date ? $posted_date : date('Y-m-d'), $pid, $member_id, $customer_name, $systemcomment);
                 
                 if (!$gl_post_result) {
                     log_message('error', 'Savings account GL posting failed for account: ' . $account . ', receipt: ' . $receipt . ', type: ' . $systemcomment);
-                    // Don't fail the transaction if GL posting fails, but log it
-                } else {
-                    log_message('info', 'Savings account auto-posted to GL: Account ' . $account . ', Receipt ' . $receipt . ', Amount ' . $amount . ', Type: ' . $systemcomment);
-                }
             }
             
             return $receipt;
@@ -776,6 +993,15 @@ $pin=current_user()->PIN;
         $this->db->set('createdby', $this->session->userdata('user_id'));
         $insert = $this->db->insert('savings_transaction');
         if ($insert) {
+            // Auto-post withdrawals to GL
+            if (strpos($systemcomment, 'NORMAL WITHDRAWAL') !== FALSE) {
+                $member_id = isset($account_info->member_id) ? $account_info->member_id : '';
+                $pid_val = !empty($pid) ? $pid : $account_info->RFID;
+                $gl_post_result = $this->post_savings_to_gl($account, $amount, $paymethod, $account_info->account_cat, $receipt, $posted_date ? $posted_date : date('Y-m-d'), $pid_val, $member_id, $customer_name, $systemcomment);
+                if (!$gl_post_result) {
+                    log_message('error', 'Savings withdrawal GL posting failed: account ' . $account . ', receipt ' . $receipt);
+                }
+            }
             return $receipt;
         }
 
@@ -1265,47 +1491,6 @@ $pin=current_user()->PIN;
         return $this->db->get()->result();
     }
 
-    function get_total_savings_amount($key=null, $account_type_filter=null, $status_filter=null) {
-        $pin = current_user()->PIN;
-        $this->db->select_sum('ma.balance');
-        $this->db->from('members_account ma');
-        $this->db->join('saving_account_type sat', 'ma.account_cat = sat.account AND sat.PIN = ' . $this->db->escape($pin), 'left');
-        $this->db->where('ma.PIN', $pin);
-        
-        // Filter by account type (Special or MSO)
-        if (!is_null($account_type_filter) && $account_type_filter != '' && $account_type_filter != 'all') {
-            if ($account_type_filter == 'special') {
-                // Special accounts: check account_setup prefix, account_type, or name/description contains "special"
-                $this->db->join('account_chart ac', 'sat.account_setup = ac.account AND ac.PIN = ' . $this->db->escape($pin), 'left');
-                $this->db->where("((sat.account_setup IS NOT NULL AND sat.account_setup != '' AND (LEFT(sat.account_setup, 2) = '10' OR ac.account_type = 10 OR ac.account_type = '10')) OR LOWER(sat.name) LIKE '%special%' OR LOWER(sat.description) LIKE '%special%')", NULL, FALSE);
-            } else if ($account_type_filter == 'mso') {
-                // MSO accounts: check account_setup prefix, account_type, or name/description contains "mso"
-                $this->db->join('account_chart ac', 'sat.account_setup = ac.account AND ac.PIN = ' . $this->db->escape($pin), 'left');
-                $this->db->where("((sat.account_setup IS NOT NULL AND sat.account_setup != '' AND (LEFT(sat.account_setup, 2) = '40' OR ac.account_type = 40 OR ac.account_type = '40')) OR LOWER(sat.name) LIKE '%mso%' OR LOWER(sat.description) LIKE '%mso%')", NULL, FALSE);
-            }
-        }
-        
-        // Filter by status
-        if (!is_null($status_filter) && $status_filter != '') {
-            if ($status_filter != 'all') {
-                // Handle NULL status as Active (1) by default
-                if ($status_filter == '1') {
-                    $this->db->where("(ma.status = '1' OR ma.status IS NULL)", NULL, FALSE);
-                } else {
-                    $this->db->where('ma.status', $status_filter);
-                }
-            }
-        }
-        
-        if (!is_null($key) && $key != '') {
-            $key_escaped = $this->db->escape_like_str($key);
-            $this->db->where("(ma.account LIKE '%{$key_escaped}%' OR ma.member_id LIKE '%{$key_escaped}%' OR ma.RFID = " . $this->db->escape($key) . ")", NULL, FALSE);
-        }
-        
-        $result = $this->db->get()->row();
-        return $result->balance ? $result->balance : 0;
-    }
-
     function get_saving_account_info($id) {
         $pin = current_user()->PIN;
         $this->db->select('ma.*, m.member_id as member_member_id, m.firstname, m.middlename, m.lastname, sat.description as account_type_name');
@@ -1699,21 +1884,6 @@ $pin=current_user()->PIN;
     }
 
     /**
-     * Check if a journal_entry (cash receipt / cash disbursement) has been posted to general ledger.
-     *
-     * @param int $journal_entry_id journal_entry.id
-     * @return bool True if posted, False if not posted
-     */
-    function is_journal_entry_posted_to_gl($journal_entry_id) {
-        $pin = current_user()->PIN;
-        $this->db->where('refferenceID', $journal_entry_id);
-        $this->db->where('fromtable', 'journal_entry');
-        $this->db->where('PIN', $pin);
-        $count = $this->db->count_all_results('general_ledger');
-        return $count > 0;
-    }
-
-    /**
      * Post a single journal_entry (cash receipt or cash disbursement) to general ledger.
      * Reads from journal_entry + journal_entry_items and inserts into general_ledger_entry + general_ledger.
      *
@@ -2092,167 +2262,6 @@ $pin=current_user()->PIN;
     }
 
     /**
-     * Get list of unposted journal entries
-     * 
-     * @return array List of unposted journal entries with details
-     */
-    function get_unposted_journal_entries() {
-        $pin = current_user()->PIN;
-        
-        // Use query builder for main query, then add aggregates separately
-        $this->db->select('gje.*, COUNT(gj.id) as line_count');
-        $this->db->from('general_journal_entry gje');
-        $this->db->join('general_journal gj', 'gj.entryid = gje.id', 'left');
-        $this->db->join('general_ledger gl', 'gl.refferenceID = gje.id AND gl.fromtable = "general_journal"', 'left');
-        $this->db->where('gl.id IS NULL');
-        $this->db->where('gje.PIN', $pin);
-        $this->db->group_by('gje.id');
-        $this->db->order_by('gje.entrydate', 'DESC');
-        $this->db->order_by('gje.id', 'DESC');
-        
-        $results = $this->db->get()->result();
-        
-        // Calculate totals and get createdby for each entry
-        foreach ($results as $entry) {
-            // Get line items to calculate totals and createdby
-            // Try without PIN first (more reliable, matches test script)
-            $line_items = $this->db->where('entryid', $entry->id)
-                                  ->get('general_journal')
-                                  ->result();
-            
-            // If no results and PIN column exists, try with PIN filter
-            if (empty($line_items)) {
-                $line_items = $this->db->where('entryid', $entry->id)
-                                      ->where('PIN', $pin)
-                                      ->get('general_journal')
-                                      ->result();
-            }
-            
-            $entry->entryid = $entry->id; // Ensure entryid property exists
-            $entry->line_count = count($line_items); // Recalculate from actual line items
-            $entry->total_debit = 0.00;
-            $entry->total_credit = 0.00;
-            $entry->createdby = null;
-            
-            foreach ($line_items as $item) {
-                $entry->total_debit += floatval($item->debit);
-                $entry->total_credit += floatval($item->credit);
-                if (empty($entry->createdby) && !empty($item->createdby)) {
-                    $entry->createdby = $item->createdby;
-                }
-            }
-            
-            // Ensure values are always set (even if 0)
-            $entry->line_count = isset($entry->line_count) ? intval($entry->line_count) : 0;
-            $entry->total_debit = isset($entry->total_debit) ? floatval($entry->total_debit) : 0.00;
-            $entry->total_credit = isset($entry->total_credit) ? floatval($entry->total_credit) : 0.00;
-            
-            // Get user name
-            if (!empty($entry->createdby)) {
-                $user = $this->db->where('id', $entry->createdby)->get('users')->row();
-                $entry->created_by_name = $user ? $user->username : 'Unknown';
-            } else {
-                $entry->created_by_name = 'Unknown';
-            }
-        }
-        
-        return $results;
-    }
-
-    /**
-     * Get journal entries from journal_entry table (cash receipt & cash disbursement).
-     * These are stored in journal_entry + journal_entry_items, not general_journal_entry.
-     * Returns list in same shape as get_unposted_journal_entries for combined display.
-     */
-    function get_receipt_disbursement_journal_entries() {
-        $pin = current_user()->PIN;
-        $entries = array();
-        
-        // Check if reference_type column exists
-        $col = $this->db->query("SHOW COLUMNS FROM journal_entry LIKE 'reference_type'")->row();
-        if (!$col) {
-            return $entries;
-        }
-        
-        // Check if PIN column exists in journal_entry_items
-        // Note: journal_id column definitely exists (confirmed from database)
-        $has_pin_col = $this->db->query("SHOW COLUMNS FROM journal_entry_items LIKE 'PIN'")->row();
-        
-        // Get all unposted journal entries for cash receipt and cash disbursement
-        // Use LEFT JOIN to filter out posted entries
-        $sql = "SELECT je.id, je.entry_date, je.description, je.reference_type, je.reference_id, je.createdby, je.PIN, je.created_at 
-                FROM journal_entry je
-                LEFT JOIN general_ledger gl ON gl.refferenceID = je.id AND gl.fromtable = 'journal_entry' AND gl.PIN = je.PIN
-                WHERE je.PIN = ? AND je.reference_type IN ('cash_receipt', 'cash_disbursement') AND gl.id IS NULL
-                ORDER BY je.entry_date DESC, je.id DESC";
-        $rows = $this->db->query($sql, array($pin))->result();
-        if (empty($rows)) {
-            return $entries;
-        }
-        
-        foreach ($rows as $row) {
-            // Get line items using journal_id (confirmed column name from database)
-            // Use direct SQL query - try without PIN first, then with PIN
-            $line_items = $this->db->query(
-                "SELECT debit, credit FROM journal_entry_items WHERE journal_id = ?",
-                array($row->id)
-            )->result();
-            
-            // If no results and PIN column exists, try with PIN filter
-            if (empty($line_items) && $has_pin_col) {
-                $line_items = $this->db->query(
-                    "SELECT debit, credit FROM journal_entry_items WHERE journal_id = ? AND PIN = ?",
-                    array($row->id, $pin)
-                )->result();
-            }
-            
-            // Debug logging
-            if (empty($line_items)) {
-                log_message('debug', "get_receipt_disbursement_journal_entries: No line items for entry id={$row->id}");
-            } else {
-                log_message('debug', "get_receipt_disbursement_journal_entries: Found " . count($line_items) . " items for entry id={$row->id}");
-            }
-            
-            // Calculate totals - ensure values are always set
-            $total_debit = 0.00;
-            $total_credit = 0.00;
-            $line_count = 0;
-            
-            if (!empty($line_items)) {
-                $line_count = count($line_items);
-                foreach ($line_items as $item) {
-                    $total_debit += floatval($item->debit);
-                    $total_credit += floatval($item->credit);
-                }
-            }
-            
-            // Ensure values are always numeric
-            $total_debit = floatval($total_debit);
-            $total_credit = floatval($total_credit);
-            $line_count = intval($line_count);
-            
-            // Get user name
-            $user = $this->db->where('id', $row->createdby)->get('users')->row();
-            
-            $entries[] = (object) array(
-                'entryid' => $row->id,
-                'entrydate' => $row->entry_date,
-                'description' => $row->description,
-                'total_debit' => $total_debit,
-                'total_credit' => $total_credit,
-                'line_count' => $line_count,
-                'createdby' => $row->createdby,
-                'created_by_name' => $user ? $user->username : 'Unknown',
-                'entry_source' => $row->reference_type,
-                'reference_id' => isset($row->reference_id) ? $row->reference_id : null,
-                'is_posted' => $this->is_journal_entry_posted_to_gl($row->id),
-            );
-        }
-        
-        return $entries;
-    }
-
-    /**
      * Get journal entry details with line items
      * 
      * @param int $entry_id Journal entry ID
@@ -2384,6 +2393,5 @@ $pin=current_user()->PIN;
         return $entry;
     }
 
-}
+}}
 
-?>

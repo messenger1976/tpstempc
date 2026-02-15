@@ -185,8 +185,8 @@
                             <td class="text-center"><?php echo $index++; ?></td>
                             <td><?php echo $item->account_name; ?></td>
                             <td><?php echo $item->description; ?></td>
-                            <td class="text-right"><?php echo $item_debit > 0 ? number_format($item_debit, 2) : '—'; ?></td>
-                            <td class="text-right"><?php echo $item_credit > 0 ? number_format($item_credit, 2) : '—'; ?></td>
+                            <td class="text-right"><?php echo number_format($item_debit, 2); ?></td>
+                            <td class="text-right"><?php echo number_format($item_credit, 2); ?></td>
                         </tr>
                     <?php endforeach; ?>
                     <tr class="total-row">

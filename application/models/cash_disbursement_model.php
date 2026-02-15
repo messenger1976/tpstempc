@@ -154,8 +154,10 @@ class Cash_disbursement_model extends CI_Model {
             }
         }
         
-        // Create journal entry
-        $this->create_journal_entry($disburse_id, $disburse_data, $line_items);
+        // Create journal entry only when not cancelled (cancelled disbursements are document references only, no GL)
+        if (empty($disburse_data['cancelled'])) {
+            $this->create_journal_entry($disburse_id, $disburse_data, $line_items);
+        }
         
         // Complete transaction
         $this->db->trans_complete();

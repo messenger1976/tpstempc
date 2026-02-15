@@ -16,7 +16,9 @@ if (isset($message) && !empty($message)) {
         <div class="col-lg-12">
             <div class="ibox float-e-margins">
                 <div class="ibox-title">
-                    <h5><?php echo lang('cash_receipt_view'); ?> - <?php echo $receipt->receipt_no; ?></h5>
+                    <h5><?php echo lang('cash_receipt_view'); ?> - <?php echo $receipt->receipt_no; ?>
+                        <?php if (!empty($receipt->cancelled)): ?><span class="label label-default"><?php echo lang('cancelled'); ?></span><?php endif; ?>
+                    </h5>
                     <div class="ibox-tools">
                         <a href="<?php echo site_url(current_lang() . '/cash_receipt/cash_receipt_list'); ?>" class="btn btn-white btn-xs">
                             <i class="fa fa-arrow-left"></i> <?php echo lang('back'); ?>
@@ -71,6 +73,12 @@ if (isset($message) && !empty($message)) {
                                             <td><strong><?php echo lang('cash_receipt_total_amount'); ?>:</strong></td>
                                             <td><strong><?php echo number_format($receipt->total_amount, 2); ?></strong></td>
                                         </tr>
+                                        <?php if (!empty($receipt->cancelled)): ?>
+                                        <tr>
+                                            <td><strong><?php echo lang('status'); ?>:</strong></td>
+                                            <td><span class="label label-default"><?php echo lang('cancelled'); ?></span></td>
+                                        </tr>
+                                        <?php endif; ?>
                                     </table>
                                 </div>
                             </div>
@@ -152,8 +160,8 @@ if (isset($message) && !empty($message)) {
                                                             <td><?php echo $index++; ?></td>
                                                             <td><?php echo $item->account_name . ' (' . $item->account . ')'; ?></td>
                                                             <td><?php echo $item->description; ?></td>
-                                                            <td class="text-right"><?php echo $item_debit > 0 ? number_format($item_debit, 2) : '—'; ?></td>
-                                                            <td class="text-right"><?php echo $item_credit > 0 ? number_format($item_credit, 2) : '—'; ?></td>
+                                                            <td class="text-right"><?php echo number_format($item_debit, 2); ?></td>
+                                                            <td class="text-right"><?php echo number_format($item_credit, 2); ?></td>
                                                         </tr>
                                                     <?php endforeach; ?>
                                                     <tr class="active">
@@ -210,8 +218,8 @@ if (isset($message) && !empty($message)) {
                                                 <tr>
                                                     <td><?php echo htmlspecialchars((isset($entry->account_name) ? $entry->account_name : '') . ' (' . (isset($entry->account) ? $entry->account : '') . ')'); ?></td>
                                                     <td><?php echo htmlspecialchars(isset($entry->description) ? $entry->description : ''); ?></td>
-                                                    <td class="text-right"><?php echo (isset($entry->debit) && $entry->debit > 0) ? number_format($entry->debit, 2) : '—'; ?></td>
-                                                    <td class="text-right"><?php echo (isset($entry->credit) && $entry->credit > 0) ? number_format($entry->credit, 2) : '—'; ?></td>
+                                                    <td class="text-right"><?php echo number_format(isset($entry->debit) ? floatval($entry->debit) : 0, 2); ?></td>
+                                                    <td class="text-right"><?php echo number_format(isset($entry->credit) ? floatval($entry->credit) : 0, 2); ?></td>
                                                 </tr>
                                                 <?php endforeach; ?>
                                                 <!-- Totals -->

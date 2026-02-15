@@ -114,8 +114,10 @@ class Cash_receipt_model extends CI_Model {
             }
         }
         
-        // Create journal entry (journal_entry table only, not GL)
-        $this->create_journal_entry($receipt_id, $receipt_data, $line_items);
+        // Create journal entry only when not cancelled (cancelled receipts are document references only, no GL)
+        if (empty($receipt_data['cancelled'])) {
+            $this->create_journal_entry($receipt_id, $receipt_data, $line_items);
+        }
         
         return $receipt_id;
     }

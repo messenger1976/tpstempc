@@ -71,6 +71,7 @@ Or use phpMyAdmin:
 ### Supporting Files
 - ✅ `install_cash_disbursement.php` (Standalone installer)
 - ✅ `sql/add_cash_disbursement_permissions.sql` (Adds View/Create/Edit/Delete_cash_disbursement to access_level for group_id = 1; run after schema so the menu appears)
+- ✅ `sql/alter_cash_disbursement_items_debit_credit.sql` (Migration: add debit/credit columns to cash_disbursement_items; migrates existing amount→debit; run on existing installs)
 - ✅ `sql/alter_cash_disbursement_payment_method_varchar.sql` (Optional: run once if payment_method column is ENUM, so any method from paymentmenthod can be saved)
 - ✅ `docs/CASH_DISBURSEMENT_QUICK_START.md` (User guide)
 - ✅ `docs/CASH_DISBURSEMENT_COMPLETION_REPORT.md` (This file)
@@ -93,7 +94,9 @@ Or use phpMyAdmin:
    - **Optional migration:** If upgrading from ENUM, run `sql/alter_cash_disbursement_payment_method_varchar.sql` once so any payment method name (e.g. BANK DEPOSIT) can be saved.
 
 2. **cash_disbursement_items** - Line items for disbursements
-   - Fields: id, disbursement_id, account, description, amount, PIN, created_at
+   - Fields: id, disbursement_id, account, description, amount, debit, credit, PIN, created_at
+   - Debit/Credit columns (same as journal entry); total debits must equal total credits
+   - **Migration:** Run `sql/alter_cash_disbursement_items_debit_credit.sql` on existing installs to add debit/credit and migrate amount→debit
    - Indexes: idx_disbursement_id, idx_account
 
 3. **journal_entry** - Auto-created if not exists
@@ -111,8 +114,9 @@ Or use phpMyAdmin:
 - ✅ Payment methods loaded from **paymentmenthod** table only (e.g. Cash, BANK DEPOSIT, Cheque, Bank Transfer, Mobile Money)
 - ✅ Edit: payment method and line items update correctly; old journal removed and new one created with current data
 - ✅ Delete: disbursement, line items, and linked journal entry (and items) removed
-- ✅ Multi-line item support with dynamic add/remove
-- ✅ Automatic total calculation
+- ✅ Multi-line item support with **Debit | Credit columns** (same as journal entry); rows fully deletable
+- ✅ Balance validation: total debits must equal total credits before save
+- ✅ Automatic total calculation (debit/credit totals)
 - ✅ Date picker for disbursement date selection
 
 ### Accounting Features
@@ -274,15 +278,17 @@ cash_disbursement_period, cash_disbursement_transactions
 
 ### Cash Disbursement → Journal Entry Mapping
 
-**Payment flows OUT (reduces cash):**
+**Payment flows OUT (reduces cash):** Journal entry is built from **line items** (Debit and Credit columns). User enters debits and credits per account; totals must balance.
 
 ```
-Disbursement Entry:
-  DEBIT:   Expense/Asset Account (e.g., Office Supplies)  3,000
-  CREDIT:  Cash/Bank Account (based on payment method)    3,000
+Example (balanced by user):
+  DEBIT:   Office Supplies Expense  3,000
+  CREDIT:  Cash/Bank Account        3,000
 ```
 
-**Payment Method → GL Account:** From **paymentmenthod** table (`gl_account_code`) for the selected method; fallback to account_chart by name (Cash/Bank) or payment method name. Accounting entries shown on the view page are always built from the **current** disbursement (payment method + line items) so they update when the user edits.
+**Legacy:** For older disbursements with only `amount` (stored as debit), the view adds a Cash/Bank credit line so displayed entries balance.
+
+**Payment Method → GL Account:** From **paymentmenthod** table (`gl_account_code`) for the selected method; fallback to account_chart (used for legacy auto-credit line). Accounting entries on the view page are built from the **current** disbursement so they update when the user edits.
 
 ---
 
@@ -434,8 +440,8 @@ This module is production-ready and follows all TAPSTEMCO system conventions:
 ---
 
 **Created:** 2024  
-**Last Updated:** 2025  
+**Last Updated:** February 2026  
 **Status:** ✅ COMPLETE AND READY FOR USE  
-**Version:** 1.1  
+**Version:** 1.2 (Debit/Credit line items, balance validation, migration)  
 **Framework:** CodeIgniter 3.x  
 **Database:** MySQL/MariaDB

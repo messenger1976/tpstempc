@@ -134,29 +134,36 @@ if (isset($message) && !empty($message)) {
                                                 <tr>
                                                     <th width="10%">#</th>
                                                     <th width="30%"><?php echo lang('cash_disbursement_account'); ?></th>
-                                                    <th width="40%"><?php echo lang('cash_disbursement_line_description'); ?></th>
-                                                    <th width="20%" class="text-right"><?php echo lang('cash_disbursement_amount'); ?></th>
+                                                    <th width="30%"><?php echo lang('cash_disbursement_line_description'); ?></th>
+                                                    <th width="15%" class="text-right"><?php echo lang('journalentry_debit'); ?></th>
+                                                    <th width="15%" class="text-right"><?php echo lang('journalentry_credit'); ?></th>
                                                 </tr>
                                             </thead>
                                             <tbody>
                                                 <?php if (!empty($line_items)): ?>
-                                                    <?php $total = 0; $index = 1; ?>
-                                                    <?php foreach ($line_items as $item): ?>
+                                                    <?php $total_debit = 0; $total_credit = 0; $index = 1; ?>
+                                                    <?php foreach ($line_items as $item): 
+                                                        $item_debit = isset($item->debit) ? floatval($item->debit) : (isset($item->amount) ? floatval($item->amount) : 0);
+                                                        $item_credit = isset($item->credit) ? floatval($item->credit) : 0;
+                                                        $total_debit += $item_debit;
+                                                        $total_credit += $item_credit;
+                                                    ?>
                                                         <tr>
                                                             <td><?php echo $index++; ?></td>
                                                             <td><?php echo $item->account_name . ' (' . $item->account . ')'; ?></td>
                                                             <td><?php echo $item->description; ?></td>
-                                                            <td class="text-right"><?php echo number_format($item->amount, 2); ?></td>
+                                                            <td class="text-right"><?php echo $item_debit > 0 ? number_format($item_debit, 2) : '—'; ?></td>
+                                                            <td class="text-right"><?php echo $item_credit > 0 ? number_format($item_credit, 2) : '—'; ?></td>
                                                         </tr>
-                                                        <?php $total += $item->amount; ?>
                                                     <?php endforeach; ?>
                                                     <tr class="active">
                                                         <td colspan="3" class="text-right"><strong><?php echo lang('total'); ?>:</strong></td>
-                                                        <td class="text-right"><strong><?php echo number_format($total, 2); ?></strong></td>
+                                                        <td class="text-right"><strong><?php echo number_format($total_debit, 2); ?></strong></td>
+                                                        <td class="text-right"><strong><?php echo number_format($total_credit, 2); ?></strong></td>
                                                     </tr>
                                                 <?php else: ?>
                                                     <tr>
-                                                        <td colspan="4" class="text-center"><?php echo lang('no_records_found'); ?></td>
+                                                        <td colspan="5" class="text-center"><?php echo lang('no_records_found'); ?></td>
                                                     </tr>
                                                 <?php endif; ?>
                                             </tbody>
@@ -195,14 +202,18 @@ if (isset($message) && !empty($message)) {
                                         <table class="table table-striped table-bordered">
                                             <thead>
                                                 <tr>
-                                                    <th width="30%"><?php echo lang('cash_disbursement_account'); ?></th>
-                                                    <th width="35%"><?php echo lang('cash_disbursement_line_description'); ?></th>
+                                                    <th width="30%"><?php echo lang('account'); ?></th>
+                                                    <th width="35%"><?php echo lang('description'); ?></th>
                                                     <th width="17.5%" class="text-right"><?php echo lang('journalentry_debit'); ?></th>
                                                     <th width="17.5%" class="text-right"><?php echo lang('journalentry_credit'); ?></th>
                                                 </tr>
                                             </thead>
                                             <tbody>
-                                                <?php foreach ($journal_items as $entry): ?>
+                                                <?php $total_debit = 0; $total_credit = 0; ?>
+                                                <?php foreach ($journal_items as $entry): 
+                                                    $total_debit += isset($entry->debit) ? floatval($entry->debit) : 0;
+                                                    $total_credit += isset($entry->credit) ? floatval($entry->credit) : 0;
+                                                ?>
                                                 <tr>
                                                     <td><?php echo htmlspecialchars((isset($entry->account_name) ? $entry->account_name : '') . ' (' . (isset($entry->account) ? $entry->account : '') . ')'); ?></td>
                                                     <td><?php echo htmlspecialchars(isset($entry->description) ? $entry->description : ''); ?></td>
@@ -210,6 +221,24 @@ if (isset($message) && !empty($message)) {
                                                     <td class="text-right"><?php echo (isset($entry->credit) && $entry->credit > 0) ? number_format($entry->credit, 2) : '—'; ?></td>
                                                 </tr>
                                                 <?php endforeach; ?>
+                                                <tr class="active">
+                                                    <td colspan="2" class="text-right"><strong><?php echo lang('total'); ?>:</strong></td>
+                                                    <td class="text-right"><strong><?php echo number_format($total_debit, 2); ?></strong></td>
+                                                    <td class="text-right"><strong><?php echo number_format($total_credit, 2); ?></strong></td>
+                                                </tr>
+                                                <?php if (abs($total_debit - $total_credit) > 0.001): ?>
+                                                <tr class="danger">
+                                                    <td colspan="4" class="text-center">
+                                                        <i class="fa fa-exclamation-triangle"></i> <strong><?php echo lang('warning'); ?>:</strong> <?php echo lang('debits_credits_not_balanced'); ?>
+                                                    </td>
+                                                </tr>
+                                                <?php else: ?>
+                                                <tr class="success">
+                                                    <td colspan="4" class="text-center">
+                                                        <i class="fa fa-check-circle"></i> <?php echo lang('debits_credits_balanced'); ?>
+                                                    </td>
+                                                </tr>
+                                                <?php endif; ?>
                                             </tbody>
                                         </table>
                                     </div>

@@ -82,21 +82,23 @@ application/views/cash_receipt/
 ```
 application/views/cash_disbursement/
 ├── cash_disbursement_list.php ........ List view with DataTables + Date Range Filter + Report buttons
-├── cash_disbursement_form.php ........ Create form
-├── cash_disbursement_edit.php ........ Edit form
-├── cash_disbursement_view.php ........ View details
+├── cash_disbursement_form.php ........ Create form (Debit/Credit line items)
+├── cash_disbursement_edit.php ........ Edit form (Debit/Credit line items)
+├── cash_disbursement_view.php ........ View details (Debit/Credit, totals, balanced/unbalanced)
 ├── cash_disbursement_report_summary.php .. Trial Balance report (accounts summary)
 ├── cash_disbursement_report_details.php .. Report Details (grouped by transaction)
 └── print/
-    └── cash_disbursement_print.php ... Print template
+    └── cash_disbursement_print.php ... Print template (Debit/Credit columns)
 ```
 
 **Key Features:**
-- Identical structure to receipt module
+- Line items use **Debit | Credit columns** (same as journal entry); fully deletable rows
+- Form validation (debits must equal credits)
 - Date range filtering on list view
 - Report Summary and Report Details (Trial Balance layout)
 - Export to Excel for list and both reports
-- Consistent styling and functionality
+- View page shows totals row and balanced/unbalanced message for accounting entries
+- Consistent styling and functionality with Cash Receipt module
 - Role-based permission checks
 
 ### 📊 Database Schemas
@@ -106,6 +108,7 @@ application/views/cash_disbursement/
 | `cash_receipt_module.sql` | `sql/` | ~4 KB | Receipt database schema |
 | `alter_cash_receipt_items_debit_credit.sql` | `sql/` | ~0.5 KB | Migration: add debit/credit columns to cash_receipt_items (run on existing installs) |
 | `cash_disbursement_module.sql` | `sql/` | ~4 KB | Disbursement database schema |
+| `alter_cash_disbursement_items_debit_credit.sql` | `sql/` | ~0.5 KB | Migration: add debit/credit columns to cash_disbursement_items (run on existing installs) |
 
 **Tables Created (Receipt Module):**
 - `cash_receipts` - Main receipt records
@@ -115,7 +118,7 @@ application/views/cash_disbursement/
 
 **Tables Created (Disbursement Module):**
 - `cash_disbursements` - Main disbursement records
-- `cash_disbursement_items` - Line items
+- `cash_disbursement_items` - Line items (Account, Description, Debit, Credit – journal-entry style)
 - `journal_entry` - Shared with receipts (if not exists)
 - `journal_entry_items` - Shared with receipts (if not exists)
 
@@ -189,12 +192,16 @@ mysql -u root -p tapstemco < sql/cash_disbursement_module.sql
 # Existing Cash Receipt installs – run migration for Debit/Credit line items:
 mysql -u root -p tapstemco < sql/alter_cash_receipt_items_debit_credit.sql
 
+# Existing Cash Disbursement installs – run migration for Debit/Credit line items:
+mysql -u root -p tapstemco < sql/alter_cash_disbursement_items_debit_credit.sql
+
 # Or phpMyAdmin
 1. Select database "tapstemco"
 2. Import: sql/cash_receipt_module.sql
 3. Import: sql/cash_disbursement_module.sql
 4. If upgrading Cash Receipt: import sql/alter_cash_receipt_items_debit_credit.sql
-5. Execute all queries
+5. If upgrading Cash Disbursement: import sql/alter_cash_disbursement_items_debit_credit.sql
+6. Execute all queries
 ```
 
 ---
@@ -267,8 +274,8 @@ If the Cash Disbursement (or Cash Receipt) menu item does not appear, the corres
 - ✅ Full CRUD operations
 - ✅ Auto-disbursement numbering (CD-00001)
 - ✅ Multiple payment methods
-- ✅ Multi-line items
-- ✅ Automatic journal entry creation
+- ✅ Multi-line items with Debit | Credit columns (balanced validation)
+- ✅ Automatic journal entry creation from line items
 - ✅ Professional disbursement vouchers
 - ✅ Excel export
 - ✅ Print functionality

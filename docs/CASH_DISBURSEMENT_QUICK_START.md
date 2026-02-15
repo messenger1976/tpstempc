@@ -19,8 +19,9 @@ The Cash Disbursement Module is a complete accounting solution for managing outg
 1. Open your database management tool (phpMyAdmin, MySQL Workbench, etc.)
 2. Navigate to your TAPSTEMCO database
 3. Import the SQL file: `sql/cash_disbursement_module.sql`
-4. Execute all queries
-5. **Add permissions** (required for the menu to appear): run `sql/add_cash_disbursement_permissions.sql` (see [User Permissions](#user-permissions) below).
+4. **If upgrading existing install** (to add Debit/Credit line items): run `sql/alter_cash_disbursement_items_debit_credit.sql`
+5. Execute all queries
+6. **Add permissions** (required for the menu to appear): run `sql/add_cash_disbursement_permissions.sql` (see [User Permissions](#user-permissions) below).
 
 ### Method 3: Using MySQL Command Line
 ```bash
@@ -103,10 +104,14 @@ mysql -u root -p tapstemco < sql/add_cash_disbursement_permissions.sql
 - disbursement_id (Foreign Key to cash_disbursements)
 - account (GL Account code)
 - description (Line item description)
-- amount (Line item amount)
+- amount (Line item amount; kept for total/legacy)
+- debit (Decimal – line item debit amount)
+- credit (Decimal – line item credit amount)
 - PIN (Multi-tenancy identifier)
 - created_at (Timestamp)
 ```
+
+**Debit/Credit columns:** Line items use **Debit** and **Credit** columns (same as journal entry). Each row has either a debit or a credit; total debits must equal total credits before saving. For existing installs, run the migration: `sql/alter_cash_disbursement_items_debit_credit.sql` to add these columns and migrate existing `amount` into `debit`.
 
 ## User Permissions
 
@@ -146,22 +151,20 @@ Without these entries in the `access_level` table, the **Cash Disbursement** men
    - **Paid To:** Enter the payee name
    - **Payment Method:** Choose from the **paymentmenthod** table (e.g. Cash, BANK DEPOSIT, Cheque, Bank Transfer, Mobile Money). Options are loaded from Settings → Payment Method Config; only active methods with your PIN appear.
    - **Description:** Add any notes about the disbursement
-4. Add Line Items:
+4. Add Line Items (Debit | Credit, like journal entry):
    - Click **"Add Item"** button
-   - Select GL Account (e.g., Office Supplies, Rent Expense)
+   - Select GL Account (e.g., Office Supplies, Rent Expense, or Cash/Bank)
    - Enter line description
-   - Enter amount
+   - Enter **Debit** and/or **Credit** (one per line; total debits must equal total credits)
    - Click **"Add"** to add to the list
-   - Click **"Remove"** to remove any item
-5. Review the **Total Amount** (auto-calculated)
+   - Click **"Remove"** to delete any row
+5. Review **Total Debits** and **Total Credits** (must be equal); fix any imbalance before saving
 6. Click **"Save Disbursement"**
 
 **Automatic Actions:**
 - Disbursement number generated automatically (CD-00001, CD-00002, etc.)
-- Journal entry created automatically:
-  - **Debit:** Selected expense/asset accounts
-  - **Credit:** Cash/Bank account
-- Maintains double-entry bookkeeping
+- Journal entry is built from your line items (each line’s debit/credit); no automatic Cash/Bank line is added when the entry is already balanced
+- Maintains double-entry bookkeeping; form requires total debits = total credits before save
 
 ### Editing a Disbursement
 
@@ -249,18 +252,20 @@ Without these entries in the `access_level` table, the **Cash Disbursement** men
 
 ### Automatic Journal Entry Creation
 
-When you save a cash disbursement, the system automatically creates a journal entry:
+When you save a cash disbursement, the system creates a journal entry from the **line items** (Debit and Credit columns). Each line item becomes one journal line; no extra Cash/Bank line is auto-added when debits already equal credits.
 
-**Example Transaction:** Disbursement of 5,000 for Office Supplies
+**Example (balanced by user):** Disbursement with two lines
 
-| Account | Type | Amount |
-|---------|------|--------|
-| Office Supplies Expense | Debit | 5,000.00 |
-| Cash/Bank Account | Credit | 5,000.00 |
+| Account | Debit | Credit |
+|---------|-------|--------|
+| Office Supplies Expense | 5,000.00 | — |
+| Cash/Bank Account | — | 5,000.00 |
+
+**Legacy behaviour:** For older disbursements that only had an `amount` (stored as debit), the view and accounting entries add a **Cash/Bank credit** line so that debits and credits balance when displayed.
 
 **Mapping Logic:**
-- **Cash/Bank Account (credit):** From **paymentmenthod** table (`gl_account_code`) for the selected payment method; if not set, the system looks up an asset account by payment method name or uses a Cash/Bank fallback.
-- **Expense/Asset accounts (debits):** User-selected GL accounts per line item.
+- **Cash/Bank account:** From **paymentmenthod** table (`gl_account_code`) for the selected payment method; if not set, the system looks up an asset account by payment method name or uses a Cash/Bank fallback (used for legacy auto-credit line only).
+- **Line items:** User enters Debit and/or Credit per account; totals must balance before save.
 
 ### Accounting Entries on the View Page
 
@@ -306,6 +311,11 @@ This error occurs when the installer script cannot run. Solutions:
 2. Verify all required fields in line items are filled
 3. Check that GL accounts exist in Chart of Accounts
 4. Ensure account codes are correct
+
+### Line Items Not Balanced (Debits ≠ Credits)
+1. Total debits must equal total credits before saving
+2. Review each line: enter amount in **Debit** or **Credit** (not both)
+3. The form shows a warning and blocks save when imbalanced
 
 ### Disbursement Number Duplicate Error
 1. Clear application cache (if cached)
@@ -360,6 +370,7 @@ tapstemco/
 ├── sql/
 │   ├── cash_disbursement_module.sql .............. Database schema
 │   ├── add_cash_disbursement_permissions.sql ..... Permissions (run after schema)
+│   ├── alter_cash_disbursement_items_debit_credit.sql ... Migration: add debit/credit to line items (run on existing installs)
 │   └── alter_cash_disbursement_payment_method_varchar.sql ... Optional: allow any payment method name (run if column is ENUM)
 └── install_cash_disbursement.php ................. Installation script
 ```
@@ -385,7 +396,7 @@ For more information:
 - **Framework:** CodeIgniter 3.x
 - **Database:** MySQL/MariaDB
 - **Created:** 2024
-- **Last Updated:** February 2026 (date filter, Report Summary, Report Details, Trial Balance layout)
+- **Last Updated:** February 2026 (debit/credit line items, balance validation, Report Summary/Details, Trial Balance layout)
 
 ---
 
@@ -400,7 +411,8 @@ For more information:
 ✅ Payment methods from **paymentmenthod** table (Cash, BANK DEPOSIT, Cheque, etc.)
 ✅ Professional disbursement vouchers (printable)
 ✅ Role-based permission system
-✅ Multi-line item support
+✅ Multi-line item support with **Debit | Credit** columns (same as journal entry); rows fully deletable
+✅ Balance validation (total debits = total credits) on create/edit
 ✅ Automatic numbering system
 ✅ Amount-in-words conversion
 ✅ Full CRUD operations

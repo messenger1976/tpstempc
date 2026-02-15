@@ -218,7 +218,6 @@ class Cash_disbursement extends CI_Controller {
         $this->form_validation->set_rules('payment_method', lang('cash_disbursement_payment_method'), 'required');
         $this->form_validation->set_rules('description', lang('cash_disbursement_description'), 'required');
         $this->form_validation->set_rules('account[]', lang('cash_disbursement_account'), 'required');
-        $this->form_validation->set_rules('amount[]', lang('cash_disbursement_amount'), 'required');
 
         if ($this->form_validation->run() == TRUE) {
             // Prepare disbursement data
@@ -236,28 +235,35 @@ class Cash_disbursement extends CI_Controller {
                 'created_at' => date('Y-m-d H:i:s')
             );
 
-            // Get line items
+            // Get line items (debit/credit style like journal entry)
             $accounts = $this->input->post('account');
-            $amounts = $this->input->post('amount');
+            $debits = $this->input->post('debit');
+            $credits = $this->input->post('credit');
             $line_descriptions = $this->input->post('line_description');
             
             $line_items = array();
-            $total = 0;
+            $total_debit = 0;
+            $total_credit = 0;
             
             if (is_array($accounts)) {
                 foreach ($accounts as $key => $account) {
-                    if (!empty($account) && !empty($amounts[$key]) && $amounts[$key] > 0) {
+                    $debit = isset($debits[$key]) ? floatval(str_replace(',', '', $debits[$key])) : 0;
+                    $credit = isset($credits[$key]) ? floatval(str_replace(',', '', $credits[$key])) : 0;
+                    if (!empty($account) && ($debit > 0 || $credit > 0)) {
                         $line_items[] = array(
                             'account' => $account,
-                            'amount' => $amounts[$key],
+                            'debit' => $debit,
+                            'credit' => $credit,
+                            'amount' => $debit + $credit,
                             'description' => isset($line_descriptions[$key]) ? $line_descriptions[$key] : ''
                         );
-                        $total += $amounts[$key];
+                        $total_debit += $debit;
+                        $total_credit += $credit;
                     }
                 }
             }
             
-            $disburse_data['total_amount'] = $total;
+            $disburse_data['total_amount'] = max($total_debit, $total_credit);
 
             // Create cash disbursement
             $disburse_id = $this->cash_disbursement_model->create_cash_disbursement($disburse_data, $line_items);
@@ -312,7 +318,6 @@ class Cash_disbursement extends CI_Controller {
         $this->form_validation->set_rules('payment_method', lang('cash_disbursement_payment_method'), 'required');
         $this->form_validation->set_rules('description', lang('cash_disbursement_description'), 'required');
         $this->form_validation->set_rules('account[]', lang('cash_disbursement_account'), 'required');
-        $this->form_validation->set_rules('amount[]', lang('cash_disbursement_amount'), 'required');
 
         if ($this->form_validation->run() == TRUE) {
             $posted_payment = trim((string) $this->input->post('payment_method'));
@@ -335,28 +340,35 @@ class Cash_disbursement extends CI_Controller {
                 'updated_at' => date('Y-m-d H:i:s')
             );
 
-            // Get line items
+            // Get line items (debit/credit style like journal entry)
             $accounts = $this->input->post('account');
-            $amounts = $this->input->post('amount');
+            $debits = $this->input->post('debit');
+            $credits = $this->input->post('credit');
             $line_descriptions = $this->input->post('line_description');
             
             $line_items = array();
-            $total = 0;
+            $total_debit = 0;
+            $total_credit = 0;
             
             if (is_array($accounts)) {
                 foreach ($accounts as $key => $account) {
-                    if (!empty($account) && !empty($amounts[$key]) && $amounts[$key] > 0) {
+                    $debit = isset($debits[$key]) ? floatval(str_replace(',', '', $debits[$key])) : 0;
+                    $credit = isset($credits[$key]) ? floatval(str_replace(',', '', $credits[$key])) : 0;
+                    if (!empty($account) && ($debit > 0 || $credit > 0)) {
                         $line_items[] = array(
                             'account' => $account,
-                            'amount' => $amounts[$key],
+                            'debit' => $debit,
+                            'credit' => $credit,
+                            'amount' => $debit + $credit,
                             'description' => isset($line_descriptions[$key]) ? $line_descriptions[$key] : ''
                         );
-                        $total += $amounts[$key];
+                        $total_debit += $debit;
+                        $total_credit += $credit;
                     }
                 }
             }
             
-            $disburse_data['total_amount'] = $total;
+            $disburse_data['total_amount'] = max($total_debit, $total_credit);
 
             // Update cash disbursement
             $result = $this->cash_disbursement_model->update_cash_disbursement($id, $disburse_data, $line_items);
@@ -370,7 +382,7 @@ class Cash_disbursement extends CI_Controller {
         }
 
         $this->data['disburse'] = $disburse;
-        $this->data['line_items'] = $this->cash_disbursement_model->get_disburse_items($id);
+        $this->data['line_items'] = $this->cash_disbursement_model->get_line_items_for_edit($id);
         
         // Get account list for dropdown
         $this->data['account_list'] = $this->finance_model->account_chart_by_accounttype();

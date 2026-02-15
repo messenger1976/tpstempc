@@ -22,11 +22,12 @@ Manage incoming cash payments from customers, members, or other sources
 
 ### 💸 **Cash Disbursement Module**
 Manage outgoing cash payments to suppliers, vendors, or expenses
+- Line items use **Debit | Credit columns** (same as journal entry); fully deletable rows; balance validation (debits = credits)
 - Auto-generated disbursement numbers (CD-00001, CD-00002, etc.)
 - Payment methods from **paymentmenthod** table (Cash, BANK DEPOSIT, Cheque, etc.)
 - Edit/delete with correct journal entry replacement or removal
-- Accounting entries on view always reflect **current** payment method and line items
-- Automatic journal entry creation
+- Accounting entries on view always reflect **current** payment method and line items; totals row and balanced/unbalanced message
+- Automatic journal entry creation from line items
 - Professional disbursement vouchers
 - Excel export
 

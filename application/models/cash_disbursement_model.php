@@ -49,16 +49,24 @@ class Cash_disbursement_model extends CI_Model {
     }
 
     /**
-     * Get disbursement items/line items
+     * Get disbursement items/line items (with debit/credit like journal entry)
      */
     function get_disburse_items($disburse_id) {
-        $this->db->where('disbursement_id', $disburse_id);
-        $this->db->order_by('id', 'ASC');
-        
-        $items = $this->db->get('cash_disbursement_items')->result();
-        
         $pin = current_user()->PIN;
-        // Get account names using a direct query so the query builder is not left with where(account) for later current_user() calls
+        $has_debit = $this->db->query("SHOW COLUMNS FROM cash_disbursement_items LIKE 'debit'")->row();
+        $has_credit = $this->db->query("SHOW COLUMNS FROM cash_disbursement_items LIKE 'credit'")->row();
+        if ($has_debit && $has_credit) {
+            $sql = "SELECT cdi.*, COALESCE(cdi.debit, cdi.amount) as debit, COALESCE(cdi.credit, 0) as credit
+                    FROM cash_disbursement_items cdi
+                    WHERE cdi.disbursement_id = ?
+                    ORDER BY cdi.id ASC";
+        } else {
+            $sql = "SELECT cdi.*, COALESCE(cdi.amount, 0) as debit, 0 as credit
+                    FROM cash_disbursement_items cdi
+                    WHERE cdi.disbursement_id = ?
+                    ORDER BY cdi.id ASC";
+        }
+        $items = $this->db->query($sql, array($disburse_id))->result();
         foreach ($items as $item) {
             $row = $this->db->query(
                 'SELECT name FROM account_chart WHERE account = ? AND PIN = ? LIMIT 1',
@@ -66,8 +74,42 @@ class Cash_disbursement_model extends CI_Model {
             )->row();
             $item->account_name = $row ? $row->name : 'Unknown Account';
         }
-        
         return $items;
+    }
+
+    /**
+     * Get line items for edit form. For legacy disbursements (debits-only), prepends Cash/Bank credit to balance.
+     */
+    function get_line_items_for_edit($disburse_id) {
+        $disburse = $this->get_cash_disbursement($disburse_id);
+        if (!$disburse) {
+            return array();
+        }
+        $line_items = $this->get_disburse_items($disburse_id);
+        $total_debit = 0;
+        $total_credit = 0;
+        foreach ($line_items as $item) {
+            $total_debit += isset($item->debit) ? floatval($item->debit) : (isset($item->amount) ? floatval($item->amount) : 0);
+            $total_credit += isset($item->credit) ? floatval($item->credit) : 0;
+        }
+        // Legacy disbursements: add Cash/Bank credit to balance when debits exceed credits
+        if ($total_debit > $total_credit && abs($total_debit - $total_credit) > 0.001) {
+            $cash_account = $this->get_cash_account($disburse->payment_method);
+            if ($cash_account) {
+                $acct_row = $this->db->query('SELECT name FROM account_chart WHERE account = ? AND PIN = ? LIMIT 1', array($cash_account, current_user()->PIN))->row();
+                $credit_amount = $total_debit - $total_credit;
+                $cash_line = (object) array(
+                    'account' => $cash_account,
+                    'account_name' => $acct_row ? $acct_row->name : $cash_account,
+                    'description' => 'Disbursement to: ' . (isset($disburse->paid_to) ? $disburse->paid_to : ''),
+                    'debit' => 0,
+                    'credit' => $credit_amount,
+                    'amount' => $credit_amount
+                );
+                array_unshift($line_items, $cash_line);
+            }
+        }
+        return $line_items;
     }
 
     /**
@@ -96,12 +138,19 @@ class Cash_disbursement_model extends CI_Model {
         }
         $disburse_id = $disburse->id;
         
-        // Insert disbursement items
+        // Insert disbursement items (with debit/credit)
         if ($disburse_id && !empty($line_items)) {
             foreach ($line_items as $item) {
-                $item['disbursement_id'] = $disburse_id;
-                $item['PIN'] = current_user()->PIN;
-                $this->db->insert('cash_disbursement_items', $item);
+                $row = array(
+                    'disbursement_id' => $disburse_id,
+                    'account' => $item['account'],
+                    'description' => isset($item['description']) ? $item['description'] : '',
+                    'amount' => isset($item['amount']) ? $item['amount'] : (isset($item['debit']) ? $item['debit'] : 0) + (isset($item['credit']) ? $item['credit'] : 0),
+                    'PIN' => current_user()->PIN
+                );
+                if (isset($item['debit'])) $row['debit'] = $item['debit'];
+                if (isset($item['credit'])) $row['credit'] = $item['credit'];
+                $this->db->insert('cash_disbursement_items', $row);
             }
         }
         
@@ -171,12 +220,19 @@ class Cash_disbursement_model extends CI_Model {
         // Delete existing line items (direct query)
         $this->db->query('DELETE FROM cash_disbursement_items WHERE disbursement_id = ?', array($id));
 
-        // Insert new line items
+        // Insert new line items (with debit/credit)
         if (!empty($line_items)) {
             foreach ($line_items as $item) {
-                $item['disbursement_id'] = $id;
-                $item['PIN'] = $pin;
-                $this->db->insert('cash_disbursement_items', $item);
+                $row = array(
+                    'disbursement_id' => $id,
+                    'account' => $item['account'],
+                    'description' => isset($item['description']) ? $item['description'] : '',
+                    'amount' => isset($item['amount']) ? $item['amount'] : (isset($item['debit']) ? $item['debit'] : 0) + (isset($item['credit']) ? $item['credit'] : 0),
+                    'PIN' => $pin
+                );
+                if (isset($item['debit'])) $row['debit'] = $item['debit'];
+                if (isset($item['credit'])) $row['credit'] = $item['credit'];
+                $this->db->insert('cash_disbursement_items', $row);
             }
         }
 
@@ -336,30 +392,12 @@ class Cash_disbursement_model extends CI_Model {
     }
 
     /**
-     * Create journal entry for cash disbursement
+     * Create journal entry for cash disbursement (uses line items directly - each has account, debit, credit).
      */
     private function create_journal_entry($disburse_id, $disburse_data, $line_items) {
-        log_message('debug', 'create_journal_entry called for disbursement ID: ' . $disburse_id . ', line_items count: ' . count($line_items));
-        
-        // Get cash/bank account based on payment method (so entries reflect the chosen method)
-        $cash_account = $this->get_cash_account(isset($disburse_data['payment_method']) ? $disburse_data['payment_method'] : 'Cash');
-        if (!$cash_account) {
-            $pin = current_user()->PIN;
-            $fallback = $this->db->query(
-                'SELECT account FROM account_chart WHERE PIN = ? AND (name LIKE ? OR name LIKE ?) AND account_type IN (1, 10000) LIMIT 1',
-                array($pin, '%Cash%', '%Bank%')
-            )->row();
-            $cash_account = $fallback ? $fallback->account : null;
-        }
-        if (!$cash_account) {
-            log_message('error', 'Cash disbursement journal entry skipped: No cash/bank account found for payment method: ' . (isset($disburse_data['payment_method']) ? $disburse_data['payment_method'] : ''));
-            return false;
-        }
-        
-        log_message('debug', 'Cash account found: ' . $cash_account);
+        log_message('debug', 'create_journal_entry for disbursement ID: ' . $disburse_id . ', items: ' . count($line_items));
         
         $entry_date = isset($disburse_data['disburse_date']) ? $disburse_data['disburse_date'] : date('Y-m-d');
-        
         $journal_data = array(
             'entry_date' => $entry_date,
             'description' => 'Cash Disbursement: ' . $disburse_data['disburse_no'] . ' - ' . (isset($disburse_data['description']) ? $disburse_data['description'] : ''),
@@ -372,67 +410,41 @@ class Cash_disbursement_model extends CI_Model {
             $journal_data['reference_id'] = $disburse_id;
         }
         
-        $journal_insert = $this->db->insert('journal_entry', $journal_data);
+        $this->db->insert('journal_entry', $journal_data);
         $journal_id = $this->db->insert_id();
-        
-        if (!$journal_insert || !$journal_id) {
-            $error = $this->db->error();
-            log_message('error', 'Failed to create journal_entry header: ' . json_encode($error) . ' | Data: ' . json_encode($journal_data));
+        if (!$journal_id) {
+            log_message('error', 'Failed to create journal_entry header for disbursement: ' . $disburse_id);
             return false;
         }
-        
-        log_message('debug', 'Journal entry header created with ID: ' . $journal_id);
         
         $items_table_has_journal_id = $this->db->query("SHOW COLUMNS FROM journal_entry_items LIKE 'journal_id'")->row();
         $items_table_has_entry_id = $this->db->query("SHOW COLUMNS FROM journal_entry_items LIKE 'entry_id'")->row();
         $items_table_has_description = $this->db->query("SHOW COLUMNS FROM journal_entry_items LIKE 'description'")->row();
         $link_key = $items_table_has_journal_id ? 'journal_id' : ($items_table_has_entry_id ? 'entry_id' : 'journal_id');
-        $link_value = $journal_id;
-        
-        $credit_item = array(
-            $link_key => $link_value,
-            'account' => $cash_account,
-            'debit' => 0,
-            'credit' => $disburse_data['total_amount'],
-            'PIN' => current_user()->PIN
-        );
-        if ($items_table_has_description) {
-            $credit_item['description'] = 'Disbursement to: ' . (isset($disburse_data['paid_to']) ? $disburse_data['paid_to'] : '');
-        }
-        $credit_insert = $this->db->insert('journal_entry_items', $credit_item);
-        if (!$credit_insert) {
-            $error = $this->db->error();
-            log_message('error', 'Failed to insert credit item for journal entry: ' . json_encode($error) . ' | Data: ' . json_encode($credit_item));
-            return false;
-        }
         
         foreach ($line_items as $item) {
-            $debit_item = array(
-                $link_key => $link_value,
+            $debit = isset($item['debit']) ? floatval($item['debit']) : 0;
+            $credit = isset($item['credit']) ? floatval($item['credit']) : 0;
+            if (empty($item['account']) || ($debit <= 0 && $credit <= 0)) continue;
+            $line_desc = isset($item['description']) ? $item['description'] : '';
+            $insert_item = array(
+                $link_key => $journal_id,
                 'account' => $item['account'],
-                'debit' => $item['amount'],
-                'credit' => 0,
+                'debit' => $debit,
+                'credit' => $credit,
                 'PIN' => current_user()->PIN
             );
-            if ($items_table_has_description) {
-                $debit_item['description'] = isset($item['description']) ? $item['description'] : '';
-            }
-            $debit_insert = $this->db->insert('journal_entry_items', $debit_item);
-            if (!$debit_insert) {
-                $error = $this->db->error();
-                log_message('error', 'Failed to insert debit item for journal entry: ' . json_encode($error) . ' | Data: ' . json_encode($debit_item));
-                return false;
-            }
+            if ($items_table_has_description) $insert_item['description'] = $line_desc;
+            $this->db->insert('journal_entry_items', $insert_item);
         }
         
-        log_message('debug', 'Journal entry items created successfully for disbursement ID: ' . $disburse_id . ', journal_id: ' . $journal_id . ', items count: ' . (count($line_items) + 1));
+        log_message('debug', 'Journal entry created for disbursement ID: ' . $disburse_id . ', journal_id: ' . $journal_id);
         return true;
     }
 
     /**
      * Get journal/accounting entries for a cash disbursement (for display on view page).
-     * Always built from current disbursement + line items + current payment method so the
-     * displayed entries match the current payment method and accounts (they update when edited).
+     * Built from line items. For legacy disbursements (debits-only), adds Cash/Bank credit to balance.
      */
     function get_journal_entries_by_disbursement($disburse_id) {
         $pin = current_user()->PIN;
@@ -444,27 +456,40 @@ class Cash_disbursement_model extends CI_Model {
         }
 
         $line_items = $this->get_disburse_items($disburse_id);
-        $cash_account_code = $this->get_cash_account($disburse->payment_method);
         $display_items = array();
-        if ($cash_account_code) {
-            $cash_name = $this->db->query('SELECT name FROM account_chart WHERE account = ? AND PIN = ? LIMIT 1', array($cash_account_code, $pin))->row();
-            $display_items[] = (object) array(
-                'account' => $cash_account_code,
-                'account_name' => $cash_name ? $cash_name->name : $cash_account_code,
-                'debit' => 0,
-                'credit' => floatval($disburse->total_amount),
-                'description' => 'Disbursement to: ' . (isset($disburse->paid_to) ? $disburse->paid_to : '')
-            );
-        }
+        $total_debit = 0;
+        $total_credit = 0;
+        
         foreach ($line_items as $item) {
+            $debit = isset($item->debit) ? floatval($item->debit) : (isset($item->amount) ? floatval($item->amount) : 0);
+            $credit = isset($item->credit) ? floatval($item->credit) : 0;
             $display_items[] = (object) array(
                 'account' => $item->account,
                 'account_name' => isset($item->account_name) ? $item->account_name : $item->account,
-                'debit' => floatval($item->amount),
-                'credit' => 0,
+                'debit' => $debit,
+                'credit' => $credit,
                 'description' => isset($item->description) ? $item->description : ''
             );
+            $total_debit += $debit;
+            $total_credit += $credit;
         }
+        
+        // Legacy disbursements: line items had debits only; Cash/Bank credit was auto-generated, not in line items
+        if ($total_debit > $total_credit && abs($total_debit - $total_credit) > 0.001) {
+            $cash_account = $this->get_cash_account($disburse->payment_method);
+            if ($cash_account) {
+                $cash_name_row = $this->db->query('SELECT name FROM account_chart WHERE account = ? AND PIN = ? LIMIT 1', array($cash_account, $pin))->row();
+                $credit_amount = $total_debit - $total_credit;
+                array_unshift($display_items, (object) array(
+                    'account' => $cash_account,
+                    'account_name' => $cash_name_row ? $cash_name_row->name : $cash_account,
+                    'debit' => 0,
+                    'credit' => $credit_amount,
+                    'description' => 'Disbursement to: ' . (isset($disburse->paid_to) ? $disburse->paid_to : '')
+                ));
+            }
+        }
+        
         $journal_display = (object) array(
             'id' => 0,
             'description' => 'Cash Disbursement: ' . $disburse->disburse_no . ' - ' . (isset($disburse->description) ? $disburse->description : ''),

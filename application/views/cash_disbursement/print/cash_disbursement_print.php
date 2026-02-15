@@ -200,46 +200,56 @@
         </div>
         <?php endif; ?>
 
-        <!-- Line Items Table -->
+        <!-- Line Items Table (Debit | Credit like journal entry) -->
         <table>
             <thead>
                 <tr>
                     <th width="10%">#</th>
                     <th width="25%"><?php echo lang('cash_disbursement_account'); ?></th>
-                    <th width="45%"><?php echo lang('cash_disbursement_line_description'); ?></th>
-                    <th width="20%" class="text-right"><?php echo lang('cash_disbursement_amount'); ?></th>
+                    <th width="35%"><?php echo lang('cash_disbursement_line_description'); ?></th>
+                    <th width="15%" class="text-right"><?php echo lang('journalentry_debit'); ?></th>
+                    <th width="15%" class="text-right"><?php echo lang('journalentry_credit'); ?></th>
                 </tr>
             </thead>
             <tbody>
                 <?php if (!empty($line_items)): ?>
-                    <?php $total = 0; $index = 1; ?>
-                    <?php foreach ($line_items as $item): ?>
+                    <?php $total_debit = 0; $total_credit = 0; $index = 1; ?>
+                    <?php foreach ($line_items as $item): 
+                        $item_debit = isset($item->debit) ? floatval($item->debit) : (isset($item->amount) ? floatval($item->amount) : 0);
+                        $item_credit = isset($item->credit) ? floatval($item->credit) : 0;
+                        $total_debit += $item_debit;
+                        $total_credit += $item_credit;
+                    ?>
                         <tr>
                             <td><?php echo $index++; ?></td>
                             <td><?php echo $item->account_name . ' (' . $item->account . ')'; ?></td>
                             <td><?php echo $item->description; ?></td>
-                            <td class="text-right"><?php echo number_format($item->amount, 2); ?></td>
+                            <td class="text-right"><?php echo $item_debit > 0 ? number_format($item_debit, 2) : '—'; ?></td>
+                            <td class="text-right"><?php echo $item_credit > 0 ? number_format($item_credit, 2) : '—'; ?></td>
                         </tr>
-                        <?php $total += $item->amount; ?>
                     <?php endforeach; ?>
                     <tr class="total-row">
                         <td colspan="3" class="text-right"><?php echo lang('total'); ?>:</td>
-                        <td class="text-right"><?php echo number_format($total, 2); ?></td>
+                        <td class="text-right"><?php echo number_format($total_debit, 2); ?></td>
+                        <td class="text-right"><?php echo number_format($total_credit, 2); ?></td>
                     </tr>
                 <?php else: ?>
                     <tr>
-                        <td colspan="4" class="text-center"><?php echo lang('no_records_found'); ?></td>
+                        <td colspan="5" class="text-center"><?php echo lang('no_records_found'); ?></td>
                     </tr>
                 <?php endif; ?>
             </tbody>
         </table>
 
         <!-- Amount in Words -->
-        <?php if (!empty($total)): ?>
+        <?php 
+        $print_total = !empty($line_items) ? max($total_debit, $total_credit) : (isset($disburse->total_amount) ? $disburse->total_amount : 0);
+        if ($print_total > 0): 
+        ?>
         <div class="amount-in-words">
             <strong><?php echo lang('amount_in_words'); ?>:</strong>
             <?php 
-            echo ucfirst($this->common_helper->convert_number_to_words($total)) . ' only.';
+            echo ucfirst(convert_number_to_words($print_total)) . ' only.';
             ?>
         </div>
         <?php endif; ?>

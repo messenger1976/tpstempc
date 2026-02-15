@@ -172,28 +172,19 @@ class Cash_disbursement extends CI_Controller {
         $row = 2;
         foreach ($grouped as $txn) {
             $lines = $txn['lines'];
-            $txn_total = 0;
-            foreach ($lines as $l) { $txn_total += $l->amount; }
             foreach ($lines as $l) {
+                $debit = isset($l->debit) ? floatval($l->debit) : 0;
+                $credit = isset($l->credit) ? floatval($l->credit) : 0;
                 $sheet->setCellValue('A' . $row, $txn['disburse_no']);
                 $sheet->setCellValue('B' . $row, date('d-m-Y', strtotime($txn['disburse_date'])));
                 $sheet->setCellValue('C' . $row, $txn['paid_to']);
                 $sheet->setCellValue('D' . $row, $txn['payment_method']);
                 $sheet->setCellValue('E' . $row, $l->account);
                 $sheet->setCellValue('F' . $row, $l->account_name . (!empty($l->line_description) ? ' — ' . $l->line_description : ''));
-                $sheet->setCellValue('G' . $row, $l->amount);
-                $sheet->setCellValue('H' . $row, 0);
+                $sheet->setCellValue('G' . $row, $debit);
+                $sheet->setCellValue('H' . $row, $credit);
                 $row++;
             }
-            $sheet->setCellValue('A' . $row, $txn['disburse_no']);
-            $sheet->setCellValue('B' . $row, date('d-m-Y', strtotime($txn['disburse_date'])));
-            $sheet->setCellValue('C' . $row, $txn['paid_to']);
-            $sheet->setCellValue('D' . $row, $txn['payment_method']);
-            $sheet->setCellValue('E' . $row, '—');
-            $sheet->setCellValue('F' . $row, lang('cash_and_bank'));
-            $sheet->setCellValue('G' . $row, 0);
-            $sheet->setCellValue('H' . $row, $txn_total);
-            $row++;
         }
         $sheet->getStyle('G2:H' . ($row - 1))->getNumberFormat()->setFormatCode('#,##0.00');
         foreach (range('A', 'H') as $col) { $sheet->getColumnDimension($col)->setAutoSize(true); }

@@ -70,9 +70,13 @@
             $report_grand_total = 0;
             foreach ($grouped as $txn):
                 $lines = $txn['lines'];
-                $txn_total = 0;
-                foreach ($lines as $l) $txn_total += $l->amount;
-                $report_grand_total += $txn_total;
+                $txn_debit = 0;
+                $txn_credit = 0;
+                foreach ($lines as $l) {
+                    $txn_debit += isset($l->debit) ? floatval($l->debit) : 0;
+                    $txn_credit += isset($l->credit) ? floatval($l->credit) : 0;
+                }
+                $report_grand_total += max($txn_debit, $txn_credit);
         ?>
         <div class="txn-group">
             <div class="txn-header">
@@ -95,24 +99,21 @@
                     </tr>
                 </thead>
                 <tbody>
-                    <?php foreach ($lines as $l): ?>
+                    <?php foreach ($lines as $l): 
+                        $debit = isset($l->debit) ? floatval($l->debit) : 0;
+                        $credit = isset($l->credit) ? floatval($l->credit) : 0;
+                    ?>
                     <tr>
                         <td class="col-account-code"><?php echo htmlspecialchars($l->account); ?></td>
                         <td><?php echo htmlspecialchars($l->account_name); ?><?php if (!empty($l->line_description)): ?> — <?php echo htmlspecialchars($l->line_description); ?><?php endif; ?></td>
-                        <td class="col-debit"><?php echo number_format($l->amount, 2); ?></td>
-                        <td class="col-credit"><?php echo number_format(0, 2); ?></td>
+                        <td class="col-debit"><?php echo number_format($debit, 2); ?></td>
+                        <td class="col-credit"><?php echo number_format($credit, 2); ?></td>
                     </tr>
                     <?php endforeach; ?>
-                    <tr>
-                        <td class="col-account-code">—</td>
-                        <td><?php echo lang('cash_and_bank'); ?></td>
-                        <td class="col-debit"><?php echo number_format(0, 2); ?></td>
-                        <td class="col-credit"><?php echo number_format($txn_total, 2); ?></td>
-                    </tr>
                     <tr class="total-row">
                         <td colspan="2" style="text-align: right;"><?php echo lang('total'); ?></td>
-                        <td class="col-debit"><?php echo number_format($txn_total, 2); ?></td>
-                        <td class="col-credit"><?php echo number_format($txn_total, 2); ?></td>
+                        <td class="col-debit"><?php echo number_format($txn_debit, 2); ?></td>
+                        <td class="col-credit"><?php echo number_format($txn_credit, 2); ?></td>
                     </tr>
                 </tbody>
             </table>

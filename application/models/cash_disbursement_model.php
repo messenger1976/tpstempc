@@ -627,25 +627,46 @@ class Cash_disbursement_model extends CI_Model {
 
     /**
      * Get detailed lines for cash disbursement report (all disbursement items with header info).
+     * Uses same logic as get_journal_entries_by_disbursement/transaction view: actual debit/credit per line,
+     * plus Cash/Bank credit when legacy (debits-only). Excludes cancelled disbursements.
      */
     function get_account_details($date_from = null, $date_to = null) {
         $pin = current_user()->PIN;
-        $sql = "SELECT cd.disburse_no, cd.disburse_date, cd.paid_to, cd.payment_method, cd.description AS disburse_description,
-                cdi.account, COALESCE(ac.name, 'Unknown Account') AS account_name, cdi.description AS line_description, cdi.amount
-                FROM cash_disbursement_items cdi
-                INNER JOIN cash_disbursements cd ON cd.id = cdi.disbursement_id AND cd.PIN = ?
-                LEFT JOIN account_chart ac ON ac.account = cdi.account AND ac.PIN = ?
-                WHERE cdi.PIN = ?";
-        $params = array($pin, $pin, $pin);
+        $this->db->select('id, disburse_no, disburse_date, paid_to, payment_method, description');
+        $this->db->from('cash_disbursements');
+        $this->db->where('PIN', $pin);
+        $this->db->where('cancelled', 0);
         if (!empty($date_from)) {
-            $sql .= " AND cd.disburse_date >= ?";
-            $params[] = $date_from;
+            $this->db->where('disburse_date >=', $date_from);
         }
         if (!empty($date_to)) {
-            $sql .= " AND cd.disburse_date <= ?";
-            $params[] = $date_to;
+            $this->db->where('disburse_date <=', $date_to);
         }
-        $sql .= " ORDER BY cd.disburse_date ASC, cd.id ASC, cdi.id ASC";
-        return $this->db->query($sql, $params)->result();
+        $this->db->order_by('disburse_date ASC');
+        $this->db->order_by('id ASC');
+        $disbursements = $this->db->get()->result();
+
+        $details = array();
+        foreach ($disbursements as $cd) {
+            $ae = $this->get_journal_entries_by_disbursement($cd->id);
+            $items = isset($ae['items']) ? $ae['items'] : array();
+            foreach ($items as $item) {
+                $row = (object) array(
+                    'disburse_no' => $cd->disburse_no,
+                    'disburse_date' => $cd->disburse_date,
+                    'paid_to' => $cd->paid_to,
+                    'payment_method' => $cd->payment_method,
+                    'disburse_description' => isset($cd->description) ? $cd->description : '',
+                    'account' => isset($item->account) ? $item->account : '',
+                    'account_name' => isset($item->account_name) ? $item->account_name : '',
+                    'line_description' => isset($item->description) ? $item->description : '',
+                    'debit' => isset($item->debit) ? floatval($item->debit) : 0,
+                    'credit' => isset($item->credit) ? floatval($item->credit) : 0,
+                    'amount' => (isset($item->debit) ? floatval($item->debit) : 0) + (isset($item->credit) ? floatval($item->credit) : 0)
+                );
+                $details[] = $row;
+            }
+        }
+        return $details;
     }
 }

@@ -35,30 +35,38 @@ mysql -u root -p tapstemco < sql/add_cash_disbursement_permissions.sql
 - **Purpose:** Handles all cash disbursement operations
 - **Methods:**
   - `index()` - Display disbursement list
-  - `cash_disbursement_list()` - Paginated list view
+  - `cash_disbursement_list()` - List view with date range filter
   - `cash_disbursement_create()` - Create new disbursement form
   - `cash_disbursement_edit()` - Edit existing disbursement
   - `cash_disbursement_view()` - View disbursement details
   - `cash_disbursement_print()` - Printable disbursement voucher
   - `cash_disbursement_delete()` - Delete disbursement
-  - `cash_disbursement_export()` - Export to Excel format
+  - `cash_disbursement_export()` - Export to Excel (respects date range filter)
+  - `cash_disbursement_report_summary()` - Trial Balance report (accounts summary)
+  - `cash_disbursement_report_summary_export()` - Export Report Summary to Excel
+  - `cash_disbursement_report_details()` - Report Details (grouped by transaction, Trial Balance layout)
+  - `cash_disbursement_report_details_export()` - Export Report Details to Excel
 
 ### Models
 - **File:** `application/models/cash_disbursement_model.php`
 - **Purpose:** Database operations and journal entry creation
 - **Key Methods:**
   - `create_cash_disbursement()` - Create disbursement with journal entry
-  - `get_disbursements()` - Retrieve disbursements with pagination
+  - `get_cash_disbursements($id, $disburse_no, $date_from, $date_to)` - Retrieve disbursements (with optional date range)
+  - `get_account_summary($date_from, $date_to)` - Get account totals for Report Summary (Trial Balance)
+  - `get_account_details($date_from, $date_to)` - Get detailed lines for Report Details (grouped by disbursement)
   - `update_cash_disbursement()` - Update existing disbursement
   - `delete_cash_disbursement()` - Delete disbursement
   - `create_journal_entry()` - Auto-create journal entry
 
 ### Views
-- **`application/views/cash_disbursement/cash_disbursement_list.php`** - List all disbursements with DataTables
+- **`application/views/cash_disbursement/cash_disbursement_list.php`** - List with DataTables, date range filter, Report Summary & Report Details buttons
 - **`application/views/cash_disbursement/cash_disbursement_form.php`** - Create new disbursement form
 - **`application/views/cash_disbursement/cash_disbursement_edit.php`** - Edit disbursement form
 - **`application/views/cash_disbursement/cash_disbursement_view.php`** - View disbursement details
 - **`application/views/cash_disbursement/print/cash_disbursement_print.php`** - Printable voucher template
+- **`application/views/cash_disbursement/cash_disbursement_report_summary.php`** - Trial Balance report (accounts summary)
+- **`application/views/cash_disbursement/cash_disbursement_report_details.php`** - Report Details (grouped by transaction, Trial Balance layout)
 
 ### Database
 - **File:** `sql/cash_disbursement_module.sql`
@@ -175,6 +183,14 @@ Without these entries in the `access_level` table, the **Cash Disbursement** men
    - Line items breakdown
    - Creator and timestamp information
 
+### Filtering Disbursements by Date Range
+
+1. On the Cash Disbursement List page, use the date filter section (above the table)
+2. Select **Date From** (optional) and **Date To** (optional)
+3. Click **Filter** to apply
+4. Click **Clear** to reset and show all records
+5. Export and Report Summary/Details respect the active date filter when applied
+
 ### Printing a Disbursement
 
 1. Go to **Finance → Cash Disbursement List** or view disbursement details
@@ -191,12 +207,33 @@ Without these entries in the `access_level` table, the **Cash Disbursement** men
 ### Exporting to Excel
 
 1. Go to **Finance → Cash Disbursement List**
-2. Click the **Export to Excel** button
-3. Excel file downloads with:
-   - All disbursement records
+2. Optionally set **Date From** and **Date To** and click **Filter**
+3. Click the **Export to Excel** button (respects date filter)
+4. Excel file downloads with:
+   - Disbursement records (filtered if date range applied)
    - Payment dates and methods
    - Total amounts
    - Payee information
+
+### Report Summary (Trial Balance)
+
+1. On Cash Disbursement List, optionally set date range and click **Filter**
+2. Click **Report Summary** button (next to Clear)
+3. Report opens in new tab in Trial Balance format:
+   - **Debit:** Each account used in disbursement line items (expenses, etc.)
+   - **Credit:** Cash and Bank (total disbursements)
+   - Total row shows matching Debit and Credit
+4. Use **Print** or **Export to Excel** on the report page
+
+### Report Details (Grouped by Transaction)
+
+1. On Cash Disbursement List, optionally set date range and click **Filter**
+2. Click **Report Details** button (next to Clear)
+3. Report opens in new tab showing each disbursement as a separate Trial Balance block:
+   - Header: Disburse No, Date, Paid To, Payment Method
+   - Trial Balance table: line item accounts (Debit), Cash and Bank (Credit), Total row
+   - Grand total at end
+4. Use **Print** or **Export to Excel** on the report page
 
 ### Deleting a Disbursement
 
@@ -295,9 +332,11 @@ BACKUP TABLE cash_disbursements;
 
 ### Reporting
 Generate disbursement reports from the module:
-1. **List View:** View all disbursements with filtering
-2. **Excel Export:** Export for further analysis
-3. **Print Vouchers:** Print individual or multiple vouchers
+1. **List View:** View all disbursements with date range filtering
+2. **Report Summary:** Trial Balance format – totals by account (Debit: expenses; Credit: Cash and Bank)
+3. **Report Details:** Grouped by transaction – each disbursement as Trial Balance block
+4. **Excel Export:** Export list, Report Summary, or Report Details (all respect date filter)
+5. **Print Vouchers:** Print individual or multiple vouchers
 
 ## File Locations Summary
 
@@ -342,11 +381,11 @@ For more information:
 
 ## Version Information
 
-- **Module Version:** 1.1
+- **Module Version:** 1.2
 - **Framework:** CodeIgniter 3.x
 - **Database:** MySQL/MariaDB
 - **Created:** 2024
-- **Last Updated:** 2025
+- **Last Updated:** February 2026 (date filter, Report Summary, Report Details, Trial Balance layout)
 
 ---
 
@@ -354,9 +393,12 @@ For more information:
 
 ✅ Complete cash disbursement management system
 ✅ Automatic journal entry generation
+✅ **Date range filter** on list view (Date From / Date To)
+✅ **Report Summary** – Trial Balance format (accounts used in disbursements)
+✅ **Report Details** – Grouped by transaction, Trial Balance layout per disbursement
+✅ Export to Excel for list, Report Summary, and Report Details (all respect date filter)
 ✅ Payment methods from **paymentmenthod** table (Cash, BANK DEPOSIT, Cheque, etc.)
 ✅ Professional disbursement vouchers (printable)
-✅ Excel export functionality
 ✅ Role-based permission system
 ✅ Multi-line item support
 ✅ Automatic numbering system

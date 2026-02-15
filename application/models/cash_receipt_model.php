@@ -51,17 +51,29 @@ class Cash_receipt_model extends CI_Model {
     }
 
     /**
-     * Get receipt items/line items
+     * Get receipt items/line items (with debit/credit like journal entry)
      */
     function get_receipt_items($receipt_id) {
-        // Use raw query to avoid query builder state issues
-        $sql = "SELECT cri.*, ac.name as account_name 
-                FROM cash_receipt_items cri
-                LEFT JOIN account_chart ac ON ac.account = cri.account AND ac.PIN = ?
-                WHERE cri.receipt_id = ?
-                ORDER BY cri.id ASC";
-        
-        return $this->db->query($sql, array(current_user()->PIN, $receipt_id))->result();
+        $pin = current_user()->PIN;
+        // Check if debit/credit columns exist (for legacy DBs before migration)
+        $has_debit = $this->db->query("SHOW COLUMNS FROM cash_receipt_items LIKE 'debit'")->row();
+        $has_credit = $this->db->query("SHOW COLUMNS FROM cash_receipt_items LIKE 'credit'")->row();
+        if ($has_debit && $has_credit) {
+            $sql = "SELECT cri.*, ac.name as account_name,
+                    COALESCE(cri.debit, 0) as debit, COALESCE(cri.credit, cri.amount) as credit
+                    FROM cash_receipt_items cri
+                    LEFT JOIN account_chart ac ON ac.account = cri.account AND ac.PIN = ?
+                    WHERE cri.receipt_id = ?
+                    ORDER BY cri.id ASC";
+        } else {
+            $sql = "SELECT cri.*, ac.name as account_name,
+                    0 as debit, COALESCE(cri.amount, 0) as credit
+                    FROM cash_receipt_items cri
+                    LEFT JOIN account_chart ac ON ac.account = cri.account AND ac.PIN = ?
+                    WHERE cri.receipt_id = ?
+                    ORDER BY cri.id ASC";
+        }
+        return $this->db->query($sql, array($pin, $receipt_id))->result();
     }
 
     /**
@@ -86,12 +98,19 @@ class Cash_receipt_model extends CI_Model {
         $receipt_id = $receipt->id;
         $receipt_data['id'] = $receipt_id;
         
-        // Insert receipt items
+        // Insert receipt items (with debit/credit)
         if (!empty($line_items)) {
             foreach ($line_items as $item) {
-                $item['receipt_id'] = $receipt_id;
-                $item['PIN'] = current_user()->PIN;
-                $this->db->insert('cash_receipt_items', $item);
+                $row = array(
+                    'receipt_id' => $receipt_id,
+                    'account' => $item['account'],
+                    'description' => isset($item['description']) ? $item['description'] : '',
+                    'amount' => isset($item['amount']) ? $item['amount'] : (isset($item['debit']) ? $item['debit'] : 0) + (isset($item['credit']) ? $item['credit'] : 0),
+                    'PIN' => current_user()->PIN
+                );
+                if (isset($item['debit'])) $row['debit'] = $item['debit'];
+                if (isset($item['credit'])) $row['credit'] = $item['credit'];
+                $this->db->insert('cash_receipt_items', $row);
             }
         }
         
@@ -154,12 +173,19 @@ class Cash_receipt_model extends CI_Model {
         // Delete existing line items (direct query)
         $this->db->query('DELETE FROM cash_receipt_items WHERE receipt_id = ?', array($id));
 
-        // Insert new line items
+        // Insert new line items (with debit/credit)
         if (!empty($line_items)) {
             foreach ($line_items as $item) {
-                $item['receipt_id'] = $id;
-                $item['PIN'] = $pin;
-                $this->db->insert('cash_receipt_items', $item);
+                $row = array(
+                    'receipt_id' => $id,
+                    'account' => $item['account'],
+                    'description' => isset($item['description']) ? $item['description'] : '',
+                    'amount' => isset($item['amount']) ? $item['amount'] : (isset($item['debit']) ? $item['debit'] : 0) + (isset($item['credit']) ? $item['credit'] : 0),
+                    'PIN' => $pin
+                );
+                if (isset($item['debit'])) $row['debit'] = $item['debit'];
+                if (isset($item['credit'])) $row['credit'] = $item['credit'];
+                $this->db->insert('cash_receipt_items', $row);
             }
         }
 
@@ -320,27 +346,12 @@ class Cash_receipt_model extends CI_Model {
 
     /**
      * Create journal entry for cash receipt (journal_entry table only, not GL).
-     * Handles both journal_id and entry_id columns in journal_entry_items.
+     * Uses line items directly - each line has account, debit, credit (same as journal entry).
      */
     private function create_journal_entry($receipt_id, $receipt_data, $line_items) {
         $pin = current_user()->PIN;
-        $cash_account = $this->get_cash_account($receipt_data['payment_method']);
 
-        // Final fallback if get_cash_account still returns null
-        if (!$cash_account) {
-            $fallback = $this->db->query(
-                'SELECT account FROM account_chart WHERE PIN = ? AND account_type IN (1, 10000) AND (name LIKE ? OR name LIKE ?) LIMIT 1',
-                array($pin, '%Cash%', '%Bank%')
-            )->row();
-            if ($fallback) {
-                $cash_account = $fallback->account;
-            } else {
-                log_message('error', 'Journal entry failed: No cash account found for payment method: ' . $receipt_data['payment_method']);
-                return false;
-            }
-        }
-
-        log_message('debug', 'Creating journal entry for receipt_id: ' . $receipt_id . ', cash_account: ' . $cash_account);
+        log_message('debug', 'Creating journal entry for receipt_id: ' . $receipt_id . ', items: ' . count($line_items));
 
         $entry_date = isset($receipt_data['receipt_date']) ? $receipt_data['receipt_date'] : date('Y-m-d');
         $desc = 'Cash Receipt: ' . $receipt_data['receipt_no'] . ' - ' . (isset($receipt_data['description']) ? $receipt_data['description'] : '');
@@ -374,53 +385,38 @@ class Cash_receipt_model extends CI_Model {
         // Check which column journal_entry_items uses
         $has_journal_id = $this->db->query("SHOW COLUMNS FROM journal_entry_items LIKE 'journal_id'")->row();
         $has_entry_id = $this->db->query("SHOW COLUMNS FROM journal_entry_items LIKE 'entry_id'")->row();
-        $link_col = $has_journal_id ? 'journal_id' : ($has_entry_id ? 'entry_id' : 'journal_id'); // default to journal_id
+        $link_col = $has_journal_id ? 'journal_id' : ($has_entry_id ? 'entry_id' : 'journal_id');
 
         // Check if description column exists
         $has_desc = $this->db->query("SHOW COLUMNS FROM journal_entry_items LIKE 'description'")->row();
 
-        // Debit Cash/Bank Account (increase asset)
-        $debit_desc = 'Receipt from: ' . (isset($receipt_data['received_from']) ? $receipt_data['received_from'] : '');
-        if ($has_desc) {
-            $debit_result = $this->db->query(
-                'INSERT INTO journal_entry_items (' . $link_col . ', account, debit, credit, description, PIN) VALUES (?, ?, ?, ?, ?, ?)',
-                array($journal_id, $cash_account, $receipt_data['total_amount'], 0, $debit_desc, $pin)
-            );
-        } else {
-            $debit_result = $this->db->query(
-                'INSERT INTO journal_entry_items (' . $link_col . ', account, debit, credit, PIN) VALUES (?, ?, ?, ?, ?)',
-                array($journal_id, $cash_account, $receipt_data['total_amount'], 0, $pin)
-            );
-        }
-        
-        if (!$debit_result) {
-            $error = $this->db->error();
-            log_message('error', 'Failed to insert debit item for cash receipt journal entry: ' . json_encode($error) . ' | journal_id: ' . $journal_id);
-            return false;
-        }
-
-        // Credit Revenue/Other Accounts (based on line items)
+        // Insert each line item as journal entry item (debit/credit like journal entry)
         foreach ($line_items as $item) {
+            $debit = isset($item['debit']) ? floatval($item['debit']) : 0;
+            $credit = isset($item['credit']) ? floatval($item['credit']) : 0;
+            if (empty($item['account']) || ($debit <= 0 && $credit <= 0)) {
+                continue;
+            }
+            $line_desc = isset($item['description']) ? $item['description'] : '';
             if ($has_desc) {
-                $credit_result = $this->db->query(
+                $ok = $this->db->query(
                     'INSERT INTO journal_entry_items (' . $link_col . ', account, debit, credit, description, PIN) VALUES (?, ?, ?, ?, ?, ?)',
-                    array($journal_id, $item['account'], 0, $item['amount'], isset($item['description']) ? $item['description'] : '', $pin)
+                    array($journal_id, $item['account'], $debit, $credit, $line_desc, $pin)
                 );
             } else {
-                $credit_result = $this->db->query(
+                $ok = $this->db->query(
                     'INSERT INTO journal_entry_items (' . $link_col . ', account, debit, credit, PIN) VALUES (?, ?, ?, ?, ?)',
-                    array($journal_id, $item['account'], 0, $item['amount'], $pin)
+                    array($journal_id, $item['account'], $debit, $credit, $pin)
                 );
             }
-            
-            if (!$credit_result) {
+            if (!$ok) {
                 $error = $this->db->error();
-                log_message('error', 'Failed to insert credit item for cash receipt journal entry: ' . json_encode($error) . ' | journal_id: ' . $journal_id . ' | item: ' . json_encode($item));
+                log_message('error', 'Failed to insert journal item: ' . json_encode($error) . ' | item: ' . json_encode($item));
                 return false;
             }
         }
 
-        log_message('debug', 'Journal entry items created successfully for receipt ID: ' . $receipt_id . ', journal_id: ' . $journal_id . ', items count: ' . (count($line_items) + 1));
+        log_message('debug', 'Journal entry items created for receipt ID: ' . $receipt_id . ', journal_id: ' . $journal_id);
         return true;
     }
 
@@ -487,9 +483,43 @@ class Cash_receipt_model extends CI_Model {
     }
 
     /**
+     * Get line items for edit form. For legacy receipts (credits-only), prepends the Cash/Bank debit to balance.
+     */
+    function get_line_items_for_edit($receipt_id) {
+        $receipt = $this->get_cash_receipt($receipt_id);
+        if (!$receipt) {
+            return array();
+        }
+        $line_items = $this->get_receipt_items($receipt_id);
+        $total_debit = 0;
+        $total_credit = 0;
+        foreach ($line_items as $item) {
+            $total_debit += isset($item->debit) ? floatval($item->debit) : 0;
+            $total_credit += isset($item->credit) ? floatval($item->credit) : (isset($item->amount) ? floatval($item->amount) : 0);
+        }
+        // Legacy receipts: add Cash/Bank debit to balance when credits exceed debits
+        if ($total_credit > $total_debit && abs($total_credit - $total_debit) > 0.001) {
+            $cash_account = $this->get_cash_account($receipt->payment_method);
+            if ($cash_account) {
+                $acct_row = $this->db->query('SELECT name FROM account_chart WHERE account = ? AND PIN = ? LIMIT 1', array($cash_account, current_user()->PIN))->row();
+                $debit_amount = $total_credit - $total_debit;
+                $cash_line = (object) array(
+                    'account' => $cash_account,
+                    'account_name' => $acct_row ? $acct_row->name : $cash_account,
+                    'description' => 'Receipt from: ' . (isset($receipt->received_from) ? $receipt->received_from : ''),
+                    'debit' => $debit_amount,
+                    'credit' => 0,
+                    'amount' => $debit_amount
+                );
+                array_unshift($line_items, $cash_line);
+            }
+        }
+        return $line_items;
+    }
+
+    /**
      * Get journal/accounting entries for a cash receipt (for display on view page).
-     * Always built from current receipt + line items + current payment method so the
-     * displayed entries match the current payment method and accounts (they update when edited).
+     * Built from line items. For legacy receipts (credits-only), adds the Cash/Bank debit to balance.
      */
     function get_journal_entries_by_receipt($receipt_id) {
         $pin = current_user()->PIN;
@@ -501,30 +531,40 @@ class Cash_receipt_model extends CI_Model {
         }
 
         $line_items = $this->get_receipt_items($receipt_id);
-        $cash_account_code = $this->get_cash_account($receipt->payment_method);
         $display_items = array();
+        $total_debit = 0;
+        $total_credit = 0;
         
-        // Debit entry: Cash/Bank Account
-        if ($cash_account_code) {
-            $cash_name = $this->db->query('SELECT name FROM account_chart WHERE account = ? AND PIN = ? LIMIT 1', array($cash_account_code, $pin))->row();
-            $display_items[] = (object) array(
-                'account' => $cash_account_code,
-                'account_name' => $cash_name ? $cash_name->name : $cash_account_code,
-                'debit' => floatval($receipt->total_amount),
-                'credit' => 0,
-                'description' => 'Receipt from: ' . (isset($receipt->received_from) ? $receipt->received_from : '')
-            );
-        }
-        
-        // Credit entries: Revenue/Other Accounts (from line items)
         foreach ($line_items as $item) {
+            $debit = isset($item->debit) ? floatval($item->debit) : 0;
+            $credit = isset($item->credit) ? floatval($item->credit) : (isset($item->amount) ? floatval($item->amount) : 0);
             $display_items[] = (object) array(
                 'account' => $item->account,
                 'account_name' => isset($item->account_name) ? $item->account_name : $item->account,
-                'debit' => 0,
-                'credit' => floatval($item->amount),
+                'debit' => $debit,
+                'credit' => $credit,
                 'description' => isset($item->description) ? $item->description : ''
             );
+            $total_debit += $debit;
+            $total_credit += $credit;
+        }
+        
+        // Legacy receipts: line items had credits only; Cash/Bank debit was auto-generated, not in line items.
+        // Add the Cash debit to balance when credits exceed debits.
+        if ($total_credit > $total_debit && abs($total_credit - $total_debit) > 0.001) {
+            $cash_account = $this->get_cash_account($receipt->payment_method);
+            if ($cash_account) {
+                $cash_name_row = $this->db->query('SELECT name FROM account_chart WHERE account = ? AND PIN = ? LIMIT 1', array($cash_account, $pin))->row();
+                $cash_name = $cash_name_row ? $cash_name_row->name : $cash_account;
+                $debit_amount = $total_credit - $total_debit;
+                array_unshift($display_items, (object) array(
+                    'account' => $cash_account,
+                    'account_name' => $cash_name,
+                    'debit' => $debit_amount,
+                    'credit' => 0,
+                    'description' => 'Receipt from: ' . (isset($receipt->received_from) ? $receipt->received_from : '')
+                ));
+            }
         }
         
         $journal_display = (object) array(

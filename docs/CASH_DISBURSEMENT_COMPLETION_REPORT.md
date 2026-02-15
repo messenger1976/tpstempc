@@ -56,12 +56,14 @@ Or use phpMyAdmin:
 ### Models
 - ✅ `application/models/cash_disbursement_model.php` (290 lines)
 
-### Views (5 files)
-- ✅ `application/views/cash_disbursement/cash_disbursement_list.php`
+### Views (7 files)
+- ✅ `application/views/cash_disbursement/cash_disbursement_list.php` (with date filter, Report Summary & Report Details buttons)
 - ✅ `application/views/cash_disbursement/cash_disbursement_form.php`
 - ✅ `application/views/cash_disbursement/cash_disbursement_edit.php`
 - ✅ `application/views/cash_disbursement/cash_disbursement_view.php`
 - ✅ `application/views/cash_disbursement/print/cash_disbursement_print.php`
+- ✅ `application/views/cash_disbursement/cash_disbursement_report_summary.php` (Trial Balance report)
+- ✅ `application/views/cash_disbursement/cash_disbursement_report_details.php` (grouped by transaction)
 
 ### Database Schema
 - ✅ `sql/cash_disbursement_module.sql`
@@ -129,7 +131,10 @@ Or use phpMyAdmin:
 - ✅ Responsive design (Bootstrap 3)
 
 ### Additional Features
-- ✅ Excel export functionality
+- ✅ Date range filter on list view (Date From / Date To)
+- ✅ Report Summary – Trial Balance format (accounts used in disbursements)
+- ✅ Report Details – Grouped by transaction, Trial Balance layout per disbursement
+- ✅ Export to Excel for list, Report Summary, and Report Details (all respect date filter)
 - ✅ Role-based permission system
 - ✅ Multi-tenancy support (PIN-based)
 - ✅ User authentication integration
@@ -140,29 +145,35 @@ Or use phpMyAdmin:
 
 ## Controller Methods Reference
 
-### cash_disbursement.php (8 Methods)
+### cash_disbursement.php (12 Methods)
 
 | Method | Purpose | Parameters |
 |--------|---------|-----------|
 | `index()` | Redirect to list | - |
-| `cash_disbursement_list()` | List all disbursements | GET page, search params |
+| `cash_disbursement_list()` | List disbursements (with date range filter) | GET date_from, date_to |
 | `cash_disbursement_create()` | Create form & process POST | POST disbursement data |
 | `cash_disbursement_edit()` | Edit form & process POST | GET/POST id, data |
 | `cash_disbursement_view()` | Display details | GET id |
 | `cash_disbursement_print()` | Print voucher | GET id |
 | `cash_disbursement_delete()` | Delete disbursement | GET/POST id |
-| `cash_disbursement_export()` | Export to Excel | GET |
+| `cash_disbursement_export()` | Export to Excel (respects date filter) | GET date_from, date_to |
+| `cash_disbursement_report_summary()` | Trial Balance report (accounts summary) | GET date_from, date_to |
+| `cash_disbursement_report_summary_export()` | Export Report Summary to Excel | GET date_from, date_to |
+| `cash_disbursement_report_details()` | Report Details (grouped by transaction) | GET date_from, date_to |
+| `cash_disbursement_report_details_export()` | Export Report Details to Excel | GET date_from, date_to |
 
 ---
 
 ## Model Methods Reference
 
-### cash_disbursement_model.php (13 Methods)
+### cash_disbursement_model.php (15 Methods)
 
 | Method | Purpose |
 |--------|---------|
 | `create_cash_disbursement()` | Create disbursement with items & journal entry |
-| `get_cash_disbursements()` | Retrieve disbursements (optional id/disburse_no filter) |
+| `get_cash_disbursements()` | Retrieve disbursements (optional id, disburse_no, date_from, date_to) |
+| `get_account_summary()` | Get account totals for Report Summary (Trial Balance) |
+| `get_account_details()` | Get detailed lines for Report Details (grouped by disbursement) |
 | `get_cash_disbursement()` | Get single disbursement by id |
 | `get_disburse_items()` | Get line items for disbursement |
 | `update_cash_disbursement()` | Update disbursement, line items; replace journal entry with new one |
@@ -216,7 +227,11 @@ cash_disbursement_delete_success, cash_disbursement_delete_fail,
 cash_disbursement_not_found, cash_disbursement_no_exists, cash_disbursement_no_items,
 
 // Print template
-cash_disbursement_voucher, cash_disbursement_statement
+cash_disbursement_voucher, cash_disbursement_statement,
+
+// Report (added Feb 2026)
+cash_disbursement_report_summary, cash_disbursement_report_details,
+cash_disbursement_period, cash_disbursement_transactions
 ```
 
 ---

@@ -14,15 +14,19 @@ A complete Cash Receipt Module has been created and integrated into your TAPSTEM
 ### Models (1 file)
 - ✅ `application/models/cash_receipt_model.php`
 
-### Views (5 files)
-- ✅ `application/views/cash_receipt/cash_receipt_list.php`
-- ✅ `application/views/cash_receipt/cash_receipt_form.php`
-- ✅ `application/views/cash_receipt/cash_receipt_edit.php`
+### Views (8 files)
+- ✅ `application/views/cash_receipt/cash_receipt_list.php` (includes popup modal)
+- ✅ `application/views/cash_receipt/cash_receipt_form.php` (Debit/Credit line items)
+- ✅ `application/views/cash_receipt/cash_receipt_edit.php` (Debit/Credit line items)
 - ✅ `application/views/cash_receipt/cash_receipt_view.php`
+- ✅ `application/views/cash_receipt/cash_receipt_view_popup.php` (popup iframe)
 - ✅ `application/views/cash_receipt/print/cash_receipt_print.php`
+- ✅ `application/views/cash_receipt/cash_receipt_report_summary.php` (Trial Balance report)
+- ✅ `application/views/cash_receipt/cash_receipt_report_details.php` (Details grouped by transaction)
 
-### Database (1 file)
+### Database (2 files)
 - ✅ `sql/cash_receipt_module.sql`
+- ✅ `sql/alter_cash_receipt_items_debit_credit.sql` (migration for existing installs)
 
 ### Documentation (2 files)
 - ✅ `CASH_RECEIPT_MODULE_README.md` (Complete documentation)
@@ -58,6 +62,11 @@ A complete Cash Receipt Module has been created and integrated into your TAPSTEM
 **Option C - Using MySQL Command Line**
 ```bash
 mysql -u your_username -p your_database_name < sql/cash_receipt_module.sql
+```
+
+**Existing installations (upgrade to v1.3.0 Debit/Credit):**
+```bash
+mysql -u your_username -p your_database_name < sql/alter_cash_receipt_items_debit_credit.sql
 ```
 
 ### Step 2: Set Up Permissions
@@ -98,7 +107,10 @@ INSERT INTO access_level (group_id, Module, link, allow) VALUES
    - Received From
    - Payment Method
    - Description
-3. Add line items (account + amount)
+3. Add line items (Account | Description | **Debit** | **Credit** – same as journal entry)
+   - Each row has Debit and Credit columns; enter value in one or the other
+   - Total debits must equal total credits (form validates)
+   - Click trash icon to delete rows (at least one row required)
 4. Click **Save**
 
 ### Filter Receipts by Date Range
@@ -110,11 +122,16 @@ INSERT INTO access_level (group_id, Module, link, allow) VALUES
 6. **Note:** If no dates are selected, all records are shown by default
 
 ### View/Print Receipts
-- Click the 👁️ icon to view details
+- Click the 👁️ icon to view details (opens popup modal on list page)
 - Click the 🖨️ icon to print
 - Click the ✏️ icon to edit
 - Click the 🗑️ icon to delete
 - Click **Export to Excel** to export (respects current date filters)
+
+### Report Summary & Report Details
+- Click **Report Summary** for Trial Balance format (accounts summary with Debit/Credit columns)
+- Click **Report Details** for transaction-grouped Trial Balance (each receipt as separate block)
+- Both open in new tab; include Print and Export to Excel buttons
 
 ---
 
@@ -139,6 +156,9 @@ INSERT INTO access_level (group_id, Module, link, allow) VALUES
 ✅ **Reporting**
 - Print receipts with letterhead
 - Export to Excel (respects date filters)
+- **Report Summary** – Trial Balance format (accounts summary)
+- **Report Details** – Grouped by transaction, Trial Balance layout
+- Export to Excel for both reports
 - Amount in words
 - Date range filtering on list view
 
@@ -179,10 +199,13 @@ Main receipt information
 - Audit fields
 
 ### 2. cash_receipt_items
-Line items for each receipt
+Line items for each receipt (journal-entry style)
 - Account code
 - Description
-- Amount
+- **Debit** | **Credit** columns
+- Amount (for backward compatibility)
+
+**Migration:** Run `sql/alter_cash_receipt_items_debit_credit.sql` for existing installations.
 
 ### 3. journal_entry (if not exists)
 Journal entry headers
@@ -274,8 +297,9 @@ If you encounter any issues:
 
 ---
 
-**Module Version:** 1.0.0  
+**Module Version:** 1.3.0  
 **Created:** December 22, 2025  
+**Updated:** February 2026 (v1.3.0: Debit/Credit line items, deletable rows; v1.2.0: Report Summary/Details)  
 **Framework:** CodeIgniter 3.x  
 **Compatible with:** TAPSTEMCO Accounting System
 

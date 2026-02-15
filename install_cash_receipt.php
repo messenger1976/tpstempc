@@ -217,12 +217,14 @@ $sqls = array(
       KEY `idx_createdby` (`createdby`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8 COMMENT='Cash Receipt Headers'",
     
-    // Create cash_receipt_items table
+    // Create cash_receipt_items table (with debit/credit columns like journal entry)
     "CREATE TABLE IF NOT EXISTS `cash_receipt_items` (
       `id` int(11) NOT NULL AUTO_INCREMENT,
       `receipt_id` int(11) NOT NULL,
       `account` varchar(50) NOT NULL COMMENT 'Account code from chart of accounts',
       `description` varchar(255) DEFAULT NULL,
+      `debit` decimal(15,2) NOT NULL DEFAULT '0.00',
+      `credit` decimal(15,2) NOT NULL DEFAULT '0.00',
       `amount` decimal(15,2) NOT NULL DEFAULT '0.00',
       `PIN` varchar(20) NOT NULL,
       PRIMARY KEY (`id`),

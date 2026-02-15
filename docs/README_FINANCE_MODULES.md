@@ -12,9 +12,11 @@ Two fully-integrated accounting modules for managing cash transactions:
 
 ### 📄 **Cash Receipt Module** 
 Manage incoming cash payments from customers, members, or other sources
+- Line items use **Debit | Credit columns** (same as journal entry); fully deletable rows
 - Auto-generated receipt numbers (CR-00001, CR-00002, etc.)
 - Multiple payment methods supported
 - Automatic journal entry creation
+- Popup view from list page (eye icon)
 - Professional receipt vouchers
 - Excel export
 
@@ -327,8 +329,12 @@ After installation, verify these work:
 
 ### URLs After Installation
 - Cash Receipt List: `/[lang]/cash_receipt/cash_receipt_list`
-- Create Receipt: `/[lang]/cash_receipt/cash_disbursement_create`
+- Cash Receipt Report Summary: `/[lang]/cash_receipt/cash_receipt_report_summary` (?date_from=, ?date_to=)
+- Cash Receipt Report Details: `/[lang]/cash_receipt/cash_receipt_report_details` (?date_from=, ?date_to=)
+- Create Receipt: `/[lang]/cash_receipt/cash_receipt_create`
 - Cash Disbursement List: `/[lang]/cash_disbursement/cash_disbursement_list`
+- Cash Disbursement Report Summary: `/[lang]/cash_disbursement/cash_disbursement_report_summary` (?date_from=, ?date_to=)
+- Cash Disbursement Report Details: `/[lang]/cash_disbursement/cash_disbursement_report_details` (?date_from=, ?date_to=)
 - Create Disbursement: `/[lang]/cash_disbursement/cash_disbursement_create`
 
 ### Database Queries
@@ -357,9 +363,10 @@ SELECT * FROM journal_entry WHERE description LIKE '%Receipt%';
 2. **Print Batches** - Print multiple receipts/disbursements at once
 3. **Search Function** - Use search to find specific transactions
 4. **Permission Levels** - Create different roles with different permissions
-5. **Date Filtering** - Filter by date range for reporting
-6. **Cheque Management** - Track cheques by number
-7. **Supplier Tracking** - Group disbursements by supplier
+5. **Date Filtering** - Filter by date range on Cash Receipt and Cash Disbursement lists
+6. **Trial Balance Reports** - Report Summary and Report Details (grouped by transaction) for both modules
+7. **Cheque Management** - Track cheques by number
+8. **Supplier Tracking** - Group disbursements by supplier
 
 ---
 

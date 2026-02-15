@@ -135,22 +135,23 @@ if (isset($message) && !empty($message)) {
 
                     <hr/>
 
-                    <!-- Line Items Table -->
+                    <!-- Line Items Table (journal-entry style: Account | Description | Debit | Credit) -->
                     <h4><?php echo lang('cash_receipt_line_items'); ?></h4>
                     <div class="table-responsive">
                         <table id="lineItemsTable" class="table table-bordered">
                             <thead>
                                 <tr>
-                                    <th style="width: 40%;"><?php echo lang('cash_receipt_account'); ?> <span class="required">*</span></th>
-                                    <th style="width: 40%;"><?php echo lang('cash_receipt_line_description'); ?></th>
-                                    <th style="width: 15%;"><?php echo lang('cash_receipt_amount'); ?> <span class="required">*</span></th>
-                                    <th style="width: 5%;"></th>
+                                    <th style="width: 30%;"><?php echo lang('cash_receipt_account'); ?> <span class="required">*</span></th>
+                                    <th style="width: 30%;"><?php echo lang('cash_receipt_line_description'); ?></th>
+                                    <th style="width: 15%;"><?php echo lang('journalentry_debit'); ?></th>
+                                    <th style="width: 15%;"><?php echo lang('journalentry_credit'); ?></th>
+                                    <th style="width: 10%;"></th>
                                 </tr>
                             </thead>
                             <tbody>
                                 <tr class="line-item">
                                     <td>
-                                        <select class="form-control account-select" name="account[]" required>
+                                        <select class="form-control account-select" name="account[]">
                                             <option value=""><?php echo lang('select_default_text'); ?></option>
                                             <?php foreach ($account_list as $key1 => $value1) { ?>
                                                 <optgroup label="<?php echo $value1['info']->name; ?>">
@@ -165,10 +166,13 @@ if (isset($message) && !empty($message)) {
                                         <input type="text" name="line_description[]" class="form-control"/>
                                     </td>
                                     <td>
-                                        <input type="number" step="0.01" name="amount[]" class="form-control amount-input" required/>
+                                        <input type="number" step="0.01" min="0" name="debit[]" class="form-control debit-input" placeholder="0.00"/>
                                     </td>
                                     <td>
-                                        <button type="button" class="btn btn-danger btn-xs remove-line" disabled>
+                                        <input type="number" step="0.01" min="0" name="credit[]" class="form-control credit-input" placeholder="0.00"/>
+                                    </td>
+                                    <td>
+                                        <button type="button" class="btn btn-danger btn-xs remove-line" title="<?php echo lang('delete'); ?>">
                                             <i class="fa fa-trash"></i>
                                         </button>
                                     </td>
@@ -178,9 +182,16 @@ if (isset($message) && !empty($message)) {
                                 <tr>
                                     <td colspan="2" class="text-right"><strong><?php echo lang('total'); ?>:</strong></td>
                                     <td>
-                                        <input type="text" id="total_amount" class="form-control" readonly value="0.00"/>
+                                        <input type="text" id="total_debit" class="form-control" readonly value="0.00"/>
+                                    </td>
+                                    <td>
+                                        <input type="text" id="total_credit" class="form-control" readonly value="0.00"/>
                                     </td>
                                     <td></td>
+                                </tr>
+                                <tr>
+                                    <td colspan="2" id="balance_diff" class="text-right" style="color: red; font-weight: bold;"></td>
+                                    <td colspan="3"></td>
                                 </tr>
                             </tfoot>
                         </table>
@@ -293,6 +304,8 @@ if (isset($message) && !empty($message)) {
 
             ensureBootstrapDP(initPicker);
 
+            updateRemoveButtons();
+
             // Show/hide cheque details based on payment method
             $('#payment_method').on('change', function(){
                 if($(this).val() === 'Cheque'){
@@ -306,39 +319,66 @@ if (isset($message) && !empty($message)) {
             $('#addLineItem').on('click', function(){
                 var newRow = $('.line-item:first').clone();
                 newRow.find('input, select').val('');
-                newRow.find('.remove-line').prop('disabled', false);
                 $('#lineItemsTable tbody').append(newRow);
-                calculateTotal();
+                updateRemoveButtons();
+                calculateTotals();
             });
 
-            // Remove line item
+            // Remove line item (all rows deletable; keep at least one)
             $(document).on('click', '.remove-line', function(){
-                $(this).closest('tr').remove();
-                calculateTotal();
+                if ($('.line-item').length > 1) {
+                    $(this).closest('tr').remove();
+                    updateRemoveButtons();
+                    calculateTotals();
+                }
             });
 
-            // Calculate total when amount changes
-            $(document).on('keyup change', '.amount-input', function(){
-                calculateTotal();
-            });
-
-            function calculateTotal(){
-                var total = 0;
-                $('.amount-input').each(function(){
-                    var amount = parseFloat($(this).val()) || 0;
-                    total += amount;
-                });
-                $('#total_amount').val(total.toFixed(2));
+            function updateRemoveButtons(){
+                var count = $('.line-item').length;
+                $('.remove-line').prop('disabled', count <= 1);
             }
 
-            // Form validation
-            $('#cashReceiptForm').on('submit', function(e){
-                var hasItems = false;
-                $('.amount-input').each(function(){
-                    if(parseFloat($(this).val()) > 0){ hasItems = true; }
+            // Calculate totals when debit/credit changes
+            $(document).on('keyup change', '.debit-input, .credit-input', function(){
+                calculateTotals();
+            });
+
+            function calculateTotals(){
+                var totalDebit = 0, totalCredit = 0;
+                $('.debit-input').each(function(){
+                    totalDebit += parseFloat($(this).val()) || 0;
                 });
-                if(!hasItems){
+                $('.credit-input').each(function(){
+                    totalCredit += parseFloat($(this).val()) || 0;
+                });
+                $('#total_debit').val(totalDebit.toFixed(2));
+                $('#total_credit').val(totalCredit.toFixed(2));
+                var diff = totalDebit - totalCredit;
+                if (Math.abs(diff) < 0.01) {
+                    $('#balance_diff').text('').css('color', 'green');
+                } else {
+                    $('#balance_diff').text('Diff: ' + diff.toFixed(2)).css('color', 'red');
+                }
+            }
+
+            // Form validation - debits must equal credits
+            $('#cashReceiptForm').on('submit', function(e){
+                var totalDebit = 0, totalCredit = 0, hasItems = false;
+                $('.debit-input').each(function(){
+                    totalDebit += parseFloat($(this).val()) || 0;
+                });
+                $('.credit-input').each(function(){
+                    var v = parseFloat($(this).val()) || 0;
+                    totalCredit += v;
+                    if (v > 0) hasItems = true;
+                });
+                if (!hasItems) {
                     alert('<?php echo lang('cash_receipt_no_items'); ?>');
+                    e.preventDefault();
+                    return false;
+                }
+                if (Math.abs(totalDebit - totalCredit) > 0.01) {
+                    alert('<?php echo lang('debits_credits_not_balanced'); ?>');
                     e.preventDefault();
                     return false;
                 }
@@ -445,7 +485,6 @@ if (isset($message) && !empty($message)) {
                                 // Add new line item with AR account
                                 var newRow = $('.line-item:first').clone();
                                 newRow.find('input, select').val('');
-                                newRow.find('.remove-line').prop('disabled', false);
                                 
                                 // Set AR account
                                 newRow.find('.account-select').val(response.account);
@@ -456,10 +495,11 @@ if (isset($message) && !empty($message)) {
                                 
                                 // Add to table
                                 $('#lineItemsTable tbody').append(newRow);
-                                calculateTotal();
+                                updateRemoveButtons();
+                                calculateTotals();
                                 
                                 // Show message
-                                alert('Accounts Receivable account (' + response.name + ') has been added. Please enter the amount.');
+                                alert('Accounts Receivable account (' + response.name + ') has been added. Please enter the credit amount.');
                             } else {
                                 alert('Accounts Receivable account already exists in line items.');
                             }

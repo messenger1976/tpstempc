@@ -161,30 +161,38 @@
             <span class="info-value"><?php echo $receipt->description; ?></span>
         </div>
 
-        <!-- Line Items Table -->
+        <!-- Line Items Table (Debit | Credit like journal entry) -->
         <table class="items-table">
             <thead>
                 <tr>
                     <th width="5%" class="text-center">#</th>
-                    <th width="40%">Account</th>
-                    <th width="35%">Description</th>
-                    <th width="20%" class="text-right">Amount</th>
+                    <th width="35%">Account</th>
+                    <th width="30%">Description</th>
+                    <th width="15%" class="text-right">Debit</th>
+                    <th width="15%" class="text-right">Credit</th>
                 </tr>
             </thead>
             <tbody>
                 <?php if (!empty($line_items)): ?>
-                    <?php $index = 1; ?>
-                    <?php foreach ($line_items as $item): ?>
+                    <?php $index = 1; $total_debit = 0; $total_credit = 0; ?>
+                    <?php foreach ($line_items as $item): 
+                        $item_debit = isset($item->debit) ? floatval($item->debit) : 0;
+                        $item_credit = isset($item->credit) ? floatval($item->credit) : (isset($item->amount) ? floatval($item->amount) : 0);
+                        $total_debit += $item_debit;
+                        $total_credit += $item_credit;
+                    ?>
                         <tr>
                             <td class="text-center"><?php echo $index++; ?></td>
                             <td><?php echo $item->account_name; ?></td>
                             <td><?php echo $item->description; ?></td>
-                            <td class="text-right"><?php echo number_format($item->amount, 2); ?></td>
+                            <td class="text-right"><?php echo $item_debit > 0 ? number_format($item_debit, 2) : '—'; ?></td>
+                            <td class="text-right"><?php echo $item_credit > 0 ? number_format($item_credit, 2) : '—'; ?></td>
                         </tr>
                     <?php endforeach; ?>
                     <tr class="total-row">
                         <td colspan="3" class="text-right">TOTAL:</td>
-                        <td class="text-right"><?php echo number_format($receipt->total_amount, 2); ?></td>
+                        <td class="text-right"><?php echo number_format($total_debit, 2); ?></td>
+                        <td class="text-right"><?php echo number_format($total_credit, 2); ?></td>
                     </tr>
                 <?php endif; ?>
             </tbody>

@@ -54,6 +54,9 @@ The Cash Receipt Module is a comprehensive accounting solution integrated into y
 4. **Reporting & Export**
    - Print receipts with company letterhead
    - Export receipts to Excel (with date range filter support)
+   - **Report Summary** – Trial Balance format: accounts used in cash receipts with totals (Debit: Cash and Bank; Credit: revenue/expense accounts)
+   - **Report Details** – Grouped by transaction, Trial Balance layout per receipt (opens in new tab)
+   - Export to Excel for both Report Summary and Report Details
    - Amount in words conversion
    - Professional receipt format
    - Date range filtering for viewing and exporting receipts
@@ -98,10 +101,11 @@ Ensure all the following files are in place:
 - `application/models/cash_receipt_model.php`
 
 **Views:**
-- `application/views/cash_receipt/cash_receipt_list.php`
+- `application/views/cash_receipt/cash_receipt_list.php` (includes popup modal for quick view)
 - `application/views/cash_receipt/cash_receipt_form.php`
 - `application/views/cash_receipt/cash_receipt_edit.php`
 - `application/views/cash_receipt/cash_receipt_view.php`
+- `application/views/cash_receipt/cash_receipt_view_popup.php` (popup iframe view)
 - `application/views/cash_receipt/print/cash_receipt_print.php`
 
 **Helper Functions:**
@@ -144,15 +148,19 @@ Stores main receipt information:
 ```
 
 #### 2. cash_receipt_items
-Stores line items for each receipt:
+Stores line items for each receipt (journal-entry style with debit/credit):
 ```sql
 - id (Primary Key)
 - receipt_id (Foreign Key to cash_receipts)
 - account (Account code from chart of accounts)
 - description (Line item description)
-- amount (Line item amount)
+- debit (Debit amount, default 0.00)
+- credit (Credit amount, default 0.00)
+- amount (Total activity: debit + credit; for backward compatibility)
 - PIN (Organization identifier)
 ```
+
+**Migration for existing installations:** Run `sql/alter_cash_receipt_items_debit_credit.sql` to add `debit` and `credit` columns. Legacy receipts (credits-only) are migrated automatically.
 
 ### Important Notes
 - The module automatically creates journal entries when receipts are created or updated
@@ -213,6 +221,10 @@ Located: `application/controllers/cash_receipt.php`
 - `cash_receipt_print($id)` - Print receipt
 - `cash_receipt_delete($id)` - Delete receipt
 - `cash_receipt_export()` - Export to Excel (respects date range filters)
+- `cash_receipt_report_summary()` - Trial Balance report (accounts summary)
+- `cash_receipt_report_summary_export()` - Export Report Summary to Excel
+- `cash_receipt_report_details()` - Report Details (grouped by transaction, Trial Balance layout)
+- `cash_receipt_report_details_export()` - Export Report Details to Excel
 
 ### Model (`cash_receipt_model.php`)
 Located: `application/models/cash_receipt_model.php`
@@ -220,7 +232,10 @@ Located: `application/models/cash_receipt_model.php`
 **Main Functions:**
 - `get_cash_receipts($id, $receipt_no, $date_from, $date_to)` - Retrieve receipts with optional date range filtering
 - `get_cash_receipt($id)` - Get single receipt
-- `get_receipt_items($id)` - Get receipt line items
+- `get_receipt_items($id)` - Get receipt line items (with debit/credit)
+- `get_line_items_for_edit($id)` - Get line items for edit form; adds Cash debit for legacy receipts to balance
+- `get_account_summary($date_from, $date_to)` - Get account totals for Report Summary (Trial Balance)
+- `get_account_details($date_from, $date_to)` - Get detailed lines for Report Details (grouped by receipt)
 - `create_cash_receipt()` - Create new receipt
 - `update_cash_receipt()` - Update existing receipt
 - `delete_cash_receipt()` - Delete receipt
@@ -229,11 +244,13 @@ Located: `application/models/cash_receipt_model.php`
 
 ### Views
 
-1. **cash_receipt_list.php** - Receipt listing with DataTables and date range filter
+1. **cash_receipt_list.php** - Receipt listing with DataTables, date range filter, Report Summary & Report Details buttons
 2. **cash_receipt_form.php** - Create new receipt
 3. **cash_receipt_edit.php** - Edit receipt
 4. **cash_receipt_view.php** - View receipt details
 5. **cash_receipt_print.php** - Printable receipt format
+6. **cash_receipt_report_summary.php** - Trial Balance report (Account Code, Account Name, Debit, Credit)
+7. **cash_receipt_report_details.php** - Report Details (grouped by transaction, Trial Balance layout per receipt)
 
 ---
 
@@ -267,15 +284,18 @@ Located: `application/models/cash_receipt_model.php`
      - Mobile Money
    - **Description:** Enter main receipt description
 
-3. **Add Line Items**
-   - **Account:** Select revenue account from chart of accounts
+3. **Add Line Items** (journal-entry style: Debit | Credit columns)
+   - **Account:** Select account from chart of accounts
    - **Line Description:** Enter description for this line item
-   - **Amount:** Enter amount for this line item
+   - **Debit:** Enter debit amount (or leave blank)
+   - **Credit:** Enter credit amount (or leave blank)
+   - Each line item has either a debit OR credit (typically not both)
+   - Total debits must equal total credits before saving
    - Click "Add Row" to add more line items
-   - Click the trash icon to remove a line item
+   - Click the trash icon to remove a line item (all rows deletable; at least one row required)
 
 4. **Review and Save**
-   - Check that total amount is correct
+   - Ensure total debits = total credits (form validates balance)
    - Click "Save" button
    - Receipt will be created and journal entry will be posted automatically
 
@@ -338,6 +358,26 @@ Located: `application/models/cash_receipt_model.php`
 3. Excel file will download automatically
 4. Contains all receipt information in spreadsheet format
 
+### Report Summary (Trial Balance)
+
+1. On the Cash Receipt List page, optionally set **Date From** and **Date To** and click **Filter**
+2. Click **Report Summary** button (next to Clear)
+3. Report opens in a new tab in Trial Balance format:
+   - **Debit:** Cash and Bank (total receipts)
+   - **Credit:** Each account used in receipt line items with total amount
+   - Total row shows matching Debit and Credit totals
+4. Use **Print** or **Export to Excel** on the report page
+
+### Report Details (Grouped by Transaction)
+
+1. On the Cash Receipt List page, optionally set date range and click **Filter**
+2. Click **Report Details** button (next to Clear)
+3. Report opens in a new tab showing each receipt as a separate Trial Balance block:
+   - Header: Receipt No, Date, Received From, Payment Method
+   - Trial Balance table: Cash and Bank (Debit), line item accounts (Credit), Total row
+   - Grand total at end
+4. Use **Print** or **Export to Excel** on the report page
+
 ### Deleting a Receipt
 
 1. From Cash Receipt List, click the "trash" icon
@@ -350,17 +390,9 @@ Located: `application/models/cash_receipt_model.php`
 
 ### How Journal Entries are Created
 
-When a cash receipt is created, the system automatically creates a journal entry with:
+Line items are entered with **Debit** and **Credit** columns (same as journal entry). The system creates the journal entry directly from line items—each line becomes a journal entry item with its account, debit, and credit. Debits must equal credits before saving.
 
-**Debit Entry:**
-- Account: Cash/Bank account (based on payment method)
-- Amount: Total receipt amount
-- Description: Receipt from [Received From]
-
-**Credit Entries:**
-- Accounts: As specified in line items
-- Amounts: As specified in line items
-- Descriptions: As specified in line items
+**Legacy receipts** (created before v1.3.0 with credits-only): The system auto-adds the Cash/Bank debit when displaying view/edit/print so entries remain balanced.
 
 ### Example:
 **Cash Receipt Details:**
@@ -369,9 +401,12 @@ When a cash receipt is created, the system automatically creates a journal entry
 - Payment Method: Cash
 - Total: 5,000
 
-**Line Items:**
-- Sales Revenue: 3,000
-- Service Income: 2,000
+**Line Items (Debit | Credit):**
+| Account        | Description  | Debit | Credit |
+|----------------|--------------|-------|--------|
+| Cash Account   | Receipt from | 5,000 | —      |
+| Sales Revenue  | —            | —     | 3,000  |
+| Service Income | —            | —     | 2,000  |
 
 **Journal Entry Created:**
 ```
@@ -507,6 +542,20 @@ When updating the module:
 ---
 
 ## VERSION HISTORY
+
+**Version 1.3.0** - February 2026
+- **Line items now use Debit | Credit columns** (same layout as journal entry)
+- Line items are fully deletable (trash button enabled when more than one row)
+- Form validates that total debits equal total credits before saving
+- **Migration:** `sql/alter_cash_receipt_items_debit_credit.sql` for existing installations
+- **Legacy receipts:** Auto-adds Cash/Bank debit for view, edit, and popup when entries would be unbalanced (credits-only)
+- Popup view on list page now uses `accounting_entries` for balanced display
+
+**Version 1.2.0** - February 2026
+- Added **Report Summary** – Trial Balance format with accounts used in cash receipts
+- Added **Report Details** – Grouped by transaction, Trial Balance layout per receipt
+- Export to Excel for both Report Summary and Report Details
+- Reports respect date range filter when applied
 
 **Version 1.1.0** - December 22, 2025
 - Added date range filtering on list view

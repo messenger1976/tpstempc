@@ -52,53 +52,64 @@
 
 ### 📄 Views
 
-#### Cash Receipt Views (5 files)
+#### Cash Receipt Views (8 files)
 ```
 application/views/cash_receipt/
-├── cash_receipt_list.php ........... List view with DataTables + Date Range Filter
-├── cash_receipt_form.php ........... Create form
-├── cash_receipt_edit.php ........... Edit form
+├── cash_receipt_list.php ........... List view with DataTables + Date Range Filter + Report buttons + Popup view
+├── cash_receipt_form.php ........... Create form (Debit/Credit line items)
+├── cash_receipt_edit.php ........... Edit form (Debit/Credit line items)
 ├── cash_receipt_view.php ........... View details
+├── cash_receipt_view_popup.php ..... Popup iframe view (modal from list)
+├── cash_receipt_report_summary.php . Trial Balance report (accounts summary)
+├── cash_receipt_report_details.php . Report Details (grouped by transaction)
 └── print/
     └── cash_receipt_print.php ....... Print template
 ```
 
 **Key Features:**
+- Line items use **Debit | Credit columns** (same as journal entry); fully deletable rows
+- Popup view from list page (eye icon) loads receipt in modal iframe
 - DataTables integration (sortable, searchable, paginated)
 - Date range filtering (optional, shows all by default)
-- Form validation with error messages
+- Report Summary and Report Details (Trial Balance layout)
+- Export to Excel for list and both reports
+- Form validation (debits must equal credits)
 - Dynamic line item add/remove
 - Professional print layout with letterhead
 - Permission-based visibility
-- Export to Excel (respects date filters)
 
-#### Cash Disbursement Views (5 files)
+#### Cash Disbursement Views (7 files)
 ```
 application/views/cash_disbursement/
-├── cash_disbursement_list.php ........ List view with DataTables
+├── cash_disbursement_list.php ........ List view with DataTables + Date Range Filter + Report buttons
 ├── cash_disbursement_form.php ........ Create form
 ├── cash_disbursement_edit.php ........ Edit form
 ├── cash_disbursement_view.php ........ View details
+├── cash_disbursement_report_summary.php .. Trial Balance report (accounts summary)
+├── cash_disbursement_report_details.php .. Report Details (grouped by transaction)
 └── print/
     └── cash_disbursement_print.php ... Print template
 ```
 
 **Key Features:**
 - Identical structure to receipt module
+- Date range filtering on list view
+- Report Summary and Report Details (Trial Balance layout)
+- Export to Excel for list and both reports
 - Consistent styling and functionality
 - Role-based permission checks
-- Export and print capabilities
 
 ### 📊 Database Schemas
 
 | File | Location | Size | Purpose |
 |------|----------|------|---------|
 | `cash_receipt_module.sql` | `sql/` | ~4 KB | Receipt database schema |
+| `alter_cash_receipt_items_debit_credit.sql` | `sql/` | ~0.5 KB | Migration: add debit/credit columns to cash_receipt_items (run on existing installs) |
 | `cash_disbursement_module.sql` | `sql/` | ~4 KB | Disbursement database schema |
 
 **Tables Created (Receipt Module):**
 - `cash_receipts` - Main receipt records
-- `cash_receipt_items` - Line items
+- `cash_receipt_items` - Line items (Account, Description, Debit, Credit – journal-entry style)
 - `journal_entry` - Journal entries (if not exists)
 - `journal_entry_items` - Journal entry items (if not exists)
 
@@ -175,11 +186,15 @@ Run: sql/add_cash_disbursement_permissions.sql
 mysql -u root -p tapstemco < sql/cash_receipt_module.sql
 mysql -u root -p tapstemco < sql/cash_disbursement_module.sql
 
+# Existing Cash Receipt installs – run migration for Debit/Credit line items:
+mysql -u root -p tapstemco < sql/alter_cash_receipt_items_debit_credit.sql
+
 # Or phpMyAdmin
 1. Select database "tapstemco"
 2. Import: sql/cash_receipt_module.sql
 3. Import: sql/cash_disbursement_module.sql
-4. Execute all queries
+4. If upgrading Cash Receipt: import sql/alter_cash_receipt_items_debit_credit.sql
+5. Execute all queries
 ```
 
 ---

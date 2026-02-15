@@ -152,29 +152,36 @@ if (isset($message) && !empty($message)) {
                                                 <tr>
                                                     <th width="10%">#</th>
                                                     <th width="30%"><?php echo lang('cash_receipt_account'); ?></th>
-                                                    <th width="40%"><?php echo lang('cash_receipt_line_description'); ?></th>
-                                                    <th width="20%" class="text-right"><?php echo lang('cash_receipt_amount'); ?></th>
+                                                    <th width="30%"><?php echo lang('cash_receipt_line_description'); ?></th>
+                                                    <th width="15%" class="text-right"><?php echo lang('journalentry_debit'); ?></th>
+                                                    <th width="15%" class="text-right"><?php echo lang('journalentry_credit'); ?></th>
                                                 </tr>
                                             </thead>
                                             <tbody>
                                                 <?php if (!empty($line_items)): ?>
-                                                    <?php $total = 0; $index = 1; ?>
-                                                    <?php foreach ($line_items as $item): ?>
+                                                    <?php $total_debit = 0; $total_credit = 0; $index = 1; ?>
+                                                    <?php foreach ($line_items as $item): 
+                                                        $item_debit = isset($item->debit) ? floatval($item->debit) : 0;
+                                                        $item_credit = isset($item->credit) ? floatval($item->credit) : (isset($item->amount) ? floatval($item->amount) : 0);
+                                                        $total_debit += $item_debit;
+                                                        $total_credit += $item_credit;
+                                                    ?>
                                                         <tr>
                                                             <td><?php echo $index++; ?></td>
                                                             <td><?php echo $item->account_name . ' (' . $item->account . ')'; ?></td>
                                                             <td><?php echo $item->description; ?></td>
-                                                            <td class="text-right"><?php echo number_format($item->amount, 2); ?></td>
+                                                            <td class="text-right"><?php echo $item_debit > 0 ? number_format($item_debit, 2) : '—'; ?></td>
+                                                            <td class="text-right"><?php echo $item_credit > 0 ? number_format($item_credit, 2) : '—'; ?></td>
                                                         </tr>
-                                                        <?php $total += $item->amount; ?>
                                                     <?php endforeach; ?>
                                                     <tr class="active">
                                                         <td colspan="3" class="text-right"><strong><?php echo lang('total'); ?>:</strong></td>
-                                                        <td class="text-right"><strong><?php echo number_format($total, 2); ?></strong></td>
+                                                        <td class="text-right"><strong><?php echo number_format($total_debit, 2); ?></strong></td>
+                                                        <td class="text-right"><strong><?php echo number_format($total_credit, 2); ?></strong></td>
                                                     </tr>
                                                 <?php else: ?>
                                                     <tr>
-                                                        <td colspan="4" class="text-center"><?php echo lang('no_records_found'); ?></td>
+                                                        <td colspan="5" class="text-center"><?php echo lang('no_records_found'); ?></td>
                                                     </tr>
                                                 <?php endif; ?>
                                             </tbody>
@@ -189,88 +196,48 @@ if (isset($message) && !empty($message)) {
                         <div class="col-md-12">
                             <div class="panel panel-info">
                                 <div class="panel-heading">
-                                    <strong><?php echo lang('journal_entry'); ?> (<?php echo lang('reference_only'); ?>)</strong>
+                                    <strong><?php echo lang('accounting_entries'); ?></strong>
+                                    <?php
+                                    $ae = isset($accounting_entries) ? $accounting_entries : array('journal' => null, 'items' => array());
+                                    $journal = isset($ae['journal']) ? $ae['journal'] : null;
+                                    $journal_items = isset($ae['items']) ? $ae['items'] : array();
+                                    if ($journal && !empty($journal->description)): ?>
+                                        <span class="text-muted small"> — <?php echo htmlspecialchars($journal->description); ?></span>
+                                    <?php endif; ?>
                                 </div>
                                 <div class="panel-body">
+                                    <?php if (!empty($journal_items)): ?>
                                     <div class="table-responsive">
                                         <table class="table table-striped table-bordered">
                                             <thead>
                                                 <tr>
-                                                    <th width="10%">#</th>
-                                                    <th width="40%"><?php echo lang('account'); ?></th>
-                                                    <th width="25%" class="text-right"><?php echo lang('debit'); ?></th>
-                                                    <th width="25%" class="text-right"><?php echo lang('credit'); ?></th>
+                                                    <th width="30%"><?php echo lang('account'); ?></th>
+                                                    <th width="35%"><?php echo lang('description'); ?></th>
+                                                    <th width="17.5%" class="text-right"><?php echo lang('debit'); ?></th>
+                                                    <th width="17.5%" class="text-right"><?php echo lang('credit'); ?></th>
                                                 </tr>
                                             </thead>
                                             <tbody>
                                                 <?php 
-                                                $total_debit = 0; 
-                                                $total_credit = 0; 
-                                                $je_index = 1;
-                                                
-                                                // Load models to get the mapped GL account from paymentmenthod table
-                                                $this->load->model('payment_method_config_model');
-                                                $this->load->model('finance_model');
-                                                
-                                                // Get payment method config with GL account
-                                                $payment_config = $this->payment_method_config_model->get_account_for_payment_method($receipt->payment_method);
-                                                
-                                                $cash_account_name = 'Cash/Bank Account (Unconfigured)';
-                                                $cash_account_code = '';
-                                                
-                                                if ($payment_config && !empty($payment_config->gl_account_code)) {
-                                                    // Use account_chart method to get account details by account code
-                                                    $account_result = $this->finance_model->account_chart(null, $payment_config->gl_account_code);
-                                                    $account = $account_result->row();
-                                                    if ($account) {
-                                                        $cash_account_name = $account->name;
-                                                        $cash_account_code = $account->account;
-                                                    }
-                                                }
+                                                $total_debit = 0;
+                                                $total_credit = 0;
+                                                foreach ($journal_items as $entry): 
+                                                    $total_debit += isset($entry->debit) ? floatval($entry->debit) : 0;
+                                                    $total_credit += isset($entry->credit) ? floatval($entry->credit) : 0;
                                                 ?>
-                                                
-                                                <!-- Debit Entry: Cash/Bank Account (from paymentmenthod GL account) -->
                                                 <tr>
-                                                    <td><?php echo $je_index++; ?></td>
-                                                    <td>
-                                                        <strong><?php echo $cash_account_name; ?></strong>
-                                                        <?php if ($cash_account_code): ?>
-                                                            <br><small class="text-muted"><?php echo $cash_account_code; ?> - <?php echo lang('payment_method'); ?>: <?php echo $receipt->payment_method; ?></small>
-                                                        <?php else: ?>
-                                                            <br><small class="text-warning"><?php echo lang('payment_method'); ?>: <?php echo $receipt->payment_method; ?> - <a href="<?php echo site_url('payment_method_config'); ?>">Configure GL account</a></small>
-                                                        <?php endif; ?>
-                                                    </td>
-                                                    <td class="text-right"><strong><?php echo number_format($receipt->total_amount, 2); ?></strong></td>
-                                                    <td class="text-right">-</td>
+                                                    <td><?php echo htmlspecialchars((isset($entry->account_name) ? $entry->account_name : '') . ' (' . (isset($entry->account) ? $entry->account : '') . ')'); ?></td>
+                                                    <td><?php echo htmlspecialchars(isset($entry->description) ? $entry->description : ''); ?></td>
+                                                    <td class="text-right"><?php echo (isset($entry->debit) && $entry->debit > 0) ? number_format($entry->debit, 2) : '—'; ?></td>
+                                                    <td class="text-right"><?php echo (isset($entry->credit) && $entry->credit > 0) ? number_format($entry->credit, 2) : '—'; ?></td>
                                                 </tr>
-                                                <?php $total_debit += $receipt->total_amount; ?>
-                                                
-                                                <!-- Credit Entries: Line Items (Revenue/Income Accounts) -->
-                                                <?php if (!empty($line_items)): ?>
-                                                    <?php foreach ($line_items as $item): ?>
-                                                        <tr>
-                                                            <td><?php echo $je_index++; ?></td>
-                                                            <td>
-                                                                <?php echo $item->account_name . ' (' . $item->account . ')'; ?>
-                                                                <?php if (!empty($item->description)): ?>
-                                                                    <br><small class="text-muted"><?php echo $item->description; ?></small>
-                                                                <?php endif; ?>
-                                                            </td>
-                                                            <td class="text-right">-</td>
-                                                            <td class="text-right"><?php echo number_format($item->amount, 2); ?></td>
-                                                        </tr>
-                                                        <?php $total_credit += $item->amount; ?>
-                                                    <?php endforeach; ?>
-                                                <?php endif; ?>
-                                                
-                                                <!-- Totals -->
+                                                <?php endforeach; ?>
                                                 <tr class="active">
                                                     <td colspan="2" class="text-right"><strong><?php echo lang('total'); ?>:</strong></td>
                                                     <td class="text-right"><strong><?php echo number_format($total_debit, 2); ?></strong></td>
                                                     <td class="text-right"><strong><?php echo number_format($total_credit, 2); ?></strong></td>
                                                 </tr>
-                                                
-                                                <?php if ($total_debit != $total_credit): ?>
+                                                <?php if (abs($total_debit - $total_credit) > 0.001): ?>
                                                 <tr class="danger">
                                                     <td colspan="4" class="text-center">
                                                         <i class="fa fa-exclamation-triangle"></i> 
@@ -288,6 +255,9 @@ if (isset($message) && !empty($message)) {
                                             </tbody>
                                         </table>
                                     </div>
+                                    <?php else: ?>
+                                    <p class="text-muted"><?php echo lang('no_accounting_entries'); ?></p>
+                                    <?php endif; ?>
                                 </div>
                             </div>
                         </div>

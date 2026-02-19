@@ -91,8 +91,18 @@ if (isset($message) && !empty($message)) {
                                 <div class="col-lg-8">
                                     <select name="payment_method" id="payment_method" class="form-control" required>
                                         <option value=""><?php echo lang('select_default_text'); ?></option>
-                                        <?php foreach ($payment_methods as $key => $method): ?>
-                                            <option value="<?php echo $key; ?>" <?php echo set_select('payment_method', $key); ?>><?php echo $method; ?></option>
+                                        <?php 
+                                        $selected_payment = set_value('payment_method');
+                                        $default_to_cash = empty($selected_payment) && isset($default_cash_id);
+                                        foreach ($payment_methods as $id => $name): 
+                                            $is_selected = false;
+                                            if ($default_to_cash && $id == $default_cash_id) {
+                                                $is_selected = true;
+                                            } elseif (!empty($selected_payment) && $id == $selected_payment) {
+                                                $is_selected = true;
+                                            }
+                                        ?>
+                                            <option value="<?php echo $id; ?>" <?php echo $is_selected ? 'selected="selected"' : ''; ?>><?php echo $name; ?></option>
                                         <?php endforeach; ?>
                                     </select>
                                     <?php echo form_error('payment_method'); ?>

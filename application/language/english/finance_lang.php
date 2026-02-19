@@ -53,6 +53,9 @@ $lang['all_status'] = 'All Status';
 
 
 // general journal
+$lang['account'] = 'Account';
+$lang['debit'] = 'Debit';
+$lang['credit'] = 'Credit';
 $lang['journalentry_date'] ='Date';
 $lang['journalentry_description'] ='Description';
 $lang['journalentry_account'] ='Account';

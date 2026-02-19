@@ -67,7 +67,27 @@ class Cash_receipt extends CI_Controller {
         $this->data['date_from'] = $date_from;
         $this->data['date_to'] = $date_to;
         
-        $this->data['cash_receipts'] = $this->cash_receipt_model->get_cash_receipts(null, null, $date_from, $date_to)->result();
+        $receipts = $this->cash_receipt_model->get_cash_receipts(null, null, $date_from, $date_to)->result();
+        
+        // Load payment methods lookup for ID to name conversion
+        $this->load->model('payment_method_config_model');
+        $payment_methods_list = $this->payment_method_config_model->get_all_payment_methods();
+        $payment_methods_by_id = array();
+        foreach ($payment_methods_list as $pm) {
+            $payment_methods_by_id[$pm->id] = $pm->name;
+        }
+        
+        foreach ($receipts as $receipt) {
+            $receipt->is_posted = $this->cash_receipt_model->is_receipt_posted_to_gl($receipt->id);
+            
+            // If payment_method is an integer (ID), lookup the name from paymentmenthod table
+            if (is_numeric($receipt->payment_method) && isset($payment_methods_by_id[(int)$receipt->payment_method])) {
+                $receipt->payment_method_display = $payment_methods_by_id[(int)$receipt->payment_method];
+            } else {
+                $receipt->payment_method_display = $receipt->payment_method;
+            }
+        }
+        $this->data['cash_receipts'] = $receipts;
         
         $this->data['content'] = 'cash_receipt/cash_receipt_list';
         $this->load->view('template', $this->data);
@@ -91,12 +111,22 @@ class Cash_receipt extends CI_Controller {
         }
 
         if ($this->form_validation->run() == TRUE) {
+            // Convert payment method ID to name
+            $payment_method_id = $this->input->post('payment_method');
+            $payment_method_name = '';
+            if (!empty($payment_method_id) && isset($this->data['payment_methods_by_id'][$payment_method_id])) {
+                $payment_method_name = $this->data['payment_methods_by_id'][$payment_method_id]->name;
+            } else {
+                // Fallback: use posted value if ID lookup fails (for backward compatibility)
+                $payment_method_name = $payment_method_id;
+            }
+            
             // Prepare receipt data
             $receipt_data = array(
                 'receipt_no' => $this->input->post('receipt_no'),
                 'receipt_date' => date('Y-m-d', strtotime($this->input->post('receipt_date'))),
                 'received_from' => $this->input->post('received_from'),
-                'payment_method' => $this->input->post('payment_method'),
+                'payment_method' => $payment_method_name,
                 'cheque_no' => $this->input->post('cheque_no'),
                 'bank_name' => $this->input->post('bank_name'),
                 'description' => $this->input->post('description'),
@@ -157,8 +187,14 @@ class Cash_receipt extends CI_Controller {
         $this->load->model('payment_method_config_model');
         $payment_methods = $this->payment_method_config_model->get_all_payment_methods();
         $this->data['payment_methods'] = array();
+        $this->data['payment_methods_by_id'] = array();
         foreach ($payment_methods as $method) {
-            $this->data['payment_methods'][$method->name] = $method->name;
+            $this->data['payment_methods'][$method->id] = $method->name;
+            $this->data['payment_methods_by_id'][$method->id] = $method;
+            // Find Cash ID for default selection
+            if (strtolower(trim($method->name)) === 'cash') {
+                $this->data['default_cash_id'] = $method->id;
+            }
         }
 
         $this->data['content'] = 'cash_receipt/cash_receipt_form';
@@ -182,60 +218,81 @@ class Cash_receipt extends CI_Controller {
             redirect(current_lang() . '/cash_receipt/cash_receipt_list', 'refresh');
         }
         
+        if ($this->cash_receipt_model->is_receipt_posted_to_gl($id)) {
+            $this->session->set_flashdata('warning', lang('cash_receipt_cannot_edit_posted'));
+            redirect(current_lang() . '/cash_receipt/cash_receipt_list', 'refresh');
+        }
+        
         // Form validation rules
         $this->form_validation->set_rules('receipt_date', lang('cash_receipt_date'), 'required');
         $this->form_validation->set_rules('receipt_no', lang('cash_receipt_no'), 'required');
         $this->form_validation->set_rules('received_from', lang('cash_receipt_received_from'), 'required');
         $this->form_validation->set_rules('payment_method', lang('cash_receipt_payment_method'), 'required');
         $this->form_validation->set_rules('description', lang('cash_receipt_description'), 'required');
-        $this->form_validation->set_rules('account[]', lang('cash_receipt_account'), 'required');
+        
+        // Check if cancelled
+        $cancelled = $this->input->post('cancelled') == '1';
+        if (!$cancelled) {
+            $this->form_validation->set_rules('account[]', lang('cash_receipt_account'), 'required');
+        }
 
         if ($this->form_validation->run() == TRUE) {
-            // Normalize payment method (trim, fallback to existing value or 'Cash')
-            $posted_payment = trim($this->input->post('payment_method'));
-            if ($posted_payment === '' && isset($receipt->payment_method)) {
-                $posted_payment = trim($receipt->payment_method);
+            // Convert payment method ID to name
+            $payment_method_id = $this->input->post('payment_method');
+            $payment_method_name = '';
+            if (!empty($payment_method_id) && isset($this->data['payment_methods_by_id'][$payment_method_id])) {
+                $payment_method_name = $this->data['payment_methods_by_id'][$payment_method_id]->name;
+            } elseif (!empty($payment_method_id) && $payment_method_id < 0) {
+                // Temporary entry (removed from config) - use as-is
+                $payment_method_name = isset($this->data['payment_methods'][$payment_method_id]) ? $this->data['payment_methods'][$payment_method_id] : '';
             }
-            if ($posted_payment === '') {
-                $posted_payment = 'Cash';
+            // Fallback to existing value or 'Cash'
+            if (empty($payment_method_name) && isset($receipt->payment_method)) {
+                $payment_method_name = trim($receipt->payment_method);
+            }
+            if (empty($payment_method_name)) {
+                $payment_method_name = 'Cash';
             }
             // Prepare receipt data
             $receipt_data = array(
                 'receipt_no' => $this->input->post('receipt_no'),
                 'receipt_date' => date('Y-m-d', strtotime($this->input->post('receipt_date'))),
                 'received_from' => $this->input->post('received_from'),
-                'payment_method' => $posted_payment,
+                'payment_method' => $payment_method_name,
                 'cheque_no' => $this->input->post('cheque_no'),
                 'bank_name' => $this->input->post('bank_name'),
                 'description' => $this->input->post('description'),
                 'total_amount' => 0,
+                'cancelled' => $cancelled ? 1 : 0,
                 'updated_at' => date('Y-m-d H:i:s')
             );
 
-            // Get line items (debit/credit style like journal entry)
-            $accounts = $this->input->post('account');
-            $debits = $this->input->post('debit');
-            $credits = $this->input->post('credit');
-            $line_descriptions = $this->input->post('line_description');
-            
+            // Get line items (skip when cancelled - just record document reference)
             $line_items = array();
             $total_debit = 0;
             $total_credit = 0;
             
-            if (is_array($accounts)) {
-                foreach ($accounts as $key => $account) {
-                    $debit = isset($debits[$key]) ? floatval(str_replace(',', '', $debits[$key])) : 0;
-                    $credit = isset($credits[$key]) ? floatval(str_replace(',', '', $credits[$key])) : 0;
-                    if (!empty($account) && ($debit > 0 || $credit > 0)) {
-                        $line_items[] = array(
-                            'account' => $account,
-                            'debit' => $debit,
-                            'credit' => $credit,
-                            'amount' => $debit + $credit,
-                            'description' => isset($line_descriptions[$key]) ? $line_descriptions[$key] : ''
-                        );
-                        $total_debit += $debit;
-                        $total_credit += $credit;
+            if (!$cancelled) {
+                $accounts = $this->input->post('account');
+                $debits = $this->input->post('debit');
+                $credits = $this->input->post('credit');
+                $line_descriptions = $this->input->post('line_description');
+                
+                if (is_array($accounts)) {
+                    foreach ($accounts as $key => $account) {
+                        $debit = isset($debits[$key]) ? floatval(str_replace(',', '', $debits[$key])) : 0;
+                        $credit = isset($credits[$key]) ? floatval(str_replace(',', '', $credits[$key])) : 0;
+                        if (!empty($account) && ($debit > 0 || $credit > 0)) {
+                            $line_items[] = array(
+                                'account' => $account,
+                                'debit' => $debit,
+                                'credit' => $credit,
+                                'amount' => $debit + $credit,
+                                'description' => isset($line_descriptions[$key]) ? $line_descriptions[$key] : ''
+                            );
+                            $total_debit += $debit;
+                            $total_credit += $credit;
+                        }
                     }
                 }
             }
@@ -263,12 +320,21 @@ class Cash_receipt extends CI_Controller {
         $this->load->model('payment_method_config_model');
         $payment_methods = $this->payment_method_config_model->get_all_payment_methods();
         $this->data['payment_methods'] = array();
+        $this->data['payment_methods_by_id'] = array();
+        $this->data['payment_method_id_by_name'] = array();
         foreach ($payment_methods as $method) {
-            $this->data['payment_methods'][$method->name] = $method->name;
+            $this->data['payment_methods'][$method->id] = $method->name;
+            $this->data['payment_methods_by_id'][$method->id] = $method;
+            $this->data['payment_method_id_by_name'][strtolower(trim($method->name))] = $method->id;
         }
         // If saved payment method is not in the table (e.g. was removed from config), still show it so it can be selected
-        if (!empty($receipt->payment_method) && !isset($this->data['payment_methods'][$receipt->payment_method])) {
-            $this->data['payment_methods'][$receipt->payment_method] = $receipt->payment_method;
+        if (!empty($receipt->payment_method)) {
+            $saved_method_lower = strtolower(trim($receipt->payment_method));
+            if (!isset($this->data['payment_method_id_by_name'][$saved_method_lower])) {
+                // Add as a temporary entry with a fake ID (negative to avoid conflicts)
+                $temp_id = -999;
+                $this->data['payment_methods'][$temp_id] = $receipt->payment_method;
+            }
         }
 
         $this->data['content'] = 'cash_receipt/cash_receipt_edit';
@@ -290,6 +356,19 @@ class Cash_receipt extends CI_Controller {
         if (!$receipt) {
             $this->session->set_flashdata('warning', lang('cash_receipt_not_found'));
             redirect(current_lang() . '/cash_receipt/cash_receipt_list', 'refresh');
+        }
+        
+        // Lookup payment method name if stored as ID
+        if (!empty($receipt->payment_method) && is_numeric($receipt->payment_method)) {
+            $this->load->model('payment_method_config_model');
+            $pm = $this->db->query('SELECT name FROM paymentmenthod WHERE id = ? AND PIN = ? LIMIT 1', array((int)$receipt->payment_method, current_user()->PIN))->row();
+            if ($pm) {
+                $receipt->payment_method_display = $pm->name;
+            } else {
+                $receipt->payment_method_display = $receipt->payment_method;
+            }
+        } else {
+            $receipt->payment_method_display = $receipt->payment_method;
         }
         
         $this->data['receipt'] = $receipt;
@@ -336,6 +415,12 @@ class Cash_receipt extends CI_Controller {
      */
     function cash_receipt_delete($id) {
         $id = decode_id($id);
+        
+        if ($this->cash_receipt_model->is_receipt_posted_to_gl($id)) {
+            $this->session->set_flashdata('warning', lang('cash_receipt_cannot_delete_posted'));
+            redirect(current_lang() . '/cash_receipt/cash_receipt_list', 'refresh');
+            return;
+        }
         
         // Delete receipt
         $result = $this->cash_receipt_model->delete_cash_receipt($id);

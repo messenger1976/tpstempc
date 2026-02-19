@@ -149,7 +149,7 @@ class Cash_receipt_model extends CI_Model {
         }
 
         // Update remaining receipt header fields (payment_method already done above)
-        $allowed = array('receipt_no', 'receipt_date', 'received_from', 'cheque_no', 'bank_name', 'description', 'total_amount', 'updated_at');
+        $allowed = array('receipt_no', 'receipt_date', 'received_from', 'cheque_no', 'bank_name', 'description', 'total_amount', 'cancelled', 'updated_at');
         $set_parts = array();
         $params = array();
         foreach ($allowed as $col) {
@@ -198,8 +198,10 @@ class Cash_receipt_model extends CI_Model {
             return false;
         }
 
-        // Create journal entry after commit so a journal failure does not roll back the edit
-        $this->create_journal_entry($id, $receipt_data, $line_items);
+        // Create journal entry only when not cancelled (cancelled receipts are document references only, no GL)
+        if (empty($receipt_data['cancelled'])) {
+            $this->create_journal_entry($id, $receipt_data, $line_items);
+        }
 
         return true;
     }
@@ -279,6 +281,66 @@ class Cash_receipt_model extends CI_Model {
             return;
         }
 
+        $this->_delete_journal_entry_rows($entry_ids, $receipt_id, $pin);
+    }
+
+    /**
+     * Get the journal entry ID for a cash receipt (if any).
+     * Used to check if receipt has been posted to GL.
+     */
+    function get_journal_entry_id_for_receipt($receipt_id) {
+        $pin = current_user()->PIN;
+        $receipt_id = (int) $receipt_id;
+        $has_ref_type = $this->db->query("SHOW COLUMNS FROM journal_entry LIKE 'reference_type'")->row();
+        $has_ref_id = $this->db->query("SHOW COLUMNS FROM journal_entry LIKE 'reference_id'")->row();
+        if ($has_ref_type && $has_ref_id) {
+            $row = $this->db->query(
+                'SELECT id FROM journal_entry WHERE reference_type = ? AND reference_id = ? AND PIN = ? LIMIT 1',
+                array('cash_receipt', $receipt_id, $pin)
+            )->row();
+            if ($row) {
+                return (int) $row->id;
+            }
+        }
+        $r = $this->db->query('SELECT receipt_no FROM cash_receipts WHERE id = ? AND PIN = ? LIMIT 1', array($receipt_id, $pin))->row();
+        if ($r) {
+            $like = 'Cash Receipt: ' . $this->db->escape_like_str($r->receipt_no) . '%';
+            $row = $this->db->query(
+                'SELECT id FROM journal_entry WHERE description LIKE ? AND PIN = ? LIMIT 1',
+                array($like, $pin)
+            )->row();
+            if ($row) {
+                return (int) $row->id;
+            }
+        }
+        if ($has_ref_id) {
+            $row = $this->db->query(
+                'SELECT id FROM journal_entry WHERE reference_id = ? AND PIN = ? LIMIT 1',
+                array($receipt_id, $pin)
+            )->row();
+            if ($row) {
+                return (int) $row->id;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Check if a cash receipt has been posted to the general ledger.
+     */
+    function is_receipt_posted_to_gl($receipt_id) {
+        $journal_id = $this->get_journal_entry_id_for_receipt($receipt_id);
+        if (!$journal_id) {
+            return false;
+        }
+        $this->load->model('finance_model');
+        return $this->finance_model->is_journal_entry_posted_to_gl($journal_id);
+    }
+
+    /**
+     * Delete journal entry rows (items and header). Used by _delete_journal_entries_for_receipt.
+     */
+    private function _delete_journal_entry_rows($entry_ids, $receipt_id, $pin) {
         $has_journal_id = $this->db->query("SHOW COLUMNS FROM journal_entry_items LIKE 'journal_id'")->row();
         $has_entry_id = $this->db->query("SHOW COLUMNS FROM journal_entry_items LIKE 'entry_id'")->row();
         $link_col = $has_journal_id ? 'journal_id' : ($has_entry_id ? 'entry_id' : null);
@@ -289,7 +351,8 @@ class Cash_receipt_model extends CI_Model {
                 $entry_ids
             );
         }
-
+        $has_ref_type = $this->db->query("SHOW COLUMNS FROM journal_entry LIKE 'reference_type'")->row();
+        $has_ref_id = $this->db->query("SHOW COLUMNS FROM journal_entry LIKE 'reference_id'")->row();
         if ($has_ref_type && $has_ref_id) {
             $this->db->query(
                 'DELETE FROM journal_entry WHERE reference_type = ? AND reference_id = ? AND PIN = ?',
@@ -393,12 +456,16 @@ class Cash_receipt_model extends CI_Model {
         $has_desc = $this->db->query("SHOW COLUMNS FROM journal_entry_items LIKE 'description'")->row();
 
         // Insert each line item as journal entry item (debit/credit like journal entry)
+        $total_debit = 0;
+        $total_credit = 0;
         foreach ($line_items as $item) {
             $debit = isset($item['debit']) ? floatval($item['debit']) : 0;
             $credit = isset($item['credit']) ? floatval($item['credit']) : 0;
             if (empty($item['account']) || ($debit <= 0 && $credit <= 0)) {
                 continue;
             }
+            $total_debit += $debit;
+            $total_credit += $credit;
             $line_desc = isset($item['description']) ? $item['description'] : '';
             if ($has_desc) {
                 $ok = $this->db->query(
@@ -414,6 +481,46 @@ class Cash_receipt_model extends CI_Model {
             if (!$ok) {
                 $error = $this->db->error();
                 log_message('error', 'Failed to insert journal item: ' . json_encode($error) . ' | item: ' . json_encode($item));
+                return false;
+            }
+        }
+
+        // Ensure journal balances: add Cash/Bank debit or credit line if needed
+        $balance_tolerance = 0.02;
+        $diff = $total_debit - $total_credit;
+        if (abs($diff) > $balance_tolerance) {
+            $payment_method = isset($receipt_data['payment_method']) ? trim($receipt_data['payment_method']) : 'Cash';
+            if (empty($payment_method)) {
+                $payment_method = 'Cash';
+            }
+            $cash_account = $this->get_cash_account($payment_method);
+            if ($cash_account) {
+                $debit_bal = 0;
+                $credit_bal = 0;
+                if ($diff < 0) {
+                    $debit_bal = $total_credit - $total_debit; // need more debit (e.g. Cash debit)
+                } else {
+                    $credit_bal = $total_debit - $total_credit; // need more credit
+                }
+                $bal_desc = 'Receipt from: ' . (isset($receipt_data['received_from']) ? $receipt_data['received_from'] : '');
+                if ($has_desc) {
+                    $ok = $this->db->query(
+                        'INSERT INTO journal_entry_items (' . $link_col . ', account, debit, credit, description, PIN) VALUES (?, ?, ?, ?, ?, ?)',
+                        array($journal_id, $cash_account, $debit_bal, $credit_bal, $bal_desc, $pin)
+                    );
+                } else {
+                    $ok = $this->db->query(
+                        'INSERT INTO journal_entry_items (' . $link_col . ', account, debit, credit, PIN) VALUES (?, ?, ?, ?, ?)',
+                        array($journal_id, $cash_account, $debit_bal, $credit_bal, $pin)
+                    );
+                }
+                if (!$ok) {
+                    log_message('error', 'Failed to insert balancing journal item for receipt_id: ' . $receipt_id);
+                    return false;
+                }
+                log_message('debug', 'Added balancing line for receipt_id ' . $receipt_id . ': account=' . $cash_account . ', debit=' . $debit_bal . ', credit=' . $credit_bal);
+            } else {
+                log_message('error', 'Journal entry for receipt_id ' . $receipt_id . ' does not balance (debit=' . $total_debit . ', credit=' . $total_credit . ') and no cash account found.');
                 return false;
             }
         }

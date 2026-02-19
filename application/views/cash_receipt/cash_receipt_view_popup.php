@@ -75,9 +75,11 @@ if (isset($message) && !empty($message)) {
                                         </tr>
                                         <tr>
                                             <td><strong><?php echo lang('cash_receipt_payment_method'); ?>:</strong></td>
-                                            <td><?php echo $receipt->payment_method; ?></td>
+                                            <td><?php echo isset($receipt->payment_method_display) ? $receipt->payment_method_display : $receipt->payment_method; ?></td>
                                         </tr>
-                                        <?php if ($receipt->payment_method == 'Cheque' && !empty($receipt->cheque_no)): ?>
+                                        <?php 
+                                        $payment_method_display = isset($receipt->payment_method_display) ? $receipt->payment_method_display : $receipt->payment_method;
+                                        if ($payment_method_display == 'Cheque' && !empty($receipt->cheque_no)): ?>
                                         <tr>
                                             <td><strong><?php echo lang('cash_receipt_cheque_no'); ?>:</strong></td>
                                             <td><?php echo $receipt->cheque_no; ?></td>

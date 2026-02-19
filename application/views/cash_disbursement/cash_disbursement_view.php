@@ -57,9 +57,11 @@ if (isset($message) && !empty($message)) {
                                         </tr>
                                         <tr>
                                             <td><strong><?php echo lang('cash_disbursement_payment_method'); ?>:</strong></td>
-                                            <td><?php echo $disburse->payment_method; ?></td>
+                                            <td><?php echo isset($disburse->payment_method_display) ? $disburse->payment_method_display : $disburse->payment_method; ?></td>
                                         </tr>
-                                        <?php if ($disburse->payment_method == 'Cheque' && !empty($disburse->cheque_no)): ?>
+                                        <?php 
+                                        $payment_method_display = isset($disburse->payment_method_display) ? $disburse->payment_method_display : $disburse->payment_method;
+                                        if ($payment_method_display == 'Cheque' && !empty($disburse->cheque_no)): ?>
                                         <tr>
                                             <td><strong><?php echo lang('cash_disbursement_cheque_no'); ?>:</strong></td>
                                             <td><?php echo $disburse->cheque_no; ?></td>

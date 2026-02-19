@@ -93,6 +93,7 @@ if (isset($message) && !empty($message)) {
                                     <th><?php echo lang('cash_receipt_payment_method'); ?></th>
                                     <th><?php echo lang('cash_receipt_description'); ?></th>
                                     <th><?php echo lang('cash_receipt_total_amount'); ?></th>
+                                    <th><?php echo lang('status'); ?></th>
                                     <th><?php echo lang('actions'); ?></th>
                                 </tr>
                             </thead>
@@ -103,18 +104,27 @@ if (isset($message) && !empty($message)) {
                                             <td><?php echo $receipt->receipt_no; ?>
                                                 <?php if (!empty($receipt->cancelled)): ?><span class="label label-default"><?php echo lang('cancelled'); ?></span><?php endif; ?>
                                             </td>
-                                            <td><?php echo date('d-m-Y', strtotime($receipt->receipt_date)); ?></td>
+                                            <td data-order="<?php echo $receipt->receipt_date; ?>"><?php echo date('d-m-Y', strtotime($receipt->receipt_date)); ?></td>
                                             <td><?php echo $receipt->received_from; ?></td>
-                                            <td><?php echo $receipt->payment_method; ?></td>
+                                            <td><?php echo isset($receipt->payment_method_display) ? $receipt->payment_method_display : $receipt->payment_method; ?></td>
                                             <td><?php echo character_limiter($receipt->description, 50); ?></td>
                                             <td class="text-right"><?php echo number_format($receipt->total_amount, 2); ?></td>
+                                            <td>
+                                                <?php if (!empty($receipt->cancelled)): ?>
+                                                    <span class="label label-default"><?php echo lang('cancelled'); ?></span>
+                                                <?php elseif (!empty($receipt->is_posted)): ?>
+                                                    <span class="label label-success"><?php echo lang('cash_receipt_status_posted'); ?></span>
+                                                <?php else: ?>
+                                                    <span class="label label-default"><?php echo lang('cash_receipt_status_draft'); ?></span>
+                                                <?php endif; ?>
+                                            </td>
                                             <td>
                                                 <div class="btn-group">
                                                     <a href="<?php echo site_url(current_lang() . '/cash_receipt/cash_receipt_view/' . encode_id($receipt->id) . '?popup=1'); ?>" 
                                                        class="btn btn-info btn-xs view-popup" title="<?php echo lang('view'); ?>" data-url="<?php echo site_url(current_lang() . '/cash_receipt/cash_receipt_view/' . encode_id($receipt->id) . '?popup=1'); ?>">
                                                         <i class="fa fa-eye"></i>
                                                     </a>
-                                                    <?php if (has_role(6, 'Edit_cash_receipt')) { ?>
+                                                    <?php if (has_role(6, 'Edit_cash_receipt') && empty($receipt->is_posted)) { ?>
                                                         <a href="<?php echo site_url(current_lang() . '/cash_receipt/cash_receipt_edit/' . encode_id($receipt->id)); ?>" 
                                                            class="btn btn-warning btn-xs" title="<?php echo lang('edit'); ?>">
                                                             <i class="fa fa-edit"></i>
@@ -124,7 +134,7 @@ if (isset($message) && !empty($message)) {
                                                        class="btn btn-success btn-xs" target="_blank" title="<?php echo lang('print'); ?>">
                                                         <i class="fa fa-print"></i>
                                                     </a>
-                                                    <?php if (has_role(6, 'Delete_cash_receipt')) { ?>
+                                                    <?php if (has_role(6, 'Delete_cash_receipt') && empty($receipt->is_posted)) { ?>
                                                         <a href="<?php echo site_url(current_lang() . '/cash_receipt/cash_receipt_delete/' . encode_id($receipt->id)); ?>" 
                                                            class="btn btn-danger btn-xs delete-confirm" title="<?php echo lang('delete'); ?>">
                                                             <i class="fa fa-trash"></i>

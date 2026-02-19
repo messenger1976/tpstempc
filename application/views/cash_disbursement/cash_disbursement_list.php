@@ -93,6 +93,7 @@ if (isset($message) && !empty($message)) {
                                     <th><?php echo lang('cash_disbursement_payment_method'); ?></th>
                                     <th><?php echo lang('cash_disbursement_description'); ?></th>
                                     <th><?php echo lang('cash_disbursement_total_amount'); ?></th>
+                                    <th><?php echo lang('status'); ?></th>
                                     <th><?php echo lang('actions'); ?></th>
                                 </tr>
                             </thead>
@@ -103,18 +104,27 @@ if (isset($message) && !empty($message)) {
                                             <td><?php echo $disburse->disburse_no; ?>
                                                 <?php if (!empty($disburse->cancelled)): ?><span class="label label-default"><?php echo lang('cancelled'); ?></span><?php endif; ?>
                                             </td>
-                                            <td><?php echo date('d-m-Y', strtotime($disburse->disburse_date)); ?></td>
+                                            <td data-order="<?php echo $disburse->disburse_date; ?>"><?php echo date('d-m-Y', strtotime($disburse->disburse_date)); ?></td>
                                             <td><?php echo $disburse->paid_to; ?></td>
-                                            <td><?php echo $disburse->payment_method; ?></td>
+                                            <td><?php echo isset($disburse->payment_method_display) ? $disburse->payment_method_display : $disburse->payment_method; ?></td>
                                             <td><?php echo character_limiter($disburse->description, 50); ?></td>
                                             <td class="text-right"><?php echo number_format($disburse->total_amount, 2); ?></td>
+                                            <td>
+                                                <?php if (!empty($disburse->cancelled)): ?>
+                                                    <span class="label label-default"><?php echo lang('cancelled'); ?></span>
+                                                <?php elseif (!empty($disburse->is_posted)): ?>
+                                                    <span class="label label-success"><?php echo lang('cash_disbursement_status_posted'); ?></span>
+                                                <?php else: ?>
+                                                    <span class="label label-default"><?php echo lang('cash_disbursement_status_draft'); ?></span>
+                                                <?php endif; ?>
+                                            </td>
                                             <td>
                                                 <div class="btn-group">
                                                     <a href="<?php echo site_url(current_lang() . '/cash_disbursement/cash_disbursement_view/' . encode_id($disburse->id)); ?>" 
                                                        class="btn btn-info btn-xs" title="<?php echo lang('view'); ?>">
                                                         <i class="fa fa-eye"></i>
                                                     </a>
-                                                    <?php if (has_role(6, 'Edit_cash_disbursement')) { ?>
+                                                    <?php if (has_role(6, 'Edit_cash_disbursement') && empty($disburse->is_posted)) { ?>
                                                         <a href="<?php echo site_url(current_lang() . '/cash_disbursement/cash_disbursement_edit/' . encode_id($disburse->id)); ?>" 
                                                            class="btn btn-warning btn-xs" title="<?php echo lang('edit'); ?>">
                                                             <i class="fa fa-edit"></i>
@@ -124,7 +134,7 @@ if (isset($message) && !empty($message)) {
                                                        class="btn btn-success btn-xs" target="_blank" title="<?php echo lang('print'); ?>">
                                                         <i class="fa fa-print"></i>
                                                     </a>
-                                                    <?php if (has_role(6, 'Delete_cash_disbursement')) { ?>
+                                                    <?php if (has_role(6, 'Delete_cash_disbursement') && empty($disburse->is_posted)) { ?>
                                                         <a href="<?php echo site_url(current_lang() . '/cash_disbursement/cash_disbursement_delete/' . encode_id($disburse->id)); ?>" 
                                                            class="btn btn-danger btn-xs delete-confirm" title="<?php echo lang('delete'); ?>">
                                                             <i class="fa fa-trash"></i>

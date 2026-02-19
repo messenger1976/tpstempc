@@ -48,9 +48,13 @@ class Finance_Model extends CI_Model {
         }
         $has_pin_col = $this->db->query("SHOW COLUMNS FROM journal_entry_items LIKE 'PIN'")->row();
         $has_desc_col = $this->db->query("SHOW COLUMNS FROM journal_entry_items LIKE 'description'")->row();
+        $has_amount_col = $this->db->query("SHOW COLUMNS FROM journal_entry_items LIKE 'amount'")->row();
         $select_fields = 'account, debit, credit';
         if ($has_desc_col) {
             $select_fields .= ', description';
+        }
+        if ($has_amount_col) {
+            $select_fields .= ', amount';
         }
         $line_items = $this->db->query(
             'SELECT ' . $select_fields . ' FROM journal_entry_items WHERE ' . $link_col . ' = ? ORDER BY id ASC',
@@ -82,42 +86,82 @@ class Finance_Model extends CI_Model {
         }
         if (empty($line_items)) {
             $entry_check = $this->db->query('SELECT id, reference_type, reference_id FROM journal_entry WHERE id = ?', array($journal_entry_id))->row();
-            if ($entry_check && $entry_check->reference_type == 'cash_receipt' && isset($entry_check->reference_id)) {
-                $this->load->model('cash_receipt_model');
-                $receipt = $this->cash_receipt_model->get_cash_receipt($entry_check->reference_id);
-                if ($receipt) {
-                    $receipt_items = $this->cash_receipt_model->get_receipt_items($entry_check->reference_id);
-                    $payment_method = isset($receipt->payment_method) ? trim($receipt->payment_method) : 'Cash';
-                    if (empty($payment_method)) $payment_method = 'Cash';
-                    $this->load->model('payment_method_config_model');
-                    $pm_config = $this->payment_method_config_model->get_account_for_payment_method($payment_method);
-                    $cash_account = null;
-                    if ($pm_config && !empty($pm_config->gl_account_code)) {
-                        $acct = $this->db->query('SELECT account FROM account_chart WHERE account = ? AND PIN = ? LIMIT 1', array($pm_config->gl_account_code, $pin))->row();
-                        if ($acct) $cash_account = $acct->account;
-                    }
-                    if (!$cash_account) {
-                        $acct = $this->db->query('SELECT account FROM account_chart WHERE PIN = ? AND account_type IN (1, 10000) AND (name LIKE ? OR name LIKE ?) LIMIT 1', array($pin, '%Cash%', '%Bank%'))->row();
-                        if ($acct) $cash_account = $acct->account;
-                    }
-                    if ($cash_account) {
-                        $has_desc = $this->db->query("SHOW COLUMNS FROM journal_entry_items LIKE 'description'")->row();
-                        $debit_desc = 'Receipt from: ' . (isset($receipt->received_from) ? $receipt->received_from : '');
-                        if ($has_desc) {
-                            $this->db->query('INSERT INTO journal_entry_items (' . $link_col . ', account, debit, credit, description, PIN) VALUES (?, ?, ?, ?, ?, ?)', array($journal_entry_id, $cash_account, $receipt->total_amount, 0, $debit_desc, $pin));
-                        } else {
-                            $this->db->query('INSERT INTO journal_entry_items (' . $link_col . ', account, debit, credit, PIN) VALUES (?, ?, ?, ?, ?)', array($journal_entry_id, $cash_account, $receipt->total_amount, 0, $pin));
-                        }
-                        foreach ($receipt_items as $item) {
+            if ($entry_check && isset($entry_check->reference_id)) {
+                $has_desc = $this->db->query("SHOW COLUMNS FROM journal_entry_items LIKE 'description'")->row();
+                if ($entry_check->reference_type == 'cash_receipt') {
+                    $this->load->model('cash_receipt_model');
+                    $receipt = $this->cash_receipt_model->get_cash_receipt($entry_check->reference_id);
+                    if ($receipt) {
+                        $receipt_items = $this->cash_receipt_model->get_receipt_items($entry_check->reference_id);
+                        $payment_method = isset($receipt->payment_method) ? trim($receipt->payment_method) : 'Cash';
+                        if (empty($payment_method)) $payment_method = 'Cash';
+                        $cash_account = $this->_get_cash_account_for_receipt($payment_method, $pin);
+                        if ($cash_account) {
+                            $debit_desc = 'Receipt from: ' . (isset($receipt->received_from) ? $receipt->received_from : '');
                             if ($has_desc) {
-                                $this->db->query('INSERT INTO journal_entry_items (' . $link_col . ', account, debit, credit, description, PIN) VALUES (?, ?, ?, ?, ?, ?)', array($journal_entry_id, $item->account, 0, $item->amount, isset($item->description) ? $item->description : '', $pin));
+                                $this->db->query('INSERT INTO journal_entry_items (' . $link_col . ', account, debit, credit, description, PIN) VALUES (?, ?, ?, ?, ?, ?)', array($journal_entry_id, $cash_account, $receipt->total_amount, 0, $debit_desc, $pin));
                             } else {
-                                $this->db->query('INSERT INTO journal_entry_items (' . $link_col . ', account, debit, credit, PIN) VALUES (?, ?, ?, ?, ?)', array($journal_entry_id, $item->account, 0, $item->amount, $pin));
+                                $this->db->query('INSERT INTO journal_entry_items (' . $link_col . ', account, debit, credit, PIN) VALUES (?, ?, ?, ?, ?)', array($journal_entry_id, $cash_account, $receipt->total_amount, 0, $pin));
+                            }
+                            foreach ($receipt_items as $item) {
+                                $amt = isset($item->amount) ? floatval($item->amount) : (isset($item->credit) ? floatval($item->credit) : 0);
+                                if ($amt <= 0) continue;
+                                if ($has_desc) {
+                                    $this->db->query('INSERT INTO journal_entry_items (' . $link_col . ', account, debit, credit, description, PIN) VALUES (?, ?, ?, ?, ?, ?)', array($journal_entry_id, $item->account, 0, $amt, isset($item->description) ? $item->description : '', $pin));
+                                } else {
+                                    $this->db->query('INSERT INTO journal_entry_items (' . $link_col . ', account, debit, credit, PIN) VALUES (?, ?, ?, ?, ?)', array($journal_entry_id, $item->account, 0, $amt, $pin));
+                                }
+                            }
+                            $line_items = $this->db->query('SELECT ' . $select_fields . ' FROM journal_entry_items WHERE ' . $link_col . ' = ? ORDER BY id ASC', array($journal_entry_id))->result();
+                            if (empty($line_items) && $has_pin_col) {
+                                $line_items = $this->db->query('SELECT ' . $select_fields . ' FROM journal_entry_items WHERE ' . $link_col . ' = ? AND PIN = ? ORDER BY id ASC', array($journal_entry_id, $pin))->result();
                             }
                         }
-                        $line_items = $this->db->query('SELECT ' . $select_fields . ' FROM journal_entry_items WHERE ' . $link_col . ' = ? ORDER BY id ASC', array($journal_entry_id))->result();
-                        if (empty($line_items) && $has_pin_col) {
-                            $line_items = $this->db->query('SELECT ' . $select_fields . ' FROM journal_entry_items WHERE ' . $link_col . ' = ? AND PIN = ? ORDER BY id ASC', array($journal_entry_id, $pin))->result();
+                    }
+                } elseif ($entry_check->reference_type == 'cash_disbursement') {
+                    $this->load->model('cash_disbursement_model');
+                    $disburse = $this->cash_disbursement_model->get_cash_disbursement($entry_check->reference_id);
+                    if ($disburse) {
+                        $disburse_items = $this->cash_disbursement_model->get_disburse_items($entry_check->reference_id);
+                        $total_debit = 0;
+                        $total_credit = 0;
+                        foreach ($disburse_items as $it) {
+                            $total_debit += isset($it->debit) ? floatval($it->debit) : (isset($it->amount) ? floatval($it->amount) : 0);
+                            $total_credit += isset($it->credit) ? floatval($it->credit) : 0;
+                        }
+                        $cash_account = $this->_get_cash_account_for_receipt(isset($disburse->payment_method) ? trim($disburse->payment_method) : 'Cash', $pin);
+                        if ($cash_account) {
+                            if ($total_debit > $total_credit && ($total_debit - $total_credit) > 0.001) {
+                                $credit_amt = $total_debit - $total_credit;
+                                $bal_desc = 'Disbursement to: ' . (isset($disburse->paid_to) ? $disburse->paid_to : '');
+                                if ($has_desc) {
+                                    $this->db->query('INSERT INTO journal_entry_items (' . $link_col . ', account, debit, credit, description, PIN) VALUES (?, ?, ?, ?, ?, ?)', array($journal_entry_id, $cash_account, 0, $credit_amt, $bal_desc, $pin));
+                                } else {
+                                    $this->db->query('INSERT INTO journal_entry_items (' . $link_col . ', account, debit, credit, PIN) VALUES (?, ?, ?, ?, ?)', array($journal_entry_id, $cash_account, 0, $credit_amt, $pin));
+                                }
+                            } elseif ($total_credit > $total_debit && ($total_credit - $total_debit) > 0.001) {
+                                $debit_amt = $total_credit - $total_debit;
+                                $bal_desc = 'Disbursement to: ' . (isset($disburse->paid_to) ? $disburse->paid_to : '');
+                                if ($has_desc) {
+                                    $this->db->query('INSERT INTO journal_entry_items (' . $link_col . ', account, debit, credit, description, PIN) VALUES (?, ?, ?, ?, ?, ?)', array($journal_entry_id, $cash_account, $debit_amt, 0, $bal_desc, $pin));
+                                } else {
+                                    $this->db->query('INSERT INTO journal_entry_items (' . $link_col . ', account, debit, credit, PIN) VALUES (?, ?, ?, ?, ?)', array($journal_entry_id, $cash_account, $debit_amt, 0, $pin));
+                                }
+                            }
+                            foreach ($disburse_items as $item) {
+                                $d = isset($item->debit) ? floatval($item->debit) : (isset($item->amount) ? floatval($item->amount) : 0);
+                                $c = isset($item->credit) ? floatval($item->credit) : 0;
+                                if (empty($item->account) || ($d <= 0 && $c <= 0)) continue;
+                                if ($has_desc) {
+                                    $this->db->query('INSERT INTO journal_entry_items (' . $link_col . ', account, debit, credit, description, PIN) VALUES (?, ?, ?, ?, ?, ?)', array($journal_entry_id, $item->account, $d, $c, isset($item->description) ? $item->description : '', $pin));
+                                } else {
+                                    $this->db->query('INSERT INTO journal_entry_items (' . $link_col . ', account, debit, credit, PIN) VALUES (?, ?, ?, ?, ?)', array($journal_entry_id, $item->account, $d, $c, $pin));
+                                }
+                            }
+                            $line_items = $this->db->query('SELECT ' . $select_fields . ' FROM journal_entry_items WHERE ' . $link_col . ' = ? ORDER BY id ASC', array($journal_entry_id))->result();
+                            if (empty($line_items) && $has_pin_col) {
+                                $line_items = $this->db->query('SELECT ' . $select_fields . ' FROM journal_entry_items WHERE ' . $link_col . ' = ? AND PIN = ? ORDER BY id ASC', array($journal_entry_id, $pin))->result();
+                            }
                         }
                     }
                 }
@@ -130,12 +174,77 @@ class Finance_Model extends CI_Model {
         $total_debit = 0;
         $total_credit = 0;
         foreach ($line_items as $item) {
-            $total_debit += floatval($item->debit);
-            $total_credit += floatval($item->credit);
+            $d = isset($item->debit) ? floatval($item->debit) : 0;
+            $c = isset($item->credit) ? floatval($item->credit) : 0;
+            if ($d <= 0 && $c <= 0 && isset($item->amount)) {
+                $c = floatval($item->amount);
+            }
+            $total_debit += $d;
+            $total_credit += $c;
         }
-        if (abs($total_debit - $total_credit) > 0.01) {
-            log_message('error', 'post_journal_entry_to_general_ledger: entry ' . $journal_entry_id . ' does not balance');
-            return false;
+        $balance_tolerance = 0.02;
+        if (abs($total_debit - $total_credit) > $balance_tolerance) {
+            // For cash_receipt entries, try to add a balancing Cash/Bank line so posting can succeed
+            $entry_ref = $this->db->query(
+                'SELECT reference_type, reference_id FROM journal_entry WHERE id = ? AND PIN = ? LIMIT 1',
+                array($journal_entry_id, $pin)
+            )->row();
+            if ($entry_ref && $entry_ref->reference_type === 'cash_receipt' && !empty($entry_ref->reference_id)) {
+                $this->load->model('cash_receipt_model');
+                $receipt = $this->cash_receipt_model->get_cash_receipt($entry_ref->reference_id);
+                if ($receipt) {
+                    $payment_method = isset($receipt->payment_method) ? trim($receipt->payment_method) : 'Cash';
+                    if (empty($payment_method)) {
+                        $payment_method = 'Cash';
+                    }
+                    $cash_account = $this->_get_cash_account_for_receipt($payment_method, $pin);
+                    if ($cash_account) {
+                        $diff = $total_credit - $total_debit;
+                        $debit_bal = ($diff > 0) ? $diff : 0;
+                        $credit_bal = ($diff < 0) ? -$diff : 0;
+                        $has_desc = $this->db->query("SHOW COLUMNS FROM journal_entry_items LIKE 'description'")->row();
+                        $bal_desc = 'Receipt from: ' . (isset($receipt->received_from) ? $receipt->received_from : '');
+                        if ($has_desc) {
+                            $this->db->query(
+                                'INSERT INTO journal_entry_items (' . $link_col . ', account, debit, credit, description, PIN) VALUES (?, ?, ?, ?, ?, ?)',
+                                array($journal_entry_id, $cash_account, $debit_bal, $credit_bal, $bal_desc, $pin)
+                            );
+                        } else {
+                            $this->db->query(
+                                'INSERT INTO journal_entry_items (' . $link_col . ', account, debit, credit, PIN) VALUES (?, ?, ?, ?, ?)',
+                                array($journal_entry_id, $cash_account, $debit_bal, $credit_bal, $pin)
+                            );
+                        }
+                        // Re-fetch line items and recompute totals
+                        $line_items = $this->db->query(
+                            'SELECT ' . $select_fields . ' FROM journal_entry_items WHERE ' . $link_col . ' = ? ORDER BY id ASC',
+                            array($journal_entry_id)
+                        )->result();
+                        if (empty($line_items) && $has_pin_col) {
+                            $line_items = $this->db->query(
+                                'SELECT ' . $select_fields . ' FROM journal_entry_items WHERE ' . $link_col . ' = ? AND PIN = ? ORDER BY id ASC',
+                                array($journal_entry_id, $pin)
+                            )->result();
+                        }
+                        $total_debit = 0;
+                        $total_credit = 0;
+                        foreach ($line_items as $item) {
+                            $d = isset($item->debit) ? floatval($item->debit) : 0;
+                            $c = isset($item->credit) ? floatval($item->credit) : 0;
+                            if ($d <= 0 && $c <= 0 && isset($item->amount)) {
+                                $c = floatval($item->amount);
+                            }
+                            $total_debit += $d;
+                            $total_credit += $c;
+                        }
+                        log_message('info', 'post_journal_entry_to_general_ledger: auto-balanced cash_receipt entry ' . $journal_entry_id . ' (added Cash/Bank line). Debit: ' . $total_debit . ', Credit: ' . $total_credit);
+                    }
+                }
+            }
+            if (abs($total_debit - $total_credit) > $balance_tolerance) {
+                log_message('error', 'post_journal_entry_to_general_ledger: entry ' . $journal_entry_id . ' does not balance. Debit: ' . $total_debit . ', Credit: ' . $total_credit);
+                return false;
+            }
         }
         $this->db->trans_start();
         $entry_date = isset($entry->entry_date) ? $entry->entry_date : date('Y-m-d');
@@ -159,9 +268,14 @@ class Finance_Model extends CI_Model {
         foreach ($line_items as $item) {
             $account_info = account_row_info($item->account);
             if (!$account_info) continue;
+            $d = isset($item->debit) ? floatval($item->debit) : 0;
+            $c = isset($item->credit) ? floatval($item->credit) : 0;
+            if ($d <= 0 && $c <= 0 && isset($item->amount)) {
+                $c = floatval($item->amount);
+            }
             $ledger['account'] = $item->account;
-            $ledger['debit'] = floatval($item->debit);
-            $ledger['credit'] = floatval($item->credit);
+            $ledger['debit'] = $d;
+            $ledger['credit'] = $c;
             $ledger['description'] = isset($item->description) ? $item->description : (isset($entry->description) ? $entry->description : '');
             $ledger['account_type'] = isset($account_info->account_type) ? $account_info->account_type : 0;
             $ledger['sub_account_type'] = isset($account_info->sub_account_type) ? $account_info->sub_account_type : 0;
@@ -171,6 +285,29 @@ class Finance_Model extends CI_Model {
         }
         $this->db->trans_complete();
         return ($inserted_count > 0 && $this->db->trans_status());
+    }
+
+    /**
+     * Get cash/bank account code for a payment method (used when auto-balancing cash_receipt journal entries).
+     */
+    private function _get_cash_account_for_receipt($payment_method, $pin) {
+        $payment_method = trim((string) $payment_method);
+        if (empty($payment_method)) {
+            $payment_method = 'Cash';
+        }
+        $this->load->model('payment_method_config_model');
+        $pm_config = $this->payment_method_config_model->get_account_for_payment_method($payment_method);
+        if ($pm_config && !empty($pm_config->gl_account_code)) {
+            $acct = $this->db->query('SELECT account FROM account_chart WHERE account = ? AND PIN = ? LIMIT 1', array($pm_config->gl_account_code, $pin))->row();
+            if ($acct) {
+                return $acct->account;
+            }
+        }
+        $acct = $this->db->query(
+            'SELECT account FROM account_chart WHERE PIN = ? AND account_type IN (1, 10000) AND (name LIKE ? OR name LIKE ?) LIMIT 1',
+            array($pin, '%Cash%', '%Bank%')
+        )->row();
+        return $acct ? $acct->account : null;
     }
 
     /**

@@ -93,8 +93,25 @@ if (isset($message) && !empty($message)) {
                                 <div class="col-lg-8">
                                     <select name="payment_method" id="payment_method" class="form-control" required>
                                         <option value=""><?php echo lang('select_default_text'); ?></option>
-                                        <?php foreach ($payment_methods as $key => $method): ?>
-                                            <option value="<?php echo $key; ?>" <?php echo set_select('payment_method', $key, ($receipt->payment_method == $key)); ?>><?php echo $method; ?></option>
+                                        <?php 
+                                        $selected_payment_id = set_value('payment_method');
+                                        // Handle saved payment_method: if it's numeric (ID), use it directly; if it's a name, lookup the ID
+                                        if (empty($selected_payment_id) && !empty($receipt->payment_method)) {
+                                            if (is_numeric($receipt->payment_method)) {
+                                                // Saved value is an ID
+                                                $selected_payment_id = (int)$receipt->payment_method;
+                                            } else {
+                                                // Saved value is a name, lookup the ID
+                                                $saved_method_lower = strtolower(trim($receipt->payment_method));
+                                                if (isset($payment_method_id_by_name[$saved_method_lower])) {
+                                                    $selected_payment_id = $payment_method_id_by_name[$saved_method_lower];
+                                                }
+                                            }
+                                        }
+                                        foreach ($payment_methods as $id => $name): 
+                                            $is_selected = (!empty($selected_payment_id) && $id == $selected_payment_id);
+                                        ?>
+                                            <option value="<?php echo $id; ?>" <?php echo $is_selected ? 'selected="selected"' : ''; ?>><?php echo $name; ?></option>
                                         <?php endforeach; ?>
                                     </select>
                                     <?php echo form_error('payment_method'); ?>
@@ -130,6 +147,22 @@ if (isset($message) && !empty($message)) {
                                 <div class="col-lg-10">
                                     <textarea name="description" class="form-control" rows="3" required><?php echo set_value('description', $receipt->description); ?></textarea>
                                     <?php echo form_error('description'); ?>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-12">
+                            <div class="form-group">
+                                <div class="col-lg-offset-2 col-lg-10">
+                                    <div class="checkbox">
+                                        <label>
+                                            <input type="checkbox" name="cancelled" id="cancelled" value="1" <?php echo set_checkbox('cancelled', '1', !empty($receipt->cancelled)); ?>/>
+                                            <?php echo lang('cancelled'); ?>
+                                        </label>
+                                    </div>
+                                    <p class="help-block text-muted" style="margin-left: 0;"><?php echo lang('cash_receipt_cancelled_help'); ?></p>
                                 </div>
                             </div>
                         </div>
@@ -345,7 +378,11 @@ if (isset($message) && !empty($message)) {
                 else{ $('#balance_diff').text('Diff: '+diff.toFixed(2)).css('color','red'); }
             }
 
+            // Form validation - debits must equal credits (skip when cancelled)
             $('#cashReceiptForm').on('submit', function(e){
+                if ($('#cancelled').is(':checked')) {
+                    return true; // No line items validation when cancelled
+                }
                 var totalDebit=0, totalCredit=0, hasItems=false;
                 $('.debit-input').each(function(){ totalDebit += parseFloat($(this).val()) || 0; });
                 $('.credit-input').each(function(){ var v=parseFloat($(this).val())||0; totalCredit+=v; if(v>0)hasItems=true; });
@@ -353,6 +390,20 @@ if (isset($message) && !empty($message)) {
                 if(Math.abs(totalDebit-totalCredit)>0.01){ alert('<?php echo lang('debits_credits_not_balanced'); ?>'); e.preventDefault(); return false; }
                 return true;
             });
+
+            // Toggle line items required indicator when cancelled changes
+            $('#cancelled').on('change', function(){
+                if ($(this).is(':checked')) {
+                    $('#lineItemsTable th .required').hide();
+                } else {
+                    $('#lineItemsTable th .required').show();
+                }
+            });
+            
+            // Initialize on page load
+            if ($('#cancelled').is(':checked')) {
+                $('#lineItemsTable th .required').hide();
+            }
 
             // Member Search functionality
             var memberSearchUrl = '<?php echo site_url(current_lang() . '/cash_receipt/search_member'); ?>';

@@ -196,7 +196,7 @@ class Cash_disbursement_model extends CI_Model {
         }
 
         // Update remaining disbursement header fields (payment_method already done above)
-        $allowed = array('disburse_no', 'disburse_date', 'paid_to', 'cheque_no', 'bank_name', 'description', 'total_amount', 'updated_at');
+        $allowed = array('disburse_no', 'disburse_date', 'paid_to', 'cheque_no', 'bank_name', 'description', 'total_amount', 'cancelled', 'updated_at');
         $set_parts = array();
         $params = array();
         foreach ($allowed as $col) {
@@ -245,8 +245,10 @@ class Cash_disbursement_model extends CI_Model {
             return false;
         }
 
-        // Create journal entry after commit so a journal failure does not roll back the edit
-        $this->create_journal_entry($id, $disburse_data, $line_items);
+        // Create journal entry only when not cancelled (cancelled disbursements are document references only, no GL)
+        if (empty($disburse_data['cancelled'])) {
+            $this->create_journal_entry($id, $disburse_data, $line_items);
+        }
 
         return true;
     }
@@ -326,6 +328,66 @@ class Cash_disbursement_model extends CI_Model {
             return;
         }
 
+        $this->_delete_journal_entry_rows($entry_ids, $disburse_id, $pin);
+    }
+
+    /**
+     * Get the journal entry ID for a cash disbursement (if any).
+     * Used to check if disbursement has been posted to GL.
+     */
+    function get_journal_entry_id_for_disbursement($disburse_id) {
+        $pin = current_user()->PIN;
+        $disburse_id = (int) $disburse_id;
+        $has_ref_type = $this->db->query("SHOW COLUMNS FROM journal_entry LIKE 'reference_type'")->row();
+        $has_ref_id = $this->db->query("SHOW COLUMNS FROM journal_entry LIKE 'reference_id'")->row();
+        if ($has_ref_type && $has_ref_id) {
+            $row = $this->db->query(
+                'SELECT id FROM journal_entry WHERE reference_type = ? AND reference_id = ? AND PIN = ? LIMIT 1',
+                array('cash_disbursement', $disburse_id, $pin)
+            )->row();
+            if ($row) {
+                return (int) $row->id;
+            }
+        }
+        $d = $this->db->query('SELECT disburse_no FROM cash_disbursements WHERE id = ? AND PIN = ? LIMIT 1', array($disburse_id, $pin))->row();
+        if ($d) {
+            $like = 'Cash Disbursement: ' . $this->db->escape_like_str($d->disburse_no) . '%';
+            $row = $this->db->query(
+                'SELECT id FROM journal_entry WHERE description LIKE ? AND PIN = ? LIMIT 1',
+                array($like, $pin)
+            )->row();
+            if ($row) {
+                return (int) $row->id;
+            }
+        }
+        if ($has_ref_id) {
+            $row = $this->db->query(
+                'SELECT id FROM journal_entry WHERE reference_id = ? AND PIN = ? LIMIT 1',
+                array($disburse_id, $pin)
+            )->row();
+            if ($row) {
+                return (int) $row->id;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Check if a cash disbursement has been posted to the general ledger.
+     */
+    function is_disbursement_posted_to_gl($disburse_id) {
+        $journal_id = $this->get_journal_entry_id_for_disbursement($disburse_id);
+        if (!$journal_id) {
+            return false;
+        }
+        $this->load->model('finance_model');
+        return $this->finance_model->is_journal_entry_posted_to_gl($journal_id);
+    }
+
+    /**
+     * Delete journal entry rows (items and header). Used by _delete_journal_entries_for_disbursement.
+     */
+    private function _delete_journal_entry_rows($entry_ids, $disburse_id, $pin) {
         $has_journal_id = $this->db->query("SHOW COLUMNS FROM journal_entry_items LIKE 'journal_id'")->row();
         $has_entry_id = $this->db->query("SHOW COLUMNS FROM journal_entry_items LIKE 'entry_id'")->row();
         $link_col = $has_journal_id ? 'journal_id' : ($has_entry_id ? 'entry_id' : null);
@@ -336,7 +398,8 @@ class Cash_disbursement_model extends CI_Model {
                 $entry_ids
             );
         }
-
+        $has_ref_type = $this->db->query("SHOW COLUMNS FROM journal_entry LIKE 'reference_type'")->row();
+        $has_ref_id = $this->db->query("SHOW COLUMNS FROM journal_entry LIKE 'reference_id'")->row();
         if ($has_ref_type && $has_ref_id) {
             $this->db->query(
                 'DELETE FROM journal_entry WHERE reference_type = ? AND reference_id = ? AND PIN = ?',

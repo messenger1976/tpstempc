@@ -1367,6 +1367,7 @@ $pin=current_user()->PIN;
                 
                 if (!$gl_post_result) {
                     log_message('error', 'Savings account GL posting failed for account: ' . $account . ', receipt: ' . $receipt . ', type: ' . $systemcomment);
+                }
             }
             
             return $receipt;
@@ -2172,5 +2173,4 @@ $pin=current_user()->PIN;
         return $result->num_rows() > 0;
     }
 
-}
 }

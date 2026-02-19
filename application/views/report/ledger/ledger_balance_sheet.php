@@ -21,8 +21,15 @@
                             <br/>
                             <table style="width: 96%; margin-left: 20px;">
                                 <?php
-                                $assets = $this->report_model->get_balance_sheet_data($reportinfo->fromdate, 10);
+                                $assets = $this->report_model->get_balance_sheet_data($reportinfo->fromdate, 10000);
                                 $total_asset = 0;
+                                if (empty($assets)) {
+                                    ?>
+                                    <tr>
+                                        <td colspan="2" style="color: #999; font-style: italic;">No asset accounts found for this date.</td>
+                                    </tr>
+                                    <?php
+                                }
                                 foreach ($assets as $key => $value) {
                                     $diff = $value->debit - $value->credit;
                                     $diff_sset = 0;
@@ -58,9 +65,15 @@
                             <br/>
                             <table style="width: 96%; margin-left: 20px;">
                                 <?php
-                                $liabilities = $this->report_model->get_balance_sheet_data($reportinfo->fromdate, 20);
+                                $liabilities = $this->report_model->get_balance_sheet_data($reportinfo->fromdate, 20000);
                                 $total_liabilities = 0;
-
+                                if (empty($liabilities)) {
+                                    ?>
+                                    <tr>
+                                        <td colspan="2" style="color: #999; font-style: italic;">No liability accounts found for this date.</td>
+                                    </tr>
+                                    <?php
+                                }
                                 foreach ($liabilities as $key => $value) {
                                     $diff = $value->credit - $value->debit;
                                     $diff_sset = 0;
@@ -98,9 +111,15 @@
                             <br/>
                             <table style="width: 96%; margin-left: 20px;">
                                 <?php
-                                $equaty = $this->report_model->get_balance_sheet_data($reportinfo->fromdate, 30);
+                                $equaty = $this->report_model->get_balance_sheet_data($reportinfo->fromdate, 30000);
                                 $total_equaty = 0;
-
+                                if (empty($equaty)) {
+                                    ?>
+                                    <tr>
+                                        <td colspan="2" style="color: #999; font-style: italic;">No equity accounts found for this date.</td>
+                                    </tr>
+                                    <?php
+                                }
                                 foreach ($equaty as $key => $value) {
                                     $diff = $value->credit - $value->debit;
                                     $diff_sset = 0;

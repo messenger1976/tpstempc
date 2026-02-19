@@ -141,8 +141,44 @@ class Report_Model extends CI_Model {
 
     function get_balance_sheet_data($date, $category) {
         $pin = current_user()->PIN;
-        $sql = "SELECT general_ledger.account as account, account_chart.account_type as account_type,account_chart.name as name, SUM(general_ledger.credit) as credit,SUM(general_ledger.debit) as debit
-                    FROM general_ledger INNER JOIN account_chart ON account_chart.account=general_ledger.account WHERE general_ledger.PIN=account_chart.PIN AND account_chart.PIN='$pin' AND general_ledger.date <= '$date' AND account_chart.account_type='$category'  GROUP BY general_ledger.account";
+        
+        // Validate inputs
+        if (empty($date) || empty($category) || empty($pin)) {
+            return array();
+        }
+        
+        // Ensure date is in correct format
+        $date = date('Y-m-d', strtotime($date));
+        if ($date === false || $date === '1970-01-01') {
+            return array();
+        }
+        
+        // Escape inputs for security
+        $pin = $this->db->escape($pin);
+        $date = $this->db->escape($date);
+        // Handle both integer and string account_type values
+        // account_chart.account_type stores the account type code (10000 for Assets, 20000 for Liabilities, 30000 for Equity)
+        // which should match account_type.account
+        $category_int = (int)$category;
+        $category_str = $this->db->escape($category);
+        
+        $sql = "SELECT 
+                    general_ledger.account as account, 
+                    account_chart.account_type as account_type,
+                    account_chart.name as name, 
+                    SUM(general_ledger.credit) as credit,
+                    SUM(general_ledger.debit) as debit
+                FROM general_ledger 
+                INNER JOIN account_chart ON account_chart.account = general_ledger.account 
+                WHERE general_ledger.PIN = account_chart.PIN 
+                    AND account_chart.PIN = $pin 
+                    AND general_ledger.date <= $date 
+                    AND (
+                        CAST(account_chart.account_type AS UNSIGNED) = $category_int
+                        OR account_chart.account_type = $category_str
+                    )
+                GROUP BY general_ledger.account, account_chart.name, account_chart.account_type
+                ORDER BY general_ledger.account ASC";
 
         return $this->db->query($sql)->result();
     }

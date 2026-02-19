@@ -356,6 +356,21 @@ class Report extends CI_Controller {
             $id = decode_id($id);
         }
         $reportinfo = $this->report_model->report_list($id)->row();
+        
+        // Validate reportinfo exists
+        if (!$reportinfo) {
+            $this->session->set_flashdata('error', 'Report not found.');
+            redirect(current_lang() . '/report/general_leger_transaction/' . $link);
+            return;
+        }
+        
+        // Validate fromdate exists
+        if (empty($reportinfo->fromdate)) {
+            $this->session->set_flashdata('error', 'Report date is missing. Please edit the report and set a valid date.');
+            redirect(current_lang() . '/report/create_ledger_trans_title/' . $link . '/' . encode_id($id));
+            return;
+        }
+        
         $this->data['reportinfo'] = $reportinfo;
 
         $this->data['content'] = 'report/ledger/ledger_balance_sheet';

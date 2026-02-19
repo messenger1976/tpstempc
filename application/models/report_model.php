@@ -220,15 +220,87 @@ class Report_Model extends CI_Model {
 
     function journal_trans($from, $until, $journal_id) {
         $pin = current_user()->PIN;
-        $sql = "SELECT general_ledger.*,account_chart.name,general_ledger.entryid,(SELECT type FROM journal WHERE id=general_ledger.journalID) as trans_comment FROM general_ledger INNER JOIN account_chart ON
-                account_chart.account=general_ledger.account WHERE general_ledger.PIN=account_chart.PIN AND account_chart.PIN='$pin' AND general_ledger.date >= '$from' AND general_ledger.date <= '$until' AND general_ledger.account_type != 3 ";
+        
+        // Validate inputs
+        if (empty($from) || empty($until) || empty($journal_id) || empty($pin)) {
+            return array();
+        }
+        
+        // Ensure dates are in correct format
+        $from = date('Y-m-d', strtotime($from));
+        $until = date('Y-m-d', strtotime($until));
+        if ($from === false || $from === '1970-01-01' || $until === false || $until === '1970-01-01') {
+            return array();
+        }
+        
+        // Escape inputs for security
+        $pin = $this->db->escape($pin);
+        $from = $this->db->escape($from);
+        $until = $this->db->escape($until);
+        
+        // Store original journal_id before escaping for mapping lookup
+        $journal_id_int = (int)$journal_id;
+        $journal_id = $this->db->escape($journal_id);
+        
+        // Check if journal table has a journalID field or if we need to use the id directly
+        // Sometimes transactions are posted with a different journalID than the journal type id
+        // Try to get the actual journalID from the journal table if it exists
+        $journal_info = $this->db->query("SELECT * FROM journal WHERE id = $journal_id LIMIT 1")->row();
+        $actual_journal_id = null;
+        
+        // If journal table has a journalID field, use it
+        if ($journal_info && isset($journal_info->journalID) && !empty($journal_info->journalID)) {
+            $actual_journal_id = $this->db->escape($journal_info->journalID);
+        }
+        
+        // If no journalID field found, check for known mappings
+        // Common mapping: journal type 3 uses journalID 5
+        if (!$actual_journal_id) {
+            $journal_type_mappings = array(
+                3 => 5,  // Journal type 3 maps to journalID 5
+                // Add other mappings here if needed
+            );
+            
+            if (isset($journal_type_mappings[$journal_id_int])) {
+                $actual_journal_id = $this->db->escape($journal_type_mappings[$journal_id_int]);
+            }
+        }
+        
+        // Build the journalID condition - check both the journal type id and mapped journalID
+        // This ensures we catch transactions regardless of which journalID was used
+        if ($actual_journal_id && $actual_journal_id != $journal_id) {
+            // Check both the original journal type ID and the mapped journalID
+            $journal_id_condition = "(general_ledger.journalID = $journal_id OR general_ledger.journalID = $actual_journal_id)";
+        } else if ($actual_journal_id) {
+            // Use the mapped journalID if it's the same as journal_id
+            $journal_id_condition = "general_ledger.journalID = $actual_journal_id";
+        } else {
+            // Use the journal type ID directly
+            $journal_id_condition = "general_ledger.journalID = $journal_id";
+        }
+        
+        $sql = "SELECT general_ledger.*,
+                account_chart.name,
+                general_ledger.entryid,
+                (SELECT type FROM journal WHERE id=general_ledger.journalID) as trans_comment 
+                FROM general_ledger 
+                INNER JOIN account_chart ON account_chart.account = general_ledger.account 
+                WHERE general_ledger.PIN = account_chart.PIN 
+                    AND account_chart.PIN = $pin 
+                    AND general_ledger.date >= $from 
+                    AND general_ledger.date <= $until 
+                    AND general_ledger.account_type != 3 
+                    AND $journal_id_condition
+                ORDER BY general_ledger.date ASC, general_ledger.entryid ASC, general_ledger.debit DESC";
 
-
-        $sql .= " AND general_ledger.journalID = '$journal_id'";
-
-        $sql.=" ORDER BY general_ledger.date ASC, general_ledger.entryid ASC,general_ledger.debit DESC";
-
-        return $this->db->query($sql)->result();
+        $result = $this->db->query($sql)->result();
+        
+        // Debug: If no results and we're using a mapped journalID, log it
+        if (empty($result) && $actual_journal_id) {
+            log_message('debug', "journal_trans: No results found for journal type ID $journal_id_int, mapped journalID $actual_journal_id, date range $from to $until, PIN $pin");
+        }
+        
+        return $result;
     }
 
     function registration_fee_collection($fromdate, $todate) {

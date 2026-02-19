@@ -28,6 +28,15 @@
                     </thead>
                     <tbody>
                         <?php
+                        if (empty($transaction)) {
+                            ?>
+                            <tr>
+                                <td colspan="4" style="text-align: center; padding: 20px; color: #999; font-style: italic;">
+                                    No journal transactions found for the selected date range (<?php echo format_date($reportinfo->fromdate, false); ?> to <?php echo format_date($reportinfo->todate, false); ?>).
+                                </td>
+                            </tr>
+                            <?php
+                        } else {
                         $entry_id = 0;
                         $entry_id_track = 0;
                         $start = 0;
@@ -92,6 +101,7 @@
                                 <th style="text-align: right; padding-right: 20px; border-top: 1px solid #000; border-bottom:  1px solid #000;"><?php echo number_format($total_debit,2) ?></th>
                                 <th style="text-align: right; padding-right: 20px; border-top: 1px solid #000; border-bottom:  1px solid #000;"><?php echo number_format($total_credit,2) ?></th>
                         </tr>
+                        <?php } ?>
                     </tbody>
 
                 </table>

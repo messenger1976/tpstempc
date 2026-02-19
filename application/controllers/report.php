@@ -237,8 +237,15 @@ class Report extends CI_Controller {
 
         $this->db->where('id', $link);
         $title = $this->db->get('journal')->row();
+        
+        // Validate journal exists
+        if (!$title) {
+            $this->session->set_flashdata('error', 'Journal type not found.');
+            redirect(current_lang() . '/report/journal_entry/' . $link);
+            return;
+        }
+        
         $this->data['journalinfo'] = $title;
-
         $this->data['title'] = $title->type . ' Journal';
 
         $this->data['link_cat'] = $link;
@@ -247,6 +254,21 @@ class Report extends CI_Controller {
             $id = decode_id($id);
         }
         $reportinfo = $this->report_model->report_list_journal($id)->row();
+        
+        // Validate reportinfo exists
+        if (!$reportinfo) {
+            $this->session->set_flashdata('error', 'Report not found.');
+            redirect(current_lang() . '/report/journal_entry/' . $link);
+            return;
+        }
+        
+        // Validate dates exist
+        if (empty($reportinfo->fromdate) || empty($reportinfo->todate)) {
+            $this->session->set_flashdata('error', 'Report dates are missing. Please edit the report and set valid dates.');
+            redirect(current_lang() . '/report/create_journal_trans_title/' . $link . '/' . encode_id($id));
+            return;
+        }
+        
         $this->data['reportinfo'] = $reportinfo;
         $this->data['transaction'] = $this->report_model->journal_trans($reportinfo->fromdate, $reportinfo->todate, $link);
 

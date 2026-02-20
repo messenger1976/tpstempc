@@ -77,10 +77,23 @@ $status_filter = isset($status_filter) ? $status_filter : (isset($_GET['status_f
     </div>
 </div>
 
+<?php echo form_open(current_lang() . '/saving/post_selected_to_gl', array('id' => 'form_post_selected_gl', 'onsubmit' => 'return confirm(\'' . addslashes(lang('saving_account_post_selected_to_gl_confirm')) . '\');')); ?>
+<?php if (!empty($search_key)) { ?><input type="hidden" name="redirect_key" value="<?php echo htmlspecialchars($search_key, ENT_QUOTES, 'UTF-8'); ?>"/><?php } ?>
+<?php if (!empty($account_type_filter) && $account_type_filter != 'all') { ?><input type="hidden" name="redirect_account_type_filter" value="<?php echo htmlspecialchars($account_type_filter, ENT_QUOTES, 'UTF-8'); ?>"/><?php } ?>
+<?php if (isset($status_filter) && $status_filter !== '') { ?><input type="hidden" name="redirect_status_filter" value="<?php echo htmlspecialchars($status_filter, ENT_QUOTES, 'UTF-8'); ?>"/><?php } ?>
+<div class="form-group col-lg-12" style="margin-bottom: 10px;">
+    <button type="submit" name="post_selected" id="btn_post_selected_gl" class="btn btn-warning" disabled="disabled">
+        <i class="fa fa-book"></i> <?php echo lang('saving_account_post_selected_to_gl'); ?>
+    </button>
+    <span id="post_selected_hint" class="text-muted" style="margin-left: 10px;"></span>
+</div>
 <div class="table-responsive">
-    <table class="table table-bordered table-striped">
+    <table class="table table-bordered table-striped" id="saving_account_list_table">
         <thead>
             <tr>
+                <th style="width: 40px; text-align: center;">
+                    <input type="checkbox" id="select_all_post_gl" title="<?php echo htmlspecialchars(lang('saving_account_select_all_post_gl'), ENT_QUOTES, 'UTF-8'); ?>"/>
+                </th>
                 <th><?php echo lang('account_number'); ?></th>
                 <th><?php echo lang('member_member_id'); ?></th>
                 <th><?php echo lang('member_fullname'); ?></th>
@@ -95,8 +108,18 @@ $status_filter = isset($status_filter) ? $status_filter : (isset($_GET['status_f
         </thead>
         <tbody>
             <?php if (isset($saving_accounts) && count($saving_accounts) > 0) { ?>
-                <?php foreach ($saving_accounts as $key => $value) { ?>
+                <?php foreach ($saving_accounts as $key => $value) {
+                    $unposted_count = isset($value->unposted_count) ? intval($value->unposted_count) : 0;
+                    $can_post = $unposted_count > 0;
+                ?>
                     <tr>
+                        <td style="text-align: center;">
+                            <?php if ($can_post) { ?>
+                                <input type="checkbox" name="ids[]" value="<?php echo htmlspecialchars(encode_id($value->id), ENT_QUOTES, 'UTF-8'); ?>" class="cb_post_gl"/>
+                            <?php } else { ?>
+                                <input type="checkbox" disabled="disabled" title="<?php echo htmlspecialchars(lang('saving_account_gl_not_posted'), ENT_QUOTES, 'UTF-8'); ?>"/>
+                            <?php } ?>
+                        </td>
                         <td><?php echo htmlspecialchars($value->account, ENT_QUOTES, 'UTF-8'); ?></td>
                         <td><?php echo htmlspecialchars($value->member_id, ENT_QUOTES, 'UTF-8'); ?></td>
                         <td>
@@ -163,8 +186,7 @@ $status_filter = isset($status_filter) ? $status_filter : (isset($_GET['status_f
                                 $ledger_url = current_lang() . "/report_saving/new_saving_account_statement_view/1/" . encode_id($report->id) . "/" . encode_id($value->account);
                                 echo anchor($ledger_url, ' <i class="fa fa-th-list"></i> Ledger', 'class="btn btn-info btn-xs btn-outline" target="_blank" style="margin-right: 5px;"');
                             }
-                            $unposted_count = isset($value->unposted_count) ? intval($value->unposted_count) : 0;
-                            if ($unposted_count > 0) {
+                            if ($can_post) {
                                 echo anchor(current_lang() . "/saving/post_to_gl/" . encode_id($value->id), ' <i class="fa fa-book"></i> ' . lang('saving_account_post_to_gl'), 'class="btn btn-warning btn-xs btn-outline" style="margin-right: 5px;" onclick="return confirm(\'' . htmlspecialchars(lang('saving_account_post_to_gl_confirm'), ENT_QUOTES, 'UTF-8') . '\');"');
                             }
                             echo anchor(current_lang() . "/saving/edit_saving_account/" . encode_id($value->id), ' <i class="fa fa-edit"></i> ' . lang('button_edit'), 'class="btn btn-success btn-xs btn-outline"'); 
@@ -174,7 +196,7 @@ $status_filter = isset($status_filter) ? $status_filter : (isset($_GET['status_f
                 <?php } ?>
             <?php } else { ?>
                 <tr>
-                    <td colspan="10" style="text-align: center;"><?php echo lang('no_records_found'); ?></td>
+                    <td colspan="11" style="text-align: center;"><?php echo lang('no_records_found'); ?></td>
                 </tr>
             <?php } ?>
         </tbody>
@@ -183,3 +205,34 @@ $status_filter = isset($status_filter) ? $status_filter : (isset($_GET['status_f
     <?php echo $links; ?>
     <div style="margin-right: 20px; text-align: right;"> <?php page_selector(); ?></div>
 </div>
+<?php echo form_close(); ?>
+
+<script>
+(function() {
+    var selectAll = document.getElementById('select_all_post_gl');
+    var checkboxes = document.querySelectorAll('.cb_post_gl');
+    var btn = document.getElementById('btn_post_selected_gl');
+    var hint = document.getElementById('post_selected_hint');
+
+    function updateButton() {
+        var n = 0;
+        for (var i = 0; i < checkboxes.length; i++) {
+            if (checkboxes[i].checked) n++;
+        }
+        btn.disabled = n === 0;
+        hint.textContent = n > 0 ? (n === 1 ? '<?php echo addslashes(lang('saving_account_1_selected')); ?>' : n + ' <?php echo addslashes(lang('saving_account_n_selected')); ?>') : '';
+    }
+
+    if (selectAll) {
+        selectAll.onclick = function() {
+            var checked = this.checked;
+            for (var i = 0; i < checkboxes.length; i++) checkboxes[i].checked = checked;
+            updateButton();
+        };
+    }
+    for (var i = 0; i < checkboxes.length; i++) {
+        checkboxes[i].onclick = updateButton;
+    }
+    updateButton();
+})();
+</script>

@@ -395,6 +395,69 @@ class Saving extends CI_Controller {
         }
         redirect(current_lang() . '/saving/saving_account_list', 'refresh');
     }
+
+    /**
+     * Post all unposted savings transactions for multiple selected accounts to the General Ledger.
+     * Expects POST ids[] = array of encoded members_account ids.
+     */
+    function post_selected_to_gl() {
+        if (!$this->ion_auth->logged_in()) {
+            redirect('auth/login', 'refresh');
+        }
+        if (!has_role(3, 'saving_account_list')) {
+            $this->session->set_flashdata('warning', lang('access_denied'));
+            redirect('dashboard', 'refresh');
+            return;
+        }
+        $ids = $this->input->post('ids');
+        if (!is_array($ids) || count($ids) == 0) {
+            $this->session->set_flashdata('warning', lang('saving_account_post_to_gl_none'));
+            $this->_redirect_saving_list();
+            return;
+        }
+        $total_posted = 0;
+        $total_failed = 0;
+        $accounts_processed = 0;
+        $errors = array();
+        foreach ($ids as $encoded_id) {
+            $encoded_id = trim($encoded_id);
+            if (empty($encoded_id)) continue;
+            $decoded_id = decode_id($encoded_id);
+            $account_info = $this->finance_model->get_saving_account_info($decoded_id);
+            if (!$account_info || empty($account_info->account)) continue;
+            $result = $this->finance_model->post_savings_account_to_gl($account_info->account);
+            $accounts_processed++;
+            $total_posted += $result['posted'];
+            $total_failed += $result['failed'];
+            if (!empty($result['errors'])) {
+                $errors = array_merge($errors, $result['errors']);
+            }
+        }
+        if ($accounts_processed == 0) {
+            $this->session->set_flashdata('warning', lang('invalid_account'));
+        } elseif ($total_posted > 0) {
+            $msg = $total_posted . ' ' . ($total_posted == 1 ? lang('saving_account_post_to_gl_success_one') : lang('saving_account_post_to_gl_success_many'));
+            if ($total_failed > 0) {
+                $msg .= '. ' . $total_failed . ' ' . lang('saving_account_post_to_gl_partial_fail');
+            }
+            $this->session->set_flashdata('message', $msg);
+        } elseif ($total_failed > 0) {
+            $this->session->set_flashdata('warning', lang('saving_account_post_to_gl_fail'));
+        } else {
+            $this->session->set_flashdata('message', lang('saving_account_post_to_gl_none'));
+        }
+        $this->_redirect_saving_list();
+    }
+
+    private function _redirect_saving_list() {
+        $query = array();
+        if ($this->input->post('redirect_key') !== false && $this->input->post('redirect_key') !== '') $query['key'] = $this->input->post('redirect_key');
+        if ($this->input->post('redirect_account_type_filter') !== false && $this->input->post('redirect_account_type_filter') !== '') $query['account_type_filter'] = $this->input->post('redirect_account_type_filter');
+        if ($this->input->post('redirect_status_filter') !== false && $this->input->post('redirect_status_filter') !== '') $query['status_filter'] = $this->input->post('redirect_status_filter');
+        $url = current_lang() . '/saving/saving_account_list';
+        if (!empty($query)) $url .= '?' . http_build_query($query);
+        redirect($url, 'refresh');
+    }
     
     function edit_saving_account($id = null) {
         $this->data['title'] = lang('edit_saving_account');

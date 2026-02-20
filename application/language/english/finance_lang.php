@@ -60,6 +60,11 @@ $lang['saving_account_post_to_gl_partial_fail'] = 'failed';
 $lang['saving_account_post_to_gl_fail'] = 'Failed to post to General Ledger';
 $lang['saving_account_post_to_gl_none'] = 'No unposted transactions for this account';
 $lang['saving_account_post_to_gl_confirm'] = 'Post all unposted transactions for this account to the General Ledger?';
+$lang['saving_account_post_selected_to_gl'] = 'Post selected to GL';
+$lang['saving_account_select_all_post_gl'] = 'Select all (accounts with unposted transactions)';
+$lang['saving_account_1_selected'] = '1 account selected';
+$lang['saving_account_n_selected'] = 'accounts selected';
+$lang['saving_account_post_selected_to_gl_confirm'] = 'Post all unposted transactions for the selected accounts to the General Ledger?';
 
 
 // general journal

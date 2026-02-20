@@ -485,6 +485,7 @@ class Cash_disbursement_model extends CI_Model {
         $items_table_has_journal_id = $this->db->query("SHOW COLUMNS FROM journal_entry_items LIKE 'journal_id'")->row();
         $items_table_has_entry_id = $this->db->query("SHOW COLUMNS FROM journal_entry_items LIKE 'entry_id'")->row();
         $items_table_has_description = $this->db->query("SHOW COLUMNS FROM journal_entry_items LIKE 'description'")->row();
+        $items_table_has_reference_type = $this->db->query("SHOW COLUMNS FROM journal_entry_items LIKE 'reference_type'")->row();
         $link_key = $items_table_has_journal_id ? 'journal_id' : ($items_table_has_entry_id ? 'entry_id' : 'journal_id');
         
         foreach ($line_items as $item) {
@@ -500,6 +501,7 @@ class Cash_disbursement_model extends CI_Model {
                 'PIN' => current_user()->PIN
             );
             if ($items_table_has_description) $insert_item['description'] = $line_desc;
+            if ($items_table_has_reference_type) $insert_item['reference_type'] = 'cash_disbursement';
             $this->db->insert('journal_entry_items', $insert_item);
         }
         

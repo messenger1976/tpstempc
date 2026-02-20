@@ -521,6 +521,9 @@ class Cash_disbursement extends CI_Controller {
             $disburse->payment_method_display = $disburse->payment_method;
         }
         
+        $journal_id = $this->cash_disbursement_model->get_journal_entry_id_for_disbursement($id);
+        $disburse->journal_entry_id = $journal_id;
+        $disburse->is_posted_to_gl = $journal_id ? $this->finance_model->is_journal_entry_posted_to_gl($journal_id) : false;
         $this->data['disburse'] = $disburse;
         $this->data['line_items'] = $this->cash_disbursement_model->get_disburse_items($id);
         $this->data['accounting_entries'] = $this->cash_disbursement_model->get_journal_entries_by_disbursement($id);

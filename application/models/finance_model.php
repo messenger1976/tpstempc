@@ -32,12 +32,20 @@ class Finance_Model extends CI_Model {
             return true;
         }
         $entry = $this->db->query(
-            'SELECT id, entry_date, description, PIN FROM journal_entry WHERE id = ? AND PIN = ? LIMIT 1',
+            'SELECT id, entry_date, description, PIN, reference_type FROM journal_entry WHERE id = ? AND PIN = ? LIMIT 1',
             array($journal_entry_id, $pin)
         )->row();
         if (!$entry) {
             log_message('error', 'post_journal_entry_to_general_ledger: journal_entry not found id=' . $journal_entry_id);
             return false;
+        }
+        // Use journal_id = 3 (Receive Money) for cash_receipt, 10 for cash_disbursement
+        if (isset($entry->reference_type)) {
+            if ($entry->reference_type == 'cash_receipt') {
+                $journal_id = 3;
+            } elseif ($entry->reference_type == 'cash_disbursement') {
+                $journal_id = 10;
+            }
         }
         $has_journal_id = $this->db->query("SHOW COLUMNS FROM journal_entry_items LIKE 'journal_id'")->row();
         $has_entry_id = $this->db->query("SHOW COLUMNS FROM journal_entry_items LIKE 'entry_id'")->row();
@@ -49,6 +57,7 @@ class Finance_Model extends CI_Model {
         $has_pin_col = $this->db->query("SHOW COLUMNS FROM journal_entry_items LIKE 'PIN'")->row();
         $has_desc_col = $this->db->query("SHOW COLUMNS FROM journal_entry_items LIKE 'description'")->row();
         $has_amount_col = $this->db->query("SHOW COLUMNS FROM journal_entry_items LIKE 'amount'")->row();
+        $has_ref_type_col = $this->db->query("SHOW COLUMNS FROM journal_entry_items LIKE 'reference_type'")->row();
         $select_fields = 'account, debit, credit';
         if ($has_desc_col) {
             $select_fields .= ', description';
@@ -56,28 +65,38 @@ class Finance_Model extends CI_Model {
         if ($has_amount_col) {
             $select_fields .= ', amount';
         }
+        $ref_type = isset($entry->reference_type) ? $entry->reference_type : null;
+        $where_extra = ($has_ref_type_col && $ref_type) ? ' AND (reference_type = ? OR reference_type IS NULL)' : '';
+        $params = array($journal_entry_id);
+        if ($has_ref_type_col && $ref_type) $params[] = $ref_type;
         $line_items = $this->db->query(
-            'SELECT ' . $select_fields . ' FROM journal_entry_items WHERE ' . $link_col . ' = ? ORDER BY id ASC',
-            array($journal_entry_id)
+            'SELECT ' . $select_fields . ' FROM journal_entry_items WHERE ' . $link_col . ' = ?' . $where_extra . ' ORDER BY id ASC',
+            $params
         )->result();
         if (empty($line_items) && $has_pin_col) {
+            $params = array($journal_entry_id, $pin);
+            if ($has_ref_type_col && $ref_type) $params[] = $ref_type;
             $line_items = $this->db->query(
-                'SELECT ' . $select_fields . ' FROM journal_entry_items WHERE ' . $link_col . ' = ? AND PIN = ? ORDER BY id ASC',
-                array($journal_entry_id, $pin)
+                'SELECT ' . $select_fields . ' FROM journal_entry_items WHERE ' . $link_col . ' = ? AND PIN = ?' . $where_extra . ' ORDER BY id ASC',
+                $params
             )->result();
         }
         if (empty($line_items) && $has_journal_id && $has_entry_id) {
             $other_link_col = ($link_col == 'journal_id') ? 'entry_id' : 'journal_id';
+            $params = array($journal_entry_id);
+            if ($has_ref_type_col && $ref_type) $params[] = $ref_type;
             $line_items = $this->db->query(
-                'SELECT ' . $select_fields . ' FROM journal_entry_items WHERE ' . $other_link_col . ' = ? ORDER BY id ASC',
-                array($journal_entry_id)
+                'SELECT ' . $select_fields . ' FROM journal_entry_items WHERE ' . $other_link_col . ' = ?' . $where_extra . ' ORDER BY id ASC',
+                $params
             )->result();
             if (!empty($line_items)) {
                 $link_col = $other_link_col;
             } elseif ($has_pin_col) {
+                $params = array($journal_entry_id, $pin);
+                if ($has_ref_type_col && $ref_type) $params[] = $ref_type;
                 $line_items = $this->db->query(
-                    'SELECT ' . $select_fields . ' FROM journal_entry_items WHERE ' . $other_link_col . ' = ? AND PIN = ? ORDER BY id ASC',
-                    array($journal_entry_id, $pin)
+                    'SELECT ' . $select_fields . ' FROM journal_entry_items WHERE ' . $other_link_col . ' = ? AND PIN = ?' . $where_extra . ' ORDER BY id ASC',
+                    $params
                 )->result();
                 if (!empty($line_items)) {
                     $link_col = $other_link_col;
@@ -98,7 +117,11 @@ class Finance_Model extends CI_Model {
                         $cash_account = $this->_get_cash_account_for_receipt($payment_method, $pin);
                         if ($cash_account) {
                             $debit_desc = 'Receipt from: ' . (isset($receipt->received_from) ? $receipt->received_from : '');
-                            if ($has_desc) {
+                            if ($has_ref_type_col && $has_desc) {
+                                $this->db->query('INSERT INTO journal_entry_items (' . $link_col . ', reference_type, account, debit, credit, description, PIN) VALUES (?, ?, ?, ?, ?, ?, ?)', array($journal_entry_id, 'cash_receipt', $cash_account, $receipt->total_amount, 0, $debit_desc, $pin));
+                            } elseif ($has_ref_type_col) {
+                                $this->db->query('INSERT INTO journal_entry_items (' . $link_col . ', reference_type, account, debit, credit, PIN) VALUES (?, ?, ?, ?, ?, ?)', array($journal_entry_id, 'cash_receipt', $cash_account, $receipt->total_amount, 0, $pin));
+                            } elseif ($has_desc) {
                                 $this->db->query('INSERT INTO journal_entry_items (' . $link_col . ', account, debit, credit, description, PIN) VALUES (?, ?, ?, ?, ?, ?)', array($journal_entry_id, $cash_account, $receipt->total_amount, 0, $debit_desc, $pin));
                             } else {
                                 $this->db->query('INSERT INTO journal_entry_items (' . $link_col . ', account, debit, credit, PIN) VALUES (?, ?, ?, ?, ?)', array($journal_entry_id, $cash_account, $receipt->total_amount, 0, $pin));
@@ -106,15 +129,23 @@ class Finance_Model extends CI_Model {
                             foreach ($receipt_items as $item) {
                                 $amt = isset($item->amount) ? floatval($item->amount) : (isset($item->credit) ? floatval($item->credit) : 0);
                                 if ($amt <= 0) continue;
-                                if ($has_desc) {
+                                if ($has_ref_type_col && $has_desc) {
+                                    $this->db->query('INSERT INTO journal_entry_items (' . $link_col . ', reference_type, account, debit, credit, description, PIN) VALUES (?, ?, ?, ?, ?, ?, ?)', array($journal_entry_id, 'cash_receipt', $item->account, 0, $amt, isset($item->description) ? $item->description : '', $pin));
+                                } elseif ($has_ref_type_col) {
+                                    $this->db->query('INSERT INTO journal_entry_items (' . $link_col . ', reference_type, account, debit, credit, PIN) VALUES (?, ?, ?, ?, ?, ?)', array($journal_entry_id, 'cash_receipt', $item->account, 0, $amt, $pin));
+                                } elseif ($has_desc) {
                                     $this->db->query('INSERT INTO journal_entry_items (' . $link_col . ', account, debit, credit, description, PIN) VALUES (?, ?, ?, ?, ?, ?)', array($journal_entry_id, $item->account, 0, $amt, isset($item->description) ? $item->description : '', $pin));
                                 } else {
                                     $this->db->query('INSERT INTO journal_entry_items (' . $link_col . ', account, debit, credit, PIN) VALUES (?, ?, ?, ?, ?)', array($journal_entry_id, $item->account, 0, $amt, $pin));
                                 }
                             }
-                            $line_items = $this->db->query('SELECT ' . $select_fields . ' FROM journal_entry_items WHERE ' . $link_col . ' = ? ORDER BY id ASC', array($journal_entry_id))->result();
+                            $params = array($journal_entry_id);
+                            if ($has_ref_type_col && $ref_type) $params[] = $ref_type;
+                            $line_items = $this->db->query('SELECT ' . $select_fields . ' FROM journal_entry_items WHERE ' . $link_col . ' = ?' . $where_extra . ' ORDER BY id ASC', $params)->result();
                             if (empty($line_items) && $has_pin_col) {
-                                $line_items = $this->db->query('SELECT ' . $select_fields . ' FROM journal_entry_items WHERE ' . $link_col . ' = ? AND PIN = ? ORDER BY id ASC', array($journal_entry_id, $pin))->result();
+                                $params = array($journal_entry_id, $pin);
+                                if ($has_ref_type_col && $ref_type) $params[] = $ref_type;
+                                $line_items = $this->db->query('SELECT ' . $select_fields . ' FROM journal_entry_items WHERE ' . $link_col . ' = ? AND PIN = ?' . $where_extra . ' ORDER BY id ASC', $params)->result();
                             }
                         }
                     }
@@ -134,7 +165,11 @@ class Finance_Model extends CI_Model {
                             if ($total_debit > $total_credit && ($total_debit - $total_credit) > 0.001) {
                                 $credit_amt = $total_debit - $total_credit;
                                 $bal_desc = 'Disbursement to: ' . (isset($disburse->paid_to) ? $disburse->paid_to : '');
-                                if ($has_desc) {
+                                if ($has_ref_type_col && $has_desc) {
+                                    $this->db->query('INSERT INTO journal_entry_items (' . $link_col . ', reference_type, account, debit, credit, description, PIN) VALUES (?, ?, ?, ?, ?, ?, ?)', array($journal_entry_id, 'cash_disbursement', $cash_account, 0, $credit_amt, $bal_desc, $pin));
+                                } elseif ($has_ref_type_col) {
+                                    $this->db->query('INSERT INTO journal_entry_items (' . $link_col . ', reference_type, account, debit, credit, PIN) VALUES (?, ?, ?, ?, ?, ?)', array($journal_entry_id, 'cash_disbursement', $cash_account, 0, $credit_amt, $pin));
+                                } elseif ($has_desc) {
                                     $this->db->query('INSERT INTO journal_entry_items (' . $link_col . ', account, debit, credit, description, PIN) VALUES (?, ?, ?, ?, ?, ?)', array($journal_entry_id, $cash_account, 0, $credit_amt, $bal_desc, $pin));
                                 } else {
                                     $this->db->query('INSERT INTO journal_entry_items (' . $link_col . ', account, debit, credit, PIN) VALUES (?, ?, ?, ?, ?)', array($journal_entry_id, $cash_account, 0, $credit_amt, $pin));
@@ -142,7 +177,11 @@ class Finance_Model extends CI_Model {
                             } elseif ($total_credit > $total_debit && ($total_credit - $total_debit) > 0.001) {
                                 $debit_amt = $total_credit - $total_debit;
                                 $bal_desc = 'Disbursement to: ' . (isset($disburse->paid_to) ? $disburse->paid_to : '');
-                                if ($has_desc) {
+                                if ($has_ref_type_col && $has_desc) {
+                                    $this->db->query('INSERT INTO journal_entry_items (' . $link_col . ', reference_type, account, debit, credit, description, PIN) VALUES (?, ?, ?, ?, ?, ?, ?)', array($journal_entry_id, 'cash_disbursement', $cash_account, $debit_amt, 0, $bal_desc, $pin));
+                                } elseif ($has_ref_type_col) {
+                                    $this->db->query('INSERT INTO journal_entry_items (' . $link_col . ', reference_type, account, debit, credit, PIN) VALUES (?, ?, ?, ?, ?, ?)', array($journal_entry_id, 'cash_disbursement', $cash_account, $debit_amt, 0, $pin));
+                                } elseif ($has_desc) {
                                     $this->db->query('INSERT INTO journal_entry_items (' . $link_col . ', account, debit, credit, description, PIN) VALUES (?, ?, ?, ?, ?, ?)', array($journal_entry_id, $cash_account, $debit_amt, 0, $bal_desc, $pin));
                                 } else {
                                     $this->db->query('INSERT INTO journal_entry_items (' . $link_col . ', account, debit, credit, PIN) VALUES (?, ?, ?, ?, ?)', array($journal_entry_id, $cash_account, $debit_amt, 0, $pin));
@@ -152,15 +191,23 @@ class Finance_Model extends CI_Model {
                                 $d = isset($item->debit) ? floatval($item->debit) : (isset($item->amount) ? floatval($item->amount) : 0);
                                 $c = isset($item->credit) ? floatval($item->credit) : 0;
                                 if (empty($item->account) || ($d <= 0 && $c <= 0)) continue;
-                                if ($has_desc) {
+                                if ($has_ref_type_col && $has_desc) {
+                                    $this->db->query('INSERT INTO journal_entry_items (' . $link_col . ', reference_type, account, debit, credit, description, PIN) VALUES (?, ?, ?, ?, ?, ?, ?)', array($journal_entry_id, 'cash_disbursement', $item->account, $d, $c, isset($item->description) ? $item->description : '', $pin));
+                                } elseif ($has_ref_type_col) {
+                                    $this->db->query('INSERT INTO journal_entry_items (' . $link_col . ', reference_type, account, debit, credit, PIN) VALUES (?, ?, ?, ?, ?, ?)', array($journal_entry_id, 'cash_disbursement', $item->account, $d, $c, $pin));
+                                } elseif ($has_desc) {
                                     $this->db->query('INSERT INTO journal_entry_items (' . $link_col . ', account, debit, credit, description, PIN) VALUES (?, ?, ?, ?, ?, ?)', array($journal_entry_id, $item->account, $d, $c, isset($item->description) ? $item->description : '', $pin));
                                 } else {
                                     $this->db->query('INSERT INTO journal_entry_items (' . $link_col . ', account, debit, credit, PIN) VALUES (?, ?, ?, ?, ?)', array($journal_entry_id, $item->account, $d, $c, $pin));
                                 }
                             }
-                            $line_items = $this->db->query('SELECT ' . $select_fields . ' FROM journal_entry_items WHERE ' . $link_col . ' = ? ORDER BY id ASC', array($journal_entry_id))->result();
+                            $params = array($journal_entry_id);
+                            if ($has_ref_type_col && $ref_type) $params[] = $ref_type;
+                            $line_items = $this->db->query('SELECT ' . $select_fields . ' FROM journal_entry_items WHERE ' . $link_col . ' = ?' . $where_extra . ' ORDER BY id ASC', $params)->result();
                             if (empty($line_items) && $has_pin_col) {
-                                $line_items = $this->db->query('SELECT ' . $select_fields . ' FROM journal_entry_items WHERE ' . $link_col . ' = ? AND PIN = ? ORDER BY id ASC', array($journal_entry_id, $pin))->result();
+                                $params = array($journal_entry_id, $pin);
+                                if ($has_ref_type_col && $ref_type) $params[] = $ref_type;
+                                $line_items = $this->db->query('SELECT ' . $select_fields . ' FROM journal_entry_items WHERE ' . $link_col . ' = ? AND PIN = ?' . $where_extra . ' ORDER BY id ASC', $params)->result();
                             }
                         }
                     }
@@ -204,7 +251,17 @@ class Finance_Model extends CI_Model {
                         $credit_bal = ($diff < 0) ? -$diff : 0;
                         $has_desc = $this->db->query("SHOW COLUMNS FROM journal_entry_items LIKE 'description'")->row();
                         $bal_desc = 'Receipt from: ' . (isset($receipt->received_from) ? $receipt->received_from : '');
-                        if ($has_desc) {
+                        if ($has_ref_type_col && $has_desc) {
+                            $this->db->query(
+                                'INSERT INTO journal_entry_items (' . $link_col . ', reference_type, account, debit, credit, description, PIN) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                                array($journal_entry_id, 'cash_receipt', $cash_account, $debit_bal, $credit_bal, $bal_desc, $pin)
+                            );
+                        } elseif ($has_ref_type_col) {
+                            $this->db->query(
+                                'INSERT INTO journal_entry_items (' . $link_col . ', reference_type, account, debit, credit, PIN) VALUES (?, ?, ?, ?, ?, ?)',
+                                array($journal_entry_id, 'cash_receipt', $cash_account, $debit_bal, $credit_bal, $pin)
+                            );
+                        } elseif ($has_desc) {
                             $this->db->query(
                                 'INSERT INTO journal_entry_items (' . $link_col . ', account, debit, credit, description, PIN) VALUES (?, ?, ?, ?, ?, ?)',
                                 array($journal_entry_id, $cash_account, $debit_bal, $credit_bal, $bal_desc, $pin)
@@ -216,14 +273,18 @@ class Finance_Model extends CI_Model {
                             );
                         }
                         // Re-fetch line items and recompute totals
+                        $params = array($journal_entry_id);
+                        if ($has_ref_type_col && $ref_type) $params[] = $ref_type;
                         $line_items = $this->db->query(
-                            'SELECT ' . $select_fields . ' FROM journal_entry_items WHERE ' . $link_col . ' = ? ORDER BY id ASC',
-                            array($journal_entry_id)
+                            'SELECT ' . $select_fields . ' FROM journal_entry_items WHERE ' . $link_col . ' = ?' . $where_extra . ' ORDER BY id ASC',
+                            $params
                         )->result();
                         if (empty($line_items) && $has_pin_col) {
+                            $params = array($journal_entry_id, $pin);
+                            if ($has_ref_type_col && $ref_type) $params[] = $ref_type;
                             $line_items = $this->db->query(
-                                'SELECT ' . $select_fields . ' FROM journal_entry_items WHERE ' . $link_col . ' = ? AND PIN = ? ORDER BY id ASC',
-                                array($journal_entry_id, $pin)
+                                'SELECT ' . $select_fields . ' FROM journal_entry_items WHERE ' . $link_col . ' = ? AND PIN = ?' . $where_extra . ' ORDER BY id ASC',
+                                $params
                             )->result();
                         }
                         $total_debit = 0;
@@ -445,36 +506,46 @@ class Finance_Model extends CI_Model {
      */
     function get_unposted_journal_entries() {
         $pin = current_user()->PIN;
-        $this->db->select('gje.*, COUNT(gj.id) as line_count');
+        // Check if general_journal table has PIN column
+        $has_pin_col = $this->db->query("SHOW COLUMNS FROM general_journal LIKE 'PIN'")->row();
+        
+        $this->db->select('gje.*');
         $this->db->from('general_journal_entry gje');
-        $this->db->join('general_journal gj', 'gj.entryid = gje.id', 'left');
         $this->db->join('general_ledger gl', 'gl.refferenceID = gje.id AND gl.fromtable = "general_journal"', 'left');
         $this->db->where('gl.id IS NULL');
         $this->db->where('gje.PIN', $pin);
-        $this->db->group_by('gje.id');
         $this->db->order_by('gje.entrydate', 'DESC');
         $this->db->order_by('gje.id', 'DESC');
         $results = $this->db->get()->result();
+        
         foreach ($results as $entry) {
-            $line_items = $this->db->where('entryid', $entry->id)->get('general_journal')->result();
-            if (empty($line_items)) {
-                $line_items = $this->db->where('entryid', $entry->id)->where('PIN', $pin)->get('general_journal')->result();
+            // Calculate totals using SQL aggregation for accuracy
+            if ($has_pin_col) {
+                $totals_query = "SELECT 
+                                    COUNT(*) as line_count,
+                                    COALESCE(SUM(COALESCE(gj.debit, 0)), 0) as total_debit,
+                                    COALESCE(SUM(COALESCE(gj.credit, 0)), 0) as total_credit,
+                                    MAX(gj.createdby) as createdby
+                                 FROM general_journal gj
+                                 WHERE gj.entryid = ? AND gj.PIN = ?";
+                $totals = $this->db->query($totals_query, array($entry->id, $pin))->row();
+            } else {
+                $totals_query = "SELECT 
+                                    COUNT(*) as line_count,
+                                    COALESCE(SUM(COALESCE(gj.debit, 0)), 0) as total_debit,
+                                    COALESCE(SUM(COALESCE(gj.credit, 0)), 0) as total_credit,
+                                    MAX(gj.createdby) as createdby
+                                 FROM general_journal gj
+                                 WHERE gj.entryid = ?";
+                $totals = $this->db->query($totals_query, array($entry->id))->row();
             }
+            
             $entry->entryid = $entry->id;
-            $entry->line_count = count($line_items);
-            $entry->total_debit = 0.00;
-            $entry->total_credit = 0.00;
-            $entry->createdby = null;
-            foreach ($line_items as $item) {
-                $entry->total_debit += floatval($item->debit);
-                $entry->total_credit += floatval($item->credit);
-                if (empty($entry->createdby) && !empty($item->createdby)) {
-                    $entry->createdby = $item->createdby;
-                }
-            }
-            $entry->line_count = isset($entry->line_count) ? intval($entry->line_count) : 0;
-            $entry->total_debit = isset($entry->total_debit) ? floatval($entry->total_debit) : 0.00;
-            $entry->total_credit = isset($entry->total_credit) ? floatval($entry->total_credit) : 0.00;
+            $entry->line_count = isset($totals->line_count) ? intval($totals->line_count) : 0;
+            $entry->total_debit = isset($totals->total_debit) ? floatval($totals->total_debit) : 0.00;
+            $entry->total_credit = isset($totals->total_credit) ? floatval($totals->total_credit) : 0.00;
+            $entry->createdby = isset($totals->createdby) ? $totals->createdby : null;
+            
             if (!empty($entry->createdby)) {
                 $user = $this->db->where('id', $entry->createdby)->get('users')->row();
                 $entry->created_by_name = $user ? $user->username : 'Unknown';
@@ -483,6 +554,122 @@ class Finance_Model extends CI_Model {
             }
         }
         return $results;
+    }
+
+    /**
+     * Get list of posted journal entries (general_journal_entry) that have been posted to GL.
+     */
+    function get_posted_general_journal_entries() {
+        $pin = current_user()->PIN;
+        $has_pin_col = $this->db->query("SHOW COLUMNS FROM general_journal LIKE 'PIN'")->row();
+        $this->db->select('gje.*');
+        $this->db->from('general_journal_entry gje');
+        $this->db->join('general_ledger gl', 'gl.refferenceID = gje.id AND gl.fromtable = "general_journal" AND gl.PIN = gje.PIN', 'inner');
+        $this->db->where('gje.PIN', $pin);
+        $this->db->group_by('gje.id');
+        $this->db->order_by('gje.entrydate', 'DESC');
+        $this->db->order_by('gje.id', 'DESC');
+        $results = $this->db->get()->result();
+        foreach ($results as $entry) {
+            if ($has_pin_col) {
+                $totals = $this->db->query(
+                    "SELECT COUNT(*) as line_count, COALESCE(SUM(COALESCE(gj.debit, 0)), 0) as total_debit, COALESCE(SUM(COALESCE(gj.credit, 0)), 0) as total_credit, MAX(gj.createdby) as createdby FROM general_journal gj WHERE gj.entryid = ? AND gj.PIN = ?",
+                    array($entry->id, $pin)
+                )->row();
+            } else {
+                $totals = $this->db->query(
+                    "SELECT COUNT(*) as line_count, COALESCE(SUM(COALESCE(gj.debit, 0)), 0) as total_debit, COALESCE(SUM(COALESCE(gj.credit, 0)), 0) as total_credit, MAX(gj.createdby) as createdby FROM general_journal gj WHERE gj.entryid = ?",
+                    array($entry->id)
+                )->row();
+            }
+            $entry->entryid = $entry->id;
+            $entry->line_count = isset($totals->line_count) ? intval($totals->line_count) : 0;
+            $entry->total_debit = isset($totals->total_debit) ? floatval($totals->total_debit) : 0.00;
+            $entry->total_credit = isset($totals->total_credit) ? floatval($totals->total_credit) : 0.00;
+            $entry->createdby = isset($totals->createdby) ? $totals->createdby : null;
+            $user = !empty($entry->createdby) ? $this->db->where('id', $entry->createdby)->get('users')->row() : null;
+            $entry->created_by_name = $user ? $user->username : 'Unknown';
+        }
+        return $results;
+    }
+
+    /**
+     * Get list of posted journal entries (cash_receipt / cash_disbursement) that have been posted to GL.
+     */
+    function get_posted_receipt_disbursement_journal_entries() {
+        $pin = current_user()->PIN;
+        if (!$this->db->table_exists('journal_entry')) {
+            return array();
+        }
+        if (!$this->db->query("SHOW COLUMNS FROM journal_entry LIKE 'reference_type'")->row()) {
+            return array();
+        }
+        $sql = "SELECT je.id, je.entry_date, je.description, je.reference_type, je.reference_id, je.createdby, je.PIN, je.created_at
+                FROM journal_entry je
+                INNER JOIN general_ledger gl ON gl.refferenceID = je.id AND gl.fromtable = 'journal_entry' AND gl.PIN = je.PIN
+                WHERE je.PIN = ? AND je.reference_type IN ('cash_receipt', 'cash_disbursement')
+                GROUP BY je.id, je.entry_date, je.description, je.reference_type, je.reference_id, je.createdby, je.PIN, je.created_at
+                ORDER BY je.entry_date DESC, je.id DESC";
+        $rows = $this->db->query($sql, array($pin))->result();
+        $entries = array();
+        foreach ($rows as $row) {
+            $total_debit = 0.00;
+            $total_credit = 0.00;
+            $line_count = 0;
+            if ($row->reference_type == 'cash_receipt' && !empty($row->reference_id)) {
+                $receipt_id = intval($row->reference_id);
+                $pin_esc = $this->db->escape($pin);
+                $has_d = $this->db->query("SHOW COLUMNS FROM cash_receipt_items LIKE 'debit'")->row();
+                $has_c = $this->db->query("SHOW COLUMNS FROM cash_receipt_items LIKE 'credit'")->row();
+                if ($has_d && $has_c) {
+                    $t = $this->db->query("SELECT COUNT(*) as line_count, IFNULL(SUM(IFNULL(debit, 0)), 0) as total_debit, IFNULL(SUM(IFNULL(credit, 0)), 0) as total_credit FROM cash_receipt_items WHERE receipt_id = {$receipt_id} AND PIN = {$pin_esc}")->row();
+                } else {
+                    $t = $this->db->query("SELECT COUNT(*) as line_count, 0 as total_debit, IFNULL(SUM(IFNULL(amount, 0)), 0) as total_credit FROM cash_receipt_items WHERE receipt_id = {$receipt_id} AND PIN = {$pin_esc}")->row();
+                }
+                if ($t) {
+                    $line_count = intval($t->line_count);
+                    $total_debit = floatval($t->total_debit);
+                    $total_credit = floatval($t->total_credit);
+                    if ($total_debit == 0 && $row->reference_id) {
+                        $r = $this->db->query("SELECT total_amount FROM cash_receipts WHERE id = ? AND PIN = ? LIMIT 1", array($row->reference_id, $pin))->row();
+                        if ($r && isset($r->total_amount)) $total_debit = floatval($r->total_amount);
+                    }
+                }
+            } elseif ($row->reference_type == 'cash_disbursement' && !empty($row->reference_id)) {
+                $disb_id = intval($row->reference_id);
+                $pin_esc = $this->db->escape($pin);
+                $has_d = $this->db->query("SHOW COLUMNS FROM cash_disbursement_items LIKE 'debit'")->row();
+                $has_c = $this->db->query("SHOW COLUMNS FROM cash_disbursement_items LIKE 'credit'")->row();
+                if ($has_d && $has_c) {
+                    $t = $this->db->query("SELECT COUNT(*) as line_count, IFNULL(SUM(IFNULL(debit, 0)), 0) as total_debit, IFNULL(SUM(IFNULL(credit, 0)), 0) as total_credit FROM cash_disbursement_items WHERE disbursement_id = {$disb_id} AND PIN = {$pin_esc}")->row();
+                } else {
+                    $t = $this->db->query("SELECT COUNT(*) as line_count, IFNULL(SUM(IFNULL(amount, 0)), 0) as total_debit, 0 as total_credit FROM cash_disbursement_items WHERE disbursement_id = {$disb_id} AND PIN = {$pin_esc}")->row();
+                }
+                if ($t) {
+                    $line_count = intval($t->line_count);
+                    $total_debit = floatval($t->total_debit);
+                    $total_credit = floatval($t->total_credit);
+                    if ($total_credit == 0 && $row->reference_id) {
+                        $d = $this->db->query("SELECT total_amount FROM cash_disbursements WHERE id = ? AND PIN = ? LIMIT 1", array($row->reference_id, $pin))->row();
+                        if ($d && isset($d->total_amount)) $total_credit = floatval($d->total_amount);
+                    }
+                }
+            }
+            $user = $this->db->where('id', $row->createdby)->get('users')->row();
+            $entries[] = (object) array(
+                'entryid' => $row->id,
+                'entrydate' => $row->entry_date,
+                'description' => $row->description,
+                'total_debit' => $total_debit,
+                'total_credit' => $total_credit,
+                'line_count' => $line_count,
+                'created_by_name' => $user ? $user->username : 'Unknown',
+                'entry_source' => $row->reference_type,
+                'reference_id' => isset($row->reference_id) ? $row->reference_id : null,
+                'is_posted' => true,
+            );
+        }
+        return $entries;
     }
 
     function get_total_savings_amount($key=null, $account_type_filter=null, $status_filter=null) {
@@ -526,49 +713,183 @@ class Finance_Model extends CI_Model {
         return $count > 0;
     }
 
-    function get_receipt_disbursement_journal_entries() {
+    /**
+     * Void (remove) GL posting for a journal entry. Deletes general_ledger rows only;
+     * journal entry stays active and can be reposted.
+     * @param int $journal_entry_id ID from journal_entry or general_journal_entry
+     * @param string $from_table 'journal_entry' or 'general_journal'
+     * @return bool
+     */
+    function void_journal_posting_to_gl($journal_entry_id, $from_table = 'journal_entry') {
         $pin = current_user()->PIN;
+        $journal_entry_id = (int) $journal_entry_id;
+        if (!in_array($from_table, array('journal_entry', 'general_journal'), true)) {
+            return false;
+        }
+        $this->db->where('refferenceID', $journal_entry_id);
+        $this->db->where('fromtable', $from_table);
+        $this->db->where('PIN', $pin);
+        $existing = $this->db->get('general_ledger')->row();
+        if (!$existing) {
+            return true; // Nothing posted, consider success
+        }
+        $entryid = $existing->entryid;
+        $this->db->where('refferenceID', $journal_entry_id);
+        $this->db->where('fromtable', $from_table);
+        $this->db->where('PIN', $pin);
+        $this->db->delete('general_ledger');
+        $this->db->where('entryid', $entryid);
+        $remaining = $this->db->count_all_results('general_ledger');
+        if ($remaining == 0) {
+            $this->db->where('id', $entryid);
+            $this->db->delete('general_ledger_entry');
+        }
+        return true;
+    }
+
+    function get_receipt_disbursement_journal_entries() {
+        log_message('error', '=== get_receipt_disbursement_journal_entries START ===');
+        $pin = current_user()->PIN;
+        log_message('error', 'PIN: ' . $pin);
         $entries = array();
+        
+        // Check if table exists first
+        if (!$this->db->table_exists('journal_entry')) {
+            log_message('error', 'journal_entry table does not exist');
+            return $entries;
+        }
+        log_message('error', 'journal_entry table exists');
+        
         $col = $this->db->query("SHOW COLUMNS FROM journal_entry LIKE 'reference_type'")->row();
         if (!$col) {
+            log_message('error', 'reference_type column does not exist');
             return $entries;
         }
-        $has_pin_col = $this->db->query("SHOW COLUMNS FROM journal_entry_items LIKE 'PIN'")->row();
-        $sql = "SELECT je.id, je.entry_date, je.description, je.reference_type, je.reference_id, je.createdby, je.PIN, je.created_at 
+        log_message('error', 'reference_type column exists');
+        
+        // Get journal entries first
+        $sql = "SELECT 
+                    je.id,
+                    je.entry_date,
+                    je.description,
+                    je.reference_type,
+                    je.reference_id,
+                    je.createdby,
+                    je.PIN,
+                    je.created_at
                 FROM journal_entry je
                 LEFT JOIN general_ledger gl ON gl.refferenceID = je.id AND gl.fromtable = 'journal_entry' AND gl.PIN = je.PIN
-                WHERE je.PIN = ? AND je.reference_type IN ('cash_receipt', 'cash_disbursement') AND gl.id IS NULL
+                WHERE je.PIN = ? 
+                    AND je.reference_type IN ('cash_receipt', 'cash_disbursement') 
+                    AND gl.id IS NULL
                 ORDER BY je.entry_date DESC, je.id DESC";
+        
+        log_message('error', 'Executing main query with PIN: ' . $pin);
         $rows = $this->db->query($sql, array($pin))->result();
+        log_message('error', 'Main query returned ' . count($rows) . ' rows');
+        
         if (empty($rows)) {
+            log_message('error', 'No journal entries found, returning empty array');
             return $entries;
         }
+        
         foreach ($rows as $row) {
-            $line_items = $this->db->query(
-                "SELECT debit, credit FROM journal_entry_items WHERE journal_id = ?",
-                array($row->id)
-            )->result();
-            if (empty($line_items) && $has_pin_col) {
-                $line_items = $this->db->query(
-                    "SELECT debit, credit FROM journal_entry_items WHERE journal_id = ? AND PIN = ?",
-                    array($row->id, $pin)
-                )->result();
-            }
+            log_message('error', 'Processing entry ID: ' . $row->id . ', reference_type: ' . $row->reference_type . ', reference_id: ' . $row->reference_id);
+            
             $total_debit = 0.00;
             $total_credit = 0.00;
             $line_count = 0;
-            if (!empty($line_items)) {
-                $line_count = count($line_items);
-                foreach ($line_items as $item) {
-                    $total_debit += floatval($item->debit);
-                    $total_credit += floatval($item->credit);
+            
+            // Query items based on reference_type
+            if ($row->reference_type == 'cash_receipt' && !empty($row->reference_id)) {
+                // Query cash_receipt_items where receipt_id = journal_entry.reference_id
+                $receipt_id = intval($row->reference_id);
+                $pin_escaped = $this->db->escape($pin);
+                
+                // Check if debit/credit columns exist
+                $has_debit = $this->db->query("SHOW COLUMNS FROM cash_receipt_items LIKE 'debit'")->row();
+                $has_credit = $this->db->query("SHOW COLUMNS FROM cash_receipt_items LIKE 'credit'")->row();
+                
+                if ($has_debit && $has_credit) {
+                    $items_query = "SELECT 
+                                        COUNT(*) as line_count,
+                                        IFNULL(SUM(IFNULL(debit, 0)), 0) as total_debit,
+                                        IFNULL(SUM(IFNULL(credit, 0)), 0) as total_credit
+                                    FROM cash_receipt_items
+                                    WHERE receipt_id = {$receipt_id} AND PIN = {$pin_escaped}";
+                } else {
+                    // Legacy: use amount as credit
+                    $items_query = "SELECT 
+                                        COUNT(*) as line_count,
+                                        0 as total_debit,
+                                        IFNULL(SUM(IFNULL(amount, 0)), 0) as total_credit
+                                    FROM cash_receipt_items
+                                    WHERE receipt_id = {$receipt_id} AND PIN = {$pin_escaped}";
                 }
+                
+                log_message('error', 'Cash Receipt Items query: ' . $items_query);
+                $items_totals = $this->db->query($items_query)->row();
+                
+            } elseif ($row->reference_type == 'cash_disbursement' && !empty($row->reference_id)) {
+                // Query cash_disbursement_items where disbursement_id = journal_entry.reference_id
+                $disbursement_id = intval($row->reference_id);
+                $pin_escaped = $this->db->escape($pin);
+                
+                // Check if debit/credit columns exist
+                $has_debit = $this->db->query("SHOW COLUMNS FROM cash_disbursement_items LIKE 'debit'")->row();
+                $has_credit = $this->db->query("SHOW COLUMNS FROM cash_disbursement_items LIKE 'credit'")->row();
+                
+                if ($has_debit && $has_credit) {
+                    $items_query = "SELECT 
+                                        COUNT(*) as line_count,
+                                        IFNULL(SUM(IFNULL(debit, 0)), 0) as total_debit,
+                                        IFNULL(SUM(IFNULL(credit, 0)), 0) as total_credit
+                                    FROM cash_disbursement_items
+                                    WHERE disbursement_id = {$disbursement_id} AND PIN = {$pin_escaped}";
+                } else {
+                    // Legacy: use amount as debit
+                    $items_query = "SELECT 
+                                        COUNT(*) as line_count,
+                                        IFNULL(SUM(IFNULL(amount, 0)), 0) as total_debit,
+                                        0 as total_credit
+                                    FROM cash_disbursement_items
+                                    WHERE disbursement_id = {$disbursement_id} AND PIN = {$pin_escaped}";
+                }
+                
+                log_message('error', 'Cash Disbursement Items query: ' . $items_query);
+                $items_totals = $this->db->query($items_query)->row();
+            } else {
+                log_message('error', 'Entry ' . $row->id . ': Unknown reference_type or missing reference_id');
+                $items_totals = null;
             }
-            $total_debit = floatval($total_debit);
-            $total_credit = floatval($total_credit);
-            $line_count = intval($line_count);
+            
+            if ($items_totals) {
+                $line_count = isset($items_totals->line_count) ? intval($items_totals->line_count) : 0;
+                $total_debit = isset($items_totals->total_debit) ? floatval($items_totals->total_debit) : 0.00;
+                $total_credit = isset($items_totals->total_credit) ? floatval($items_totals->total_credit) : 0.00;
+                
+                // If total_debit is 0, use receipt/disbursement header total_amount as debit
+                if ($total_debit == 0 && $row->reference_type == 'cash_receipt' && !empty($row->reference_id)) {
+                    $receipt = $this->db->query("SELECT total_amount FROM cash_receipts WHERE id = ? AND PIN = ? LIMIT 1", array($row->reference_id, $pin))->row();
+                    if ($receipt && isset($receipt->total_amount)) {
+                        $total_debit = floatval($receipt->total_amount);
+                        log_message('error', 'Entry ' . $row->id . ': Using receipt total_amount as debit: ' . $total_debit);
+                    }
+                } elseif ($total_credit == 0 && $row->reference_type == 'cash_disbursement' && !empty($row->reference_id)) {
+                    $disbursement = $this->db->query("SELECT total_amount FROM cash_disbursements WHERE id = ? AND PIN = ? LIMIT 1", array($row->reference_id, $pin))->row();
+                    if ($disbursement && isset($disbursement->total_amount)) {
+                        $total_credit = floatval($disbursement->total_amount);
+                        log_message('error', 'Entry ' . $row->id . ': Using disbursement total_amount as credit: ' . $total_credit);
+                    }
+                }
+                
+                log_message('error', 'Entry ' . $row->id . ' final results: line_count=' . $line_count . ', total_debit=' . $total_debit . ', total_credit=' . $total_credit);
+            } else {
+                log_message('error', 'Entry ' . $row->id . ': No items_totals returned');
+            }
+            
             $user = $this->db->where('id', $row->createdby)->get('users')->row();
-            $entries[] = (object) array(
+            $entry_obj = (object) array(
                 'entryid' => $row->id,
                 'entrydate' => $row->entry_date,
                 'description' => $row->description,
@@ -581,7 +902,11 @@ class Finance_Model extends CI_Model {
                 'reference_id' => isset($row->reference_id) ? $row->reference_id : null,
                 'is_posted' => $this->is_journal_entry_posted_to_gl($row->id),
             );
+            log_message('error', 'Adding entry to array: ID=' . $entry_obj->entryid . ', total_debit=' . $entry_obj->total_debit . ', total_credit=' . $entry_obj->total_credit . ', line_count=' . $entry_obj->line_count);
+            $entries[] = $entry_obj;
         }
+        log_message('error', 'Returning ' . count($entries) . ' entries');
+        log_message('error', '=== get_receipt_disbursement_journal_entries END ===');
         return $entries;
     }
 
@@ -1440,6 +1765,64 @@ $pin=current_user()->PIN;
         return FALSE;
     }
 
+    /**
+     * Get savings transactions for an account that have not been posted to GL.
+     *
+     * @param string $account Savings account number
+     * @return array List of savings_transaction rows
+     */
+    function get_unposted_savings_transactions($account) {
+        $pin = current_user()->PIN;
+        $pin_esc = $this->db->escape($pin);
+        $account_esc = $this->db->escape($account);
+        // Use NOT IN subquery to avoid join condition quoting issues with CodeIgniter
+        $subquery = "SELECT gl.refferenceID FROM general_ledger gl WHERE gl.fromtable = 'savings_transaction' AND gl.PIN = " . $pin_esc;
+        $sql = "SELECT st.* FROM savings_transaction st WHERE st.account = " . $account_esc . " AND st.PIN = " . $pin_esc
+            . " AND st.receipt NOT IN (" . $subquery . ") ORDER BY st.trans_date ASC";
+        return $this->db->query($sql)->result();
+    }
+
+    /**
+     * Post all unposted savings transactions for an account to the General Ledger.
+     *
+     * @param string $account Savings account number
+     * @return array ['posted' => int, 'failed' => int, 'errors' => array of strings]
+     */
+    function post_savings_account_to_gl($account) {
+        $unposted = $this->get_unposted_savings_transactions($account);
+        $posted = 0;
+        $failed = 0;
+        $errors = array();
+        $account_info = $this->saving_account_balance($account);
+        if (!$account_info) {
+            return array('posted' => 0, 'failed' => 0, 'errors' => array('Account not found'));
+        }
+        $member_id = isset($account_info->member_id) ? $account_info->member_id : '';
+        $pid = isset($account_info->RFID) ? $account_info->RFID : '';
+        foreach ($unposted as $st) {
+            $trans_date = isset($st->trans_date) ? date('Y-m-d', strtotime($st->trans_date)) : date('Y-m-d');
+            $ok = $this->post_savings_to_gl(
+                $st->account,
+                floatval($st->amount),
+                isset($st->paymethod) ? $st->paymethod : 'Cash',
+                $st->account_cat,
+                $st->receipt,
+                $trans_date,
+                $pid,
+                $member_id,
+                isset($st->customer_name) ? $st->customer_name : '',
+                isset($st->system_comment) ? $st->system_comment : ''
+            );
+            if ($ok) {
+                $posted++;
+            } else {
+                $failed++;
+                $errors[] = 'Receipt ' . $st->receipt . ': post failed';
+            }
+        }
+        return array('posted' => $posted, 'failed' => $failed, 'errors' => $errors);
+    }
+
     function saving_account_name($account) {
         $account_info = $this->saving_account_balance($account);
         if ($account_info->tablename == 'members_grouplist') {
@@ -1488,7 +1871,13 @@ $pin=current_user()->PIN;
         $description = $this->db->escape($main_array['description']);
         $pin_value = isset($main_array['PIN']) ? $this->db->escape($main_array['PIN']) : 'NULL';
         
-        $insert_sql = "INSERT INTO general_journal_entry (entrydate, description, PIN) VALUES ($entrydate, $description, $pin_value)";
+        // Check if reference_type column exists (Journal Voucher)
+        $has_ref_type = $this->db->query("SHOW COLUMNS FROM general_journal_entry LIKE 'reference_type'")->row();
+        if ($has_ref_type) {
+            $insert_sql = "INSERT INTO general_journal_entry (entrydate, description, PIN, reference_type) VALUES ($entrydate, $description, $pin_value, 'journal_voucher')";
+        } else {
+            $insert_sql = "INSERT INTO general_journal_entry (entrydate, description, PIN) VALUES ($entrydate, $description, $pin_value)";
+        }
         
         $header_insert_result = $this->db->query($insert_sql);
         $header_affected = $this->db->affected_rows();
@@ -1587,6 +1976,9 @@ $pin=current_user()->PIN;
             $has_pin_column = $pin_column_cache;
         }
         
+        // Check if reference_type column exists in general_journal (Journal Voucher line items)
+        $has_gj_ref_type = $this->db->query("SHOW COLUMNS FROM general_journal LIKE 'reference_type'")->row();
+        
         log_message('debug', 'Starting to insert ' . count($array_items) . ' line items for journal entry ID: ' . $jid);
 
         // Save journal line items
@@ -1603,6 +1995,11 @@ $pin=current_user()->PIN;
             } else {
                 // Remove PIN from array if column doesn't exist
                 unset($value['PIN']);
+            }
+            
+            // Set reference_type for JV line items when column exists
+            if ($has_gj_ref_type) {
+                $value['reference_type'] = 'journal_voucher';
             }
             
             // Ensure required fields are present
@@ -1823,7 +2220,10 @@ $pin=current_user()->PIN;
 
     function search_saving_account($key=null, $limit=40, $start=0, $account_type_filter=null, $status_filter=null) {
         $pin = current_user()->PIN;
+        $pin_esc = $this->db->escape($pin);
         $this->db->select('ma.*, m.firstname, m.middlename, m.lastname, m.member_id as member_id_display, mg.name as group_name, sat.description as account_type_name, sat.account as account_type_code, sat.name as account_type_name_display');
+        $this->db->select("(SELECT COUNT(DISTINCT gl.id) FROM savings_transaction st INNER JOIN general_ledger gl ON gl.fromtable = 'savings_transaction' AND gl.refferenceID = st.receipt AND gl.PIN = st.PIN WHERE st.account = ma.account AND st.PIN = " . $pin_esc . ") AS gl_posted_count", FALSE);
+        $this->db->select("(SELECT COUNT(*) FROM savings_transaction st LEFT JOIN general_ledger gl ON gl.fromtable = 'savings_transaction' AND gl.refferenceID = st.receipt AND gl.PIN = st.PIN WHERE st.account = ma.account AND st.PIN = " . $pin_esc . " AND gl.id IS NULL) AS unposted_count", FALSE);
         $this->db->from('members_account ma');
         $this->db->join('members m', 'ma.RFID = m.PID AND m.PIN = ma.PIN AND ma.tablename = \'members\'', 'left');
         $this->db->join('members_grouplist mg', 'ma.RFID = mg.GID AND mg.PIN = ma.PIN AND ma.tablename = \'members_grouplist\'', 'left');

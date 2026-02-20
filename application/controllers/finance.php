@@ -476,6 +476,21 @@ class Finance extends CI_Controller {
             if ($da !== $db) return $db - $da;
             return $b->entryid - $a->entryid;
         });
+
+        // Posted to GL entries (so user can void and repost)
+        $posted_general = $this->finance_model->get_posted_general_journal_entries();
+        foreach ($posted_general as $e) {
+            $e->entry_source = 'general_journal';
+            $e->reference_id = null;
+        }
+        $posted_receipt_disburse = $this->finance_model->get_posted_receipt_disbursement_journal_entries();
+        $this->data['posted_entries'] = array_merge($posted_general, $posted_receipt_disburse);
+        usort($this->data['posted_entries'], function ($a, $b) {
+            $da = strtotime($a->entrydate);
+            $db = strtotime($b->entrydate);
+            if ($da !== $db) return $db - $da;
+            return $b->entryid - $a->entryid;
+        });
         
         $this->data['content'] = 'finance/journal_entry_review';
         $this->load->view('template', $this->data);
@@ -576,6 +591,113 @@ class Finance extends CI_Controller {
             $this->session->set_flashdata('message', 'Journal entry has been posted to General Ledger successfully.');
         } else {
             $this->session->set_flashdata('warning', 'Failed to post to General Ledger. Entry may be unbalanced or not found. Check error logs.');
+        }
+        redirect(current_lang() . '/finance/journal_entry_review', 'refresh');
+    }
+
+    /**
+     * Void GL posting for a manual journal entry (general_journal). Journal entry stays active; can repost later.
+     */
+    function void_gl_posting_general($id) {
+        $id = decode_id($id);
+        if (!has_role(6, 'Journal_entry')) {
+            $this->session->set_flashdata('warning', 'You do not have permission to void GL postings.');
+            redirect(current_lang() . '/finance/journal_entry_review', 'refresh');
+            return;
+        }
+        if (!$this->finance_model->is_journal_posted($id)) {
+            $this->session->set_flashdata('warning', 'This journal entry is not posted to the General Ledger.');
+            redirect(current_lang() . '/finance/journal_entry_view/' . encode_id($id), 'refresh');
+            return;
+        }
+        $this->finance_model->void_journal_posting_to_gl($id, 'general_journal');
+        $this->session->set_flashdata('message', 'GL posting has been voided. You can repost this journal entry to the General Ledger when ready.');
+        redirect(current_lang() . '/finance/journal_entry_view/' . encode_id($id), 'refresh');
+    }
+
+    /**
+     * Void GL posting for a journal entry (cash receipt / cash disbursement). Journal stays active; can repost later.
+     */
+    function void_gl_posting_journal_entry($id) {
+        $id = decode_id($id);
+        if (!has_role(6, 'Journal_entry')) {
+            $this->session->set_flashdata('warning', 'You do not have permission to void GL postings.');
+            redirect(current_lang() . '/finance/journal_entry_review', 'refresh');
+            return;
+        }
+        if (!$this->finance_model->is_journal_entry_posted_to_gl($id)) {
+            $this->session->set_flashdata('warning', 'This entry is not posted to the General Ledger.');
+            redirect(current_lang() . '/finance/journal_entry_review', 'refresh');
+            return;
+        }
+        $this->finance_model->void_journal_posting_to_gl($id, 'journal_entry');
+        $this->session->set_flashdata('message', 'GL posting has been voided. You can repost this entry to the General Ledger from Journal Entry Review when ready.');
+        redirect(current_lang() . '/finance/journal_entry_review', 'refresh');
+    }
+
+    /**
+     * Void GL posting for multiple selected entries (batch). Expects void_ids[] = "source::encoded_id" (e.g. general_journal::xxx or journal_entry::xxx).
+     */
+    function void_gl_posting_batch() {
+        if (!has_role(6, 'Journal_entry')) {
+            $this->session->set_flashdata('warning', 'You do not have permission to void GL postings.');
+            redirect(current_lang() . '/finance/journal_entry_review', 'refresh');
+            return;
+        }
+        $void_ids = $this->input->post('void_ids', FALSE);
+        if (empty($void_ids)) {
+            $this->session->set_flashdata('warning', 'No entries selected. Please select at least one posted entry to void.');
+            redirect(current_lang() . '/finance/journal_entry_review', 'refresh');
+            return;
+        }
+        if (!is_array($void_ids)) {
+            $void_ids = array($void_ids);
+        }
+        $success_count = 0;
+        $skip_count = 0;
+        $invalid_count = 0;
+        foreach ($void_ids as $composite) {
+            $composite = trim((string) $composite);
+            if ($composite === '') continue;
+            $parts = explode('::', $composite, 2);
+            if (count($parts) !== 2 || $parts[0] === '' || $parts[1] === '') {
+                $invalid_count++;
+                continue;
+            }
+            list($source, $encoded_id) = $parts;
+            // Map source to GL fromtable: only general_journal vs journal_entry (cash_receipt/cash_disbursement use journal_entry table)
+            $from_table = ($source === 'general_journal') ? 'general_journal' : 'journal_entry';
+            if ($source !== 'general_journal' && !in_array($source, array('journal_entry', 'cash_receipt', 'cash_disbursement'), true)) {
+                $invalid_count++;
+                continue;
+            }
+            $id = decode_id($encoded_id);
+            if ($id === null || $id === '' || (is_numeric($id) && (int) $id <= 0)) {
+                $invalid_count++;
+                continue;
+            }
+            if ($from_table === 'general_journal' && !$this->finance_model->is_journal_posted($id)) {
+                $skip_count++;
+                continue;
+            }
+            if ($from_table === 'journal_entry' && !$this->finance_model->is_journal_entry_posted_to_gl($id)) {
+                $skip_count++;
+                continue;
+            }
+            $this->finance_model->void_journal_posting_to_gl($id, $from_table);
+            $success_count++;
+        }
+        if ($success_count > 0) {
+            $this->session->set_flashdata('message', $success_count . ' GL posting(s) voided. You can repost from Journal Entry Review when ready.');
+        }
+        if ($skip_count > 0) {
+            $this->session->set_flashdata('warning', $skip_count . ' selected entry/entries were not posted to GL and were skipped.');
+        }
+        if ($invalid_count > 0) {
+            $this->session->set_flashdata('warning', $invalid_count . ' selected value(s) were invalid and skipped.');
+        }
+        if ($success_count === 0 && $skip_count === 0 && $invalid_count === 0) {
+            $this->session->set_flashdata('warning', 'No entries were voided. Please select at least one posted entry and try again.');
         }
         redirect(current_lang() . '/finance/journal_entry_review', 'refresh');
     }

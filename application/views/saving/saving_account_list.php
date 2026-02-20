@@ -89,6 +89,7 @@ $status_filter = isset($status_filter) ? $status_filter : (isset($_GET['status_f
                 <th style="text-align: right; width: 120px;"><?php echo lang('balance'); ?></th>
                 <th style="text-align: right; width: 120px;"><?php echo lang('virtual_balance'); ?></th>
                 <th style="text-align: center; width: 100px;"><?php echo lang('account_status'); ?></th>
+                <th style="text-align: center; width: 100px;"><?php echo lang('saving_account_gl_status'); ?></th>
                 <th style="text-align: center; width: 200px;"><?php echo lang('index_action_th'); ?></th>
             </tr>
         </thead>
@@ -134,6 +135,16 @@ $status_filter = isset($status_filter) ? $status_filter : (isset($_GET['status_f
                                 <?php echo htmlspecialchars($status_text, ENT_QUOTES, 'UTF-8'); ?>
                             </span>
                         </td>
+                        <td style="text-align: center;">
+                            <?php
+                            $gl_posted_count = isset($value->gl_posted_count) ? intval($value->gl_posted_count) : 0;
+                            $gl_class = $gl_posted_count > 0 ? 'btn-success' : 'btn-default';
+                            $gl_text = $gl_posted_count > 0 ? lang('saving_account_gl_posted') : lang('saving_account_gl_not_posted');
+                            ?>
+                            <span class="btn <?php echo $gl_class; ?> btn-xs" style="cursor: default;">
+                                <?php echo htmlspecialchars($gl_text, ENT_QUOTES, 'UTF-8'); ?>
+                            </span>
+                        </td>
                         <td style="text-align: center; white-space: nowrap;">
                             <?php 
                             // Find the most recent report for saving account list (link=1) with matching account type
@@ -152,6 +163,10 @@ $status_filter = isset($status_filter) ? $status_filter : (isset($_GET['status_f
                                 $ledger_url = current_lang() . "/report_saving/new_saving_account_statement_view/1/" . encode_id($report->id) . "/" . encode_id($value->account);
                                 echo anchor($ledger_url, ' <i class="fa fa-th-list"></i> Ledger', 'class="btn btn-info btn-xs btn-outline" target="_blank" style="margin-right: 5px;"');
                             }
+                            $unposted_count = isset($value->unposted_count) ? intval($value->unposted_count) : 0;
+                            if ($unposted_count > 0) {
+                                echo anchor(current_lang() . "/saving/post_to_gl/" . encode_id($value->id), ' <i class="fa fa-book"></i> ' . lang('saving_account_post_to_gl'), 'class="btn btn-warning btn-xs btn-outline" style="margin-right: 5px;" onclick="return confirm(\'' . htmlspecialchars(lang('saving_account_post_to_gl_confirm'), ENT_QUOTES, 'UTF-8') . '\');"');
+                            }
                             echo anchor(current_lang() . "/saving/edit_saving_account/" . encode_id($value->id), ' <i class="fa fa-edit"></i> ' . lang('button_edit'), 'class="btn btn-success btn-xs btn-outline"'); 
                             ?>
                         </td>
@@ -159,7 +174,7 @@ $status_filter = isset($status_filter) ? $status_filter : (isset($_GET['status_f
                 <?php } ?>
             <?php } else { ?>
                 <tr>
-                    <td colspan="9" style="text-align: center;"><?php echo lang('no_records_found'); ?></td>
+                    <td colspan="10" style="text-align: center;"><?php echo lang('no_records_found'); ?></td>
                 </tr>
             <?php } ?>
         </tbody>

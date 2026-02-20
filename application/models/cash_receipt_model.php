@@ -452,8 +452,9 @@ class Cash_receipt_model extends CI_Model {
         $has_entry_id = $this->db->query("SHOW COLUMNS FROM journal_entry_items LIKE 'entry_id'")->row();
         $link_col = $has_journal_id ? 'journal_id' : ($has_entry_id ? 'entry_id' : 'journal_id');
 
-        // Check if description column exists
+        // Check if description and reference_type columns exist
         $has_desc = $this->db->query("SHOW COLUMNS FROM journal_entry_items LIKE 'description'")->row();
+        $has_ref_type = $this->db->query("SHOW COLUMNS FROM journal_entry_items LIKE 'reference_type'")->row();
 
         // Insert each line item as journal entry item (debit/credit like journal entry)
         $total_debit = 0;
@@ -467,7 +468,17 @@ class Cash_receipt_model extends CI_Model {
             $total_debit += $debit;
             $total_credit += $credit;
             $line_desc = isset($item['description']) ? $item['description'] : '';
-            if ($has_desc) {
+            if ($has_ref_type && $has_desc) {
+                $ok = $this->db->query(
+                    'INSERT INTO journal_entry_items (' . $link_col . ', reference_type, account, debit, credit, description, PIN) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                    array($journal_id, 'cash_receipt', $item['account'], $debit, $credit, $line_desc, $pin)
+                );
+            } elseif ($has_ref_type) {
+                $ok = $this->db->query(
+                    'INSERT INTO journal_entry_items (' . $link_col . ', reference_type, account, debit, credit, PIN) VALUES (?, ?, ?, ?, ?, ?)',
+                    array($journal_id, 'cash_receipt', $item['account'], $debit, $credit, $pin)
+                );
+            } elseif ($has_desc) {
                 $ok = $this->db->query(
                     'INSERT INTO journal_entry_items (' . $link_col . ', account, debit, credit, description, PIN) VALUES (?, ?, ?, ?, ?, ?)',
                     array($journal_id, $item['account'], $debit, $credit, $line_desc, $pin)
@@ -503,7 +514,17 @@ class Cash_receipt_model extends CI_Model {
                     $credit_bal = $total_debit - $total_credit; // need more credit
                 }
                 $bal_desc = 'Receipt from: ' . (isset($receipt_data['received_from']) ? $receipt_data['received_from'] : '');
-                if ($has_desc) {
+                if ($has_ref_type && $has_desc) {
+                    $ok = $this->db->query(
+                        'INSERT INTO journal_entry_items (' . $link_col . ', reference_type, account, debit, credit, description, PIN) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                        array($journal_id, 'cash_receipt', $cash_account, $debit_bal, $credit_bal, $bal_desc, $pin)
+                    );
+                } elseif ($has_ref_type) {
+                    $ok = $this->db->query(
+                        'INSERT INTO journal_entry_items (' . $link_col . ', reference_type, account, debit, credit, PIN) VALUES (?, ?, ?, ?, ?, ?)',
+                        array($journal_id, 'cash_receipt', $cash_account, $debit_bal, $credit_bal, $pin)
+                    );
+                } elseif ($has_desc) {
                     $ok = $this->db->query(
                         'INSERT INTO journal_entry_items (' . $link_col . ', account, debit, credit, description, PIN) VALUES (?, ?, ?, ?, ?, ?)',
                         array($journal_id, $cash_account, $debit_bal, $credit_bal, $bal_desc, $pin)

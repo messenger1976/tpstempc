@@ -50,6 +50,16 @@ $lang['account_status'] = 'Status';
 $lang['account_status_active'] = 'Active';
 $lang['account_status_inactive'] = 'Inactive';
 $lang['all_status'] = 'All Status';
+$lang['saving_account_gl_posted'] = 'Posted';
+$lang['saving_account_gl_not_posted'] = 'Not posted';
+$lang['saving_account_gl_status'] = 'GL Status';
+$lang['saving_account_post_to_gl'] = 'Post to GL';
+$lang['saving_account_post_to_gl_success_one'] = 'transaction posted to General Ledger';
+$lang['saving_account_post_to_gl_success_many'] = 'transactions posted to General Ledger';
+$lang['saving_account_post_to_gl_partial_fail'] = 'failed';
+$lang['saving_account_post_to_gl_fail'] = 'Failed to post to General Ledger';
+$lang['saving_account_post_to_gl_none'] = 'No unposted transactions for this account';
+$lang['saving_account_post_to_gl_confirm'] = 'Post all unposted transactions for this account to the General Ledger?';
 
 
 // general journal

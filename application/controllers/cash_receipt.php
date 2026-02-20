@@ -371,6 +371,9 @@ class Cash_receipt extends CI_Controller {
             $receipt->payment_method_display = $receipt->payment_method;
         }
         
+        $journal_id = $this->cash_receipt_model->get_journal_entry_id_for_receipt($id);
+        $receipt->journal_entry_id = $journal_id;
+        $receipt->is_posted_to_gl = $journal_id ? $this->finance_model->is_journal_entry_posted_to_gl($journal_id) : false;
         $this->data['receipt'] = $receipt;
         $this->data['line_items'] = $this->cash_receipt_model->get_receipt_items($id);
         

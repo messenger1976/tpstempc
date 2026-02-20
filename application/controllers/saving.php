@@ -239,13 +239,14 @@ class Saving extends CI_Controller {
         $sheet->setCellValue('G1', lang('balance'));
         $sheet->setCellValue('H1', lang('virtual_balance'));
         $sheet->setCellValue('I1', lang('account_status'));
+        $sheet->setCellValue('J1', lang('saving_account_gl_status'));
         
         // Style header row
-        $sheet->getStyle('A1:I1')->getFont()->setBold(true);
-        $sheet->getStyle('A1:I1')->getFill()->setFillType(PHPExcel_Style_Fill::FILL_SOLID);
-        $sheet->getStyle('A1:I1')->getFill()->getStartColor()->setARGB('FFCCCCCC');
-        $sheet->getStyle('A1:I1')->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_CENTER);
-        $sheet->getStyle('A1:I1')->applyFromArray(array(
+        $sheet->getStyle('A1:J1')->getFont()->setBold(true);
+        $sheet->getStyle('A1:J1')->getFill()->setFillType(PHPExcel_Style_Fill::FILL_SOLID);
+        $sheet->getStyle('A1:J1')->getFill()->getStartColor()->setARGB('FFCCCCCC');
+        $sheet->getStyle('A1:J1')->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_CENTER);
+        $sheet->getStyle('A1:J1')->applyFromArray(array(
             'borders' => array(
                 'allborders' => array(
                     'style' => PHPExcel_Style_Border::BORDER_THIN
@@ -263,6 +264,7 @@ class Saving extends CI_Controller {
         $sheet->getColumnDimension('G')->setWidth(15);
         $sheet->getColumnDimension('H')->setWidth(15);
         $sheet->getColumnDimension('I')->setWidth(15);
+        $sheet->getColumnDimension('J')->setWidth(15);
         
         // Populate data
         $row = 2;
@@ -280,6 +282,10 @@ class Saving extends CI_Controller {
             $status_value = isset($value->status) ? $value->status : '1';
             $status_text = ($status_value == '1' || $status_value === 1) ? lang('account_status_active') : lang('account_status_inactive');
             
+            // Get GL posted status
+            $gl_posted_count = isset($value->gl_posted_count) ? intval($value->gl_posted_count) : 0;
+            $gl_status_text = $gl_posted_count > 0 ? lang('saving_account_gl_posted') : lang('saving_account_gl_not_posted');
+            
             // Write data to cells
             $sheet->setCellValue('A' . $row, $i++);
             $sheet->setCellValue('B' . $row, $value->account);
@@ -290,6 +296,7 @@ class Saving extends CI_Controller {
             $sheet->setCellValue('G' . $row, number_format($value->balance, 2, '.', ''));
             $sheet->setCellValue('H' . $row, number_format($value->virtual_balance, 2, '.', ''));
             $sheet->setCellValue('I' . $row, $status_text);
+            $sheet->setCellValue('J' . $row, $gl_status_text);
             
             // Set alignment
             $sheet->getStyle('A' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_RIGHT);
@@ -301,9 +308,10 @@ class Saving extends CI_Controller {
             $sheet->getStyle('G' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_RIGHT);
             $sheet->getStyle('H' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_RIGHT);
             $sheet->getStyle('I' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_CENTER);
+            $sheet->getStyle('J' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_CENTER);
             
             // Add borders to cells
-            $sheet->getStyle('A' . $row . ':I' . $row)->applyFromArray(array(
+            $sheet->getStyle('A' . $row . ':J' . $row)->applyFromArray(array(
                 'borders' => array(
                     'allborders' => array(
                         'style' => PHPExcel_Style_Border::BORDER_THIN
@@ -346,6 +354,46 @@ class Saving extends CI_Controller {
         $objWriter = PHPExcel_IOFactory::createWriter($objPHPExcel, 'Excel5');
         $objWriter->save('php://output');
         exit();
+    }
+    
+    /**
+     * Post all unposted savings transactions for an account to the General Ledger.
+     * Expects encoded members_account id.
+     */
+    function post_to_gl($id = null) {
+        if (!$this->ion_auth->logged_in()) {
+            redirect('auth/login', 'refresh');
+        }
+        if (!has_role(3, 'saving_account_list')) {
+            $this->session->set_flashdata('warning', lang('access_denied'));
+            redirect('dashboard', 'refresh');
+            return;
+        }
+        if (empty($id)) {
+            $this->session->set_flashdata('warning', lang('invalid_account'));
+            redirect(current_lang() . '/saving/saving_account_list', 'refresh');
+            return;
+        }
+        $decoded_id = decode_id($id);
+        $account_info = $this->finance_model->get_saving_account_info($decoded_id);
+        if (!$account_info || empty($account_info->account)) {
+            $this->session->set_flashdata('warning', lang('invalid_account'));
+            redirect(current_lang() . '/saving/saving_account_list', 'refresh');
+            return;
+        }
+        $result = $this->finance_model->post_savings_account_to_gl($account_info->account);
+        if ($result['posted'] > 0) {
+            $msg = $result['posted'] . ' ' . ($result['posted'] == 1 ? lang('saving_account_post_to_gl_success_one') : lang('saving_account_post_to_gl_success_many'));
+            if ($result['failed'] > 0) {
+                $msg .= '. ' . $result['failed'] . ' ' . lang('saving_account_post_to_gl_partial_fail');
+            }
+            $this->session->set_flashdata('message', $msg);
+        } elseif ($result['failed'] > 0) {
+            $this->session->set_flashdata('warning', lang('saving_account_post_to_gl_fail'));
+        } else {
+            $this->session->set_flashdata('message', lang('saving_account_post_to_gl_none'));
+        }
+        redirect(current_lang() . '/saving/saving_account_list', 'refresh');
     }
     
     function edit_saving_account($id = null) {

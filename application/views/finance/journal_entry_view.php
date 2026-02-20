@@ -171,6 +171,11 @@ if (isset($message) && !empty($message)) {
                                 <div class="alert alert-success">
                                     <i class="fa fa-check-circle"></i> This journal entry has already been posted to General Ledger.
                                 </div>
+                                <a href="<?php echo site_url(current_lang() . '/finance/void_gl_posting_general/' . $id); ?>"
+                                   onclick="return confirm('Void the GL posting only? The journal entry will stay and you can repost it later.');"
+                                   class="btn btn-warning">
+                                    <i class="fa fa-undo"></i> Void GL Posting
+                                </a>
                             <?php endif; ?>
                             
                             <a href="<?php echo site_url(current_lang() . '/finance/journal_entry_review'); ?>" class="btn btn-default">

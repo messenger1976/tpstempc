@@ -3,8 +3,10 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
     <?php $company = function_exists('company_info_detail') ? company_info_detail() : null; $company_name = ($company && isset($company->name) && $company->name !== '') ? $company->name : 'Cooperative'; ?>
     <title><?php echo htmlspecialchars($company_name); ?> | Cash Receipt - <?php echo $receipt->receipt_no; ?></title>
+
     <link href="<?php echo base_url(); ?>media/css/bootstrap.min.css" rel="stylesheet">
     <style>
         body {

@@ -1,0 +1,9 @@
+# Deny access to backup files from web
+<Files *.sql>
+    Order Allow,Deny
+    Deny from all
+</Files>
+
+# Allow only authenticated users (if applicable)
+# Uncomment if you want to make the directory browsable for admins only
+# Options +Indexes

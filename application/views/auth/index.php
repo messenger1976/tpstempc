@@ -82,6 +82,7 @@ if (isset($message) && !empty($message)) {
                 </th>
                 <th><?php echo lang('index_fname_th'); ?></th>
                 <th><?php echo lang('index_lname_th'); ?></th>
+                <th><?php echo lang('index_username_th'); ?></th>
                 <th><?php echo lang('index_email_th'); ?></th>
                 <th><?php echo lang('index_groups_th'); ?></th>
                 <th><?php echo lang('index_status_th'); ?></th>
@@ -107,6 +108,7 @@ foreach ($users as $key => $user) { ?>
             ?></td>
             <td><?php echo htmlspecialchars($user->first_name, ENT_QUOTES, 'UTF-8'); ?></td>
             <td><?php echo htmlspecialchars($user->last_name, ENT_QUOTES, 'UTF-8'); ?></td>
+            <td><?php echo isset($user->username) ? htmlspecialchars($user->username, ENT_QUOTES, 'UTF-8') : '-'; ?></td>
             <td><?php echo htmlspecialchars($user->email, ENT_QUOTES, 'UTF-8'); ?></td>
             <td>
                 <?php echo $this->ion_auth->get_users_groups($user->id)->row()->name;?>

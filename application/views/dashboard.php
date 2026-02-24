@@ -710,7 +710,7 @@
             </div>
             <div class="footer">
             <div class="pull-right">
-                <strong>Talibon Public School Teachers and Employees Multi-Purpose Cooperative</strong>
+                <strong><?php echo htmlspecialchars($company_name); ?></strong>
             </div>
             <div>
                 <strong>Copyright</strong> Cooperative Management System &copy; <?php echo date('Y'); ?>

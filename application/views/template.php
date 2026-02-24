@@ -99,7 +99,8 @@
                     <div class="col-lg-12">
                         <div class="footer">
                             <div class="pull-right">
-                                <strong>Talibon Public School Teachers and Employees Multi-Purpose Cooperative</strong>
+                                <?php $company = function_exists('company_info_detail') ? company_info_detail() : null; $company_name = ($company && isset($company->name) && $company->name !== '') ? $company->name : 'Cooperative'; ?>
+                                <strong><?php echo htmlspecialchars($company_name); ?></strong>
                             </div>
                             <div>
                                 <strong>Copyright</strong> Cooperative Management System &copy; <?php echo date('Y'); ?>

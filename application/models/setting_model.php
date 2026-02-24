@@ -296,6 +296,141 @@ $this->db->where('PIN',  current_user()->PIN);
         return $this->db->get('loan_product');
     }
 
+    function payment_method_list($id = null) {
+        $pin = current_user()->PIN;
+        $this->db->select('pm.*, ac.name as gl_account_name, IFNULL(pm.status, 1) as status', FALSE);
+        $this->db->from('paymentmenthod pm');
+        $this->db->join('account_chart ac', 'pm.gl_account_code = ac.account AND ac.PIN = ' . $this->db->escape($pin), 'left');
+        $this->db->where('pm.PIN', $pin);
+        if (!is_null($id)) {
+            $this->db->where('pm.id', $id);
+        }
+        $this->db->order_by('pm.name', 'ASC');
+        return $this->db->get();
+    }
+
+    function payment_method_create($data, $id = null) {
+        if (is_null($id)) {
+            return $this->db->insert('paymentmenthod', $data);
+        } else {
+            return $this->db->update('paymentmenthod', $data, array('id' => $id));
+        }
+    }
+
+    function payment_method_delete($id) {
+        $pin = current_user()->PIN;
+        $this->db->where('id', $id);
+        $this->db->where('PIN', $pin);
+        $result = $this->db->delete('paymentmenthod');
+        return $result;
+    }
+
+    function payment_method_toggle_status($id) {
+        $pin = current_user()->PIN;
+        // Get current status
+        $this->db->where('id', $id);
+        $this->db->where('PIN', $pin);
+        $current = $this->db->get('paymentmenthod')->row();
+        
+        if ($current) {
+            $new_status = $current->status == 1 ? 0 : 1;
+            $this->db->where('id', $id);
+            $this->db->where('PIN', $pin);
+            return $this->db->update('paymentmenthod', array('status' => $new_status));
+        }
+        return FALSE;
+    }
+
+    function is_payment_method_exist($name, $exclude_id = null) {
+        $pin = current_user()->PIN;
+        $this->db->where('name', $name);
+        $this->db->where('PIN', $pin);
+        if (!is_null($exclude_id)) {
+            $this->db->where('id !=', $exclude_id);
+        }
+        $check = $this->db->get('paymentmenthod')->row();
+
+        if (!empty($check)) {
+            return TRUE;
+        }
+        return FALSE;
+    }
+
+    // Fiscal Year Methods
+    function fiscal_year_list($id = null) {
+        $pin = current_user()->PIN;
+        $this->db->where('PIN', $pin);
+        if (!is_null($id)) {
+            $this->db->where('id', $id);
+        }
+        $this->db->order_by('start_date', 'DESC');
+        return $this->db->get('fiscal_year');
+    }
+
+    function fiscal_year_create($data, $id = null) {
+        if (is_null($id)) {
+            return $this->db->insert('fiscal_year', $data);
+        } else {
+            return $this->db->update('fiscal_year', $data, array('id' => $id));
+        }
+    }
+
+    function fiscal_year_delete($id) {
+        $pin = current_user()->PIN;
+        $this->db->where('id', $id);
+        $this->db->where('PIN', $pin);
+        return $this->db->delete('fiscal_year');
+    }
+
+    function fiscal_year_set_active($id) {
+        $pin = current_user()->PIN;
+        // First, set all fiscal years to inactive
+        $this->db->where('PIN', $pin);
+        $this->db->update('fiscal_year', array('status' => 0));
+
+        // Then set the selected fiscal year to active
+        $this->db->where('id', $id);
+        $this->db->where('PIN', $pin);
+        return $this->db->update('fiscal_year', array('status' => 1));
+    }
+
+    function fiscal_year_toggle_status($id, $status) {
+        $pin = current_user()->PIN;
+
+        // If activating (status = 1), first set all others to inactive
+        if ($status == 1) {
+            $this->db->where('PIN', $pin);
+            $this->db->update('fiscal_year', array('status' => 0));
+        }
+
+        // Update the specific fiscal year
+        $this->db->where('id', $id);
+        $this->db->where('PIN', $pin);
+        return $this->db->update('fiscal_year', array('status' => $status));
+    }
+
+    function is_fiscal_year_exist($name, $exclude_id = null) {
+        $pin = current_user()->PIN;
+        $this->db->where('name', $name);
+        $this->db->where('PIN', $pin);
+        if (!is_null($exclude_id)) {
+            $this->db->where('id !=', $exclude_id);
+        }
+        $check = $this->db->get('fiscal_year')->row();
+
+        if (!empty($check)) {
+            return TRUE;
+        }
+        return FALSE;
+    }
+
+    function get_active_fiscal_year() {
+        $pin = current_user()->PIN;
+        $this->db->where('PIN', $pin);
+        $this->db->where('status', 1);
+        return $this->db->get('fiscal_year')->row();
+    }
+
 }
 
 ?>

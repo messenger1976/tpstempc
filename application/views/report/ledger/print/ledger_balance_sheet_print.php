@@ -25,7 +25,7 @@
                             ASSETS<hr/>
                              <table  style=" margin-left: 20px;">
                                  <?php
-                                $assets = $this->report_model->get_balance_sheet_data($reportinfo->fromdate, 10);
+                                $assets = $this->report_model->get_balance_sheet_data($reportinfo->fromdate, 10000);
                                 $total_asset = 0;
                                 foreach ($assets as $key => $value) {
                                     $diff = $value->debit - $value->credit;
@@ -63,7 +63,7 @@
                             LIABILITIES<hr/>
                           <table style=" margin-left: 20px;">
                                 <?php
-                                $liabilities = $this->report_model->get_balance_sheet_data($reportinfo->fromdate, 20);
+                                $liabilities = $this->report_model->get_balance_sheet_data($reportinfo->fromdate, 20000);
                                 $total_liabilities = 0;
 
                                 foreach ($liabilities as $key => $value) {
@@ -102,7 +102,7 @@
                             STOCKHOLDERS' EQUITY<hr/>
                            <table style="margin-left: 20px;">
                                 <?php
-                                $equaty = $this->report_model->get_balance_sheet_data($reportinfo->fromdate, 30);
+                                $equaty = $this->report_model->get_balance_sheet_data($reportinfo->fromdate, 30000);
                                 $total_equaty = 0;
 
                                 foreach ($equaty as $key => $value) {

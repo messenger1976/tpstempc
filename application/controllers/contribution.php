@@ -88,20 +88,43 @@ class Contribution extends CI_Controller {
         $config["per_page"] = $this->session->userdata('PER_PAGE');
 
         $key = null;
-        if (isset($_POST['key']) && $_POST['key'] != '') {
-            $explode = explode('-', $_POST['key']);
+        if ($this->input->post('key') && $this->input->post('key') != '') {
+            $explode = explode('-', $this->input->post('key'));
             $key = $explode[0];
-        } else if (isset($_GET['key'])) {
-            $key = $_GET['key'];
+        } else if ($this->input->get('key')) {
+            $key = $this->input->get('key');
         }
 
-        if (!is_null($key)) {
-            $config['suffix'] = '?key=' . $key;
+        $status = null;
+        if ($this->input->post('status') !== FALSE) {
+            $post_status = $this->input->post('status');
+            if ($post_status === '0' || $post_status === '1') {
+                $status = $post_status;
+            }
+        } else if ($this->input->get('status') !== FALSE) {
+            $get_status = $this->input->get('status');
+            if ($get_status === '0' || $get_status === '1') {
+                $status = $get_status;
+            }
+        }
+
+        $query_params = array();
+        if (!is_null($key) && $key != '') {
+            $query_params['key'] = $key;
+        }
+        if (!is_null($status) && ($status === '0' || $status === '1')) {
+            $query_params['status'] = $status;
+        }
+
+        $query_string = http_build_query($query_params);
+        if ($query_string) {
+            $config['suffix'] = '?' . $query_string;
+            $config['first_url'] = site_url(current_lang() . '/contribution/contribute_setting/?' . $query_string);
         }
 
 
         $config["base_url"] = site_url(current_lang() . '/contribution/contribute_setting');
-        $config["total_rows"] = $this->contribution_model->count_contribution_setting($key);
+        $config["total_rows"] = $this->contribution_model->count_contribution_setting($key, $status);
         $config["uri_segment"] = 4;
 
         $config['full_tag_open'] = '<div class="pagination" style="background-color:#fff; margin-left:0px;">';
@@ -129,7 +152,7 @@ class Contribution extends CI_Controller {
         $page = ($this->uri->segment(4) ? $this->uri->segment(4) : 0);
         $this->data['links'] = $this->pagination->create_links();
 
-        $this->data['contribution_setting'] = $this->contribution_model->search_contribution_setting($key, $config["per_page"], $page);
+        $this->data['contribution_setting'] = $this->contribution_model->search_contribution_setting($key, $config["per_page"], $page, $status);
 
 
         $this->data['content'] = 'contribution/contribute_setting_list';
@@ -366,46 +389,112 @@ class Contribution extends CI_Controller {
         $config["per_page"] = $this->session->userdata('PER_PAGE');
 
         $key = null;
+        $key1 = null;
         $from = null;
         $to = null;
-        if (isset($_POST['key']) && $_POST['key'] != '') {
-            $key = $_POST['key'];
-            $expl = explode('-', $key);
-            $key1 = $expl[0];
+        
+        // Handle POST submission - save to session or clear if empty
+        if (isset($_POST['key'])) {
+            if ($_POST['key'] != '') {
+                $key = $_POST['key'];
+                $expl = explode('-', $key);
+                $key1 = trim($expl[0]);
+                $this->session->set_userdata('contribution_transaction_key', $key);
+            } else {
+                // Clear session if empty value submitted
+                $this->session->unset_userdata('contribution_transaction_key');
+            }
         } else if (isset($_GET['key'])) {
-            $key = $_GET['key'];
+            // GET parameter takes priority - use it even if empty
+            if ($_GET['key'] != '') {
+                $key = $_GET['key'];
+                $expl = explode('-', $key);
+                $key1 = trim($expl[0]);
+                $this->session->set_userdata('contribution_transaction_key', $key);
+            } else {
+                // Clear session if GET is empty
+                $this->session->unset_userdata('contribution_transaction_key');
+            }
+        } else if ($this->session->userdata('contribution_transaction_key')) {
+            // Use session value if no GET/POST
+            $key = $this->session->userdata('contribution_transaction_key');
             $expl = explode('-', $key);
-            $key1 = $expl[0];
+            $key1 = trim($expl[0]);
         }
 
-        if (isset($_POST['from']) && $_POST['from'] != '') {
-            $from = format_date($_POST['from']);
-        } else if (isset($_GET['from'])) {
-            $from = format_date($_GET['from']);
-        } else {
-            $from = date('Y-m-d');
-        }
+        // If Member ID is provided, ignore date filters
+        // Otherwise, use date filters
+        if (empty($key1) || $key1 == '0') {
+            // Member ID is blank/empty, use date filters
+            if (isset($_POST['from'])) {
+                if ($_POST['from'] != '') {
+                    $from = format_date($_POST['from']);
+                    $this->session->set_userdata('contribution_transaction_from', format_date($_POST['from'], FALSE));
+                } else {
+                    // Clear session if empty value submitted and set default
+                    $this->session->unset_userdata('contribution_transaction_from');
+                    $from = date('Y-m-d');
+                }
+            } else if (isset($_GET['from'])) {
+                // GET parameter takes priority - use it even if empty
+                if ($_GET['from'] != '') {
+                    $from = format_date($_GET['from']);
+                    $this->session->set_userdata('contribution_transaction_from', format_date($_GET['from'], FALSE));
+                } else {
+                    // Clear session if GET is empty and set default
+                    $this->session->unset_userdata('contribution_transaction_from');
+                    $from = date('Y-m-d');
+                }
+            } else if ($this->session->userdata('contribution_transaction_from')) {
+                // Use session value if no GET/POST
+                $from = format_date($this->session->userdata('contribution_transaction_from'));
+            } else {
+                $from = date('Y-m-d');
+            }
 
-        if (isset($_POST['upto']) && $_POST['upto'] != '') {
-            $upto = format_date($_POST['upto']);
-        } else if (isset($_GET['upto'])) {
-            $upto = format_date($_GET['upto']);
+            if (isset($_POST['upto'])) {
+                if ($_POST['upto'] != '') {
+                    $upto = format_date($_POST['upto']);
+                    $this->session->set_userdata('contribution_transaction_upto', format_date($_POST['upto'], FALSE));
+                } else {
+                    // Clear session if empty value submitted and set default
+                    $this->session->unset_userdata('contribution_transaction_upto');
+                    $upto = date('Y-m-d');
+                }
+            } else if (isset($_GET['upto'])) {
+                // GET parameter takes priority - use it even if empty
+                if ($_GET['upto'] != '') {
+                    $upto = format_date($_GET['upto']);
+                    $this->session->set_userdata('contribution_transaction_upto', format_date($_GET['upto'], FALSE));
+                } else {
+                    // Clear session if GET is empty and set default
+                    $this->session->unset_userdata('contribution_transaction_upto');
+                    $upto = date('Y-m-d');
+                }
+            } else if ($this->session->userdata('contribution_transaction_upto')) {
+                // Use session value if no GET/POST
+                $upto = format_date($this->session->userdata('contribution_transaction_upto'));
+            } else {
+                $upto = date('Y-m-d');
+            }
         } else {
-            $upto = date('Y-m-d');
+            // Member ID is provided, ignore date filters
+            $from = null;
+            $upto = null;
         }
 
 
         $suffix_array = array();
 
-        if (!is_null($key)) {
+        if (!is_null($key) && $key != '') {
             $suffix_array['key'] = $key;
         }
 
-        if (!is_null($from)) {
+        if (!is_null($from) && $from != '') {
             $suffix_array['from'] = $from;
         }
 
-        if (!is_null($upto)) {
+        if (!is_null($upto) && $upto != '') {
             $suffix_array['upto'] = $upto;
         }
         $this->data['jxy'] = $suffix_array;
@@ -444,11 +533,33 @@ class Contribution extends CI_Controller {
         $page = ($this->uri->segment(4) ? $this->uri->segment(4) : 0);
         $this->data['links'] = $this->pagination->create_links();
 
+        // Pass key1 (can be null if empty) and date filters
         $this->data['transactionlist'] = $this->contribution_model->search_transaction($key1, $from, $upto, $config["per_page"], $page);
 
 
         $this->data['content'] = 'contribution/transaction_history';
         $this->load->view('template', $this->data);
+    }
+
+    function delete_transaction($receipt) {
+        // Verify receipt is provided
+        if (empty($receipt)) {
+            $this->session->set_flashdata('warning', 'Invalid transaction receipt');
+            redirect(current_lang() . '/contribution/contribution_transaction', 'refresh');
+            return;
+        }
+        
+        // Delete the transaction
+        $result = $this->contribution_model->delete_transaction($receipt);
+        
+        if ($result) {
+            $this->session->set_flashdata('message', 'Transaction deleted successfully');
+        } else {
+            $this->session->set_flashdata('warning', 'Failed to delete transaction. Transaction may not exist or you may not have permission.');
+        }
+        
+        // Redirect back to transaction list
+        redirect(current_lang() . '/contribution/contribution_transaction', 'refresh');
     }
 
     function contribution_post_to_gl(){

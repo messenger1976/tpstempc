@@ -24,8 +24,8 @@
                 <h4  style="padding: 0px; margin: 0px;"><strong>Joining  from <?php echo format_date($reportinfo->fromdate, false); ?> to <?php echo format_date($reportinfo->todate, false); ?></strong></h4>
             </div>
             <div style="padding-top: 20px;">
-                <div class="table-responsive" style="overflow: auto;">
-                    <table cellspacing="0" cellpadding="0" class="table" >
+                <div>
+                    <table cellspacing="0" cellpadding="0" class="table" style="width:100%;">
                         <thead>
                             <tr>
                                 <th style="text-align: center; width: 50px;">S/No</th>

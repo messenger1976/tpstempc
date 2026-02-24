@@ -206,11 +206,19 @@ class Setting extends CI_Controller {
             $id = decode_id($id);
         }
 
-        if ($this->input->post('minimum_amount')) {
-            $_POST['minimum_amount'] = str_replace(',', '', $_POST['minimum_amount']);
-            $_POST['max_withdrawal'] = str_replace(',', '', $_POST['max_withdrawal']);
-            $_POST['interest_rate'] = str_replace(',', '', $_POST['interest_rate']);
-            $_POST['min_deposit'] = str_replace(',', '', $_POST['min_deposit']);
+        // Handle comma-formatted monetary values before validation
+        // Remove commas from all monetary fields if they exist in POST
+        if ($this->input->post('minimum_amount') !== FALSE) {
+            $_POST['minimum_amount'] = str_replace(',', '', $this->input->post('minimum_amount'));
+        }
+        if ($this->input->post('max_withdrawal') !== FALSE) {
+            $_POST['max_withdrawal'] = str_replace(',', '', $this->input->post('max_withdrawal'));
+        }
+        if ($this->input->post('interest_rate') !== FALSE) {
+            $_POST['interest_rate'] = str_replace(',', '', $this->input->post('interest_rate'));
+        }
+        if ($this->input->post('min_deposit') !== FALSE) {
+            $_POST['min_deposit'] = str_replace(',', '', $this->input->post('min_deposit'));
         }
         $this->form_validation->set_rules('account_name', lang('account_name'), 'xss_clean|required');
         $this->form_validation->set_rules('account_description', lang('account_description'), 'xss_clean|required');
@@ -218,6 +226,8 @@ class Setting extends CI_Controller {
         $this->form_validation->set_rules('max_withdrawal', lang('account_max_withdrawal'), 'xss_clean|required|numeric');
         $this->form_validation->set_rules('interest_rate', lang('account_interest_rate'), 'xss_clean|required|numeric');
         $this->form_validation->set_rules('min_deposit', lang('account_min_deposit'), 'xss_clean|numeric');
+        $this->form_validation->set_rules('account_setup', 'Account Setup', 'xss_clean|required');
+        $this->form_validation->set_rules('account_setup_interest_rate', 'Account Setup for Interest Rate', 'xss_clean|required');
         if ($this->form_validation->run() == TRUE) {
             $account_info = array(
                 'name' => trim($this->input->post('account_name')),
@@ -226,6 +236,8 @@ class Setting extends CI_Controller {
                 'max_withdrawal' => trim($this->input->post('max_withdrawal')),
                 'interest_rate' => trim($this->input->post('interest_rate')),
                 'min_deposit' => trim($this->input->post('min_deposit')),
+                'account_setup' => trim($this->input->post('account_setup')),
+                'account_setup_interest_rate' => trim($this->input->post('account_setup_interest_rate')),
                 'PIN' =>  current_user()->PIN
             );
 
@@ -241,6 +253,57 @@ class Setting extends CI_Controller {
         if (!is_null($id)) {
             $this->data['account'] = $this->setting_model->saving_account_typelist($id)->row();
         }
+        
+        // Get account list and build hierarchical structure with indentation
+        $account_list_raw = $this->finance_model->account_chart_by_accounttype(array(10, 40, 50));
+        
+        // Build hierarchical tree structure with indentation based on account number
+        $account_tree = array();
+        foreach ($account_list_raw as $type_key => $type_data) {
+            $accounts = $type_data['data'];
+            
+            // Determine level based on account number structure (ladderize)
+            foreach ($accounts as $account) {
+                // Convert account to string and pad if needed
+                $account_str = str_pad((string)$account->account, 7, '0', STR_PAD_LEFT);
+                $level = 0;
+                
+                // Level detection based on trailing zeros or account structure
+                // Accounts ending in 0000 = Level 0 (Main)
+                // Accounts ending in 00 = Level 1 (Sub)
+                // Accounts ending in 0 = Level 2 (Detail)
+                // Other accounts = Level 3 (Sub-detail)
+                if (strlen($account_str) >= 4) {
+                    $last_4 = substr($account_str, -4);
+                    $last_2 = substr($account_str, -2);
+                    $last_1 = substr($account_str, -1);
+                    
+                    if ($last_4 == '0000') {
+                        $level = 0; // Main account
+                    } else if ($last_2 == '00') {
+                        $level = 1; // Sub-account
+                    } else if ($last_1 == '0') {
+                        $level = 2; // Detail account
+                    } else {
+                        $level = 3; // Sub-detail account
+                    }
+                }
+                // Ensure display_level is set
+                $account->display_level = (int)$level;
+            }
+            
+            // Sort by account number to maintain hierarchy
+            usort($accounts, function($a, $b) {
+                return (int)$a->account - (int)$b->account;
+            });
+            
+            $account_tree[$type_key] = array(
+                'info' => $type_data['info'],
+                'data' => $accounts
+            );
+        }
+        
+        $this->data['account_list'] = $account_tree;
         $this->data['content'] = 'setting/saving_account_typecreate';
         $this->load->view('template', $this->data);
     }
@@ -714,6 +777,449 @@ class Setting extends CI_Controller {
         $this->data['productlist'] = $this->setting_model->loanproduct()->result();
         $this->data['content'] = 'setting/loanproductlist';
         $this->load->view('template', $this->data);
+    }
+
+    function payment_method_list() {
+        // Allow admin users to access without permission check
+        if (!has_role(9, 'Manage_payment_method') && !$this->ion_auth->is_admin()) {
+            $this->session->set_flashdata('warning', lang('access_denied'));
+            redirect('dashboard', 'refresh');
+            return;
+        }
+        
+        $this->data['title'] = lang('payment_method_list');
+        $this->data['payment_method_list'] = $this->setting_model->payment_method_list()->result();
+        $this->data['content'] = 'setting/payment_method_list';
+        $this->load->view('template', $this->data);
+    }
+
+    function payment_method_create($id = null) {
+        // Allow admin users to access without permission check
+        if (!has_role(9, 'Manage_payment_method') && !$this->ion_auth->is_admin()) {
+            $this->session->set_flashdata('warning', lang('access_denied'));
+            redirect('dashboard', 'refresh');
+            return;
+        }
+        
+        $this->data['id'] = $id;
+        if (!is_null($id)) {
+            $id = decode_id($id);
+        }
+        if (is_null($id)) {
+            $this->data['title'] = lang('payment_method_create');
+        } else {
+            $this->data['title'] = lang('payment_method_edit');
+        }
+
+        $this->form_validation->set_rules('name', lang('payment_method_name'), 'xss_clean|required');
+        $this->form_validation->set_rules('description', lang('payment_method_description'), 'xss_clean');
+        $this->form_validation->set_rules('gl_account_code', lang('payment_method_gl_account'), 'xss_clean');
+
+        if ($this->form_validation->run() == TRUE) {
+            $payment_method_info = array(
+                'name' => trim($this->input->post('name')),
+                'description' => trim($this->input->post('description')),
+                'gl_account_code' => trim($this->input->post('gl_account_code')),
+                'status' => 1, // Default to active
+                'PIN' => current_user()->PIN
+            );
+
+            $error = 0;
+            // Check if payment method name already exists
+            if ($this->setting_model->is_payment_method_exist(trim($this->input->post('name')), $id)) {
+                $error = 1;
+            }
+
+            if ($error == 0) {
+                $create = $this->setting_model->payment_method_create($payment_method_info, $id);
+                if ($create) {
+                    $this->session->set_flashdata('message', lang('payment_method_success'));
+                    redirect(current_lang() . '/setting/payment_method_list', 'refresh');
+                } else {
+                    $this->data['warning'] = lang('payment_method_fail');
+                }
+            } else {
+                $this->data['warning'] = lang('payment_method_exist');
+            }
+        }
+
+        if (!is_null($id)) {
+            $this->data['payment_method'] = $this->setting_model->payment_method_list($id)->row();
+        }
+
+        // Get account list and build hierarchical structure with indentation
+        $account_list_raw = $this->finance_model->account_chart_by_accounttype(array(10, 40));
+        
+        // Build hierarchical tree structure with indentation based on account number
+        $account_tree = array();
+        foreach ($account_list_raw as $type_key => $type_data) {
+            $accounts = $type_data['data'];
+            
+            // Determine level based on account number structure (ladderize)
+            foreach ($accounts as $account) {
+                // Convert account to string and pad if needed
+                $account_str = str_pad((string)$account->account, 7, '0', STR_PAD_LEFT);
+                $level = 0;
+                
+                // Level detection based on trailing zeros or account structure
+                // Accounts ending in 0000 = Level 0 (Main)
+                // Accounts ending in 00 = Level 1 (Sub)
+                // Accounts ending in 0 = Level 2 (Detail)
+                // Other accounts = Level 3 (Sub-detail)
+                if (strlen($account_str) >= 4) {
+                    $last_4 = substr($account_str, -4);
+                    $last_2 = substr($account_str, -2);
+                    $last_1 = substr($account_str, -1);
+                    
+                    if ($last_4 == '0000') {
+                        $level = 0; // Main account
+                    } else if ($last_2 == '00') {
+                        $level = 1; // Sub-account
+                    } else if ($last_1 == '0') {
+                        $level = 2; // Detail account
+                    } else {
+                        $level = 3; // Sub-detail account
+                    }
+                }
+                // Ensure display_level is set
+                $account->display_level = (int)$level;
+            }
+            
+            // Sort by account number to maintain hierarchy
+            usort($accounts, function($a, $b) {
+                return (int)$a->account - (int)$b->account;
+            });
+            
+            $account_tree[$type_key] = array(
+                'info' => $type_data['info'],
+                'data' => $accounts
+            );
+        }
+        
+        $this->data['account_list'] = $account_tree;
+
+        $this->data['content'] = 'setting/payment_method_create';
+        $this->load->view('template', $this->data);
+    }
+
+    function payment_method_delete($id) {
+        // Allow admin users to access without permission check
+        if (!has_role(9, 'Manage_payment_method') && !$this->ion_auth->is_admin()) {
+            $this->session->set_flashdata('warning', lang('access_denied'));
+            redirect('dashboard', 'refresh');
+            return;
+        }
+        
+        if (empty($id)) {
+            $this->session->set_flashdata('warning', lang('payment_method_invalid_id'));
+            redirect(current_lang() . '/setting/payment_method_list', 'refresh');
+            return;
+        }
+        
+        $id = decode_id($id);
+        $id = (int) $id;
+
+        if (!$id || $id <= 0) {
+            $this->session->set_flashdata('warning', lang('payment_method_invalid_id'));
+            redirect(current_lang() . '/setting/payment_method_list', 'refresh');
+            return;
+        }
+
+        // Check if record exists before deleting
+        $payment_method = $this->setting_model->payment_method_list($id)->row();
+        if (!$payment_method) {
+            $this->session->set_flashdata('warning', lang('payment_method_not_found'));
+            redirect(current_lang() . '/setting/payment_method_list', 'refresh');
+            return;
+        }
+
+        $result = $this->setting_model->payment_method_delete($id);
+        if ($result) {
+            $this->session->set_flashdata('message', lang('payment_method_delete_success'));
+        } else {
+            $this->session->set_flashdata('warning', lang('payment_method_delete_fail'));
+        }
+        
+        redirect(current_lang() . '/setting/payment_method_list', 'refresh');
+    }
+
+    function payment_method_toggle_status($id) {
+        // Allow admin users to access without permission check
+        if (!has_role(9, 'Manage_payment_method') && !$this->ion_auth->is_admin()) {
+            echo json_encode(array('success' => false, 'message' => lang('access_denied')));
+            return;
+        }
+
+        if (!is_null($id)) {
+            $id = decode_id($id);
+            $id = (int) $id;
+
+            if (!$id) {
+                echo json_encode(array('success' => false, 'message' => lang('payment_method_invalid_id')));
+                return;
+            }
+
+            $result = $this->setting_model->payment_method_toggle_status($id);
+            if ($result) {
+                $payment_method = $this->setting_model->payment_method_list($id)->row();
+                echo json_encode(array(
+                    'success' => true,
+                    'message' => lang('payment_method_status_updated'),
+                    'status' => $payment_method->status,
+                    'status_text' => $payment_method->status == 1 ? lang('payment_method_active') : lang('payment_method_inactive')
+                ));
+            } else {
+                echo json_encode(array('success' => false, 'message' => lang('payment_method_status_update_fail')));
+            }
+        } else {
+            echo json_encode(array('success' => false, 'message' => lang('payment_method_invalid_id')));
+        }
+    }
+
+    // Fiscal Year Methods
+    function fiscal_year_list() {
+        // Check if user is admin
+        if (!$this->ion_auth->is_admin()) {
+            $this->session->set_flashdata('warning', lang('access_denied'));
+            redirect('dashboard', 'refresh');
+            return;
+        }
+
+        $this->data['title'] = lang('fiscal_year_list');
+        $this->data['fiscal_years'] = $this->setting_model->fiscal_year_list()->result();
+        $this->data['active_fiscal_year'] = $this->setting_model->get_active_fiscal_year();
+        $this->data['content'] = 'setting/fiscal_year_list';
+        $this->load->view('template', $this->data);
+    }
+
+    function fiscal_year_create($id = null) {
+        // Check if user is admin
+        if (!$this->ion_auth->is_admin()) {
+            $this->session->set_flashdata('warning', lang('access_denied'));
+            redirect('dashboard', 'refresh');
+            return;
+        }
+
+        $this->data['id'] = $id;
+        if (!is_null($id)) {
+            $id = decode_id($id);
+        }
+
+        if (is_null($id)) {
+            $this->data['title'] = lang('fiscal_year_create');
+        } else {
+            $this->data['title'] = lang('fiscal_year_edit');
+        }
+
+        $this->form_validation->set_rules('name', lang('fiscal_year_name'), 'xss_clean|required');
+        $this->form_validation->set_rules('start_date', lang('fiscal_year_start_date'), 'xss_clean|required|callback_valid_date_mmddyyyy');
+        $this->form_validation->set_rules('end_date', lang('fiscal_year_end_date'), 'xss_clean|required|callback_valid_date_mmddyyyy');
+
+        if ($this->form_validation->run() == TRUE) {
+            $start_date = date('Y-m-d', strtotime($this->input->post('start_date')));
+            $end_date = date('Y-m-d', strtotime($this->input->post('end_date')));
+
+            // Validate date range
+            if (strtotime($end_date) <= strtotime($start_date)) {
+                $this->data['warning'] = lang('fiscal_year_end_date_before_start');
+            } else {
+                $fiscal_year_info = array(
+                    'name' => trim($this->input->post('name')),
+                    'start_date' => $start_date,
+                    'end_date' => $end_date,
+                    'created_by' => current_user()->id,
+                    'PIN' => current_user()->PIN
+                );
+
+                $error = 0;
+                // Check if fiscal year name already exists
+                if ($this->setting_model->is_fiscal_year_exist(trim($this->input->post('name')), $id)) {
+                    $error = 1;
+                }
+
+                if ($error == 0) {
+                    $create = $this->setting_model->fiscal_year_create($fiscal_year_info, $id);
+                    if ($create) {
+                        $this->session->set_flashdata('message', lang('fiscal_year_success'));
+                        redirect(current_lang() . '/setting/fiscal_year_list', 'refresh');
+                    } else {
+                        $this->data['warning'] = lang('fiscal_year_fail');
+                    }
+                } else {
+                    $this->data['warning'] = lang('fiscal_year_exist');
+                }
+            }
+        }
+
+        if (!is_null($id)) {
+            $this->data['fiscal_year'] = $this->setting_model->fiscal_year_list($id)->row();
+        }
+
+        $this->data['content'] = 'setting/fiscal_year_create';
+        $this->load->view('template', $this->data);
+    }
+
+    function fiscal_year_delete($id) {
+        // Check if user is admin
+        if (!$this->ion_auth->is_admin()) {
+            $this->session->set_flashdata('warning', lang('access_denied'));
+            redirect('dashboard', 'refresh');
+            return;
+        }
+
+        if (empty($id)) {
+            $this->session->set_flashdata('warning', lang('fiscal_year_invalid_id'));
+            redirect(current_lang() . '/setting/fiscal_year_list', 'refresh');
+            return;
+        }
+
+        $id = decode_id($id);
+        $id = (int) $id;
+
+        if (!$id || $id <= 0) {
+            $this->session->set_flashdata('warning', lang('fiscal_year_invalid_id'));
+            redirect(current_lang() . '/setting/fiscal_year_list', 'refresh');
+            return;
+        }
+
+        // Check if record exists before deleting
+        $fiscal_year = $this->setting_model->fiscal_year_list($id)->row();
+        if (!$fiscal_year) {
+            $this->session->set_flashdata('warning', lang('fiscal_year_not_found'));
+            redirect(current_lang() . '/setting/fiscal_year_list', 'refresh');
+            return;
+        }
+
+        // Check if trying to delete active fiscal year
+        if ($fiscal_year->status == 1) {
+            $this->session->set_flashdata('warning', lang('fiscal_year_cannot_delete_active'));
+            redirect(current_lang() . '/setting/fiscal_year_list', 'refresh');
+            return;
+        }
+
+        $result = $this->setting_model->fiscal_year_delete($id);
+        if ($result) {
+            $this->session->set_flashdata('message', lang('fiscal_year_delete_success'));
+        } else {
+            $this->session->set_flashdata('warning', lang('fiscal_year_delete_fail'));
+        }
+
+        redirect(current_lang() . '/setting/fiscal_year_list', 'refresh');
+    }
+
+    function fiscal_year_set_active($id) {
+        // Check if user is admin
+        if (!$this->ion_auth->is_admin()) {
+            $this->session->set_flashdata('warning', lang('access_denied'));
+            redirect('dashboard', 'refresh');
+            return;
+        }
+
+        if (!is_null($id)) {
+            $id = decode_id($id);
+            $id = (int) $id;
+
+            if (!$id) {
+                $this->session->set_flashdata('warning', lang('fiscal_year_invalid_id'));
+                redirect(current_lang() . '/setting/fiscal_year_list', 'refresh');
+                return;
+            }
+
+            // Check if fiscal year exists
+            $fiscal_year = $this->setting_model->fiscal_year_list($id)->row();
+            if (!$fiscal_year) {
+                $this->session->set_flashdata('warning', lang('fiscal_year_not_found'));
+                redirect(current_lang() . '/setting/fiscal_year_list', 'refresh');
+                return;
+            }
+
+            $result = $this->setting_model->fiscal_year_set_active($id);
+            if ($result) {
+                $this->session->set_flashdata('message', lang('fiscal_year_set_active_success'));
+            } else {
+                $this->session->set_flashdata('warning', lang('fiscal_year_set_active_fail'));
+            }
+        } else {
+            $this->session->set_flashdata('warning', lang('fiscal_year_invalid_id'));
+        }
+
+        redirect(current_lang() . '/setting/fiscal_year_list', 'refresh');
+    }
+
+    function fiscal_year_toggle_status($id) {
+        // Check if user is admin
+        if (!$this->ion_auth->is_admin()) {
+            $this->session->set_flashdata('warning', lang('access_denied'));
+            redirect('dashboard', 'refresh');
+            return;
+        }
+
+        if (!is_null($id)) {
+            $id = decode_id($id);
+            $id = (int) $id;
+
+            if (!$id) {
+                $this->session->set_flashdata('warning', lang('fiscal_year_invalid_id'));
+                redirect(current_lang() . '/setting/fiscal_year_list', 'refresh');
+                return;
+            }
+
+            // Check if fiscal year exists
+            $fiscal_year = $this->setting_model->fiscal_year_list($id)->row();
+            if (!$fiscal_year) {
+                $this->session->set_flashdata('warning', lang('fiscal_year_not_found'));
+                redirect(current_lang() . '/setting/fiscal_year_list', 'refresh');
+                return;
+            }
+
+            // Toggle the status
+            $new_status = $fiscal_year->status == 1 ? 0 : 1;
+            $action_text = $new_status == 1 ? 'activated' : 'deactivated';
+
+            $result = $this->setting_model->fiscal_year_toggle_status($id, $new_status);
+            if ($result) {
+                $this->session->set_flashdata('message', "Fiscal year '{$fiscal_year->name}' has been {$action_text} successfully.");
+            } else {
+                $this->session->set_flashdata('warning', lang('fiscal_year_set_active_fail'));
+            }
+        } else {
+            $this->session->set_flashdata('warning', lang('fiscal_year_invalid_id'));
+        }
+
+        redirect(current_lang() . '/setting/fiscal_year_list', 'refresh');
+    }
+
+    // Custom validation callback for MM/DD/YYYY date format
+    function valid_date_mmddyyyy($date) {
+        if (empty($date)) {
+            $this->form_validation->set_message('valid_date_mmddyyyy', 'The %s field is required.');
+            return FALSE;
+        }
+
+        // Check MM/DD/YYYY format
+        if (!preg_match('/^(0[1-9]|1[0-2])\/(0[1-9]|[12][0-9]|3[01])\/\d{4}$/', $date)) {
+            $this->form_validation->set_message('valid_date_mmddyyyy', 'The %s must be in MM/DD/YYYY format.');
+            return FALSE;
+        }
+
+        // Validate the date is real
+        $parts = explode('/', $date);
+        $month = (int)$parts[0];
+        $day = (int)$parts[1];
+        $year = (int)$parts[2];
+
+        if (!checkdate($month, $day, $year)) {
+            $this->form_validation->set_message('valid_date_mmddyyyy', 'The %s contains an invalid date.');
+            return FALSE;
+        }
+
+        // Check reasonable year range
+        if ($year < 1900 || $year > 2100) {
+            $this->form_validation->set_message('valid_date_mmddyyyy', 'The %s year must be between 1900 and 2100.');
+            return FALSE;
+        }
+
+        return TRUE;
     }
 
 }

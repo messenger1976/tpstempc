@@ -17,7 +17,7 @@
     <title>Talibon Public School Teachers and Employees Multi-Purpose Cooperative  | <?php echo $current_title; ?></title>
 
     <link href="<?php echo base_url(); ?>media/css/bootstrap.min.css" rel="stylesheet">
-    <link href="<?php echo base_url(); ?>media/font-awesome/css/font-awesome.css" rel="stylesheet">
+    <link href="<?php echo base_url(); ?>assets/font-awesome/css/font-awesome.css?v=4.7.0" rel="stylesheet">
 
     <!-- Morris -->
     <link href="<?php echo base_url(); ?>media/css/plugins/morris/morris-0.4.3.min.css" rel="stylesheet">
@@ -27,43 +27,6 @@
 
     <link href="<?php echo base_url(); ?>media/css/animate.css" rel="stylesheet">
     <link href="<?php echo base_url(); ?>media/css/style.css" rel="stylesheet">
-
-<!-- Mainly scripts -->
-<script src="<?php echo base_url(); ?>media/js/jquery-1.10.2.js"></script>
-        <script src="<?php echo base_url(); ?>media/js/bootstrap.min.js"></script>
-        <script src="<?php echo base_url(); ?>media/js/plugins/metisMenu/jquery.metisMenu.js"></script>
-        <script src="<?php echo base_url(); ?>media/js/plugins/slimscroll/jquery.slimscroll.min.js"></script>
-
-        <!-- Flot -->
-       <script src="<?php echo base_url(); ?>media/js/plugins/flot/jquery.flot.js"></script>
-        <script src="<?php echo base_url(); ?>media/js/plugins/flot/jquery.flot.tooltip.min.js"></script>
-        <script src="<?php echo base_url(); ?>media/js/plugins/flot/jquery.flot.spline.js"></script>
-        <script src="<?php echo base_url(); ?>media/js/plugins/flot/jquery.flot.resize.js"></script>
-        <script src="<?php echo base_url(); ?>media/js/plugins/flot/jquery.flot.pie.js"></script>
-
-        <!-- Peity -->
-        <script src="<?php echo base_url(); ?>media/js/plugins/peity/jquery.peity.min.js"></script>
-        <script src="<?php echo base_url(); ?>media/js/demo/peity-demo.js"></script>
-
-        <!-- Custom and plugin javascript -->
-       <script src="<?php echo base_url(); ?>media/js/inspinia.js"></script> 
-        <!--<script src="<?php echo base_url(); ?>media/js/plugins/pace/pace.min.js"></script>-->
-
-        <!-- jQuery UI -->
-        <script src="<?php echo base_url(); ?>media/js/plugins/jquery-ui/jquery-ui.min.js"></script>
-
-        <!-- GITTER -->
-        <script src="<?php echo base_url(); ?>media/js/plugins/gritter/jquery.gritter.min.js"></script>
-
-        <!-- EayPIE -->
-        <script src="<?php echo base_url(); ?>media/js/plugins/easypiechart/jquery.easypiechart.js"></script>
-
-        <!-- Sparkline -->
-        <script src="<?php echo base_url(); ?>media/js/plugins/sparkline/jquery.sparkline.min.js"></script>
-
-       
-        <!-- ChartJS -->
-        <script src="<?php echo base_url(); ?>media/js/plugins/chartJs/Chart.min.js"></script>    
 </head>
 
 <body>
@@ -353,6 +316,54 @@
                         </div>
                     </div>
                 </div>
+                
+                <!-- Loan Aging Summary -->
+                <?php if (isset($loan_aging_data) && !empty($loan_aging_data)) { ?>
+                <div class="row" style="margin-top: 20px;">
+                    <div class="col-lg-12">
+                        <div class="ibox float-e-margins">
+                            <div class="ibox-title" style="border-bottom: 2px solid #ed5565;">
+                                <h5 style="color: #ed5565; font-weight: bold;"><i class="fa fa-exclamation-triangle"></i> Loan Aging Summary (As of <?php echo date('F d, Y'); ?>)</h5>
+                            </div>
+                            <div class="ibox-content" style="background: white;">
+                                <div class="row">
+                                    <?php 
+                                    $aging_buckets = array(
+                                        'current' => array('label' => 'Current (0-30 days)', 'color' => '#1ab394', 'icon' => 'fa-check-circle'),
+                                        '31_60' => array('label' => '31-60 days', 'color' => '#f8ac59', 'icon' => 'fa-clock-o'),
+                                        '61_90' => array('label' => '61-90 days', 'color' => '#ed5565', 'icon' => 'fa-exclamation-circle'),
+                                        '91_180' => array('label' => '91-180 days', 'color' => '#d9534f', 'icon' => 'fa-warning'),
+                                        'over_180' => array('label' => 'Over 180 days', 'color' => '#a94442', 'icon' => 'fa-times-circle')
+                                    );
+                                    foreach ($aging_buckets as $key => $bucket_info) {
+                                        $bucket = isset($loan_aging_data[$key]) ? $loan_aging_data[$key] : null;
+                                        $total_balance = $bucket ? $bucket['total_balance'] : 0;
+                                        $loan_count = $bucket ? count($bucket['loans']) : 0;
+                                    ?>
+                                    <div class="col-lg-2 col-md-4 col-sm-6" style="margin-bottom: 15px;">
+                                        <div style="border-left: 4px solid <?php echo $bucket_info['color']; ?>; padding: 15px; background: #f8f9fa; border-radius: 4px;">
+                                            <div style="text-align: center;">
+                                                <i class="fa <?php echo $bucket_info['icon']; ?> fa-2x" style="color: <?php echo $bucket_info['color']; ?>;"></i>
+                                                <h4 style="color: <?php echo $bucket_info['color']; ?>; margin: 10px 0 5px 0; font-weight: bold;">
+                                                    <?php echo number_format($total_balance, 2); ?>
+                                                </h4>
+                                                <small style="color: #777; display: block; margin-bottom: 5px;">
+                                                    <?php echo $bucket_info['label']; ?>
+                                                </small>
+                                                <span style="color: #555; font-size: 12px;">
+                                                    <?php echo $loan_count; ?> loan(s)
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <?php } ?>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <?php } ?>
+                
                 <!-- Loan Collections and Performance Chart -->
                 <div class="row" style="margin-top: 20px;">
                     <div class="col-lg-12">
@@ -389,7 +400,7 @@
                                                 <small style="color: #777;">Collections (Last Month)</small>
                                                 <div class="stat-percent" style="color: #1c84c6;">Collection Rate <i class="fa fa-check-circle text-navy"></i></div>
                                                 <div class="progress progress-mini" style="margin-top: 8px;">
-                                                    <div style="width: 85%;" class="progress-bar progress-bar-info"></div>
+                                                    <div style="width: <?php echo isset($collection_rate) ? min($collection_rate, 100) : 0; ?>%;" class="progress-bar progress-bar-info"></div>
                                                 </div>
                                             </li>
                                             <li style="border-left: 3px solid #f8ac59; padding-left: 15px; margin-top: 20px;">
@@ -397,9 +408,23 @@
                                                 <small style="color: #777;">On-Time Payment Rate</small>
                                                 <div class="stat-percent" style="color: #f8ac59;">Performance <i class="fa fa-trophy text-navy"></i></div>
                                                 <div class="progress progress-mini" style="margin-top: 8px;">
-                                                    <div style="width: <?php echo isset($payment_rate) ? $payment_rate : 0; ?>%;" class="progress-bar progress-bar-warning"></div>
+                                                    <div style="width: <?php echo isset($payment_rate) ? min($payment_rate, 100) : 0; ?>%;" class="progress-bar progress-bar-warning"></div>
                                                 </div>
                                             </li>
+                                            <?php if (isset($loan_aging_data)) { ?>
+                                            <li style="border-left: 3px solid #ed5565; padding-left: 15px; margin-top: 20px;">
+                                                <h2 class="no-margins" style="color: #ed5565;"><?php echo isset($loan_aging_data['over_180']['total_balance']) ? number_format($loan_aging_data['over_180']['total_balance'], 2) : '0.00'; ?></h2>
+                                                <small style="color: #777;">Overdue > 180 Days</small>
+                                                <div class="stat-percent" style="color: #ed5565;">High Risk <i class="fa fa-exclamation-triangle text-navy"></i></div>
+                                                <div class="progress progress-mini" style="margin-top: 8px;">
+                                                    <?php 
+                                                    $total_outstanding = isset($total_active_loans) ? $total_active_loans : 1;
+                                                    $overdue_pct = $total_outstanding > 0 ? ($loan_aging_data['over_180']['total_balance'] / $total_outstanding * 100) : 0;
+                                                    ?>
+                                                    <div style="width: <?php echo min($overdue_pct, 100); ?>%;" class="progress-bar progress-bar-danger"></div>
+                                                </div>
+                                            </li>
+                                            <?php } ?>
                                         </ul>
                                     </div>
                                 </div>
@@ -694,42 +719,40 @@
     </div>
 
     <!-- Mainly scripts -->
-    <script src="js/jquery-2.1.1.js"></script>
-    <script src="js/bootstrap.min.js"></script>
-    <script src="js/plugins/metisMenu/jquery.metisMenu.js"></script>
-    <script src="js/plugins/slimscroll/jquery.slimscroll.min.js"></script>
+    <script src="<?php echo base_url(); ?>media/js/jquery-1.10.2.js"></script>
+    <script src="<?php echo base_url(); ?>media/js/bootstrap.min.js"></script>
+    <script src="<?php echo base_url(); ?>media/js/plugins/metisMenu/jquery.metisMenu.js"></script>
+    <script src="<?php echo base_url(); ?>media/js/plugins/slimscroll/jquery.slimscroll.min.js"></script>
 
     <!-- Flot -->
-    <script src="js/plugins/flot/jquery.flot.js"></script>
-    <script src="js/plugins/flot/jquery.flot.tooltip.min.js"></script>
-    <script src="js/plugins/flot/jquery.flot.spline.js"></script>
-    <script src="js/plugins/flot/jquery.flot.resize.js"></script>
-    <script src="js/plugins/flot/jquery.flot.pie.js"></script>
-    <script src="js/plugins/flot/jquery.flot.symbol.js"></script>
+    <script src="<?php echo base_url(); ?>media/js/plugins/flot/jquery.flot.js"></script>
+    <script src="<?php echo base_url(); ?>media/js/plugins/flot/jquery.flot.tooltip.min.js"></script>
+    <script src="<?php echo base_url(); ?>media/js/plugins/flot/jquery.flot.spline.js"></script>
+    <script src="<?php echo base_url(); ?>media/js/plugins/flot/jquery.flot.resize.js"></script>
+    <script src="<?php echo base_url(); ?>media/js/plugins/flot/jquery.flot.pie.js"></script>
 
     <!-- Peity -->
-    <script src="js/plugins/peity/jquery.peity.min.js"></script>
-    <script src="js/demo/peity-demo.js"></script>
+    <script src="<?php echo base_url(); ?>media/js/plugins/peity/jquery.peity.min.js"></script>
+    <script src="<?php echo base_url(); ?>media/js/demo/peity-demo.js"></script>
 
     <!-- Custom and plugin javascript -->
-    <script src="js/inspinia.js"></script>
-    <!--<script src="js/plugins/pace/pace.min.js"></script>-->
+    <script src="<?php echo base_url(); ?>media/js/inspinia.js"></script>
+    <!--<script src="<?php echo base_url(); ?>media/js/plugins/pace/pace.min.js"></script>-->
 
     <!-- jQuery UI -->
-    <script src="js/plugins/jquery-ui/jquery-ui.min.js"></script>
+    <script src="<?php echo base_url(); ?>media/js/plugins/jquery-ui/jquery-ui.min.js"></script>
 
-    <!-- Jvectormap -->
-    <script src="js/plugins/jvectormap/jquery-jvectormap-1.2.2.min.js"></script>
-    <script src="js/plugins/jvectormap/jquery-jvectormap-world-mill-en.js"></script>
+    <!-- GITTER -->
+    <script src="<?php echo base_url(); ?>media/js/plugins/gritter/jquery.gritter.min.js"></script>
 
     <!-- EayPIE -->
-    <script src="js/plugins/easypiechart/jquery.easypiechart.js"></script>
+    <script src="<?php echo base_url(); ?>media/js/plugins/easypiechart/jquery.easypiechart.js"></script>
 
     <!-- Sparkline -->
-    <script src="js/plugins/sparkline/jquery.sparkline.min.js"></script>
+    <script src="<?php echo base_url(); ?>media/js/plugins/sparkline/jquery.sparkline.min.js"></script>
 
-    <!-- Sparkline demo data  -->
-    <script src="js/demo/sparkline-demo.js"></script>
+    <!-- ChartJS -->
+    <script src="<?php echo base_url(); ?>media/js/plugins/chartJs/Chart.min.js"></script>
 
     <script>
         $(document).ready(function() {
@@ -749,106 +772,192 @@
                 size: 80
             });
 
-            var data2 = [
-                [gd(2012, 1, 1), 7], [gd(2012, 1, 2), 6], [gd(2012, 1, 3), 4], [gd(2012, 1, 4), 8],
-                [gd(2012, 1, 5), 9], [gd(2012, 1, 6), 7], [gd(2012, 1, 7), 5], [gd(2012, 1, 8), 4],
-                [gd(2012, 1, 9), 7], [gd(2012, 1, 10), 8], [gd(2012, 1, 11), 9], [gd(2012, 1, 12), 6],
-                [gd(2012, 1, 13), 4], [gd(2012, 1, 14), 5], [gd(2012, 1, 15), 11], [gd(2012, 1, 16), 8],
-                [gd(2012, 1, 17), 8], [gd(2012, 1, 18), 11], [gd(2012, 1, 19), 11], [gd(2012, 1, 20), 6],
-                [gd(2012, 1, 21), 6], [gd(2012, 1, 22), 8], [gd(2012, 1, 23), 11], [gd(2012, 1, 24), 13],
-                [gd(2012, 1, 25), 7], [gd(2012, 1, 26), 9], [gd(2012, 1, 27), 9], [gd(2012, 1, 28), 8],
-                [gd(2012, 1, 29), 5], [gd(2012, 1, 30), 8], [gd(2012, 1, 31), 25]
-            ];
-
-            var data3 = [
-                [gd(2012, 1, 1), 800], [gd(2012, 1, 2), 500], [gd(2012, 1, 3), 600], [gd(2012, 1, 4), 700],
-                [gd(2012, 1, 5), 500], [gd(2012, 1, 6), 456], [gd(2012, 1, 7), 800], [gd(2012, 1, 8), 589],
-                [gd(2012, 1, 9), 467], [gd(2012, 1, 10), 876], [gd(2012, 1, 11), 689], [gd(2012, 1, 12), 700],
-                [gd(2012, 1, 13), 500], [gd(2012, 1, 14), 600], [gd(2012, 1, 15), 700], [gd(2012, 1, 16), 786],
-                [gd(2012, 1, 17), 345], [gd(2012, 1, 18), 888], [gd(2012, 1, 19), 888], [gd(2012, 1, 20), 888],
-                [gd(2012, 1, 21), 987], [gd(2012, 1, 22), 444], [gd(2012, 1, 23), 999], [gd(2012, 1, 24), 567],
-                [gd(2012, 1, 25), 786], [gd(2012, 1, 26), 666], [gd(2012, 1, 27), 888], [gd(2012, 1, 28), 900],
-                [gd(2012, 1, 29), 178], [gd(2012, 1, 30), 555], [gd(2012, 1, 31), 993]
-            ];
-
-
-            var dataset = [
-                {
-                    label: "Loan Collections",
-                    data: data3,
+            // Prepare monthly collections data
+            var monthlyCollections = <?php echo json_encode(isset($monthly_collections) ? $monthly_collections : array()); ?>;
+            var collectionsData = [];
+            var maxCollection = 0;
+            
+            // Convert monthly collections to chart data format
+            for (var month in monthlyCollections) {
+                if (monthlyCollections.hasOwnProperty(month)) {
+                    var dateParts = month.split('-');
+                    var year = parseInt(dateParts[0]);
+                    var monthNum = parseInt(dateParts[1]);
+                    var day = 15; // Use middle of month for display
+                    var timestamp = gd(year, monthNum, day);
+                    var amount = parseFloat(monthlyCollections[month]) || 0;
+                    collectionsData.push([timestamp, amount]);
+                    if (amount > maxCollection) {
+                        maxCollection = amount;
+                    }
+                }
+            }
+            
+            // Sort by timestamp
+            collectionsData.sort(function(a, b) {
+                return a[0] - b[0];
+            });
+            
+            // Prepare loan aging data for display
+            var loanAgingData = <?php echo json_encode(isset($loan_aging_data) ? $loan_aging_data : array()); ?>;
+            var agingSeries = [];
+            
+            if (loanAgingData && Object.keys(loanAgingData).length > 0) {
+                // Create series for each aging bucket
+                var agingBuckets = [
+                    {key: 'current', label: 'Current (0-30 days)', color: '#1ab394'},
+                    {key: '31_60', label: '31-60 days', color: '#f8ac59'},
+                    {key: '61_90', label: '61-90 days', color: '#ed5565'},
+                    {key: '91_180', label: '91-180 days', color: '#d9534f'},
+                    {key: 'over_180', label: 'Over 180 days', color: '#a94442'}
+                ];
+                
+                // Get current date for display
+                var now = new Date();
+                var currentTimestamp = gd(now.getFullYear(), now.getMonth() + 1, now.getDate());
+                
+                agingBuckets.forEach(function(bucket) {
+                    if (loanAgingData[bucket.key] && loanAgingData[bucket.key].total_balance > 0) {
+                        agingSeries.push({
+                            label: bucket.label,
+                            data: [[currentTimestamp, parseFloat(loanAgingData[bucket.key].total_balance)]],
+                            color: bucket.color,
+                            bars: {
+                                show: true,
+                                align: "center",
+                                barWidth: 7 * 24 * 60 * 60 * 1000, // 7 days width
+                                lineWidth: 0,
+                                fill: true,
+                                fillColor: bucket.color
+                            }
+                        });
+                    }
+                });
+            }
+            
+            // Build dataset
+            var dataset = [];
+            
+            // Add monthly collections as bars
+            if (collectionsData.length > 0) {
+                dataset.push({
+                    label: "Monthly Collections",
+                    data: collectionsData,
                     color: "#1ab394",
                     bars: {
                         show: true,
                         align: "center",
-                        barWidth: 24 * 60 * 60 * 600,
-                        lineWidth:0
+                        barWidth: 20 * 24 * 60 * 60 * 1000, // ~20 days width for monthly bars
+                        lineWidth: 0,
+                        fill: true,
+                        fillColor: "#1ab394"
                     }
-
-                }, {
-                    label: "Loan Releases",
-                    data: data2,
-                    yaxis: 2,
-                    color: "#464f88",
-                    lines: {
-                        lineWidth:1,
-                            show: true,
-                            fill: true,
-                        fillColor: {
-                            colors: [{
-                                opacity: 0.2
-                            }, {
-                                opacity: 0.2
-                            }]
-                        }
-                    },
-                    splines: {
-                        show: false,
-                        tension: 0.6,
-                        lineWidth: 1,
-                        fill: 0.1
-                    },
+                });
+            }
+            
+            // Add aging buckets as separate series (stacked or side-by-side)
+            if (agingSeries.length > 0) {
+                // Add aging data as a line/area chart overlay
+                var agingTotalData = [];
+                if (loanAgingData) {
+                    var totalAging = 0;
+                    if (loanAgingData.current) totalAging += parseFloat(loanAgingData.current.total_balance || 0);
+                    if (loanAgingData['31_60']) totalAging += parseFloat(loanAgingData['31_60'].total_balance || 0);
+                    if (loanAgingData['61_90']) totalAging += parseFloat(loanAgingData['61_90'].total_balance || 0);
+                    if (loanAgingData['91_180']) totalAging += parseFloat(loanAgingData['91_180'].total_balance || 0);
+                    if (loanAgingData.over_180) totalAging += parseFloat(loanAgingData.over_180.total_balance || 0);
+                    
+                    if (totalAging > 0) {
+                        var now = new Date();
+                        var currentTimestamp = gd(now.getFullYear(), now.getMonth() + 1, now.getDate());
+                        agingTotalData.push([currentTimestamp, totalAging]);
+                        
+                        dataset.push({
+                            label: "Total Outstanding Loans",
+                            data: agingTotalData,
+                            yaxis: 2,
+                            color: "#464f88",
+                            points: {
+                                show: true,
+                                radius: 5,
+                                fill: true
+                            },
+                            lines: {
+                                show: false
+                            }
+                        });
+                    }
                 }
-            ];
-
-
+            }
+            
+            // Calculate max value for y-axis
+            var maxY = Math.max(maxCollection, 1000);
+            if (loanAgingData) {
+                var totalAging = 0;
+                if (loanAgingData.current) totalAging += parseFloat(loanAgingData.current.total_balance || 0);
+                if (loanAgingData['31_60']) totalAging += parseFloat(loanAgingData['31_60'].total_balance || 0);
+                if (loanAgingData['61_90']) totalAging += parseFloat(loanAgingData['61_90'].total_balance || 0);
+                if (loanAgingData['91_180']) totalAging += parseFloat(loanAgingData['91_180'].total_balance || 0);
+                if (loanAgingData.over_180) totalAging += parseFloat(loanAgingData.over_180.total_balance || 0);
+                maxY = Math.max(maxY, totalAging * 1.1); // Add 10% padding
+            }
+            
             var options = {
                 xaxis: {
                     mode: "time",
-                    tickSize: [3, "day"],
+                    tickSize: [1, "month"],
                     tickLength: 0,
-                    axisLabel: "Date (Monthly)",
+                    axisLabel: "Month",
                     axisLabelUseCanvas: true,
                     axisLabelFontSizePixels: 12,
                     axisLabelFontFamily: 'Arial',
                     axisLabelPadding: 10,
-                    color: "#838383"
+                    color: "#838383",
+                    timeformat: "%b %Y"
                 },
                 yaxes: [{
                     position: "left",
-                    max: 1070,
+                    max: maxY,
                     color: "#838383",
+                    axisLabel: "Amount",
                     axisLabelUseCanvas: true,
                     axisLabelFontSizePixels: 12,
                     axisLabelFontFamily: 'Arial',
-                    axisLabelPadding: 3
+                    axisLabelPadding: 3,
+                    tickFormatter: function(val) {
+                        return val.toLocaleString();
+                    }
                 }, {
                     position: "right",
-                    clolor: "#838383",
+                    color: "#838383",
+                    axisLabel: "Outstanding Balance",
                     axisLabelUseCanvas: true,
                     axisLabelFontSizePixels: 12,
-                    axisLabelFontFamily: ' Arial',
-                    axisLabelPadding: 67
-                }
-                ],
+                    axisLabelFontFamily: 'Arial',
+                    axisLabelPadding: 67,
+                    tickFormatter: function(val) {
+                        return val.toLocaleString();
+                    }
+                }],
                 legend: {
-                    noColumns: 1,
+                    noColumns: 2,
                     labelBoxBorderColor: "#000000",
-                    position: "nw"
+                    position: "nw",
+                    show: true
                 },
                 grid: {
-                    hoverable: false,
-                    borderWidth: 0,
-                    color: '#838383'
+                    hoverable: true,
+                    borderWidth: 1,
+                    color: '#838383',
+                    clickable: true
+                },
+                tooltip: true,
+                tooltipOpts: {
+                    content: "%s: %y",
+                    shifts: {
+                        x: -60,
+                        y: 25
+                    }
                 }
             };
 
@@ -859,6 +968,39 @@
             var previousPoint = null, previousLabel = null;
 
             $.plot($("#flot-dashboard-chart"), dataset, options);
+            
+            // Add tooltip functionality
+            $("#flot-dashboard-chart").bind("plothover", function (event, pos, item) {
+                if (item) {
+                    if (previousPoint != item.dataIndex || previousLabel != item.series.label) {
+                        previousPoint = item.dataIndex;
+                        previousLabel = item.series.label;
+                        
+                        $("#tooltip").remove();
+                        var x = item.datapoint[0],
+                            y = item.datapoint[1];
+                        
+                        showTooltip(item.pageX, item.pageY,
+                                    item.series.label + ": " + y.toLocaleString());
+                    }
+                } else {
+                    $("#tooltip").remove();
+                    previousPoint = null;
+                }
+            });
+            
+            function showTooltip(x, y, contents) {
+                $('<div id="tooltip">' + contents + '</div>').css({
+                    position: 'absolute',
+                    display: 'none',
+                    top: y + 5,
+                    left: x + 5,
+                    border: '1px solid #fdd',
+                    padding: '2px',
+                    'background-color': '#fee',
+                    opacity: 0.80
+                }).appendTo("body").fadeIn(200);
+            }
 
             // World map removed - not needed for cooperative dashboard
         });

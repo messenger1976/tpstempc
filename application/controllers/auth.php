@@ -800,23 +800,260 @@ class Auth extends CI_Controller {
          $group_id = decode_id($group_id);
          
         $group = $this->ion_auth->group($group_id)->row();
+        
+        // Debug: Log all POST data
+        if ($this->input->post('save')) {
+            log_message('debug', 'Permission save - POST data: ' . print_r($this->input->post(), true));
+        }
+        
         if ($this->input->post('save')) {
             $priv = $this->ion_auth->privilege_list($group_id);
-            foreach ($priv[1] as $key => $value) {
-                foreach ($value as $k => $v) {
-                    if ($this->input->post('module_' . $v[0] . '_' . $v[1])) {
-                        $check = $this->db->get_where('access_level', array('group_id' => $group_id, 'Module' => $v[0], 'link' => $k))->row();
-                        if ($check !== null) {
-                            $this->db->update('access_level', array('allow' => $this->input->post('module_' . $v[0] . '_' . $v[1])), array('group_id' => $group_id, 'Module' => $v[0], 'link' => $k));
-                        } else {
-                            $this->db->insert('access_level', array('group_id' => $group_id, 'Module' => $v[0], 'link' => $k, 'allow' => 1));
-                        }
-                    } else {
-                        $this->db->update('access_level', array('allow' => 0), array('group_id' => $group_id, 'Module' => $v[0], 'link' => $k));
+            $this->db->trans_start();
+            $saved_count = 0;
+            $error_messages = array();
+            $debug_info = array();
+            
+            try {
+                // Log all POST data for debugging (using ERROR level so it shows in logs)
+                $all_post = $this->input->post();
+                log_message('error', '=== Permission save POST data: ' . print_r($all_post, true) . ' ===');
+                
+                // Check if saving_account_list and Edit_saving_account fields are in POST
+                $saving_list_in_post = false;
+                $edit_in_post = false;
+                foreach ($all_post as $key => $value) {
+                    if (strpos($key, 'saving_account_list') !== false || (is_numeric(str_replace('module_3_', '', $key)) && isset($priv[1]['Savings Accounts']['saving_account_list']))) {
+                        $saving_list_in_post = true;
+                        log_message('debug', "Found saving_account_list in POST: $key = $value");
+                    }
+                    if (strpos($key, 'Edit_saving_account') !== false || (is_numeric(str_replace('module_3_', '', $key)) && isset($priv[1]['Savings Accounts']['Edit_saving_account']))) {
+                        $edit_in_post = true;
+                        log_message('debug', "Found Edit_saving_account in POST: $key = $value");
                     }
                 }
+                if (!$saving_list_in_post) {
+                    log_message('error', 'saving_account_list field NOT found in POST data!');
+                }
+                if (!$edit_in_post) {
+                    log_message('error', 'Edit_saving_account field NOT found in POST data!');
+                }
+                
+                // Debug: Check if saving_account_list and Edit_saving_account are in privilege list
+                // Note: Module name is "Savings Accounts" not "Savings"
+                $saving_in_list = false;
+                $edit_in_list = false;
+                $all_savings_roles = array();
+                foreach ($priv[1] as $key => $value) {
+                    // Check for "Savings Accounts" (the actual module name) or variations
+                    if (stripos($key, 'Savings') !== false || stripos($key, 'saving') !== false) {
+                        $all_savings_roles = array_keys($value);
+                        if (isset($value['saving_account_list'])) {
+                            $saving_in_list = true;
+                            log_message('debug', 'saving_account_list found in privilege_list: ' . print_r($value['saving_account_list'], true));
+                        }
+                        if (isset($value['Edit_saving_account'])) {
+                            $edit_in_list = true;
+                            log_message('debug', 'Edit_saving_account found in privilege_list: ' . print_r($value['Edit_saving_account'], true));
+                        }
+                    }
+                }
+                if (!$saving_in_list) {
+                    log_message('error', 'saving_account_list NOT found in privilege_list! Available Savings roles: ' . implode(', ', $all_savings_roles));
+                }
+                if (!$edit_in_list) {
+                    log_message('error', 'Edit_saving_account NOT found in privilege_list! Available Savings roles: ' . implode(', ', $all_savings_roles));
+                }
+                
+                // Log what's in privilege_list[1] for Savings Accounts before processing (using ERROR level)
+                if (isset($priv[1]['Savings Accounts'])) {
+                    log_message('error', '=== Savings Accounts roles in privilege_list: ' . print_r(array_keys($priv[1]['Savings Accounts']), true) . ' ===');
+                    if (isset($priv[1]['Savings Accounts']['saving_account_list'])) {
+                        $saving_field = 'module_' . $priv[1]['Savings Accounts']['saving_account_list'][0] . '_' . $priv[1]['Savings Accounts']['saving_account_list'][1];
+                        log_message('error', "=== saving_account_list expected field: $saving_field ===");
+                        log_message('error', "=== saving_account_list in POST: " . ($this->input->post($saving_field) !== FALSE ? 'YES = ' . $this->input->post($saving_field) : 'NO') . ' ===');
+                    }
+                    if (isset($priv[1]['Savings Accounts']['Edit_saving_account'])) {
+                        $edit_field = 'module_' . $priv[1]['Savings Accounts']['Edit_saving_account'][0] . '_' . $priv[1]['Savings Accounts']['Edit_saving_account'][1];
+                        log_message('error', "=== Edit_saving_account expected field: $edit_field ===");
+                        log_message('error', "=== Edit_saving_account in POST: " . ($this->input->post($edit_field) !== FALSE ? 'YES = ' . $this->input->post($edit_field) : 'NO') . ' ===');
+                    }
+                } else {
+                    log_message('error', '=== Savings Accounts module NOT found in privilege_list[1]! Available: ' . implode(', ', array_keys($priv[1])) . ' ===');
+                }
+                
+                foreach ($priv[1] as $key => $value) {
+                    foreach ($value as $k => $v) {
+                        // $v is array($module_id, $role_id)
+                        // $k is the role name (link)
+                        $field_name = 'module_' . $v[0] . '_' . $v[1];
+                        $post_value = $this->input->post($field_name);
+                        
+                        // Special handling for saving_account_list and Edit_saving_account for debugging (using ERROR level)
+                        if ($k == 'saving_account_list' || $k == 'Edit_saving_account') {
+                            log_message('error', "=== Processing target role: $k, field: $field_name, POST value: " . ($post_value !== FALSE ? $post_value : 'NOT IN POST') . ' ===');
+                            log_message('error', "=== Role details - Module: {$v[0]}, Role ID: {$v[1]}, Module name: $key ===");
+                            
+                            // Force save for these specific roles even if POST value is missing (for production debugging)
+                            if ($post_value === FALSE) {
+                                log_message('error', "=== WARNING: $k field NOT in POST! Checking if checkbox exists on page... ===");
+                                // Try to get from alternative POST field names
+                                $alt_names = array(
+                                    'module_' . $v[0] . '_' . $v[1] . '_exists',
+                                    'module_' . $v[0] . '_' . $v[1] . '_unchecked',
+                                    strtolower($field_name),
+                                    str_replace('_', '', $field_name)
+                                );
+                                foreach ($alt_names as $alt_name) {
+                                    $alt_value = $this->input->post($alt_name);
+                                    if ($alt_value !== FALSE) {
+                                        log_message('error', "=== Found $k in alternative field: $alt_name = $alt_value ===");
+                                        $post_value = $alt_value;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        
+                        // Debug: Log what we're processing
+                        $debug_info[] = "Processing: $k (field: $field_name, value: " . ($post_value !== FALSE ? $post_value : 'NOT SET') . ")";
+                        
+                        // Check if checkbox was checked
+                        // Hidden fields send "0" for unchecked, checkboxes send "1" for checked
+                        // If field is not in POST at all, default to 0 (unchecked)
+                        if ($post_value === FALSE) {
+                            $allow_value = 0;
+                            if ($k == 'saving_account_list' || $k == 'Edit_saving_account') {
+                                log_message('error', "=== $k not in POST - setting to 0 (unchecked) ===");
+                            }
+                        } else {
+                            // Field exists in POST - check if value is "1" (checked) or "0" (unchecked)
+                            $allow_value = ($post_value == '1' || $post_value == 1) ? 1 : 0;
+                            if ($k == 'saving_account_list' || $k == 'Edit_saving_account') {
+                                log_message('error', "=== $k in POST with value: $post_value, setting allow to: $allow_value ===");
+                            }
+                        }
+                        
+                        // Check if access_level entry exists
+                        $check = $this->db->get_where('access_level', array('group_id' => $group_id, 'Module' => $v[0], 'link' => $k))->row();
+                        
+                        if ($check !== null) {
+                            // Update existing entry
+                            $this->db->where('group_id', $group_id);
+                            $this->db->where('Module', $v[0]);
+                            $this->db->where('link', $k);
+                            $result = $this->db->update('access_level', array('allow' => $allow_value));
+                            
+                            if ($result) {
+                                $saved_count++;
+                                $debug_info[] = "Updated: $k = $allow_value";
+                                if ($k == 'saving_account_list' || $k == 'Edit_saving_account') {
+                                    log_message('error', "=== SUCCESS: Updated $k to $allow_value ===");
+                                }
+                            } else {
+                                $db_error = $this->db->error();
+                                $error_msg = "Failed to update: $k";
+                                if (!empty($db_error['message'])) {
+                                    $error_msg .= " - " . $db_error['message'];
+                                }
+                                $error_messages[] = $error_msg;
+                                $debug_info[] = "ERROR: $error_msg";
+                                if ($k == 'saving_account_list' || $k == 'Edit_saving_account') {
+                                    log_message('error', "=== FAILED: Could not update $k - " . $error_msg . ' ===');
+                                }
+                            }
+                        } else {
+                            // Insert new entry
+                            $insert_data = array(
+                                'group_id' => $group_id,
+                                'Module' => $v[0],
+                                'link' => $k,
+                                'allow' => $allow_value
+                            );
+                            $result = $this->db->insert('access_level', $insert_data);
+                            
+                            if ($result) {
+                                $saved_count++;
+                                $debug_info[] = "Inserted: $k = $allow_value";
+                                if ($k == 'saving_account_list' || $k == 'Edit_saving_account') {
+                                    log_message('error', "=== SUCCESS: Inserted $k with value $allow_value ===");
+                                }
+                            } else {
+                                $db_error = $this->db->error();
+                                $error_msg = "Failed to insert: $k";
+                                if (!empty($db_error['message'])) {
+                                    $error_msg .= " - " . $db_error['message'];
+                                }
+                                $error_messages[] = $error_msg;
+                                $debug_info[] = "ERROR: $error_msg";
+                                if ($k == 'saving_account_list' || $k == 'Edit_saving_account') {
+                                    log_message('error', "=== FAILED: Could not insert $k - " . $error_msg . ' ===');
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // Log debug info (using ERROR level so it shows)
+                log_message('error', '=== Permission save debug: ' . implode(' | ', $debug_info) . ' ===');
+                
+                // Check specifically for saving_account_list and Edit_saving_account
+                $saving_list_processed = false;
+                $edit_processed = false;
+                foreach ($debug_info as $info) {
+                    if (strpos($info, 'saving_account_list') !== false) {
+                        $saving_list_processed = true;
+                    }
+                    if (strpos($info, 'Edit_saving_account') !== false) {
+                        $edit_processed = true;
+                    }
+                }
+                
+                if (!$saving_list_processed) {
+                    log_message('error', 'saving_account_list was NOT processed during save!');
+                }
+                if (!$edit_processed) {
+                    log_message('error', 'Edit_saving_account was NOT processed during save!');
+                }
+                
+                $this->db->trans_complete();
+                
+                if ($this->db->trans_status() === FALSE) {
+                    $error_msg = 'Error saving permissions. ';
+                    if (!empty($error_messages)) {
+                        $error_msg .= implode(', ', $error_messages);
+                    } else {
+                        $error_msg .= 'Database transaction failed.';
+                    }
+                    $this->session->set_flashdata('warning', $error_msg);
+                } else {
+                    $success_msg = lang('privillege_settings_success');
+                    if ($saved_count > 0) {
+                        $success_msg .= " ($saved_count permissions saved)";
+                    }
+                    // Log debug info for Edit_saving_account specifically
+                    $edit_debug = array_filter($debug_info, function($item) {
+                        return strpos($item, 'Edit_saving_account') !== false;
+                    });
+                    if (!empty($edit_debug)) {
+                        log_message('debug', 'Edit_saving_account debug: ' . implode(' | ', $edit_debug));
+                    }
+                    // Also log saving_account_list
+                    $saving_debug = array_filter($debug_info, function($item) {
+                        return strpos($item, 'saving_account_list') !== false;
+                    });
+                    if (!empty($saving_debug)) {
+                        log_message('debug', 'saving_account_list debug: ' . implode(' | ', $saving_debug));
+                    }
+                    $this->session->set_flashdata('message', $success_msg);
+                }
+            } catch (Exception $e) {
+                $this->db->trans_rollback();
+                log_message('error', 'Permission save error: ' . $e->getMessage());
+                log_message('error', 'Stack trace: ' . $e->getTraceAsString());
+                $this->session->set_flashdata('warning', 'Error: ' . $e->getMessage());
             }
-            $this->session->set_flashdata('message', lang('privillege_settings_success'));
+            // Add a small delay to ensure save completes and user sees feedback
+            sleep(1);
             redirect(current_lang().'/auth/grouprole/' . encode_id($group_id), 'refresh');
         }
         $this->data['privilege_list'] = $this->ion_auth->privilege_list($group_id);

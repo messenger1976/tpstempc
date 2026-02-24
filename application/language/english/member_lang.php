@@ -18,7 +18,7 @@ $lang['member_join_date'] = 'Join Date';
 $lang['member_reg_date'] = 'Registration Date';
 $lang['member_member_id'] = 'Member ID';
 $lang['member_none_member_id'] = 'None Member ID';
-$lang['member_old_account_no'] = 'Old Savings Account No';
+$lang['member_old_account_no'] = 'Savings Account No';
 $lang['member_photo'] = 'Member Photo';
 $lang['member_addbtn'] = 'Add Member';
 $lang['member_registration_fee'] = 'Registration fee';
@@ -38,6 +38,10 @@ $lang['member_registration_status_label'] = 'Form Registration Status';
 $lang['member_registration_status']=array(1=>'INCOMPLETE',2=>'PARTIAL COMPLETED','3'=>'COMPLETED');
 
 //edit
+$lang['member_name'] = 'Member Name';
+$lang['member_current_balance'] = 'Current Balance';
+$lang['member_virtual_balance'] = 'Maintaining Balance';
+$lang['member_created_date'] = 'Created Date';
 $lang['member_edit_btn'] = 'Edit Information';
 $lang['member_edited_fail'] = 'Editing fail, Please try again';
 $lang['member_edited_success'] = 'Member Information edited successfully';

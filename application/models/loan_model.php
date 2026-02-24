@@ -135,13 +135,39 @@ class Loan_Model extends CI_Model {
         return $loanid;
     }
 
-    function add_newloan($data, $processingfee = 0) {
-        $loanid = $this->db->get('auto_inc')->row()->loan;
-        // increatent 1 next PIN
-        $this->db->set('loan', 'loan+1', FALSE);
-        $this->db->update('auto_inc');
+    /**
+     * Get next LN number for display (does not increment auto_inc)
+     */
+    function get_next_ln_number() {
+        $row = $this->db->get('auto_inc')->row();
+        $next = $row ? ($row->loan + 1) : 1;
+        return 'LN' . $next;
+    }
 
-        $data['LID'] = 'LN' . $loanid;
+    function add_newloan($data, $processingfee = 0) {
+        // Use LID from $data if provided and not empty; otherwise auto-generate
+        if (!empty($data['LID'])) {
+            $lid = trim($data['LID']);
+            // Check uniqueness
+            if ($this->is_loan_exist($lid)) {
+                return FALSE;
+            }
+            $data['LID'] = $lid;
+            // Ensure auto_inc stays ahead if LID is numeric (e.g. LN1234)
+            if (preg_match('/^LN(\d+)$/', $lid, $m)) {
+                $num = (int)$m[1];
+                $current = $this->db->get('auto_inc')->row()->loan;
+                if ($num >= $current) {
+                    $this->db->set('loan', $num + 1, FALSE);
+                    $this->db->update('auto_inc');
+                }
+            }
+        } else {
+            $loanid = $this->db->get('auto_inc')->row()->loan;
+            $this->db->set('loan', 'loan+1', FALSE);
+            $this->db->update('auto_inc');
+            $data['LID'] = 'LN' . $loanid;
+        }
 
         $insert = $this->db->insert('loan_contract', $data);
         if ($insert) {
@@ -237,17 +263,36 @@ class Loan_Model extends CI_Model {
 
     function count_loan($key = null) {
         $pin = current_user()->PIN;
+        
+        // Count regular loans from loan_contract
         $sql = "SELECT loan_contract.* FROM loan_contract INNER JOIN members ON members.PID=loan_contract.PID WHERE loan_contract.PIN='$pin'  ";
 
         if (!is_null($key)) {
             $sql .= "  AND (loan_contract.LID LIKE '$key%' OR loan_contract.member_id LIKE '$key%' OR members.firstname LIKE '$key%' OR members.lastname LIKE '$key%')";
         }
-
-        return count($this->db->query($sql)->result());
+        
+        $count = count($this->db->query($sql)->result());
+        
+        // Count loan beginning balances
+        $sql_bb = "SELECT loan_beginning_balances.* FROM loan_beginning_balances INNER JOIN members ON members.member_id=loan_beginning_balances.member_id WHERE loan_beginning_balances.PIN='$pin' AND members.PIN='$pin'";
+        
+        // Exclude beginning balances that already have corresponding loan_contract entries
+        $sql_bb .= " AND (loan_beginning_balances.loan_id IS NULL OR loan_beginning_balances.loan_id NOT IN (SELECT LID FROM loan_contract WHERE PIN='$pin'))";
+        
+        if (!is_null($key)) {
+            $sql_bb .= " AND (loan_beginning_balances.loan_id LIKE '$key%' OR loan_beginning_balances.member_id LIKE '$key%' OR members.firstname LIKE '$key%' OR members.lastname LIKE '$key%')";
+        }
+        
+        $count_bb = count($this->db->query($sql_bb)->result());
+        
+        return $count + $count_bb;
     }
 
     function search_loan($key, $limit, $start) {
         $pin = current_user()->PIN;
+        $results = array();
+        
+        // Get regular loans from loan_contract
         $sql = "SELECT loan_contract.*,loan_status.name FROM loan_contract INNER JOIN members ON members.PID=loan_contract.PID ";
         $sql .= " INNER JOIN loan_status ON loan_status.code=loan_contract.status WHERE loan_contract.PIN='$pin'";
 
@@ -255,9 +300,52 @@ class Loan_Model extends CI_Model {
             $sql .= "  AND ( loan_contract.LID LIKE '$key%' OR loan_contract.member_id LIKE '$key%' OR members.firstname LIKE '$key%' OR members.lastname LIKE '$key%')";
         }
 
-        $sql.= " ORDER BY loan_contract.applicationdate ASC LIMIT $start,$limit";
-
-        return $this->db->query($sql)->result();
+        $sql.= " ORDER BY loan_contract.applicationdate ASC";
+        
+        $regular_loans = $this->db->query($sql)->result();
+        
+        // Get loan beginning balances that don't have corresponding loan_contract entries
+        $sql_bb = "SELECT 
+                        COALESCE(loan_beginning_balances.loan_id, CONCAT('BB-', loan_beginning_balances.id)) as LID,
+                        members.PID,
+                        loan_beginning_balances.member_id,
+                        COALESCE(loan_beginning_balances.loan_amount, loan_beginning_balances.principal_balance) as basic_amount,
+                        loan_beginning_balances.term as number_istallment,
+                        loan_beginning_balances.monthly_amort as installment_amount,
+                        loan_beginning_balances.interest_balance as total_interest_amount,
+                        loan_beginning_balances.total_balance as total_loan,
+                        'Beginning Balance' as name,
+                        1 as edit,
+                        COALESCE(loan_product.`interval`, 1) as `interval`,
+                        loan_beginning_balances.disbursement_date as applicationdate
+                    FROM loan_beginning_balances 
+                    INNER JOIN members ON members.member_id=loan_beginning_balances.member_id 
+                    LEFT JOIN loan_product ON loan_product.id=loan_beginning_balances.loan_product_id AND loan_product.PIN='$pin'
+                    WHERE loan_beginning_balances.PIN='$pin' AND members.PIN='$pin'";
+        
+        // Exclude beginning balances that already have corresponding loan_contract entries
+        $sql_bb .= " AND (loan_beginning_balances.loan_id IS NULL OR loan_beginning_balances.loan_id NOT IN (SELECT LID FROM loan_contract WHERE PIN='$pin'))";
+        
+        if (!is_null($key)) {
+            $sql_bb .= " AND (loan_beginning_balances.loan_id LIKE '$key%' OR loan_beginning_balances.member_id LIKE '$key%' OR members.firstname LIKE '$key%' OR members.lastname LIKE '$key%')";
+        }
+        
+        $sql_bb .= " ORDER BY loan_beginning_balances.disbursement_date ASC, loan_beginning_balances.created_at ASC";
+        
+        $beginning_balances = $this->db->query($sql_bb)->result();
+        
+        // Combine results
+        $all_results = array_merge($regular_loans, $beginning_balances);
+        
+        // Sort by applicationdate
+        usort($all_results, function($a, $b) {
+            $dateA = isset($a->applicationdate) ? strtotime($a->applicationdate) : 0;
+            $dateB = isset($b->applicationdate) ? strtotime($b->applicationdate) : 0;
+            return $dateA - $dateB;
+        });
+        
+        // Apply pagination
+        return array_slice($all_results, $start, $limit);
     }
 
     function open_repayment_installment($LID) {
@@ -601,6 +689,288 @@ class Loan_Model extends CI_Model {
         }
 
         return $installment;
+    }
+
+    // Loan Beginning Balances Methods
+    function loan_beginning_balance_list($fiscal_year_id = null, $id = null, $loan_product_id = null) {
+        $pin = current_user()->PIN;
+        $this->db->where('PIN', $pin);
+
+        if (!is_null($fiscal_year_id)) {
+            $this->db->where('fiscal_year_id', $fiscal_year_id);
+        }
+
+        if (!is_null($id)) {
+            $this->db->where('id', $id);
+        }
+
+        if (!is_null($loan_product_id) && $loan_product_id != '' && $loan_product_id != 'all') {
+            $this->db->where('loan_product_id', $loan_product_id);
+        }
+
+        $this->db->order_by('created_at', 'DESC');
+        return $this->db->get('loan_beginning_balances');
+    }
+
+    function loan_beginning_balance_create($data) {
+        $pin = current_user()->PIN;
+        $data['PIN'] = $pin;
+        $data['created_by'] = current_user()->id;
+        return $this->db->insert('loan_beginning_balances', $data);
+    }
+
+    function loan_beginning_balance_update($data, $id) {
+        $pin = current_user()->PIN;
+        $this->db->where('id', $id);
+        $this->db->where('PIN', $pin);
+        return $this->db->update('loan_beginning_balances', $data);
+    }
+
+    function loan_beginning_balance_delete($id) {
+        if (empty($id)) {
+            return false;
+        }
+        
+        $pin = current_user()->PIN;
+        
+        // Check if already posted first
+        $balance = $this->loan_beginning_balance_list(null, $id)->row();
+        if ($balance && $balance->posted == 1) {
+            return false; // Cannot delete if already posted
+        }
+        
+        // Now set WHERE clauses and delete (must set WHERE before delete)
+        $this->db->where('id', $id);
+        $this->db->where('PIN', $pin);
+        
+        $result = $this->db->delete('loan_beginning_balances');
+        return $result;
+    }
+
+    function loan_beginning_balance_post_to_ledger($id) {
+        $pin = current_user()->PIN;
+        $balance = $this->loan_beginning_balance_list(null, $id)->row();
+        
+        if (!$balance || $balance->posted == 1) {
+            return false; // Already posted or doesn't exist
+        }
+        
+        // Get fiscal year info
+        $fiscal_year = $this->db->where('id', $balance->fiscal_year_id)->get('fiscal_year')->row();
+        if (!$fiscal_year) {
+            return false;
+        }
+        
+        // Get loan product info
+        $product = $this->db->where('id', $balance->loan_product_id)->where('PIN', $pin)->get('loan_product')->row();
+        if (!$product) {
+            return false;
+        }
+        
+        $this->db->trans_start();
+        
+        // Create ledger entry header
+        $ledger_entry = array(
+            'date' => $fiscal_year->start_date,
+            'PIN' => $pin
+        );
+        $ledger_entry_result = $this->db->insert('general_ledger_entry', $ledger_entry);
+        $ledger_entry_affected = $this->db->affected_rows();
+        $ledger_entry_id = $this->db->insert_id();
+        
+        // Verify ledger entry header was created
+        if (!$ledger_entry_result || $ledger_entry_affected != 1 || !$ledger_entry_id || $ledger_entry_id == 0) {
+            log_message('error', 'Failed to create general_ledger_entry header for loan beginning balance ID: ' . $id);
+            $this->db->trans_complete();
+            return false;
+        }
+        
+        // Use LAST_INSERT_ID() as fallback if needed
+        if (!$ledger_entry_id || $ledger_entry_id == 0) {
+            $last_id_result = $this->db->query("SELECT LAST_INSERT_ID() as id")->row();
+            if ($last_id_result && $last_id_result->id > 0) {
+                $ledger_entry_id = $last_id_result->id;
+            } else {
+                log_message('error', 'Failed to get ledger_entry_id for loan beginning balance ID: ' . $id);
+                $this->db->trans_complete();
+                return false;
+            }
+        }
+        
+        $ledger_items_inserted = 0;
+        
+        // Post principal balance if exists
+        if ($balance->principal_balance > 0) {
+            $ledger = array(
+                'journalID' => 8, // Journal ID for Beginning Balance
+                'refferenceID' => $id,
+                'entryid' => $ledger_entry_id,
+                'date' => $fiscal_year->start_date,
+                'description' => 'Loan Beginning Balance - Principal - ' . $balance->member_id,
+                'linkto' => 'loan_beginning_balances.id',
+                'fromtable' => 'loan_beginning_balances',
+                'account' => $product->loan_principle_account,
+                'debit' => $balance->principal_balance,
+                'credit' => 0,
+                'member_id' => $balance->member_id,
+                'PIN' => $pin
+            );
+            
+            $infoaccount = account_row_info($product->loan_principle_account);
+            if ($infoaccount) {
+                $ledger['account_type'] = $infoaccount->account_type;
+                $ledger['sub_account_type'] = isset($infoaccount->sub_account_type) ? $infoaccount->sub_account_type : null;
+            } else {
+                log_message('error', 'Account not found for principal: ' . $product->loan_principle_account);
+                $this->db->trans_complete();
+                return false;
+            }
+            
+            $insert_result = $this->db->insert('general_ledger', $ledger);
+            $insert_affected = $this->db->affected_rows();
+            
+            if (!$insert_result || $insert_affected != 1) {
+                log_message('error', 'Failed to insert principal ledger entry for loan beginning balance ID: ' . $id);
+                $this->db->trans_complete();
+                return false;
+            }
+            $ledger_items_inserted++;
+        }
+        
+        // Post interest balance if exists
+        if ($balance->interest_balance > 0) {
+            $ledger = array(
+                'journalID' => 8,
+                'refferenceID' => $id,
+                'entryid' => $ledger_entry_id,
+                'date' => $fiscal_year->start_date,
+                'description' => 'Loan Beginning Balance - Interest - ' . $balance->member_id,
+                'linkto' => 'loan_beginning_balances.id',
+                'fromtable' => 'loan_beginning_balances',
+                'account' => $product->loan_interest_account,
+                'debit' => $balance->interest_balance,
+                'credit' => 0,
+                'member_id' => $balance->member_id,
+                'PIN' => $pin
+            );
+            
+            $infoaccount = account_row_info($product->loan_interest_account);
+            if ($infoaccount) {
+                $ledger['account_type'] = $infoaccount->account_type;
+                $ledger['sub_account_type'] = isset($infoaccount->sub_account_type) ? $infoaccount->sub_account_type : null;
+            } else {
+                log_message('error', 'Account not found for interest: ' . $product->loan_interest_account);
+                $this->db->trans_complete();
+                return false;
+            }
+            
+            $insert_result = $this->db->insert('general_ledger', $ledger);
+            $insert_affected = $this->db->affected_rows();
+            
+            if (!$insert_result || $insert_affected != 1) {
+                log_message('error', 'Failed to insert interest ledger entry for loan beginning balance ID: ' . $id);
+                $this->db->trans_complete();
+                return false;
+            }
+            $ledger_items_inserted++;
+        }
+        
+        // Post penalty balance if exists
+        if ($balance->penalty_balance > 0) {
+            $ledger = array(
+                'journalID' => 8,
+                'refferenceID' => $id,
+                'entryid' => $ledger_entry_id,
+                'date' => $fiscal_year->start_date,
+                'description' => 'Loan Beginning Balance - Penalty - ' . $balance->member_id,
+                'linkto' => 'loan_beginning_balances.id',
+                'fromtable' => 'loan_beginning_balances',
+                'account' => $product->loan_penalt_account,
+                'debit' => $balance->penalty_balance,
+                'credit' => 0,
+                'member_id' => $balance->member_id,
+                'PIN' => $pin
+            );
+            
+            $infoaccount = account_row_info($product->loan_penalt_account);
+            if ($infoaccount) {
+                $ledger['account_type'] = $infoaccount->account_type;
+                $ledger['sub_account_type'] = isset($infoaccount->sub_account_type) ? $infoaccount->sub_account_type : null;
+            } else {
+                log_message('error', 'Account not found for penalty: ' . $product->loan_penalt_account);
+                $this->db->trans_complete();
+                return false;
+            }
+            
+            $insert_result = $this->db->insert('general_ledger', $ledger);
+            $insert_affected = $this->db->affected_rows();
+            
+            if (!$insert_result || $insert_affected != 1) {
+                log_message('error', 'Failed to insert penalty ledger entry for loan beginning balance ID: ' . $id);
+                $this->db->trans_complete();
+                return false;
+            }
+            $ledger_items_inserted++;
+        }
+        
+        // Verify at least one ledger item was inserted (if balances exist)
+        $expected_items = 0;
+        if ($balance->principal_balance > 0) $expected_items++;
+        if ($balance->interest_balance > 0) $expected_items++;
+        if ($balance->penalty_balance > 0) $expected_items++;
+        
+        if ($expected_items > 0 && $ledger_items_inserted != $expected_items) {
+            log_message('error', 'Loan beginning balance ID ' . $id . ': Expected ' . $expected_items . ' ledger items, but inserted ' . $ledger_items_inserted);
+            $this->db->trans_complete();
+            return false;
+        }
+        
+        // Check transaction status before updating posted status
+        if ($this->db->_trans_status === FALSE) {
+            log_message('error', 'Transaction status is FALSE before updating posted status for loan beginning balance ID: ' . $id);
+            $this->db->trans_complete();
+            return false;
+        }
+        
+        // Update loan beginning balance as posted
+        $update_data = array(
+            'posted' => 1,
+            'posted_date' => date('Y-m-d H:i:s'),
+            'posted_by' => current_user()->id
+        );
+        $this->db->where('id', $id);
+        $this->db->where('PIN', $pin);
+        $update_result = $this->db->update('loan_beginning_balances', $update_data);
+        $update_affected = $this->db->affected_rows();
+        
+        if (!$update_result || $update_affected != 1) {
+            log_message('error', 'Failed to update loan beginning balance as posted for ID: ' . $id);
+            $this->db->trans_complete();
+            return false;
+        }
+        
+        $this->db->trans_complete();
+        
+        $transaction_status = $this->db->trans_status();
+        
+        if ($transaction_status === FALSE) {
+            log_message('error', 'Loan beginning balance post to ledger failed - transaction rolled back for ID: ' . $id);
+            return false;
+        }
+        
+        log_message('info', 'Loan beginning balance ID ' . $id . ' posted to general ledger successfully with ' . $ledger_items_inserted . ' ledger entries');
+        
+        return true;
+    }
+
+    function check_loan_beginning_balance_exists($fiscal_year_id, $member_id, $loan_product_id) {
+        $pin = current_user()->PIN;
+        $this->db->where('PIN', $pin);
+        $this->db->where('fiscal_year_id', $fiscal_year_id);
+        $this->db->where('member_id', $member_id);
+        $this->db->where('loan_product_id', $loan_product_id);
+        $result = $this->db->get('loan_beginning_balances');
+        return $result->num_rows() > 0;
     }
 
 }

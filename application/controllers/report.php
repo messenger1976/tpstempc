@@ -237,8 +237,15 @@ class Report extends CI_Controller {
 
         $this->db->where('id', $link);
         $title = $this->db->get('journal')->row();
+        
+        // Validate journal exists
+        if (!$title) {
+            $this->session->set_flashdata('error', 'Journal type not found.');
+            redirect(current_lang() . '/report/journal_entry/' . $link);
+            return;
+        }
+        
         $this->data['journalinfo'] = $title;
-
         $this->data['title'] = $title->type . ' Journal';
 
         $this->data['link_cat'] = $link;
@@ -247,6 +254,21 @@ class Report extends CI_Controller {
             $id = decode_id($id);
         }
         $reportinfo = $this->report_model->report_list_journal($id)->row();
+        
+        // Validate reportinfo exists
+        if (!$reportinfo) {
+            $this->session->set_flashdata('error', 'Report not found.');
+            redirect(current_lang() . '/report/journal_entry/' . $link);
+            return;
+        }
+        
+        // Validate dates exist
+        if (empty($reportinfo->fromdate) || empty($reportinfo->todate)) {
+            $this->session->set_flashdata('error', 'Report dates are missing. Please edit the report and set valid dates.');
+            redirect(current_lang() . '/report/create_journal_trans_title/' . $link . '/' . encode_id($id));
+            return;
+        }
+        
         $this->data['reportinfo'] = $reportinfo;
         $this->data['transaction'] = $this->report_model->journal_trans($reportinfo->fromdate, $reportinfo->todate, $link);
 
@@ -356,6 +378,21 @@ class Report extends CI_Controller {
             $id = decode_id($id);
         }
         $reportinfo = $this->report_model->report_list($id)->row();
+        
+        // Validate reportinfo exists
+        if (!$reportinfo) {
+            $this->session->set_flashdata('error', 'Report not found.');
+            redirect(current_lang() . '/report/general_leger_transaction/' . $link);
+            return;
+        }
+        
+        // Validate fromdate exists
+        if (empty($reportinfo->fromdate)) {
+            $this->session->set_flashdata('error', 'Report date is missing. Please edit the report and set a valid date.');
+            redirect(current_lang() . '/report/create_ledger_trans_title/' . $link . '/' . encode_id($id));
+            return;
+        }
+        
         $this->data['reportinfo'] = $reportinfo;
 
         $this->data['content'] = 'report/ledger/ledger_balance_sheet';
@@ -409,6 +446,99 @@ class Report extends CI_Controller {
     }
     
     
+    
+    function cash_flow_report($id = null) {
+        $this->data['title'] = 'Cash Flow Report';
+        $this->data['link_cat'] = 6; // Use 6 for cash flow report
+        $this->data['id'] = $id;
+        
+        if (!is_null($id)) {
+            $id = decode_id($id);
+        }
+
+        $this->form_validation->set_rules('fromdate', 'From', 'required|valid_date');
+        $this->form_validation->set_rules('todate', 'Until', 'required|valid_date');
+        $this->form_validation->set_rules('description', 'Description', 'required');
+
+        if ($this->form_validation->run() == TRUE) {
+            $from = format_date(trim($this->input->post('fromdate')));
+            $to = format_date(trim($this->input->post('todate')));
+            $description = trim($this->input->post('description'));
+            $page = trim($this->input->post('page'));
+            
+            if (strtotime($from) <= strtotime($to)) {
+                $array = array(
+                    'fromdate' => $from,
+                    'todate' => $to,
+                    'description' => $description,
+                    'link' => 6,
+                    'page' => $page,
+                    'PIN' => current_user()->PIN,
+                );
+                if (is_null($id)) {
+                    $this->db->insert('report_table', $array);
+                    $new_id = $this->db->insert_id();
+                    redirect(current_lang() . '/report/cash_flow_report_view/' . encode_id($new_id), 'refresh');
+                } else {
+                    $this->db->update('report_table', $array, array('id' => $id));
+                    redirect(current_lang() . '/report/cash_flow_report_view/' . encode_id($id), 'refresh');
+                }
+            } else {
+                $this->data['warning'] = 'From date is greater than until date';
+            }
+        }
+
+        if (!is_null($id)) {
+            $this->data['reportinfo'] = $this->report_model->report_list($id)->row();
+        }
+
+        $this->data['reportlist'] = $this->report_model->report_list(null, 6)->result();
+        $this->data['content'] = 'report/cash_flow/cash_flow_report_title';
+        $this->load->view('template', $this->data);
+    }
+
+    function cash_flow_report_view($id) {
+        $this->data['title'] = 'Cash Flow Report';
+        $this->data['link_cat'] = 6;
+        $this->data['id'] = $id;
+        
+        if (!is_null($id)) {
+            $id = decode_id($id);
+        }
+        
+        $reportinfo = $this->report_model->report_list($id)->row();
+        $this->data['reportinfo'] = $reportinfo;
+        $this->data['cash_flow_data'] = $this->report_model->get_cash_flow_data($reportinfo->fromdate, $reportinfo->todate);
+
+        $this->data['content'] = 'report/cash_flow/cash_flow_report_view';
+        $this->load->view('template', $this->data);
+    }
+
+    function cash_flow_report_print($id) {
+        $this->data['title'] = 'Cash Flow Report';
+        $this->data['link_cat'] = 6;
+        $this->data['id'] = $id;
+        
+        if (!is_null($id)) {
+            $id = decode_id($id);
+        }
+        
+        $reportinfo = $this->report_model->report_list($id)->row();
+        $this->data['reportinfo'] = $reportinfo;
+        $this->data['cash_flow_data'] = $this->report_model->get_cash_flow_data($reportinfo->fromdate, $reportinfo->todate);
+
+        $html = $this->load->view('report/cash_flow/print/cash_flow_report_print', $this->data, true);
+        $this->export_to_pdf($html, 'Cash_Flow_Report', $reportinfo->page);
+    }
+
+    function delete_cash_flow_report($id = null) {
+        if (!is_null($id)) {
+            $id = decode_id($id);
+            $this->db->delete('report_table', array('id' => $id, 'link' => 6));
+            redirect(current_lang() . '/report/cash_flow_report', 'refresh');
+        }
+        redirect(current_lang() . '/report/cash_flow_report', 'refresh');
+    }
     
     function export_to_pdf($html, $filename, $page_orientation = null) {
         //$html = "Tanzania";

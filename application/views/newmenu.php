@@ -103,6 +103,9 @@ $activefunction = ($this->uri->segment(3)) ? $this->uri->segment(3) : 'X';
                 <li class="<?php echo ($active == 'saving' ? 'active' : ''); ?>">
                     <a href="#"><i class="fa fa-credit-card"></i> <span class="nav-label"><?php echo lang('page_saving'); ?></span><span class="fa arrow"></span></a>
                     <ul class="nav nav-second-level">
+                        <?php if (has_role(3, 'saving_account_list')) { ?>
+                            <li class="<?php echo ($activefunction == 'saving_account_list' ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/saving/saving_account_list'); ?>"><?php echo lang('saving_account_list'); ?></a></li>
+                        <?php } ?>
                         <?php if (has_role(3, 'Create_saving_account')) { ?>
                             <li class="<?php echo ($activefunction == 'create_saving_account' ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/saving/create_saving_account'); ?>"><?php echo lang('create_saving_account'); ?></a></li>
                         <?php } ?>
@@ -170,7 +173,7 @@ $activefunction = ($this->uri->segment(3)) ? $this->uri->segment(3) : 'X';
 
             <?php if (access_module(6)) { ?>
 
-                <li class="<?php echo (($active == 'finance' || $active == 'customer' || $active == 'supplier' ) ? 'active' : ''); ?>">
+                <li class="<?php echo (($active == 'finance' || $active == 'customer' || $active == 'supplier' || $active == 'cash_receipt' || $active == 'cash_disbursement') ? 'active' : ''); ?>">
                     <a href="#"><i class="fa fa-dollar"></i> <span class="nav-label"><?php echo lang('page_finance'); ?></span><span class="fa arrow"></span></a>
                     <ul class="nav nav-second-level">
                         <?php if (has_role(6, 'Manage_account_chart')) { ?>
@@ -181,6 +184,15 @@ $activefunction = ($this->uri->segment(3)) ? $this->uri->segment(3) : 'X';
                         <?php } ?>
                         <?php if (has_role(6, 'Manage_chart_sub_type')) { ?>
                             <li class="<?php echo ($activefunction == 'chart_sub_type_list' ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/finance/chart_sub_type_list'); ?>"><?php echo lang('chart_sub_type_list'); ?></a></li>
+                        <?php } ?>
+                        <?php if (has_role(6, 'Manage_beginning_balance')) { ?>
+                            <li class="<?php echo ($activefunction == 'beginning_balance_list' ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/finance/beginning_balance_list'); ?>"><?php echo lang('beginning_balance_list'); ?></a></li>
+                        <?php } ?>
+                        <?php if (has_role(6, 'View_cash_receipt')) { ?>
+                            <li class="<?php echo ($activefunction == 'cash_receipt_list' || $active == 'cash_receipt' ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/cash_receipt/cash_receipt_list'); ?>"><?php echo lang('cash_receipt_list'); ?></a></li>
+                        <?php } ?>
+                        <?php if (has_role(6, 'View_cash_disbursement')) { ?>
+                            <li class="<?php echo ($activefunction == 'cash_disbursement_list' || $active == 'cash_disbursement' ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/cash_disbursement/cash_disbursement_list'); ?>"><?php echo lang('cash_disbursement_list'); ?></a></li>
                         <?php } ?>
                         <?php if (has_role(6, 'Manage_customer')) { ?>
                             <li class="<?php echo ($activefunction == 'customerlist' ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/customer/customerlist'); ?>"><?php echo lang('customer'); ?></a></li>
@@ -262,6 +274,9 @@ $activefunction = ($this->uri->segment(3)) ? $this->uri->segment(3) : 'X';
                         <?php } ?>
                         <?php if (has_role(9, 'Manage_loan_product')) { ?>
                             <li class="<?php echo ($activefunction == 'loan_product_list' ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/setting/loan_product_list'); ?>"><?php echo lang('loan_product_list'); ?></a></li>
+                        <?php } ?>
+                        <?php if (has_role(9, 'Manage_payment_method') || $this->ion_auth->is_admin()) { ?>
+                            <li class="<?php echo ($activefunction == 'payment_method_list' ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/setting/payment_method_list'); ?>"><?php echo lang('payment_method_list'); ?></a></li>
                         <?php } ?>
                         
                             <li class="<?php echo ($activefunction == 'mobile_notification' ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/setting/mobile_notification'); ?>"><?php echo 'Mobile Notification'; ?></a></li>

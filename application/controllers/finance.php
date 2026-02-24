@@ -421,10 +421,14 @@ class Finance extends CI_Controller {
                     'description' => $out_description
                 );
                 
-                $insert = $this->finance_model->enter_journal($main_array,$array_items);
+                // Create journal entry (NOT auto-posted - requires approval)
+                $insert = $this->finance_model->enter_journal($main_array,$array_items, false);
                 if($insert){
-                    $this->session->set_flashdata('message','Journal Recorded');
+                    $this->session->set_flashdata('message','Journal Entry Created Successfully. It will be posted to General Ledger after approval.');
                     redirect(current_lang().'/finance/journalentry','refresh');
+                } else {
+                    $this->data['warning'] = 'Failed to create journal entry. Please check the error logs for details.';
+                    log_message('error', 'Journal entry creation failed from controller. Array items count: ' . count($array_items));
                 }
                 
             } else {
@@ -436,13 +440,327 @@ class Finance extends CI_Controller {
 
         $this->data['taxcode_list'] = $this->setting_model->tax_info()->result();
         $this->data['account_list'] = $this->finance_model->account_chart_by_accounttype();
-
-
-
-
+        
+        // Get count of unposted entries for display
+        $this->data['unposted_count'] = count($this->finance_model->get_unposted_journal_entries());
 
         $this->data['content'] = 'finance/journalentry';
         $this->load->view('template', $this->data);
+    }
+
+    // Journal Entry Review and Approval
+    function journal_entry_review() {
+        $this->data['title'] = 'Journal Entry Review & Approval';
+        
+        if (!has_role(6, 'Journal_entry')) {
+            $this->session->set_flashdata('warning', 'You do not have permission to access this page.');
+            redirect(current_lang() . '/dashboard', 'refresh');
+            return;
+        }
+        
+        // Get unposted journal entries (manual JV from general_journal_entry)
+        $unposted = $this->finance_model->get_unposted_journal_entries();
+        foreach ($unposted as $e) {
+            $e->entry_source = 'general_journal';
+            $e->reference_id = null;
+        }
+        // Get journal entries from cash receipt & cash disbursement (journal_entry table)
+        $receipt_disburse = array();
+        if ($this->db->table_exists('journal_entry')) {
+            $receipt_disburse = $this->finance_model->get_receipt_disbursement_journal_entries();
+        }
+        $this->data['unposted_entries'] = array_merge($unposted, $receipt_disburse);
+        usort($this->data['unposted_entries'], function ($a, $b) {
+            $da = strtotime($a->entrydate);
+            $db = strtotime($b->entrydate);
+            if ($da !== $db) return $db - $da;
+            return $b->entryid - $a->entryid;
+        });
+
+        // Posted to GL entries (so user can void and repost)
+        $posted_general = $this->finance_model->get_posted_general_journal_entries();
+        foreach ($posted_general as $e) {
+            $e->entry_source = 'general_journal';
+            $e->reference_id = null;
+        }
+        $posted_receipt_disburse = $this->finance_model->get_posted_receipt_disbursement_journal_entries();
+        $this->data['posted_entries'] = array_merge($posted_general, $posted_receipt_disburse);
+        usort($this->data['posted_entries'], function ($a, $b) {
+            $da = strtotime($a->entrydate);
+            $db = strtotime($b->entrydate);
+            if ($da !== $db) return $db - $da;
+            return $b->entryid - $a->entryid;
+        });
+        
+        $this->data['content'] = 'finance/journal_entry_review';
+        $this->load->view('template', $this->data);
+    }
+
+    function journal_entry_view($id) {
+        $encoded_id = $id; // Store original encoded ID for logging
+        $id = decode_id($id);
+        log_message('debug', 'journal_entry_view: Encoded ID=' . $encoded_id . ', Decoded ID=' . $id);
+        $this->data['title'] = 'Journal Entry Details';
+        
+        if (!has_role(6, 'Journal_entry')) {
+            $this->session->set_flashdata('warning', 'You do not have permission to access this page.');
+            redirect(current_lang() . '/dashboard', 'refresh');
+            return;
+        }
+        
+        // Get journal entry details
+        $entry = $this->finance_model->get_journal_entry_details($id);
+        
+        if (!$entry) {
+            $this->session->set_flashdata('warning', 'Journal entry not found.');
+            redirect(current_lang() . '/finance/journal_entry_review', 'refresh');
+            return;
+        }
+        
+        $this->data['entry'] = $entry;
+        $this->data['id'] = encode_id($id);
+        $this->data['content'] = 'finance/journal_entry_view';
+        $this->load->view('template', $this->data);
+    }
+
+    function journal_entry_approve($id) {
+        $id = decode_id($id);
+        
+        if (!has_role(6, 'Journal_entry')) {
+            $this->session->set_flashdata('warning', 'You do not have permission to approve journal entries.');
+            redirect(current_lang() . '/dashboard', 'refresh');
+            return;
+        }
+        
+        // Check if entry exists and is not posted
+        $entry = $this->finance_model->get_journal_entry_details($id);
+        
+        if (!$entry) {
+            $this->session->set_flashdata('warning', 'Journal entry not found.');
+            redirect(current_lang() . '/finance/journal_entry_review', 'refresh');
+            return;
+        }
+        
+        if ($entry->is_posted) {
+            $this->session->set_flashdata('warning', 'This journal entry has already been posted.');
+            redirect(current_lang() . '/finance/journal_entry_review', 'refresh');
+            return;
+        }
+        
+        // Verify debits equal credits
+        if (abs($entry->total_debit - $entry->total_credit) > 0.01) {
+            $this->session->set_flashdata('warning', 'Journal entry is not balanced. Debits: ' . number_format($entry->total_debit, 2) . ', Credits: ' . number_format($entry->total_credit, 2));
+            redirect(current_lang() . '/finance/journal_entry_view/' . encode_id($id), 'refresh');
+            return;
+        }
+        
+        // Post to general ledger
+        $result = $this->finance_model->post_journal_to_general_ledger($id, 5);
+        
+        if ($result) {
+            $this->session->set_flashdata('message', 'Journal Entry #' . $id . ' has been approved and posted to General Ledger successfully.');
+        } else {
+            $this->session->set_flashdata('warning', 'Failed to post journal entry. Please check error logs.');
+        }
+        
+        redirect(current_lang() . '/finance/journal_entry_review', 'refresh');
+    }
+
+    /**
+     * Post a single cash receipt or cash disbursement journal entry to General Ledger.
+     * Used for entries from journal_entry table (not general_journal_entry).
+     */
+    function journal_entry_post_to_gl($id) {
+        $id = decode_id($id);
+
+        if (!has_role(6, 'Journal_entry')) {
+            $this->session->set_flashdata('warning', 'You do not have permission to post journal entries to GL.');
+            redirect(current_lang() . '/finance/journal_entry_review', 'refresh');
+            return;
+        }
+
+        if ($this->finance_model->is_journal_entry_posted_to_gl($id)) {
+            $this->session->set_flashdata('warning', 'This entry has already been posted to the General Ledger.');
+            redirect(current_lang() . '/finance/journal_entry_review', 'refresh');
+            return;
+        }
+
+        $result = $this->finance_model->post_journal_entry_to_general_ledger($id, 5);
+
+        if ($result) {
+            $this->session->set_flashdata('message', 'Journal entry has been posted to General Ledger successfully.');
+        } else {
+            $this->session->set_flashdata('warning', 'Failed to post to General Ledger. Entry may be unbalanced or not found. Check error logs.');
+        }
+        redirect(current_lang() . '/finance/journal_entry_review', 'refresh');
+    }
+
+    /**
+     * Void GL posting for a manual journal entry (general_journal). Journal entry stays active; can repost later.
+     */
+    function void_gl_posting_general($id) {
+        $id = decode_id($id);
+        if (!has_role(6, 'Journal_entry')) {
+            $this->session->set_flashdata('warning', 'You do not have permission to void GL postings.');
+            redirect(current_lang() . '/finance/journal_entry_review', 'refresh');
+            return;
+        }
+        if (!$this->finance_model->is_journal_posted($id)) {
+            $this->session->set_flashdata('warning', 'This journal entry is not posted to the General Ledger.');
+            redirect(current_lang() . '/finance/journal_entry_view/' . encode_id($id), 'refresh');
+            return;
+        }
+        $this->finance_model->void_journal_posting_to_gl($id, 'general_journal');
+        $this->session->set_flashdata('message', 'GL posting has been voided. You can repost this journal entry to the General Ledger when ready.');
+        redirect(current_lang() . '/finance/journal_entry_view/' . encode_id($id), 'refresh');
+    }
+
+    /**
+     * Void GL posting for a journal entry (cash receipt / cash disbursement). Journal stays active; can repost later.
+     */
+    function void_gl_posting_journal_entry($id) {
+        $id = decode_id($id);
+        if (!has_role(6, 'Journal_entry')) {
+            $this->session->set_flashdata('warning', 'You do not have permission to void GL postings.');
+            redirect(current_lang() . '/finance/journal_entry_review', 'refresh');
+            return;
+        }
+        if (!$this->finance_model->is_journal_entry_posted_to_gl($id)) {
+            $this->session->set_flashdata('warning', 'This entry is not posted to the General Ledger.');
+            redirect(current_lang() . '/finance/journal_entry_review', 'refresh');
+            return;
+        }
+        $this->finance_model->void_journal_posting_to_gl($id, 'journal_entry');
+        $this->session->set_flashdata('message', 'GL posting has been voided. You can repost this entry to the General Ledger from Journal Entry Review when ready.');
+        redirect(current_lang() . '/finance/journal_entry_review', 'refresh');
+    }
+
+    /**
+     * Void GL posting for multiple selected entries (batch). Expects void_ids[] = "source::encoded_id" (e.g. general_journal::xxx or journal_entry::xxx).
+     */
+    function void_gl_posting_batch() {
+        if (!has_role(6, 'Journal_entry')) {
+            $this->session->set_flashdata('warning', 'You do not have permission to void GL postings.');
+            redirect(current_lang() . '/finance/journal_entry_review', 'refresh');
+            return;
+        }
+        $void_ids = $this->input->post('void_ids', FALSE);
+        if (empty($void_ids)) {
+            $this->session->set_flashdata('warning', 'No entries selected. Please select at least one posted entry to void.');
+            redirect(current_lang() . '/finance/journal_entry_review', 'refresh');
+            return;
+        }
+        if (!is_array($void_ids)) {
+            $void_ids = array($void_ids);
+        }
+        $success_count = 0;
+        $skip_count = 0;
+        $invalid_count = 0;
+        foreach ($void_ids as $composite) {
+            $composite = trim((string) $composite);
+            if ($composite === '') continue;
+            $parts = explode('::', $composite, 2);
+            if (count($parts) !== 2 || $parts[0] === '' || $parts[1] === '') {
+                $invalid_count++;
+                continue;
+            }
+            list($source, $encoded_id) = $parts;
+            // Map source to GL fromtable: only general_journal vs journal_entry (cash_receipt/cash_disbursement use journal_entry table)
+            $from_table = ($source === 'general_journal') ? 'general_journal' : 'journal_entry';
+            if ($source !== 'general_journal' && !in_array($source, array('journal_entry', 'cash_receipt', 'cash_disbursement'), true)) {
+                $invalid_count++;
+                continue;
+            }
+            $id = decode_id($encoded_id);
+            if ($id === null || $id === '' || (is_numeric($id) && (int) $id <= 0)) {
+                $invalid_count++;
+                continue;
+            }
+            if ($from_table === 'general_journal' && !$this->finance_model->is_journal_posted($id)) {
+                $skip_count++;
+                continue;
+            }
+            if ($from_table === 'journal_entry' && !$this->finance_model->is_journal_entry_posted_to_gl($id)) {
+                $skip_count++;
+                continue;
+            }
+            $this->finance_model->void_journal_posting_to_gl($id, $from_table);
+            $success_count++;
+        }
+        if ($success_count > 0) {
+            $this->session->set_flashdata('message', $success_count . ' GL posting(s) voided. You can repost from Journal Entry Review when ready.');
+        }
+        if ($skip_count > 0) {
+            $this->session->set_flashdata('warning', $skip_count . ' selected entry/entries were not posted to GL and were skipped.');
+        }
+        if ($invalid_count > 0) {
+            $this->session->set_flashdata('warning', $invalid_count . ' selected value(s) were invalid and skipped.');
+        }
+        if ($success_count === 0 && $skip_count === 0 && $invalid_count === 0) {
+            $this->session->set_flashdata('warning', 'No entries were voided. Please select at least one posted entry and try again.');
+        }
+        redirect(current_lang() . '/finance/journal_entry_review', 'refresh');
+    }
+
+    function journal_entry_batch_approve() {
+        if (!has_role(6, 'Journal_entry')) {
+            $this->session->set_flashdata('warning', 'You do not have permission to approve journal entries.');
+            redirect(current_lang() . '/dashboard', 'refresh');
+            return;
+        }
+        
+        $entry_ids = $this->input->post('entry_ids');
+        
+        if (empty($entry_ids) || !is_array($entry_ids)) {
+            $this->session->set_flashdata('warning', 'No journal entries selected.');
+            redirect(current_lang() . '/finance/journal_entry_review', 'refresh');
+            return;
+        }
+        
+        $success_count = 0;
+        $failed_count = 0;
+        
+        foreach ($entry_ids as $entry_id) {
+            $id = decode_id($entry_id);
+            
+            // Check if already posted
+            if ($this->finance_model->is_journal_posted($id)) {
+                continue;
+            }
+            
+            // Get entry details
+            $entry = $this->finance_model->get_journal_entry_details($id);
+            
+            if (!$entry) {
+                $failed_count++;
+                continue;
+            }
+            
+            // Verify balance
+            if (abs($entry->total_debit - $entry->total_credit) > 0.01) {
+                $failed_count++;
+                continue;
+            }
+            
+            // Post to general ledger
+            $result = $this->finance_model->post_journal_to_general_ledger($id, 5);
+            
+            if ($result) {
+                $success_count++;
+            } else {
+                $failed_count++;
+            }
+        }
+        
+        if ($success_count > 0) {
+            $this->session->set_flashdata('message', $success_count . ' journal entry/entries approved and posted successfully.');
+        }
+        
+        if ($failed_count > 0) {
+            $this->session->set_flashdata('warning', $failed_count . ' journal entry/entries failed to post. Please check for errors.');
+        }
+        
+        redirect(current_lang() . '/finance/journal_entry_review', 'refresh');
     }
 
     // Chart Type Management
@@ -605,6 +923,200 @@ class Finance extends CI_Controller {
         }
         
         redirect(current_lang() . '/finance/chart_sub_type_list', 'refresh');
+    }
+
+    // Beginning Balances Management
+    function beginning_balance_list() {
+        $this->data['title'] = lang('beginning_balance_list');
+        
+        // Get selected fiscal year from POST or GET
+        $selected_fiscal_year_id = $this->input->post('fiscal_year_id') ? $this->input->post('fiscal_year_id') : $this->input->get('fiscal_year_id');
+        
+        // Get all fiscal years
+        $this->data['fiscal_years'] = $this->setting_model->fiscal_year_list()->result();
+        
+        // Get beginning balances for selected fiscal year
+        if ($selected_fiscal_year_id) {
+            $this->data['selected_fiscal_year_id'] = $selected_fiscal_year_id;
+            $this->data['beginning_balances'] = $this->finance_model->beginning_balance_list($selected_fiscal_year_id)->result();
+            
+            // Get fiscal year info
+            $fiscal_year = $this->setting_model->fiscal_year_list($selected_fiscal_year_id)->row();
+            $this->data['fiscal_year'] = $fiscal_year;
+        } else {
+            $this->data['selected_fiscal_year_id'] = null;
+            $this->data['beginning_balances'] = array();
+        }
+        
+        $this->data['content'] = 'finance/beginning_balance_list';
+        $this->load->view('template', $this->data);
+    }
+
+    function beginning_balance_create($id = null) {
+        $this->data['id'] = $id;
+        if (!is_null($id)) {
+            $id = decode_id($id);
+        }
+
+        if (is_null($id)) {
+            $this->data['title'] = lang('beginning_balance_create');
+        } else {
+            $this->data['title'] = lang('beginning_balance_edit');
+            $this->data['balance'] = $this->finance_model->beginning_balance_list(null, $id)->row();
+            
+            if (!$this->data['balance']) {
+                $this->session->set_flashdata('warning', lang('beginning_balance_not_found'));
+                redirect(current_lang() . '/finance/beginning_balance_list', 'refresh');
+                return;
+            }
+            
+            // Check if already posted
+            if ($this->data['balance']->posted == 1) {
+                $this->session->set_flashdata('warning', lang('beginning_balance_already_posted'));
+                redirect(current_lang() . '/finance/beginning_balance_list?fiscal_year_id=' . $this->data['balance']->fiscal_year_id, 'refresh');
+                return;
+            }
+        }
+
+        $this->form_validation->set_rules('fiscal_year_id', lang('fiscal_year'), 'required');
+        $this->form_validation->set_rules('account', lang('finance_account_code'), 'required');
+        $this->form_validation->set_rules('debit', lang('beginning_balance_debit'), 'numeric');
+        $this->form_validation->set_rules('credit', lang('beginning_balance_credit'), 'numeric');
+        $this->form_validation->set_rules('description', lang('description'), '');
+
+        if ($this->form_validation->run() == TRUE) {
+            $fiscal_year_id = $this->input->post('fiscal_year_id');
+            $account = trim($this->input->post('account'));
+            $debit = floatval(str_replace(',', '', $this->input->post('debit')));
+            $credit = floatval(str_replace(',', '', $this->input->post('credit')));
+            $description = trim($this->input->post('description'));
+
+            // Validate that account exists
+            $account_info = account_row_info($account);
+            if (!$account_info) {
+                $this->data['warning'] = lang('beginning_balance_account_not_found');
+            } else {
+                // Check if debit and credit are both zero
+                if ($debit == 0 && $credit == 0) {
+                    $this->data['warning'] = lang('beginning_balance_amount_required');
+                } else {
+                    $data = array(
+                        'fiscal_year_id' => $fiscal_year_id,
+                        'account' => $account,
+                        'debit' => $debit,
+                        'credit' => $credit,
+                        'description' => $description
+                    );
+
+                    if (is_null($id)) {
+                        // Check if beginning balance already exists for this fiscal year and account
+                        if ($this->finance_model->check_beginning_balance_exists($fiscal_year_id, $account)) {
+                            $this->data['warning'] = lang('beginning_balance_already_exists');
+                        } else {
+                            $result = $this->finance_model->beginning_balance_create($data);
+                            if ($result) {
+                                $this->session->set_flashdata('message', lang('beginning_balance_create_success'));
+                                redirect(current_lang() . '/finance/beginning_balance_list?fiscal_year_id=' . $fiscal_year_id, 'refresh');
+                            } else {
+                                $this->data['warning'] = lang('beginning_balance_create_fail');
+                            }
+                        }
+                    } else {
+                        // Check if beginning balance already exists for another record
+                        $existing = $this->finance_model->beginning_balance_list($fiscal_year_id)->result();
+                        $exists = false;
+                        foreach ($existing as $existing_balance) {
+                            if ($existing_balance->account == $account && $existing_balance->id != $id) {
+                                $exists = true;
+                                break;
+                            }
+                        }
+                        
+                        if ($exists) {
+                            $this->data['warning'] = lang('beginning_balance_already_exists');
+                        } else {
+                            $result = $this->finance_model->beginning_balance_update($data, $id);
+                            if ($result) {
+                                $this->session->set_flashdata('message', lang('beginning_balance_update_success'));
+                                redirect(current_lang() . '/finance/beginning_balance_list?fiscal_year_id=' . $fiscal_year_id, 'refresh');
+                            } else {
+                                $this->data['warning'] = lang('beginning_balance_update_fail');
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Get fiscal years
+        $this->data['fiscal_years'] = $this->setting_model->fiscal_year_list()->result();
+        
+        // Get account list
+        $this->data['account_list'] = $this->finance_model->account_chart_by_accounttype();
+        
+        $this->data['content'] = 'finance/beginning_balance_form';
+        $this->load->view('template', $this->data);
+    }
+
+    function beginning_balance_edit($id) {
+        $this->beginning_balance_create($id);
+    }
+
+    function beginning_balance_delete($id) {
+        $id = decode_id($id);
+        
+        $balance = $this->finance_model->beginning_balance_list(null, $id)->row();
+        
+        if (!$balance) {
+            $this->session->set_flashdata('warning', lang('beginning_balance_not_found'));
+            redirect(current_lang() . '/finance/beginning_balance_list', 'refresh');
+            return;
+        }
+        
+        // Check if already posted
+        if ($balance->posted == 1) {
+            $this->session->set_flashdata('warning', lang('beginning_balance_cannot_delete_posted'));
+            redirect(current_lang() . '/finance/beginning_balance_list?fiscal_year_id=' . $balance->fiscal_year_id, 'refresh');
+            return;
+        }
+        
+        $result = $this->finance_model->beginning_balance_delete($id);
+        
+        if ($result) {
+            $this->session->set_flashdata('message', lang('beginning_balance_delete_success'));
+        } else {
+            $this->session->set_flashdata('warning', lang('beginning_balance_delete_fail'));
+        }
+        
+        redirect(current_lang() . '/finance/beginning_balance_list?fiscal_year_id=' . $balance->fiscal_year_id, 'refresh');
+    }
+
+    function beginning_balance_post($id) {
+        $id = decode_id($id);
+        
+        $balance = $this->finance_model->beginning_balance_list(null, $id)->row();
+        
+        if (!$balance) {
+            $this->session->set_flashdata('warning', lang('beginning_balance_not_found'));
+            redirect(current_lang() . '/finance/beginning_balance_list', 'refresh');
+            return;
+        }
+        
+        if ($balance->posted == 1) {
+            $this->session->set_flashdata('warning', lang('beginning_balance_already_posted'));
+            redirect(current_lang() . '/finance/beginning_balance_list?fiscal_year_id=' . $balance->fiscal_year_id, 'refresh');
+            return;
+        }
+        
+        $result = $this->finance_model->beginning_balance_post_to_ledger($id);
+        
+        if ($result) {
+            $this->session->set_flashdata('message', lang('beginning_balance_post_success'));
+        } else {
+            $this->session->set_flashdata('warning', lang('beginning_balance_post_fail'));
+        }
+        
+        redirect(current_lang() . '/finance/beginning_balance_list?fiscal_year_id=' . $balance->fiscal_year_id, 'refresh');
     }
 
 }

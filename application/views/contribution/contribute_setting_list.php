@@ -4,7 +4,7 @@
 <!-- Sweet alert -->
 <script src="<?php echo base_url(); ?>media/js/plugins/sweetalert/sweetalert.min.js"></script>
 
-<?php echo form_open(current_lang() . "/contribution/contribute_setting", 'class="form-horizontal"'); ?>
+<form action="<?php echo site_url(current_lang() . "/contribution/contribute_setting"); ?>" method="get" class="form-horizontal">
 
 <?php
 if (isset($message) && !empty($message)) {
@@ -20,8 +20,15 @@ if (isset($message) && !empty($message)) {
 
 <div class="form-group col-lg-10">
 
-    <div class="col-lg-5">
-        <input type="text" class="form-control" id="accountno" name="key" value="<?php echo (isset($_GET['key']) ? $_GET['key'] : ''); ?>"/> 
+    <div class="col-lg-4">
+        <input type="text" class="form-control" id="accountno" name="key" value="<?php echo $this->input->get('key') ? htmlspecialchars($this->input->get('key'), ENT_QUOTES, 'UTF-8') : ''; ?>"/> 
+    </div>
+    <div class="col-lg-3">
+        <select name="status" class="form-control">
+            <option value=""><?php echo lang('all'); ?> <?php echo lang('contribution_posted'); ?></option>
+            <option value="0" <?php echo ($this->input->get('status') === '0') ? 'selected' : ''; ?>>Not <?php echo lang('contribution_posted'); ?></option>
+            <option value="1" <?php echo ($this->input->get('status') === '1') ? 'selected' : ''; ?>><?php echo lang('contribution_posted'); ?></option>
+        </select>
     </div>
     <div class="col-lg-2">
         <input type="submit" value="<?php echo lang('button_search'); ?>" class="btn btn-primary"/>
@@ -30,7 +37,7 @@ if (isset($message) && !empty($message)) {
 </div>
 
 
-<?php echo form_close(); ?>
+</form>
 
 
 <div class="table-responsive">

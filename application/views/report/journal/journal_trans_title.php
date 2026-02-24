@@ -1,3 +1,9 @@
+<?php if (isset($link_cat) && $link_cat == 5): ?>
+<div class="alert alert-info" style="margin-bottom: 15px;">
+    <i class="fa fa-info-circle"></i> This report includes <strong>Journal Entries / General Journal</strong> (journal 5) transactions: manual journal entries, <strong>Cash Receipt</strong>, and <strong>Cash Disbursement</strong> transactions (once posted to the General Ledger).
+</div>
+<?php endif; ?>
+
 <div class="table-responsive">
     <div style="text-align: right; margin-right: 20px;">
         <a  class="btn btn-primary" href="<?php echo site_url(current_lang() . '/report/create_journal_trans_title/' . $link_cat); ?>"><?php echo 'New Report'; ?></a>

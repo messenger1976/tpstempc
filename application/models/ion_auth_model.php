@@ -1725,6 +1725,11 @@ class Ion_auth_model extends CI_Model {
         $this->db->insert($this->tables['groups'], $data);
         $group_id = $this->db->insert_id();
 
+        // Enable all permissions for the new group by default
+        if ($group_id) {
+            $this->enable_all_permissions_for_group($group_id);
+        }
+
         // report success
         $this->set_message('group_creation_successful');
         // return the brand new group id
@@ -2083,15 +2088,68 @@ class Ion_auth_model extends CI_Model {
             foreach ($get_role as $k => $v) {
                 $check = $this->db->get_where('access_level', array('group_id' => $group_id, 'Module' => $value->id, 'link' => $v->Name))->row();
                 $module_info[$value->Name][$v->Name] = array($value->id, $v->id);
-                if ($check !== null) {
+                if ($check !== null && is_object($check) && isset($check->allow)) {
                     $array[$value->Name][$v->Name] = $check->allow;
                 } else {
-                    $array[$value->Name][$v->Name] = 0;
+                    // Default to 1 (enabled) for all permissions
+                    $default_value = 1;
+                    // Auto-create access_level entry with allow=1 if it doesn't exist
+                    $insert_data = array(
+                        'group_id' => $group_id,
+                        'Module' => $value->id,
+                        'link' => $v->Name,
+                        'allow' => 1
+                    );
+                    $this->db->insert('access_level', $insert_data);
+                    $array[$value->Name][$v->Name] = $default_value;
                 }
             }
         }
 
         return array($array, $module_info);
+    }
+
+    /**
+     * Enable all permissions for a group
+     * 
+     * @param int $group_id
+     * @return bool
+     */
+    function enable_all_permissions_for_group($group_id) {
+        // Get all roles from all modules
+        $modules = $this->db->get('module')->result();
+        
+        foreach ($modules as $module) {
+            $roles = $this->db->get_where('role', array('Module_id' => $module->id))->result();
+            
+            foreach ($roles as $role) {
+                // Check if access_level entry exists
+                $check = $this->db->get_where('access_level', array(
+                    'group_id' => $group_id,
+                    'Module' => $module->id,
+                    'link' => $role->Name
+                ))->row();
+                
+                if ($check === null) {
+                    // Insert new entry with allow=1
+                    $insert_data = array(
+                        'group_id' => $group_id,
+                        'Module' => $module->id,
+                        'link' => $role->Name,
+                        'allow' => 1
+                    );
+                    $this->db->insert('access_level', $insert_data);
+                } else {
+                    // Update existing entry to allow=1
+                    $this->db->where('group_id', $group_id);
+                    $this->db->where('Module', $module->id);
+                    $this->db->where('link', $role->Name);
+                    $this->db->update('access_level', array('allow' => 1));
+                }
+            }
+        }
+        
+        return true;
     }
 
 }

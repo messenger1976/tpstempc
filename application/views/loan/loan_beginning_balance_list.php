@@ -1,0 +1,212 @@
+<div class="table-responsive">
+    <div style="text-align: right; margin-right: 20px; margin-bottom: 20px;">
+        <a class="btn btn-primary" href="<?php echo site_url(current_lang() . '/loan/loan_beginning_balance_create'); ?>"><?php echo lang('loan_beginning_balance_create'); ?></a>
+    </div>
+    
+    <!-- Fiscal Year Selection Form -->
+    <div class="panel panel-default" style="margin-bottom: 20px;">
+        <div class="panel-heading">
+            <h4><?php echo lang('select_fiscal_year'); ?></h4>
+        </div>
+        <div class="panel-body">
+            <form method="post" action="<?php echo site_url(current_lang() . '/loan/loan_beginning_balance_list'); ?>" class="form-inline" id="filterForm">
+                <div class="form-group">
+                    <label for="fiscal_year_id"><?php echo lang('fiscal_year'); ?>:</label>
+                    <select name="fiscal_year_id" id="fiscal_year_id" class="form-control" style="margin-left: 10px; margin-right: 10px;">
+                        <option value=""><?php echo lang('select_default_text'); ?></option>
+                        <?php foreach ($fiscal_years as $fy) { 
+                            // Ensure both values are compared as integers for proper matching
+                            $fy_id = (int)$fy->id;
+                            $is_selected = (isset($selected_fiscal_year_id) && (int)$selected_fiscal_year_id === $fy_id);
+                        ?>
+                            <option value="<?php echo $fy->id; ?>" <?php echo $is_selected ? 'selected="selected"' : ''; ?>>
+                                <?php echo $fy->name . ' (' . date('M d, Y', strtotime($fy->start_date)) . ' - ' . date('M d, Y', strtotime($fy->end_date)) . ')'; ?>
+                            </option>
+                        <?php } ?>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="loan_product_id"><?php echo lang('loan_beginning_balance_loan_product'); ?>:</label>
+                    <select name="loan_product_id" id="loan_product_id" class="form-control" style="margin-left: 10px; margin-right: 10px;">
+                        <option value="all" <?php echo (isset($selected_loan_product_id) && $selected_loan_product_id == 'all' ? 'selected' : ''); ?>>All</option>
+                        <?php foreach ($loan_products as $product) { ?>
+                            <option value="<?php echo $product->id; ?>" <?php echo (isset($selected_loan_product_id) && $selected_loan_product_id == $product->id ? 'selected' : ''); ?>>
+                                <?php echo $product->name; ?>
+                            </option>
+                        <?php } ?>
+                    </select>
+                </div>
+                <button type="submit" class="btn btn-info"><?php echo lang('button_view'); ?></button>
+            </form>
+        </div>
+    </div>
+
+    <?php if (isset($selected_fiscal_year_id) && $selected_fiscal_year_id) { ?>
+        <?php if (isset($fiscal_year)) { ?>
+            <div class="alert alert-info" style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <strong><?php echo lang('fiscal_year'); ?>:</strong> <?php echo $fiscal_year->name; ?> 
+                    (<?php echo date('M d, Y', strtotime($fiscal_year->start_date)) . ' - ' . date('M d, Y', strtotime($fiscal_year->end_date)); ?>)
+                </div>
+                <div>
+                    <?php 
+                    $export_url = site_url(current_lang() . '/loan/loan_beginning_balance_export');
+                    $export_url .= '?fiscal_year_id=' . urlencode($selected_fiscal_year_id);
+                    if (isset($selected_loan_product_id) && $selected_loan_product_id != 'all') {
+                        $export_url .= '&loan_product_id=' . urlencode($selected_loan_product_id);
+                    }
+                    ?>
+                    <a class="btn btn-success" href="<?php echo $export_url; ?>">
+                        <i class="fa fa-file-excel-o"></i> Export to Excel
+                    </a>
+                </div>
+            </div>
+        <?php } ?>
+        
+        <table class="table table-bordered table-striped">
+            <thead>
+                <tr>
+                    <th style="width:80px;"><?php echo lang('sno'); ?></th>
+                    <th><?php echo lang('loan_beginning_balance_member_id'); ?></th>
+                    <th><?php echo lang('member_name'); ?></th>
+                    <th><?php echo lang('loan_beginning_balance_loan_product'); ?></th>
+                    <th><?php echo lang('loan_beginning_balance_loan_id'); ?></th>
+                    <th style="text-align: right;"><?php echo lang('loan_beginning_balance_loan_amount'); ?></th>
+                    <th style="text-align: right;"><?php echo lang('loan_beginning_balance_monthly_amort'); ?></th>
+                    <th><?php echo lang('loan_beginning_balance_term'); ?></th>
+                    <th><?php echo lang('loan_beginning_balance_last_date_paid'); ?></th>
+                    <th style="text-align: right;"><?php echo lang('loan_beginning_balance_principal'); ?></th>
+                    <th style="text-align: right;"><?php echo lang('loan_beginning_balance_interest'); ?></th>
+                    <th style="text-align: right;"><?php echo lang('loan_beginning_balance_penalty'); ?></th>
+                    <th style="text-align: right;"><?php echo lang('loan_beginning_balance_total'); ?></th>
+                    <th><?php echo lang('status'); ?></th>
+                    <th style="width:200px;"><?php echo lang('actioncolumn'); ?></th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php
+                $i = 1;
+                if (count($loan_beginning_balances) > 0) {
+                    foreach ($loan_beginning_balances as $balance) {
+                        $member_info = isset($member_names[$balance->member_id]) ? $member_names[$balance->member_id] : 'Unknown';
+                        $product_name = isset($product_info[$balance->loan_product_id]) ? $product_info[$balance->loan_product_id] : '-';
+                        ?>
+                        <tr>
+                            <td><?php echo $i++; ?></td>
+                            <td><?php echo $balance->member_id; ?></td>
+                            <td><?php echo $member_info; ?></td>
+                            <td><?php echo $product_name; ?></td>
+                            <td><?php echo $balance->loan_id ? $balance->loan_id : '-'; ?></td>
+                            <td style="text-align: right;"><?php echo $balance->loan_amount ? number_format($balance->loan_amount, 2) : '-'; ?></td>
+                            <td style="text-align: right;"><?php echo $balance->monthly_amort ? number_format($balance->monthly_amort, 2) : '-'; ?></td>
+                            <td><?php echo $balance->term ? $balance->term . ' months' : '-'; ?></td>
+                            <td><?php echo $balance->last_date_paid ? date('d-m-Y', strtotime($balance->last_date_paid)) : '-'; ?></td>
+                            <td style="text-align: right;"><?php echo number_format($balance->principal_balance, 2); ?></td>
+                            <td style="text-align: right;"><?php echo number_format($balance->interest_balance, 2); ?></td>
+                            <td style="text-align: right;"><?php echo number_format($balance->penalty_balance, 2); ?></td>
+                            <td style="text-align: right;"><strong><?php echo number_format($balance->total_balance, 2); ?></strong></td>
+                            <td>
+                                <?php if ($balance->posted == 1) { ?>
+                                    <span class="label label-success"><?php echo lang('loan_beginning_balance_posted'); ?></span>
+                                    <?php if ($balance->posted_date) { ?>
+                                        <br><small><?php echo date('M d, Y H:i', strtotime($balance->posted_date)); ?></small>
+                                    <?php } ?>
+                                <?php } else { ?>
+                                    <span class="label label-warning"><?php echo lang('loan_beginning_balance_not_posted'); ?></span>
+                                <?php } ?>
+                            </td>
+                            <td>
+                                <?php if ($balance->posted == 0) { ?>
+                                    <a href="<?php echo site_url(current_lang() . '/loan/loan_beginning_balance_create/' . encode_id($balance->id)); ?>">
+                                        <i class="fa fa-edit"></i> <?php echo lang('button_edit'); ?>
+                                    </a>
+                                    <a href="javascript:void(0);" class="btn-delete-balance" data-id="<?php echo encode_id($balance->id); ?>" data-member="<?php echo htmlspecialchars($balance->member_id); ?>" style="color: red; margin-left: 10px;">
+                                        <i class="fa fa-trash"></i> <?php echo lang('button_delete'); ?>
+                                    </a>
+                                    <a href="javascript:void(0);" 
+                                       class="btn-post-balance" 
+                                       data-id="<?php echo encode_id($balance->id); ?>" 
+                                       data-member="<?php echo htmlspecialchars($balance->member_id); ?>"
+                                       style="color: green; margin-left: 10px;">
+                                        <i class="fa fa-check"></i> <?php echo lang('loan_beginning_balance_post'); ?>
+                                    </a>
+                                <?php } else { ?>
+                                    <span class="text-muted"><?php echo lang('loan_beginning_balance_no_edit'); ?></span>
+                                <?php } ?>
+                            </td>
+                        </tr>
+                    <?php }
+                } else {
+                    ?>
+                    <tr>
+                        <td colspan="15"><?php echo lang('data_not_found'); ?></td>
+                    </tr>
+                <?php } ?>
+            </tbody>
+        </table>
+    <?php } else { ?>
+        <div class="alert alert-warning">
+            <?php echo lang('loan_beginning_balance_select_fiscal_year'); ?>
+        </div>
+    <?php } ?>
+</div>
+
+<script>
+(function() {
+    function initScripts() {
+        if (typeof jQuery === 'undefined') {
+            setTimeout(initScripts, 50);
+            return;
+        }
+        
+        $(document).ready(function() {
+            // Delete confirmation using SweetAlert
+            $('.btn-delete-balance').click(function() {
+                var balanceId = $(this).data('id');
+                var member = $(this).data('member');
+                var deleteUrl = '<?php echo site_url(current_lang() . '/loan/loan_beginning_balance_delete/'); ?>/' + balanceId;
+                
+                swal({
+                    title: "<?php echo lang('are_you_sure'); ?>",
+                    text: "<?php echo lang('loan_beginning_balance_delete_confirm'); ?>: " + member,
+                    type: "warning",
+                    showCancelButton: true,
+                    confirmButtonColor: "#DD6B55",
+                    confirmButtonText: "<?php echo lang('yes_delete'); ?>",
+                    cancelButtonText: "<?php echo lang('cancel'); ?>",
+                    closeOnConfirm: false,
+                    closeOnCancel: true
+                }, function(isConfirm) {
+                    if (isConfirm) {
+                        window.location.href = deleteUrl;
+                    }
+                });
+            });
+            
+            // Post to General Ledger confirmation using SweetAlert
+            $('.btn-post-balance').click(function() {
+                var balanceId = $(this).data('id');
+                var member = $(this).data('member');
+                var postUrl = '<?php echo site_url(current_lang() . '/loan/loan_beginning_balance_post/'); ?>/' + balanceId;
+                
+                swal({
+                    title: "<?php echo lang('are_you_sure'); ?>",
+                    text: "<?php echo lang('loan_beginning_balance_post_confirm'); ?>" + (member ? " (Member: " + member + ")" : ""),
+                    type: "warning",
+                    showCancelButton: true,
+                    confirmButtonColor: "#5cb85c",
+                    confirmButtonText: "<?php echo lang('loan_beginning_balance_post'); ?>",
+                    cancelButtonText: "<?php echo lang('cancel'); ?>",
+                    closeOnConfirm: false,
+                    closeOnCancel: true
+                }, function(isConfirm) {
+                    if (isConfirm) {
+                        window.location.href = postUrl;
+                    }
+                });
+            });
+        });
+    }
+    initScripts();
+})();
+</script>

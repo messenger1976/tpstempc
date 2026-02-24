@@ -1,0 +1,94 @@
+FIX FOR JOURNAL ENTRY CREATION - Transaction Rollback Issue
+
+PROBLEM:
+The verification query inside the transaction (lines 610-621) is causing transactions to rollback.
+Entry 32800 was created but then rolled back, so it doesn't exist.
+Entry 12 works because it was created successfully.
+
+SOLUTION:
+Remove the verification query that happens BEFORE commit and only verify AFTER commit.
+
+REPLACE LINES 610-623 in application/models/finance_model.php:
+
+FROM:
+        // Verify items were saved with correct entryid BEFORE committing transaction
+        $verify_before_commit = $this->db->query("SELECT COUNT(*) as cnt FROM general_journal WHERE entryid = ?", array(intval($jid)))->row();
+        $verify_count_before = $verify_before_commit ? intval($verify_before_commit->cnt) : 0;
+        
+        if ($verify_count_before != $items_inserted) {
+            log_message('error', 'CRITICAL: Journal entry ' . $jid . ': Verification failed BEFORE commit! Expected ' . $items_inserted . ' items with entryid=' . $jid . ', but found ' . $verify_count_before);
+            // Check what entryid values actually exist
+            $wrong_entryids = $this->db->query("SELECT DISTINCT entryid, COUNT(*) as cnt FROM general_journal WHERE entryid != ? GROUP BY entryid ORDER BY id DESC LIMIT 5", array(intval($jid)))->result();
+            log_message('error', 'Found items with different entryids: ' . json_encode($wrong_entryids));
+        } else {
+            log_message('error', 'Journal entry ' . $jid . ': Verification passed BEFORE commit. Found ' . $verify_count_before . ' items with entryid=' . $jid);
+        }
+        
+        log_message('error', 'Journal entry ' . $jid . ': Successfully inserted ' . $items_inserted . ' line items (expected: ' . count($array_items) . ')');
+
+TO:
+        // Log insertion success - verification will happen AFTER commit
+        log_message('error', 'Journal entry ' . $jid . ': Successfully inserted ' . $items_inserted . ' line items (expected: ' . count($array_items) . '). Committing transaction...');
+
+
+ALSO UPDATE LINES 635-657 to improve post-commit verification:
+
+FROM:
+        $this->db->trans_complete();
+
+        if ($this->db->trans_status() === FALSE) {
+            log_message('error', 'Journal entry creation failed - transaction rolled back');
+            return FALSE;
+        }
+        
+        // Verify items were actually inserted after transaction commits
+        $verify_query = $this->db->select('COUNT(*) as cnt', FALSE)
+                                 ->from('general_journal')
+                                 ->where('entryid', $jid);
+        if ($has_pin_column) {
+            $verify_query->where('(PIN = "' . $this->db->escape_str($pin) . '" OR PIN IS NULL OR PIN = "")', NULL, FALSE);
+        }
+        $verify_result = $verify_query->get()->row();
+        $verify_count = $verify_result ? intval($verify_result->cnt) : 0;
+        
+        if ($verify_count != $items_inserted) {
+            log_message('error', 'Journal entry ' . $jid . ' verification failed: Expected ' . $items_inserted . ' items, found ' . $verify_count . ' after commit');
+            // Still return the ID - items might exist but with different PIN or data issue
+        } else {
+            log_message('info', 'Journal entry ' . $jid . ' created successfully with ' . $verify_count . ' line items (posted: ' . ($auto_post ? 'yes' : 'no - requires approval') . ')');
+        }
+
+TO:
+        $this->db->trans_complete();
+        
+        $transaction_status = $this->db->trans_status();
+        log_message('error', 'Transaction completed. Status: ' . ($transaction_status ? 'SUCCESS' : 'FAILED (rolled back)'));
+
+        if ($transaction_status === FALSE) {
+            log_message('error', 'Journal entry creation failed - transaction rolled back. Entry ID ' . $jid . ' and its line items were NOT saved.');
+            // Check database error
+            $error = $this->db->error();
+            if (!empty($error['message'])) {
+                log_message('error', 'Database error: ' . json_encode($error));
+            }
+            return FALSE;
+        }
+        
+        // Verify entry header exists after commit
+        $header_check = $this->db->where('id', $jid)->get('general_journal_entry')->row();
+        if (!$header_check) {
+            log_message('error', 'CRITICAL: Entry header with id=' . $jid . ' does not exist after transaction commit! Transaction may have rolled back silently.');
+            return FALSE;
+        }
+        
+        // Verify items were actually inserted after transaction commits (simple query)
+        $verify_sql = "SELECT COUNT(*) as cnt FROM general_journal WHERE entryid = ?";
+        $verify_result = $this->db->query($verify_sql, array(intval($jid)))->row();
+        $verify_count = $verify_result ? intval($verify_result->cnt) : 0;
+        
+        if ($verify_count != $items_inserted) {
+            log_message('error', 'Journal entry ' . $jid . ' verification failed: Expected ' . $items_inserted . ' items, found ' . $verify_count . ' after commit');
+            // Still return the ID - entry was created, but item count mismatch
+        } else {
+            log_message('error', 'Journal entry ' . $jid . ' created successfully with ' . $verify_count . ' line items (posted: ' . ($auto_post ? 'yes' : 'no - requires approval') . ')');
+        }

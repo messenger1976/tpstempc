@@ -214,6 +214,88 @@ class Report_Member extends CI_Controller {
         $this->load->view('template', $this->data);
     }
 
+    function member_list_export($link, $id = null) {
+        if (!is_null($id)) {
+            $id = decode_id($id);
+        }
+
+        $reportinfo = $this->report_model->report_memberlist($id)->row();
+        if (!$reportinfo) {
+            $this->session->set_flashdata('warning', 'Report not found');
+            redirect(current_lang() . '/report_member/member_report_title/' . $link);
+            exit();
+        }
+
+        $columns = explode(',', $reportinfo->column);
+        $tmpcolumn = $this->member_fields();
+        $all_column = array_merge($tmpcolumn[0], array_merge($tmpcolumn[1], $tmpcolumn[2]));
+        $transaction = $this->report_model->member_list_data($reportinfo->fromdate, $reportinfo->todate, $columns);
+
+        // Clear output buffers
+        if (ob_get_level()) {
+            ob_end_clean();
+        }
+        while (@ob_end_clean());
+
+        $this->load->library('excel');
+        $objPHPExcel = new PHPExcel();
+
+        $objPHPExcel->getProperties()->setCreator(company_info()->name)
+            ->setTitle('Member List')
+            ->setSubject('Member List Export')
+            ->setDescription('Member list exported from ' . company_info()->name);
+
+        $sheet = $objPHPExcel->setActiveSheetIndex(0);
+        $sheet->setTitle('Member List');
+
+        // Header row
+        $col = 'A';
+        $sheet->setCellValue($col++ . '1', 'S/No');
+        foreach ($columns as $value) {
+            $sheet->setCellValue($col++ . '1', isset($all_column[$value]) ? $all_column[$value] : $value);
+        }
+
+        $headerStyle = array(
+            'font' => array('bold' => true),
+            'fill' => array(
+                'type' => PHPExcel_Style_Fill::FILL_SOLID,
+                'color' => array('rgb' => 'E0E0E0')
+            )
+        );
+        $lastCol = chr(ord('A') + count($columns));
+        $sheet->getStyle('A1:' . $lastCol . '1')->applyFromArray($headerStyle);
+
+        // Data rows
+        $row = 2;
+        $i = 1;
+        foreach ($transaction as $value) {
+            $col = 'A';
+            $sheet->setCellValue($col++ . $row, $i++);
+            foreach ($columns as $value1) {
+                $prop = str_replace('.', '', $value1);
+                $cellVal = isset($value->$prop) ? $value->$prop : '';
+                if ($value1 == 'members.dob' || $value1 == 'members.joiningdate') {
+                    $cellVal = $cellVal ? format_date($cellVal, false) : $cellVal;
+                }
+                $sheet->setCellValue($col++ . $row, $cellVal);
+            }
+            $row++;
+        }
+
+        foreach (range('A', $lastCol) as $c) {
+            $sheet->getColumnDimension($c)->setAutoSize(true);
+        }
+
+        $filename = 'member_list_' . date('Y-m-d_His') . '.xls';
+        header('Content-Type: application/vnd.ms-excel');
+        header('Content-Disposition: attachment;filename="' . $filename . '"');
+        header('Cache-Control: max-age=0');
+
+        $objWriter = PHPExcel_IOFactory::createWriter($objPHPExcel, 'Excel5');
+        $objWriter->save('php://output');
+        exit();
+    }
+
     function member_list_print($link, $id = null) {
         if ($link == 1) {
             $this->data['title'] = lang('member_report_member');
@@ -313,20 +395,43 @@ class Report_Member extends CI_Controller {
     }
 
     function export_to_pdf($html, $filename, $page_orientation = null) {
-        //$html = "Tanzania";
-        //echo $var; exit;
+        // Clear output buffers to prevent corrupting PDF binary stream
+        if (ob_get_level()) {
+            ob_end_clean();
+        }
+        while (@ob_end_clean());
+
+        // mPDF needs more memory for large reports (member lists, etc.)
+        @ini_set('memory_limit', '256M');
+
         $this->load->library('pdf1');
         $pdf = $this->pdf1->load($page_orientation);
+
+        // Use local filesystem path for logo - mPDF hangs when fetching images via HTTP/URL
+        $pdf->SetBasePath(str_replace('\\', '/', FCPATH));
+        $company = company_info();
+        $logo_img = '';
+        if ($company && !empty($company->logo)) {
+            $logo_path = FCPATH . 'logo/' . $company->logo;
+            if (file_exists($logo_path)) {
+                $logo_src = 'logo/' . str_replace(' ', '%20', $company->logo);
+                $logo_img = '<img style="height:50px; display:inline-block;" src="' . $logo_src . '"/>';
+            }
+        }
+        $company_name = $company ? $company->name : '';
+        $company_box = $company ? $company->box : '';
+        $company_mobile = $company ? $company->mobile : '';
+
         $header = '<div style="border-bottom:1px solid #000; text-align:center;">
-                <table style="display:inline-block;"><tr><td valign="top"><img style="height:50px; display:inline-block;" src="' . base_url() . 'logo/' . company_info()->logo . '"/></td>
-                    <td style="text-align:center;"><h2 style="padding: 0px; margin: 0px; font-size:18px; text-align:center;"><strong>' . company_info()->name . '</strong></h2>
-                        <h5 style="padding: 0px; margin: 0px; font-size:15px;text-align:center;"><strong> P.O.Box' . strtoupper(company_info()->box) . ' , ' . strtoupper(lang('clientaccount_label_phone')) . ':' . company_info()->mobile . '</strong></h5></td></tr></table> 
+                <table style="display:inline-block;"><tr><td valign="top">' . $logo_img . '</td>
+                    <td style="text-align:center;"><h2 style="padding: 0px; margin: 0px; font-size:18px; text-align:center;"><strong>' . $company_name . '</strong></h2>
+                        <h5 style="padding: 0px; margin: 0px; font-size:15px;text-align:center;"><strong> P.O.Box' . strtoupper($company_box) . ' , ' . strtoupper(lang('clientaccount_label_phone')) . ':' . $company_mobile . '</strong></h5></td></tr></table> 
                 </div>';
         $pdf->SetHTMLHeader($header, 'E', true);
         $pdf->SetHTMLHeader($header, 'O', true);
-        $pdf->SetFooter('SACCO PLUS' . '|{PAGENO}|' . date('d-m-Y H:i:s')); // Add a footer for good measure <img src="https://davidsimpson.me/wp-includes/images/smilies/icon_wink.gif" alt=";)" class="wp-smiley">
-        $pdf->WriteHTML($html); // write the HTML into the PDF   
-        $pdf->Output($filename, 'I'); // save to file because we can
+        $pdf->SetFooter('SACCO PLUS' . '|{PAGENO}|' . date('d-m-Y H:i:s'));
+        $pdf->WriteHTML($html);
+        $pdf->Output($filename, 'I');
         exit;
     }
 

@@ -1,4 +1,3 @@
-<script type="text/javascript" src="<?php echo base_url(); ?>media/js/jquery.autocomplete.js" ></script>
 <link href="<?php echo base_url(); ?>media/css/jquery.autocomplete.css" rel="stylesheet">
 <link href="<?php echo base_url(); ?>media/css/plugins/datapicker/datepicker3.css" rel="stylesheet"/>
 <?php echo form_open_multipart(current_lang() . "/loan/loan_application", 'class="form-horizontal"'); ?>
@@ -63,7 +62,14 @@ if (isset($message) && !empty($message)) {
 
         <div style="color: brown;margin: 20px; font-weight: bold; font-size: 13px; border-bottom: 1px solid #ccc;">
             <?php echo lang('loan_basic_info'); ?>
-        </div> 
+        </div>
+        <div class="form-group"><label class="col-lg-4 control-label"><?php echo lang('loan_LID'); ?> (LN Number) :</label>
+            <div class="col-lg-7">
+                <input type="text" name="lid" value="<?php echo set_value('lid', isset($next_ln_number) ? $next_ln_number : ''); ?>" class="form-control"/>
+                <small class="text-muted">Editable. Auto-generated if left empty.</small>
+                <?php echo form_error('lid'); ?>
+            </div>
+        </div>
         <div class="form-group"><label class="col-lg-4 control-label"><?php echo lang('loan_applicationdate'); ?>  : <span class="required">*</span></label>
             <div class=" col-lg-7">
                 <div class="input-group date" id="datetimepicker" >
@@ -156,16 +162,57 @@ if (isset($message) && !empty($message)) {
 </div>
 <?php echo form_close(); ?>
 <script src="<?php echo base_url() ?>media/js/script/moment.js"></script>
-<script src="<?php echo base_url() ?>media/js/plugins/datapicker/bootstrap-datepicker.js"></script>
-
 <script type="text/javascript">
-
-    $(function() {
-        $('#datetimepicker').datetimepicker({
-            pickTime: false
-        });
-    });
-    $(document).ready(function() {
+    (function() {
+        function initScripts() {
+            if (typeof jQuery === 'undefined') {
+                setTimeout(initScripts, 50);
+                return;
+            }
+            
+            // Load custom autocomplete plugin AFTER jQuery (template loads jQuery at page bottom).
+            // Without this, our plugin would run before jQuery and jQuery UI would hijack .autocomplete().
+            function runInits() {
+                if (typeof $.fn.datetimepicker === 'undefined') {
+                    var dp = document.createElement('script');
+                    dp.src = '<?php echo base_url() ?>media/js/plugins/datapicker/bootstrap-datepicker.js';
+                    dp.onload = function() {
+                        initDatePicker();
+                        initMainScript();
+                    };
+                    document.head.appendChild(dp);
+                } else {
+                    initDatePicker();
+                    initMainScript();
+                }
+            }
+            
+            var existingScript = document.querySelector('script[src*="jquery.autocomplete.js"]');
+            if (existingScript) {
+                runInits();
+                return;
+            }
+            var autocompleteScript = document.createElement('script');
+            autocompleteScript.src = '<?php echo base_url(); ?>media/js/jquery.autocomplete.js';
+            autocompleteScript.onload = function() {
+                runInits();
+            };
+            autocompleteScript.onerror = function() {
+                console.error('Failed to load autocomplete plugin');
+                runInits();
+            };
+            document.head.appendChild(autocompleteScript);
+            
+            function initDatePicker() {
+                $(function() {
+                    $('#datetimepicker').datetimepicker({
+                        pickTime: false
+                    });
+                });
+            }
+            
+            function initMainScript() {
+                $(document).ready(function() {
 
 
 
@@ -351,5 +398,9 @@ if (isset($message) && !empty($message)) {
 
 
 
-    });
+                });
+            }
+        }
+        initScripts();
+    })();
 </script>

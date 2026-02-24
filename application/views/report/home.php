@@ -38,6 +38,7 @@
                 <div class="inside_content">
                     <a href="<?php echo site_url(current_lang().'/report/general_leger_transaction/5'); ?>">Balance Sheet</a>
                     <a href="<?php echo site_url(current_lang().'/report/general_leger_transaction/4'); ?>">Income Statement</a>
+                    <a href="<?php echo site_url(current_lang().'/report/cash_flow_report'); ?>">Cash Flow Report</a>
                     <a href="<?php echo site_url(current_lang().'/report/general_leger_transaction/3'); ?>">Trial Balance</a>
                     <a href="<?php echo site_url(current_lang().'/report/general_leger_transaction/2'); ?>">General Ledger Summary</a>
                     <a href="<?php echo site_url(current_lang().'/report/general_leger_transaction/1'); ?>">General Ledger Transactions</a>
@@ -106,6 +107,7 @@
                 <div class="inside_content">
                     <a href="<?php echo site_url(current_lang().'/report_loan/loan_report/6'); ?>">Loan Processing Fee Collection</a>
                     <a href="<?php echo site_url(current_lang().'/report_loan/loan_report/1'); ?>">Loan List</a>
+                    <a href="<?php echo site_url(current_lang().'/report_loan/loan_report/7'); ?>">Loan Aging Report</a>
                     <a href="<?php echo site_url(current_lang().'/report_loan/repayment_schedule'); ?>">Loan Repayment Schedule</a>
                     <a href="<?php echo site_url(current_lang().'/report_loan/loan_statement'); ?>">Loan Statement</a>
                     <a href="<?php echo site_url(current_lang().'/report_loan/loan_report/3'); ?>">Interest & Penalty</a>

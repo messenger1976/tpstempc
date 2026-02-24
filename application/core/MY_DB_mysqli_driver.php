@@ -21,13 +21,17 @@ class MY_DB_mysqli_driver extends CI_DB_mysqli_driver {
     private $_logging_enabled = true;
     
     /**
-     * Tables to exclude from logging (system tables)
+     * Tables to exclude from logging (system tables and frequently updated tables)
      */
     private $_excluded_tables = array(
         'activity_logs',
         'sessions',
         'ci_sessions',
-        'login_attempts'
+        'login_attempts',
+        'general_journal_entry',
+        'general_journal',
+        'general_ledger_entry',
+        'general_ledger'
     );
 
     /**

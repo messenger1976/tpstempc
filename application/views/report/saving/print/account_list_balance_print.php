@@ -48,7 +48,7 @@
                                 ?>
                                 <tr>
                                     <td style="text-align: right; padding-right: 4px;"><?php echo $i++; ?>.</td>
-                                    <td><?php echo $value->account ?></td>
+                                    <td><?php echo !empty($value->old_members_acct) ? htmlspecialchars($value->old_members_acct, ENT_QUOTES, 'UTF-8') : htmlspecialchars($value->account, ENT_QUOTES, 'UTF-8'); ?></td>
                                     <td><?php echo $this->report_model->saving_account_name($value->RFID, $value->tablename); ?></td>
                                     <td><?php echo $account->name ?></td>
                                     <td style="text-align: right;"><?php echo number_format($value->balance, 2); ?></td>

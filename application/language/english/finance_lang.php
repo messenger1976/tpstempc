@@ -39,18 +39,43 @@ $lang['invalid_member_id'] = 'Invalid Member ID';
 $lang['member_fullname'] = 'Name';
 $lang['opening_balance_error'] = 'Opening balance for selected account is ';
 $lang['create_saving_account_error'] = 'Account fail to be created';
-
+$lang['total_savings_amount'] = 'Total Savings Amount';
 $lang['saving_account_list'] = 'Saving Account List';
 $lang['saving_account_statement'] = 'Account Statement';
 $lang['saving_account_transactions'] = 'Saving Accounts Transactions';
 $lang['saving_account_transactions_summary'] = 'Saving  Transactions Summary';
+$lang['account_type_code'] = 'Account Type Code';
+$lang['account_type_name'] = 'Account Type Name';
+$lang['account_status'] = 'Status';
+$lang['account_status_active'] = 'Active';
+$lang['account_status_inactive'] = 'Inactive';
+$lang['all_status'] = 'All Status';
+$lang['saving_account_gl_posted'] = 'Posted';
+$lang['saving_account_gl_not_posted'] = 'Not posted';
+$lang['saving_account_gl_status'] = 'GL Status';
+$lang['saving_account_post_to_gl'] = 'Post to GL';
+$lang['saving_account_post_to_gl_success_one'] = 'transaction posted to General Ledger';
+$lang['saving_account_post_to_gl_success_many'] = 'transactions posted to General Ledger';
+$lang['saving_account_post_to_gl_partial_fail'] = 'failed';
+$lang['saving_account_post_to_gl_fail'] = 'Failed to post to General Ledger';
+$lang['saving_account_post_to_gl_none'] = 'No unposted transactions for this account';
+$lang['saving_account_post_to_gl_confirm'] = 'Post all unposted transactions for this account to the General Ledger?';
+$lang['saving_account_post_selected_to_gl'] = 'Post selected to GL';
+$lang['saving_account_select_all_post_gl'] = 'Select all (accounts with unposted transactions)';
+$lang['saving_account_1_selected'] = '1 account selected';
+$lang['saving_account_n_selected'] = 'accounts selected';
+$lang['saving_account_post_selected_to_gl_confirm'] = 'Post all unposted transactions for the selected accounts to the General Ledger?';
 
 
 // general journal
+$lang['account'] = 'Account';
+$lang['debit'] = 'Debit';
+$lang['credit'] = 'Credit';
 $lang['journalentry_date'] ='Date';
 $lang['journalentry_description'] ='Description';
 $lang['journalentry_account'] ='Account';
 $lang['journalentry_account_description'] ='Description';
+$lang['description'] ='Description'; // Generic description key for beginning balances
 $lang['journalentry_credit'] ='Credit';
 $lang['journalentry_debit'] ='Debit';
 $lang['journalentry_total'] ='Total';
@@ -86,5 +111,46 @@ $lang['chart_sub_type_update_fail'] = 'Failed to update Chart Sub Type';
 $lang['chart_sub_type_delete_success'] = 'Chart Sub Type deleted successfully';
 $lang['chart_sub_type_delete_fail_in_use'] = 'Cannot delete Chart Sub Type. It is being used in account charts.';
 $lang['chart_sub_type_account_exists'] = 'Sub account number already exists for this chart type';
+
+// Beginning Balances
+$lang['beginning_balance_list'] = 'Beginning Balances';
+$lang['beginning_balance_create'] = 'Create Beginning Balance';
+$lang['beginning_balance_edit'] = 'Edit Beginning Balance';
+$lang['beginning_balance_debit'] = 'Debit';
+$lang['beginning_balance_credit'] = 'Credit';
+$lang['beginning_balance_btncreate'] = 'Create Beginning Balance';
+$lang['beginning_balance_create_success'] = 'Beginning balance created successfully';
+$lang['beginning_balance_create_fail'] = 'Failed to create beginning balance';
+$lang['beginning_balance_update_success'] = 'Beginning balance updated successfully';
+$lang['beginning_balance_update_fail'] = 'Failed to update beginning balance';
+$lang['beginning_balance_delete_success'] = 'Beginning balance deleted successfully';
+$lang['beginning_balance_delete_fail'] = 'Failed to delete beginning balance';
+$lang['beginning_balance_not_found'] = 'Beginning balance not found';
+$lang['beginning_balance_already_exists'] = 'Beginning balance already exists for this fiscal year and account';
+$lang['beginning_balance_account_not_found'] = 'Account not found in chart of accounts';
+$lang['beginning_balance_amount_required'] = 'Either debit or credit amount must be greater than zero';
+$lang['beginning_balance_posted'] = 'Posted';
+$lang['beginning_balance_not_posted'] = 'Not Posted';
+$lang['beginning_balance_post'] = 'Post to General Ledger';
+$lang['beginning_balance_post_success'] = 'Beginning balance posted to General Ledger successfully';
+$lang['beginning_balance_post_fail'] = 'Failed to post beginning balance to General Ledger';
+$lang['beginning_balance_already_posted'] = 'This beginning balance has already been posted to General Ledger';
+$lang['beginning_balance_cannot_delete_posted'] = 'Cannot delete beginning balance that has been posted to General Ledger';
+$lang['beginning_balance_no_edit'] = 'Cannot edit posted balance';
+$lang['beginning_balance_post_confirm'] = 'Are you sure you want to post this beginning balance to General Ledger? This action cannot be undone.';
+$lang['beginning_balance_delete_confirm'] = 'Are you sure you want to delete this beginning balance?';
+$lang['beginning_balance_select_fiscal_year'] = 'Please select a fiscal year to view beginning balances';
+$lang['select_fiscal_year'] = 'Select Fiscal Year';
+$lang['fiscal_year'] = 'Fiscal Year';
+$lang['status'] = 'Status';
+$lang['are_you_sure'] = 'Are you sure?';
+$lang['yes_delete'] = 'Yes, delete it!';
+$lang['cancel'] = 'Cancel';
+$lang['button_view'] = 'View';
+$lang['button_update'] = 'Update';
+$lang['button_cancel'] = 'Cancel';
+
+// Loan beginning balances (referenced in finance views)
+$lang['loan_beginning_balance_list'] = 'Loan Beginning Balances';
 
 ?>

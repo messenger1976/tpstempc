@@ -230,4 +230,10 @@ $lang['ledger_trial_balance'] = 'Trial Balance';
 //Journal Entry
 $lang['journalentry'] = 'Journal Entry';
 
+// Application name
+$lang['app_name'] = 'COOP';
+
+// Payment Method
+$lang['payment_method_list'] = 'Orodha ya Njia za Malipo';
+
 ?>

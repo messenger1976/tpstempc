@@ -37,10 +37,26 @@ $html.=format_date($ex[0], FALSE) .'</b> <br/></td>
             <td style="width:750px;">&nbsp;</td>
         </tr>
         <tr>
-            <td>Account Number <br/><b> '.$trans->account .'</b><br/></td>
+            <td>Account Number <br/><b> ';
+        $account_info = $this->finance_model->saving_account_balance($trans->account);
+        $display_account = (!empty($account_info->old_members_acct) ? $account_info->old_members_acct : $trans->account);
+        $html.=$display_account.'</b><br/></td>
             <td>Account Holder\'s Name<br/><b>  ';
         $account_name = $this->finance_model->saving_account_name($trans->account);
 $html.=$account_name.'</b><br/></td>
+        </tr>
+        <tr>
+            <td>Member ID <br/><b> ';
+        if ($account_info && $account_info->tablename == 'members' && !empty($account_info->RFID)) {
+            $this->load->model('member_model');
+            $member_query = $this->member_model->member_basic_info(null, $account_info->RFID, null);
+            $member = $member_query->row();
+            $member_id = ($member && isset($member->member_id) ? $member->member_id : '-');
+        } else {
+            $member_id = '-';
+        }
+        $html.=$member_id.'</b><br/></td>
+            <td>&nbsp;</td>
         </tr>
         <tr>
             <td>Deposit/Withdrawal <br/><b> '. ($trans->trans_type == 'CR' ? lang('CR'): lang('DR')) .'</b><br/></td>
@@ -51,8 +67,14 @@ $html.=$account_name.'</b><br/></td>
             <td>Teller Name<br/><b>   ';
         $use = current_user($trans->createdby);
         $html.=$use->first_name.' '.$use->last_name.'</b></td>
-        </tr>
-         <tr>
+        </tr>';
+        if (!empty($trans->refno)) {
+            $html.='<tr>
+            <td>Ref. No.<br/><b> '. $trans->refno.'</b><br/></td>
+            <td>&nbsp;</td>
+        </tr>';
+        }
+        $html.=' <tr>
             <td colspan="2" style="height: 30px;"></td>
         </tr>
         

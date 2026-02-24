@@ -144,38 +144,61 @@ $isFemale = in_array($selectedGender, $femaleKeys) || in_array(strtolower($selec
 <?php echo form_close(); ?>
 
 <script src="<?php echo base_url() ?>media/js/script/moment.js"></script>
-<script src="<?php echo base_url() ?>media/js/plugins/datapicker/bootstrap-datepicker.js"></script>
 <script type="text/javascript">
-    $(function () {
-        $('#datetimepicker').datetimepicker({
-            pickTime: false
-        });
-        $('#datetimepicker2').datetimepicker({
-            pickTime: false
-        });
-    });
-</script>
-<script type="text/javascript">
-    (function($){
-        $(function(){
-            var femaleKeys = <?php echo json_encode($femaleKeys); ?>;
-            function isFemale(val, text){
-                if(!val && !text) return false;
-                if(val && femaleKeys.indexOf(val) !== -1) return true;
-                var l = (val||'').toLowerCase();
-                if(l === 'f' || l === 'female') return true;
-                if(text && text.toLowerCase().indexOf('female') !== -1) return true;
-                return false;
+    (function() {
+        function initScripts() {
+            if (typeof jQuery === 'undefined') {
+                setTimeout(initScripts, 50);
+                return;
             }
-            $('#gender').on('change', function(){
-                var val = $(this).val();
-                var text = $(this).find('option:selected').text();
-                if(isFemale(val, text)){
-                    $('#maiden-group').show();
-                } else {
-                    $('#maiden-group').hide();
-                }
-            });
-        });
-    })(jQuery);
+            
+            // Load bootstrap-datepicker after jQuery is available
+            if (typeof $.fn.datetimepicker === 'undefined') {
+                var script = document.createElement('script');
+                script.src = '<?php echo base_url() ?>media/js/plugins/datapicker/bootstrap-datepicker.js';
+                script.onload = function() {
+                    initDatePickers();
+                };
+                document.head.appendChild(script);
+            } else {
+                initDatePickers();
+            }
+            
+            function initDatePickers() {
+                $(function () {
+                    $('#datetimepicker').datetimepicker({
+                        pickTime: false
+                    });
+                    $('#datetimepicker2').datetimepicker({
+                        pickTime: false
+                    });
+                });
+            }
+            
+            // Gender change handler
+            (function($){
+                $(function(){
+                    var femaleKeys = <?php echo json_encode($femaleKeys); ?>;
+                    function isFemale(val, text){
+                        if(!val && !text) return false;
+                        if(val && femaleKeys.indexOf(val) !== -1) return true;
+                        var l = (val||'').toLowerCase();
+                        if(l === 'f' || l === 'female') return true;
+                        if(text && text.toLowerCase().indexOf('female') !== -1) return true;
+                        return false;
+                    }
+                    $('#gender').on('change', function(){
+                        var val = $(this).val();
+                        var text = $(this).find('option:selected').text();
+                        if(isFemale(val, text)){
+                            $('#maiden-group').show();
+                        } else {
+                            $('#maiden-group').hide();
+                        }
+                    });
+                });
+            })(jQuery);
+        }
+        initScripts();
+    })();
 </script>

@@ -1757,17 +1757,17 @@ function Close() {
 	//Terminate document
 	if($this->state==3)	return;
 	if($this->page==0) $this->AddPage($this->CurOrientation);
-	if (count($this->cellBorderBuffer)) { $this->printcellbuffer(); }	// *TABLES*
+	if (count((array)$this->cellBorderBuffer)) { $this->printcellbuffer(); }	// *TABLES*
 	if ($this->tablebuffer) { $this->printtablebuffer(); }	// *TABLES*
 /*-- COLUMNS --*/
 
 	if ($this->ColActive) {
 		$this->SetColumns(0);
 		$this->ColActive = 0; 
-		if (count($this->columnbuffer)) { $this->printcolumnbuffer(); }
+		if (count((array)$this->columnbuffer)) { $this->printcolumnbuffer(); }
 	}
 /*-- END COLUMNS --*/
-	if (count($this->divbuffer)) { $this->printdivbuffer(); }
+	if (count((array)$this->divbuffer)) { $this->printdivbuffer(); }
 
 	// BODY Backgrounds
 	$s = '';

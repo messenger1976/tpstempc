@@ -86,6 +86,9 @@ $lang['finance_account_list'] = 'Account Chart List';
 //
 
 $lang['account_no'] = 'Account Number';
+$lang['account_number'] = 'Account Number';
+$lang['account_type'] = 'Savings Account Type';
+$lang['virtual_balance'] = 'Maintaining Balance';
 $lang['member_pid'] = 'System Member ID';
 $lang['group_id'] = 'Group ID';
 $lang['member_group_list'] = 'Member Group List';
@@ -117,7 +120,7 @@ $lang['DR'] = 'CASH WITHDRAWAL';
 $lang['print_receipt'] = 'Print Receipt';
 $lang['transaction_type'] = 'Transaction Type';
 $lang['document_date'] = 'Document Date';
-$lang['saving_transaction_type_option'] = array('CR'=>'DEPOSIT','DR'=>'WITHDRAWAL');
+$lang['saving_transaction_type_option'] = array('CR'=>'DEPOSIT','DR'=>'WITHDRAWAL','INT'=>'INTEREST');
 $lang['balance'] = 'Balance';
 $lang['amount'] = 'Amount';
 $lang['customer_name'] = 'Customer Name';
@@ -128,6 +131,13 @@ $lang['transaction_fail'] = 'Transaction fail';
 $lang['next_deposit_withdrawal'] = 'Next Customer >>';
 $lang['saving_transaction_search'] ='Search Transaction';
 $lang['view_link'] ='View';
+$lang['savings_beginning_balance_list'] = 'Savings Beginning Balances';
+$lang['create_savings_beginning_balance'] = 'Create Savings Beginning Balance';
+$lang['beginning_balance'] = 'Beginning Balance';
+$lang['savings_beginning_balance_success'] = 'Savings beginning balance created successfully';
+$lang['savings_beginning_balance_error'] = 'Failed to create savings beginning balance';
+$lang['error_occurred'] = 'An error occurred';
+$lang['cancel'] = 'Cancel';
 
 //label
 $lang['index_account'] = 'Account No.';
@@ -166,6 +176,7 @@ $lang['share_trans_fail'] = 'Fail to record information';
 $lang['share_trans_success'] = 'Information successfully recorded';
 
 $lang['saving_account_edit']='Edit Account Information';
+$lang['edit_saving_account']='Edit Saving Account';
 $lang['account_name']='Account Name';
 $lang['account_description']='Description';
 $lang['account_charge']='Monthly Fee';
@@ -175,6 +186,8 @@ $lang['account_min_deposit']='Minimum Deposit';
 $lang['account_interest_rate']='Interest Rate';
 $lang['saving_account_process_success']='Information saved successfully';
 $lang['saving_account_process_fail']='Fail to save information';
+$lang['account_updated_successfully']='Account updated successfully';
+$lang['account_update_failed']='Failed to update account';
 
 
 //contribution
@@ -269,6 +282,100 @@ $lang['ledger_trial_balance'] = 'Trial Balance';
 
 //Journal Entry
 $lang['journalentry'] = 'Journal Entry';
+
+// Cash Receipt Module
+$lang['page_cash_receipt'] = 'Cash Receipt';
+$lang['cash_receipt'] = 'Cash Receipt';
+$lang['cash_receipt_list'] = 'Cash Receipt List';
+$lang['cash_receipt_create'] = 'Create Cash Receipt';
+$lang['cash_receipt_edit'] = 'Edit Cash Receipt';
+$lang['cash_receipt_view'] = 'View Cash Receipt';
+$lang['cash_receipt_no'] = 'Receipt No';
+$lang['cash_receipt_date'] = 'Receipt Date';
+$lang['cash_receipt_received_from'] = 'Received From';
+$lang['cash_receipt_payment_method'] = 'Payment Method';
+$lang['cash_receipt_cheque_no'] = 'Cheque No';
+$lang['cash_receipt_bank_name'] = 'Bank Name';
+$lang['cash_receipt_description'] = 'Description';
+$lang['cash_receipt_total_amount'] = 'Total Amount';
+$lang['cash_receipt_line_items'] = 'Line Items';
+$lang['cash_receipt_account'] = 'Account';
+$lang['cash_receipt_line_description'] = 'Line Description';
+$lang['cash_receipt_amount'] = 'Amount';
+$lang['cash_receipt_information'] = 'Receipt Information';
+$lang['cash_receipt_create_success'] = 'Cash receipt created successfully';
+$lang['cash_receipt_create_fail'] = 'Failed to create cash receipt';
+$lang['cash_receipt_update_success'] = 'Cash receipt updated successfully';
+$lang['cash_receipt_update_fail'] = 'Failed to update cash receipt';
+$lang['cash_receipt_delete_success'] = 'Cash receipt deleted successfully';
+$lang['cash_receipt_delete_fail'] = 'Failed to delete cash receipt';
+$lang['cash_receipt_not_found'] = 'Cash receipt not found';
+$lang['cash_receipt_no_exists'] = 'This receipt number already exists';
+$lang['cash_receipt_no_items'] = 'Please add at least one line item';
+$lang['cash_receipt_cancelled_help'] = 'Record document/reference as cancelled. No line items or GL posting required.';
+$lang['cash_receipt_status_posted'] = 'Posted';
+$lang['cash_receipt_status_draft'] = 'Draft';
+$lang['cash_receipt_cannot_edit_posted'] = 'This cash receipt has been posted to the General Ledger and cannot be edited.';
+$lang['cash_receipt_cannot_delete_posted'] = 'This cash receipt has been posted to the General Ledger and cannot be deleted.';
+$lang['cancelled'] = 'Cancelled';
+$lang['debits_credits_not_balanced'] = 'Debits and credits must be equal';
+$lang['debits_credits_balanced'] = 'Debits and credits are balanced';
+$lang['cash_receipt_report_summary'] = 'Cash Receipt Report Summary';
+$lang['cash_receipt_report_details'] = 'Cash Receipt Report Details';
+$lang['cash_receipt_period'] = 'Period';
+$lang['cash_and_bank'] = 'Cash and Bank';
+$lang['cash_receipt_transactions'] = 'transactions';
+$lang['all_dates'] = 'All dates';
+$lang['account_code'] = 'Account Code';
+$lang['report_generated'] = 'Report Generated';
+$lang['close'] = 'Close';
+
+// Cash Disbursement Module
+$lang['page_cash_disbursement'] = 'Cash Disbursement';
+$lang['cash_disbursement'] = 'Cash Disbursement';
+$lang['cash_disbursement_list'] = 'Cash Disbursement List';
+$lang['cash_disbursement_create'] = 'Create Cash Disbursement';
+$lang['cash_disbursement_edit'] = 'Edit Cash Disbursement';
+$lang['cash_disbursement_view'] = 'View Cash Disbursement';
+$lang['cash_disbursement_no'] = 'Disbursement No';
+$lang['cash_disbursement_date'] = 'Disbursement Date';
+$lang['cash_disbursement_paid_to'] = 'Paid To';
+$lang['cash_disbursement_payment_method'] = 'Payment Method';
+$lang['cash_disbursement_cheque_no'] = 'Cheque No';
+$lang['cash_disbursement_bank_name'] = 'Bank Name';
+$lang['cash_disbursement_description'] = 'Description';
+$lang['cash_disbursement_total_amount'] = 'Total Amount';
+$lang['cash_disbursement_line_items'] = 'Line Items';
+$lang['cash_disbursement_account'] = 'Account';
+$lang['cash_disbursement_line_description'] = 'Line Description';
+$lang['cash_disbursement_amount'] = 'Amount';
+$lang['cash_disbursement_information'] = 'Disbursement Information';
+$lang['cash_disbursement_create_success'] = 'Cash disbursement created successfully';
+$lang['cash_disbursement_create_fail'] = 'Failed to create cash disbursement';
+$lang['cash_disbursement_update_success'] = 'Cash disbursement updated successfully';
+$lang['cash_disbursement_update_fail'] = 'Failed to update cash disbursement';
+$lang['cash_disbursement_delete_success'] = 'Cash disbursement deleted successfully';
+$lang['cash_disbursement_delete_fail'] = 'Failed to delete cash disbursement';
+$lang['cash_disbursement_not_found'] = 'Cash disbursement not found';
+$lang['cash_disbursement_no_exists'] = 'This disbursement number already exists';
+$lang['cash_disbursement_no_items'] = 'Please add at least one line item';
+$lang['cash_disbursement_cancelled_help'] = 'Record document/reference as cancelled. No line items or GL posting required.';
+$lang['cash_disbursement_status_posted'] = 'Posted';
+$lang['cash_disbursement_status_draft'] = 'Draft';
+$lang['cash_disbursement_cannot_edit_posted'] = 'This cash disbursement has been posted to the General Ledger and cannot be edited.';
+$lang['cash_disbursement_cannot_delete_posted'] = 'This cash disbursement has been posted to the General Ledger and cannot be deleted.';
+$lang['cash_disbursement_report_summary'] = 'Cash Disbursement Report Summary';
+$lang['cash_disbursement_report_details'] = 'Cash Disbursement Report Details';
+$lang['cash_disbursement_period'] = 'Period';
+$lang['cash_disbursement_transactions'] = 'transactions';
+$lang['cash_disbursement_voucher'] = 'Cash Disbursement Voucher';
+$lang['cash_disbursement_statement'] = 'Cash Disbursement Statement';
+$lang['accounting_entries'] = 'Accounting Entries';
+$lang['no_accounting_entries'] = 'No accounting entries recorded for this disbursement.';
+$lang['journal_source_cash_receipt'] = 'Cash Receipt';
+$lang['journal_source_cash_disbursement'] = 'Cash Disbursement';
+$lang['journal_source_journal_entry'] = 'Journal Entry (JV)';
+
 $lang['client_account'] = 'Client Account';
 $lang['reseller_account_list'] = 'Reseller Account List';
 
@@ -285,6 +392,21 @@ $lang['powered_by'] = 'Designed and Developed by';
 $lang['edit'] = 'Edit';
 $lang['delete'] = 'Delete';
 $lang['view'] = 'View';
+$lang['print'] = 'Print';
+$lang['save'] = 'Save';
+$lang['update'] = 'Update';
+$lang['back'] = 'Back';
+$lang['cancel'] = 'Cancel';
+$lang['total'] = 'Total';
+$lang['actions'] = 'Actions';
+$lang['export_excel'] = 'Export to Excel';
+$lang['add_row'] = 'Add Row';
+$lang['delete_confirm'] = 'Are you sure you want to delete this record?';
+$lang['no_records_found'] = 'No records found';
+$lang['created_by'] = 'Created By';
+$lang['created_at'] = 'Created At';
+$lang['updated_at'] = 'Updated At';
+$lang['additional_information'] = 'Additional Information';
 $lang['no'] ='No';
 $lang['yes'] ='Yes';
 $lang['all'] ='All';
@@ -293,5 +415,11 @@ $lang['all'] ='All';
 $lang['myclient_religion_structure']='Create Client Account';
 $lang['myclients_list']='Client List';
 $lang['account_no']='Account#';
+
+// Application name
+$lang['app_name'] = 'COOP';
+
+// Payment Method
+$lang['payment_method_list'] = 'Payment Method List';
 
 ?>

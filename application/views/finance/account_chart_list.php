@@ -68,7 +68,14 @@
 </div>
 
 <script>
-$(document).ready(function() {
+(function() {
+    function initScripts() {
+        if (typeof jQuery === 'undefined') {
+            setTimeout(initScripts, 50);
+            return;
+        }
+        
+        $(document).ready(function() {
     $('.btn-delete-account').click(function() {
         var accountId = $(this).data('id');
         var accountName = $(this).data('name');
@@ -90,5 +97,8 @@ $(document).ready(function() {
             }
         });
     });
-});
+        });
+    }
+    initScripts();
+})();
 </script>

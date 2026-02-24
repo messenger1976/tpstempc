@@ -487,7 +487,7 @@ jQuery.autocomplete = function(input, options) {
         // Extract member ID from autocomplete format
         // Handles formats like "2005-00173 - BRENDALOU SALES" or just "2005-00173"
         var pid = '';
-        if (!value) {
+        if (!value || typeof value !== 'string') {
             return;
         }
         value = value.trim();
@@ -519,15 +519,46 @@ jQuery.autocomplete = function(input, options) {
                     column: options.column
                 },                              
                 success: function(data){
-                    var json = JSON.parse(data);
+                    // Handle both string and already-parsed JSON object responses
+                    var json;
+                    if (typeof data === 'string') {
+                        // If data is a string, trim it and parse it
+                        data = data.trim();
+                        
+                        // Check if response is empty
+                        if (!data || data.length === 0) {
+                            $('#member_info').html('<div style="color:red;">Error: Invalid response from server. Please try again.</div>');
+                            return;
+                        }
+                        
+                        // Try to parse JSON, handle errors gracefully
+                        try {
+                            json = JSON.parse(data);
+                        } catch (e) {
+                            console.error('JSON Parse Error:', e);
+                            console.error('Response data:', data);
+                            $('#member_info').html('<div style="color:red;">Error: Invalid response from server. Please try again.</div>');
+                            return;
+                        }
+                    } else if (typeof data === 'object' && data !== null) {
+                        // If data is already a parsed object, use it directly
+                        json = data;
+                    } else {
+                        // Invalid data type
+                        $('#member_info').html('<div style="color:red;">Error: Invalid response from server. Please try again.</div>');
+                        return;
+                    }
+                    
                     if(json['success'].toString() == 'N'){
                         $('#member_info').html('<div style="color:red;">'+json['error'].toString()+'</div>');
                     }else{
                         var userdata = json['data'];
                         var contact = json['contact'];
-                        var account_balance = json['accountinfo'];
+                        var account_balance = json['accountinfo'] || null;
                         var customername = userdata["firstname"]+' '+userdata["middlename"]+' '+userdata["lastname"];
-                        $("#"+options.customerNameID).val(customername);
+                        if (options.customerNameID) {
+                            $("#"+options.customerNameID).val(customername);
+                        }
                         var output = '<div style="border:1px solid  #ccc;font-size:15px;"><table style="width:100%;"><tr><td style="width:70%;">';
                         output += '<div style="border-bottom:1px dashed #ccc;"><strong>'+options.Name+' : </strong> '+userdata["firstname"]+' '+userdata["middlename"]+' '+userdata["lastname"]+'</div>';
                         output += '<div style="border-bottom:1px dashed #ccc;"><strong>'+options.gender+' : </strong> '+userdata["gender"]+'</div>';
@@ -538,14 +569,19 @@ jQuery.autocomplete = function(input, options) {
                         output += '<div style="border-bottom:1px dashed #ccc;"><strong>'+options.email+' : </strong> '+contact["email"]+'</div>';
                         
                         output +='</td><td>  <img style=" height:120px;" src="'+options.photourl+userdata["photo"].toString()+'"/></td></tr></table>       </div>';
-                        output += '<div style="font-size:30px;"><strong>'+options.balance+' : </strong> '+  addCommas(parseFloat(account_balance["balance"]).toFixed(2))+'</div>';
+                        // Only show balance if account_balance exists and options.balance is set
+                        if (account_balance && account_balance["balance"] !== undefined && options.balance && options.balance !== '0' && options.balance !== 0) {
+                            output += '<div style="font-size:30px;"><strong>'+options.balance+' : </strong> '+  addCommas(parseFloat(account_balance["balance"]).toFixed(2))+'</div>';
+                        }
                         $('#member_info').html(output);   
                     }
                         
                         
                 },
                 error:function(xhr,textStatus,errorThrown){
-                    alert(errorThrown); 
+                    console.error('AJAX Error:', textStatus, errorThrown);
+                    console.error('Response:', xhr.responseText);
+                    $('#member_info').html('<div style="color:red;">Error: Unable to connect to server. Please try again.</div>');
                 }
             });
           

@@ -133,10 +133,22 @@ class Loan extends CI_Controller {
         $this->form_validation->set_rules('procesingfee', 'Loan Processing Fee', 'required|numeric');
 
         if ($this->form_validation->run() == TRUE) {
-            $PID_initial = explode('-', trim($this->input->post('pid')));
-            $member_id_initial = explode('-', trim($this->input->post('member_id')));
-            $pid = $PID = $PID_initial[0];
-            $member_id = $member_id_initial[0];
+            // Handle autocomplete format: "2005-00173 - Member Name" or plain "2005-00173"
+            $pid_value = trim($this->input->post('pid'));
+            $member_id_value = trim($this->input->post('member_id'));
+            if (strpos($pid_value, ' - ') !== false) {
+                $parts = explode(' - ', $pid_value, 2);
+                $pid = trim($parts[0]);
+            } else {
+                $pid = $pid_value;
+            }
+            if (strpos($member_id_value, ' - ') !== false) {
+                $parts = explode(' - ', $member_id_value, 2);
+                $member_id = trim($parts[0]);
+            } else {
+                $member_id = $member_id_value;
+            }
+            $PID = $pid;
 
             $product_id = $this->input->post('product');
             $product = $this->setting_model->loanproduct($product_id)->row();
@@ -147,8 +159,13 @@ class Loan extends CI_Controller {
             $source = trim($this->input->post('source'));
             $purpose = trim($this->input->post('purpose'));
             $processingfee = $this->input->post('procesingfee');
+            $lid_input = trim($this->input->post('lid'));
+            if (empty($lid_input)) {
+                $lid_input = $this->loan_model->get_next_ln_number();
+            }
 
             $createloan = array(
+                'LID' => $lid_input,
                 'PID' => $pid,
                 'member_id' => $member_id,
                 'product_type' => $product_id,
@@ -233,6 +250,7 @@ class Loan extends CI_Controller {
 
         $this->data['paysource_list'] = $this->contribution_model->contribution_source()->result();
         $this->data['loan_product_list'] = $this->setting_model->loanproduct()->result();
+        $this->data['next_ln_number'] = $this->loan_model->get_next_ln_number();
         $this->data['content'] = 'loan/loan_application_step1';
         $this->load->view('template', $this->data);
     }
@@ -267,7 +285,9 @@ class Loan extends CI_Controller {
     }
 
     function pass_share_condition($product, $share) {
-
+        // TEMPORARILY DISABLED - share requirement check removed for loan application
+        return TRUE;
+        /*
         if ($product->loan_security_share_min > 0) {
             if ($share) {
                 if ($share->totalshare >= $product->loan_security_share_min) {
@@ -281,6 +301,7 @@ class Loan extends CI_Controller {
         }
 
         return TRUE;
+        */
     }
 
     function pass_saving_condition($product, $saving) {
@@ -301,6 +322,9 @@ class Loan extends CI_Controller {
     }
 
     function maximum_loan_allowed($product, $loan_amount, $contribution, $pid) {
+        // TEMPORARILY DISABLED - maximum loan amount check bypassed
+        return TRUE;
+        /*
         $total_amount = $contribution->balance * $product->loan_security_contribution_times;
 
         $open_loan = $this->db->query("SELECT * FROM loan_contract WHERE PID='$pid' AND approval=4")->result();
@@ -318,9 +342,13 @@ class Loan extends CI_Controller {
             return TRUE;
         }
         return FALSE;
+        */
     }
 
     function maximum_contributions_times($product, $loan_amount, $contribution) {
+        // TEMPORARILY DISABLED - contribution times check bypassed
+        return TRUE;
+        /*
         $total_amount = $contribution->balance * $product->loan_security_contribution_times;
         if ($total_amount == 0) {
             return TRUE;
@@ -336,10 +364,13 @@ class Loan extends CI_Controller {
             }
         }
         return TRUE;
+        */
     }
 
     function pass_contribution_condition($product, $contribution) {
-
+        // TEMPORARILY DISABLED - minimum contribution amount check bypassed
+        return TRUE;
+        /*
         if ($product->loan_security_contribution_min > 0) {
             if ($contribution) {
                 if ($contribution->balance >= $product->loan_security_contribution_min) {
@@ -354,6 +385,7 @@ class Loan extends CI_Controller {
         }
 
         return TRUE;
+        */
     }
 
     function loan_editing($loanid) {
@@ -1274,6 +1306,617 @@ break;
             exit;
         } else {
             return show_error('Transaction id not exist..', 500, 'INVALID RECEIPT NUMBER');
+        }
+    }
+
+    // Loan Beginning Balances Methods
+    function loan_beginning_balance_list() {
+        $this->data['title'] = lang('loan_beginning_balance_list');
+        
+        // Get all fiscal years
+        $this->data['fiscal_years'] = $this->setting_model->fiscal_year_list()->result();
+        
+        // Get all loan products for filter
+        $this->data['loan_products'] = $this->setting_model->loanproduct()->result();
+       
+        // Handle fiscal year selection with session + active fiscal year logic
+        // Initialize variable
+        $selected_fiscal_year_id = null;
+        
+        // 1. First, check POST/GET (user explicitly selected a fiscal year)
+        $post_fiscal_year_id = $this->input->post('fiscal_year_id');
+        $get_fiscal_year_id = $this->input->get('fiscal_year_id');
+        
+        if ($post_fiscal_year_id) {
+            $selected_fiscal_year_id = $post_fiscal_year_id;
+        } elseif ($get_fiscal_year_id) {
+            $selected_fiscal_year_id = $get_fiscal_year_id;
+        }
+
+        // 2. If a fiscal year was selected via POST/GET, store it in session
+        if ($selected_fiscal_year_id) {
+            $this->session->set_userdata('loan_beginning_balance_fiscal_year_id', $selected_fiscal_year_id);
+        } else {
+            // 3. If nothing was selected in this request, try session value
+            $session_fiscal_year_id = $this->session->userdata('loan_beginning_balance_fiscal_year_id');
+
+            if ($session_fiscal_year_id) {
+                $selected_fiscal_year_id = $session_fiscal_year_id;
+            } else {
+                // 4. If session is empty, fall back to the active fiscal year
+                $active_fiscal_year = $this->setting_model->get_active_fiscal_year();
+                if ($active_fiscal_year) {
+                    $selected_fiscal_year_id = $active_fiscal_year->id;
+                    // Store active fiscal year in session for future use
+                    $this->session->set_userdata('loan_beginning_balance_fiscal_year_id', $selected_fiscal_year_id);
+                }
+            }
+        }
+        
+        // Ensure selected_fiscal_year_id is an integer for proper comparison
+        if ($selected_fiscal_year_id) {
+            $selected_fiscal_year_id = (int)$selected_fiscal_year_id;
+        }
+        
+        // Handle loan product filter
+        $selected_loan_product_id = $this->input->post('loan_product_id');
+        if (!$selected_loan_product_id && $this->input->get('loan_product_id')) {
+            $selected_loan_product_id = $this->input->get('loan_product_id');
+        }
+        if (!$selected_loan_product_id) {
+            $selected_loan_product_id = 'all'; // Default to 'all'
+        }
+        $this->data['selected_loan_product_id'] = $selected_loan_product_id;
+        
+        // Always set selected_fiscal_year_id in data array so view can use it for dropdown selection
+        $this->data['selected_fiscal_year_id'] = $selected_fiscal_year_id;
+        
+        if ($selected_fiscal_year_id) {
+            $this->data['fiscal_year'] = $this->setting_model->fiscal_year_list($selected_fiscal_year_id)->row();
+            $balances = $this->loan_model->loan_beginning_balance_list($selected_fiscal_year_id, null, $selected_loan_product_id)->result();
+            
+            // Pre-fetch member names and product info to avoid N+1 queries
+            $member_names = array();
+            $product_info = array();
+            foreach ($balances as $balance) {
+                if (!isset($member_names[$balance->member_id])) {
+                    try {
+                        $member_names[$balance->member_id] = $this->member_model->member_name($balance->member_id);
+                    } catch (Exception $e) {
+                        $member_names[$balance->member_id] = 'Unknown';
+                    }
+                }
+                if (!isset($product_info[$balance->loan_product_id])) {
+                    $product = $this->setting_model->loanproduct($balance->loan_product_id)->row();
+                    $product_info[$balance->loan_product_id] = $product ? $product->name : '-';
+                }
+            }
+            
+            $this->data['loan_beginning_balances'] = $balances;
+            $this->data['member_names'] = $member_names;
+            $this->data['product_info'] = $product_info;
+        } else {
+            $this->data['loan_beginning_balances'] = array();
+            $this->data['member_names'] = array();
+            $this->data['product_info'] = array();
+        }
+        
+        $this->data['content'] = 'loan/loan_beginning_balance_list';
+        $this->load->view('template', $this->data);
+    }
+
+    function loan_beginning_balance_create($id = null) {
+        if (!is_null($id)) {
+            $id = decode_id($id);
+        }
+        
+        if ($id) {
+            $this->data['title'] = lang('loan_beginning_balance_edit');
+            $this->data['balance'] = $this->loan_model->loan_beginning_balance_list(null, $id)->row();
+            
+            if (!$this->data['balance']) {
+                $this->session->set_flashdata('warning', lang('loan_beginning_balance_not_found'));
+                redirect(current_lang() . '/loan/loan_beginning_balance_list', 'refresh');
+                return;
+            }
+            
+            // Check if already posted
+            if ($this->data['balance']->posted == 1) {
+                $this->session->set_flashdata('warning', lang('loan_beginning_balance_already_posted'));
+                redirect(current_lang() . '/loan/loan_beginning_balance_list?fiscal_year_id=' . $this->data['balance']->fiscal_year_id, 'refresh');
+                return;
+            }
+        } else {
+            $this->data['title'] = lang('loan_beginning_balance_create');
+        }
+        
+        // Get fiscal years and loan products
+        $this->data['fiscal_years'] = $this->setting_model->fiscal_year_list()->result();
+        $this->data['loan_products'] = $this->setting_model->loanproduct()->result();
+        
+        // Form validation
+        $this->form_validation->set_rules('fiscal_year_id', lang('fiscal_year'), 'required|numeric');
+        $this->form_validation->set_rules('member_id', lang('loan_beginning_balance_member_id'), 'required');
+        $this->form_validation->set_rules('loan_product_id', lang('loan_beginning_balance_loan_product'), 'required|numeric');
+        $this->form_validation->set_rules('principal_balance', lang('loan_beginning_balance_principal'), 'numeric');
+        $this->form_validation->set_rules('interest_balance', lang('loan_beginning_balance_interest'), 'numeric');
+        $this->form_validation->set_rules('penalty_balance', lang('loan_beginning_balance_penalty'), 'numeric');
+        
+        if ($this->form_validation->run() == TRUE) {
+            $fiscal_year_id = trim($this->input->post('fiscal_year_id'));
+            $member_id_raw = trim($this->input->post('member_id'));
+            $loan_product_id = trim($this->input->post('loan_product_id'));
+            $loan_id = trim($this->input->post('loan_id'));
+            $principal_balance = str_replace(',', '', trim($this->input->post('principal_balance')));
+            $interest_balance = str_replace(',', '', trim($this->input->post('interest_balance')));
+            $penalty_balance = str_replace(',', '', trim($this->input->post('penalty_balance')));
+            $disbursement_date = format_date(trim($this->input->post('disbursement_date')));
+            $loan_amount = str_replace(',', '', trim($this->input->post('loan_amount')));
+            $monthly_amort = str_replace(',', '', trim($this->input->post('monthly_amort')));
+            $last_date_paid = format_date(trim($this->input->post('last_date_paid')));
+            $term = trim($this->input->post('term'));
+            $description = trim($this->input->post('description'));
+            
+            // Clean member_id - extract just the ID if autocomplete format is used (e.g., "12345 - John Doe")
+            $member_id = $member_id_raw;
+            if (strpos($member_id_raw, ' - ') !== false) {
+                $explode = explode(' - ', $member_id_raw);
+                $member_id = trim($explode[0]);
+            } else {
+                // Extract numeric/alphanumeric part if there are any extra characters
+                if (preg_match('/^[\w\-]+/', $member_id_raw, $matches)) {
+                    $member_id = trim($matches[0]);
+                }
+            }
+            
+            // Ensure member_id is not empty after cleaning
+            if (empty($member_id)) {
+                $member_id = $member_id_raw; // Fallback to original if cleaning failed
+            }
+            
+            // Validate amounts
+            $principal_balance = $principal_balance ? floatval($principal_balance) : 0;
+            $interest_balance = $interest_balance ? floatval($interest_balance) : 0;
+            $penalty_balance = $penalty_balance ? floatval($penalty_balance) : 0;
+            $loan_amount = $loan_amount ? floatval($loan_amount) : null;
+            $monthly_amort = $monthly_amort ? floatval($monthly_amort) : null;
+            $term = $term ? intval($term) : null;
+            $total_balance = $principal_balance + $interest_balance + $penalty_balance;
+            
+            // Check if at least one amount is greater than zero
+            if ($total_balance <= 0) {
+                $this->data['warning'] = lang('loan_beginning_balance_amount_required');
+            } else if (empty($member_id)) {
+                $this->data['warning'] = lang('loan_beginning_balance_member_not_found');
+            } else {
+                // Check if member exists - ensure member_id is trimmed and not empty
+                $member_id = trim($member_id);
+                if (empty($member_id)) {
+                    $this->data['warning'] = lang('loan_beginning_balance_member_not_found');
+                } else {
+                    $member_query = $this->member_model->member_basic_info(null, null, $member_id);
+                    $member = $member_query->row();
+                    if ($member_query->num_rows() == 0 || !$member) {
+                        $this->data['warning'] = lang('loan_beginning_balance_member_not_found');
+                    } else {
+                        // Check if loan product exists
+                        if (!$this->loan_model->is_loan_product_exist($loan_product_id)) {
+                            $this->data['warning'] = lang('loan_beginning_balance_product_not_found');
+                        } else {
+                            $data = array(
+                                'fiscal_year_id' => $fiscal_year_id,
+                                'member_id' => $member_id,
+                                'loan_id' => $loan_id ? $loan_id : null,
+                                'loan_product_id' => $loan_product_id,
+                                'principal_balance' => $principal_balance,
+                                'interest_balance' => $interest_balance,
+                                'penalty_balance' => $penalty_balance,
+                                'total_balance' => $total_balance,
+                                'disbursement_date' => $disbursement_date ? $disbursement_date : null,
+                                'loan_amount' => $loan_amount,
+                                'monthly_amort' => $monthly_amort,
+                                'last_date_paid' => $last_date_paid ? $last_date_paid : null,
+                                'term' => $term,
+                                'description' => $description
+                            );
+                            
+                            if (!$id) {
+                                // Check if already exists
+                                if ($this->loan_model->check_loan_beginning_balance_exists($fiscal_year_id, $member_id, $loan_product_id)) {
+                                    $this->data['warning'] = lang('loan_beginning_balance_already_exists');
+                                } else {
+                                    $result = $this->loan_model->loan_beginning_balance_create($data);
+                                    if ($result) {
+                                        $this->session->set_flashdata('message', lang('loan_beginning_balance_create_success'));
+                                        redirect(current_lang() . '/loan/loan_beginning_balance_list?fiscal_year_id=' . $fiscal_year_id, 'refresh');
+                                    } else {
+                                        $this->data['warning'] = lang('loan_beginning_balance_create_fail');
+                                    }
+                                }
+                            } else {
+                                // Check if another record exists with same fiscal year, member and product
+                                $existing = $this->loan_model->loan_beginning_balance_list($fiscal_year_id)->result();
+                                $duplicate = false;
+                                foreach ($existing as $ex) {
+                                    if ($ex->id != $id && $ex->member_id == $member_id && $ex->loan_product_id == $loan_product_id) {
+                                        $duplicate = true;
+                                        break;
+                                    }
+                                }
+                                
+                                if ($duplicate) {
+                                    $this->data['warning'] = lang('loan_beginning_balance_already_exists');
+                                } else {
+                                    $result = $this->loan_model->loan_beginning_balance_update($data, $id);
+                                    if ($result) {
+                                        $this->session->set_flashdata('message', lang('loan_beginning_balance_update_success'));
+                                        redirect(current_lang() . '/loan/loan_beginning_balance_list?fiscal_year_id=' . $fiscal_year_id, 'refresh');
+                                    } else {
+                                        $this->data['warning'] = lang('loan_beginning_balance_update_fail');
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        $this->data['content'] = 'loan/loan_beginning_balance_form';
+        $this->load->view('template', $this->data);
+    }
+
+    function loan_beginning_balance_delete($id) {
+        $id = decode_id($id);
+        
+        $balance = $this->loan_model->loan_beginning_balance_list(null, $id)->row();
+        
+        if (!$balance) {
+            $this->session->set_flashdata('warning', lang('loan_beginning_balance_not_found'));
+            redirect(current_lang() . '/loan/loan_beginning_balance_list', 'refresh');
+            return;
+        }
+        
+        // Check if already posted
+        if ($balance->posted == 1) {
+            $this->session->set_flashdata('warning', lang('loan_beginning_balance_cannot_delete_posted'));
+            redirect(current_lang() . '/loan/loan_beginning_balance_list?fiscal_year_id=' . $balance->fiscal_year_id, 'refresh');
+            return;
+        }
+        
+        $result = $this->loan_model->loan_beginning_balance_delete($id);
+        
+        if ($result) {
+            $this->session->set_flashdata('message', lang('loan_beginning_balance_delete_success'));
+        } else {
+            $this->session->set_flashdata('warning', lang('loan_beginning_balance_delete_fail'));
+        }
+        
+        redirect(current_lang() . '/loan/loan_beginning_balance_list?fiscal_year_id=' . $balance->fiscal_year_id, 'refresh');
+    }
+
+    function loan_beginning_balance_export() {
+        // Clear ALL output buffers first
+        if (ob_get_level()) {
+            ob_end_clean();
+        }
+        while (@ob_end_clean());
+        
+        // Disable CodeIgniter's output completely
+        $this->output->enable_profiler(FALSE);
+        // Prevent CodeIgniter from sending output
+        $this->output->set_output('');
+        
+        // Check permission
+        if (!$this->ion_auth->logged_in()) {
+            redirect('auth/login', 'refresh');
+        }
+        
+        if (!has_role(5, 'Loan_beginning_balances')) {
+            $this->session->set_flashdata('warning', lang('access_denied'));
+            redirect('dashboard', 'refresh');
+            return;
+        }
+        
+        // Load Excel library
+        $this->load->library('excel');
+        
+        // Get fiscal year ID from GET or POST
+        $selected_fiscal_year_id = $this->input->get('fiscal_year_id');
+        if (!$selected_fiscal_year_id) {
+            $selected_fiscal_year_id = $this->input->post('fiscal_year_id');
+        }
+        
+        if (!$selected_fiscal_year_id) {
+            // Clear buffers before redirect
+            if (ob_get_level()) {
+                ob_end_clean();
+            }
+            $this->session->set_flashdata('warning', lang('loan_beginning_balance_select_fiscal_year'));
+            redirect(current_lang() . '/loan/loan_beginning_balance_list', 'refresh');
+            exit();
+        }
+        
+        // Get loan product filter from GET or POST
+        $selected_loan_product_id = $this->input->get('loan_product_id');
+        if (!$selected_loan_product_id) {
+            $selected_loan_product_id = $this->input->post('loan_product_id');
+        }
+        if (!$selected_loan_product_id) {
+            $selected_loan_product_id = 'all'; // Default to 'all'
+        }
+        
+        // Get fiscal year info
+        $fiscal_year = $this->setting_model->fiscal_year_list($selected_fiscal_year_id)->row();
+        if (!$fiscal_year) {
+            // Clear buffers before redirect
+            if (ob_get_level()) {
+                ob_end_clean();
+            }
+            $this->session->set_flashdata('warning', 'Fiscal year not found');
+            redirect(current_lang() . '/loan/loan_beginning_balance_list', 'refresh');
+            exit();
+        }
+        
+        // Get balances with loan product filter
+        $balances = $this->loan_model->loan_beginning_balance_list($selected_fiscal_year_id, null, $selected_loan_product_id)->result();
+        
+        // Pre-fetch member names and product info
+        $member_names = array();
+        $product_info = array();
+        foreach ($balances as $balance) {
+            if (!isset($member_names[$balance->member_id])) {
+                try {
+                    $member_names[$balance->member_id] = $this->member_model->member_name($balance->member_id);
+                } catch (Exception $e) {
+                    $member_names[$balance->member_id] = 'Unknown';
+                }
+            }
+            if (!isset($product_info[$balance->loan_product_id])) {
+                $product = $this->setting_model->loanproduct($balance->loan_product_id)->row();
+                $product_info[$balance->loan_product_id] = $product ? $product->name : '-';
+            }
+        }
+        
+        // Check if we have data
+        if (empty($balances) || !is_array($balances) || count($balances) == 0) {
+            // Clear buffers before redirect
+            if (ob_get_level()) {
+                ob_end_clean();
+            }
+            $this->session->set_flashdata('warning', 'No data available to export');
+            redirect(current_lang() . '/loan/loan_beginning_balance_list?fiscal_year_id=' . $selected_fiscal_year_id, 'refresh');
+            exit();
+        }
+        
+        // Create new PHPExcel object
+        $objPHPExcel = new PHPExcel();
+        
+        // Set document properties
+        $objPHPExcel->getProperties()->setCreator(company_info()->name)
+                                     ->setTitle("Loan Beginning Balances")
+                                     ->setSubject("Loan Beginning Balances Export")
+                                     ->setDescription("Loan Beginning Balances exported from " . company_info()->name);
+        
+        // Set active sheet index to the first sheet
+        $objPHPExcel->setActiveSheetIndex(0);
+        $sheet = $objPHPExcel->getActiveSheet();
+        
+        // Set sheet title
+        $sheet->setTitle('Loan Beginning Balances');
+        
+        // Add header info
+        $sheet->setCellValue('A1', 'Fiscal Year: ' . $fiscal_year->name);
+        $sheet->setCellValue('A2', 'Period: ' . date('M d, Y', strtotime($fiscal_year->start_date)) . ' - ' . date('M d, Y', strtotime($fiscal_year->end_date)));
+        $sheet->setCellValue('A3', 'Export Date: ' . date('Y-m-d H:i:s'));
+        
+        // Set column headers (starting from row 5)
+        $row = 5;
+        $sheet->setCellValue('A' . $row, lang('sno'));
+        $sheet->setCellValue('B' . $row, lang('loan_beginning_balance_member_id'));
+        $sheet->setCellValue('C' . $row, lang('member_name'));
+        $sheet->setCellValue('D' . $row, lang('loan_beginning_balance_loan_product'));
+        $sheet->setCellValue('E' . $row, lang('loan_beginning_balance_loan_id'));
+        $sheet->setCellValue('F' . $row, lang('loan_beginning_balance_loan_amount'));
+        $sheet->setCellValue('G' . $row, lang('loan_beginning_balance_monthly_amort'));
+        $sheet->setCellValue('H' . $row, lang('loan_beginning_balance_term'));
+        $sheet->setCellValue('I' . $row, lang('loan_beginning_balance_last_date_paid'));
+        $sheet->setCellValue('J' . $row, lang('loan_beginning_balance_disbursement_date'));
+        $sheet->setCellValue('K' . $row, lang('loan_beginning_balance_principal'));
+        $sheet->setCellValue('L' . $row, lang('loan_beginning_balance_interest'));
+        $sheet->setCellValue('M' . $row, lang('loan_beginning_balance_penalty'));
+        $sheet->setCellValue('N' . $row, lang('loan_beginning_balance_total'));
+        $sheet->setCellValue('O' . $row, lang('status'));
+        
+        // Style header row
+        $sheet->getStyle('A' . $row . ':O' . $row)->getFont()->setBold(true);
+        $sheet->getStyle('A' . $row . ':O' . $row)->getFill()->setFillType(PHPExcel_Style_Fill::FILL_SOLID);
+        $sheet->getStyle('A' . $row . ':O' . $row)->getFill()->getStartColor()->setARGB('FFCCCCCC');
+        $sheet->getStyle('A' . $row . ':O' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_CENTER);
+        
+        // Add data rows
+        $row = 6;
+        $i = 1;
+        foreach ($balances as $balance) {
+            $member_info = isset($member_names[$balance->member_id]) ? $member_names[$balance->member_id] : 'Unknown';
+            $product_name = isset($product_info[$balance->loan_product_id]) ? $product_info[$balance->loan_product_id] : '-';
+            $status = ($balance->posted == 1) ? lang('loan_beginning_balance_posted') : lang('loan_beginning_balance_not_posted');
+            
+            $sheet->setCellValue('A' . $row, $i++);
+            $sheet->setCellValue('B' . $row, $balance->member_id);
+            $sheet->setCellValue('C' . $row, $member_info);
+            $sheet->setCellValue('D' . $row, $product_name);
+            $sheet->setCellValue('E' . $row, $balance->loan_id ? $balance->loan_id : '-');
+            $sheet->setCellValue('F' . $row, $balance->loan_amount ? number_format($balance->loan_amount, 2) : '-');
+            $sheet->setCellValue('G' . $row, $balance->monthly_amort ? number_format($balance->monthly_amort, 2) : '-');
+            $sheet->setCellValue('H' . $row, $balance->term ? $balance->term . ' months' : '-');
+            $sheet->setCellValue('I' . $row, $balance->last_date_paid ? date('d-m-Y', strtotime($balance->last_date_paid)) : '-');
+            $sheet->setCellValue('J' . $row, $balance->disbursement_date ? date('d-m-Y', strtotime($balance->disbursement_date)) : '-');
+            $sheet->setCellValue('K' . $row, number_format($balance->principal_balance, 2));
+            $sheet->setCellValue('L' . $row, number_format($balance->interest_balance, 2));
+            $sheet->setCellValue('M' . $row, number_format($balance->penalty_balance, 2));
+            $sheet->setCellValue('N' . $row, number_format($balance->total_balance, 2));
+            $sheet->setCellValue('O' . $row, $status);
+            
+            // Right align numeric columns
+            $sheet->getStyle('F' . $row . ':N' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_RIGHT);
+            
+            $row++;
+        }
+        
+        // Auto-size columns
+        foreach (range('A', 'O') as $col) {
+            $sheet->getColumnDimension($col)->setAutoSize(true);
+        }
+        
+        // Set filename - ensure .xls extension
+        $fiscal_year_name = preg_replace('/[^a-zA-Z0-9_-]/', '_', $fiscal_year->name);
+        $filename = 'Loan_Beginning_Balances_' . $fiscal_year_name . '_' . date('Y-m-d_His') . '.xls';
+        
+        // Clear any remaining output buffers before sending headers
+        if (ob_get_level()) {
+            ob_end_clean();
+        }
+        while (@ob_end_clean());
+        
+        // Set headers - MUST be before any output
+        header('Content-Type: application/vnd.ms-excel');
+        header('Content-Disposition: attachment;filename="' . $filename . '"');
+        header('Cache-Control: must-revalidate, post-check=0, pre-check=0');
+        header('Pragma: public');
+        header('Expires: 0');
+        
+        // Create writer and output directly
+        $objWriter = PHPExcel_IOFactory::createWriter($objPHPExcel, 'Excel5');
+        $objWriter->save('php://output');
+        
+        // Exit immediately to prevent any further output
+        exit();
+    }
+
+    function loan_beginning_balance_post($id) {
+        $id = decode_id($id);
+        
+        $balance = $this->loan_model->loan_beginning_balance_list(null, $id)->row();
+        
+        if (!$balance) {
+            $this->session->set_flashdata('warning', lang('loan_beginning_balance_not_found'));
+            redirect(current_lang() . '/loan/loan_beginning_balance_list', 'refresh');
+            return;
+        }
+        
+        if ($balance->posted == 1) {
+            $this->session->set_flashdata('warning', lang('loan_beginning_balance_already_posted'));
+            redirect(current_lang() . '/loan/loan_beginning_balance_list?fiscal_year_id=' . $balance->fiscal_year_id, 'refresh');
+            return;
+        }
+        
+        $result = $this->loan_model->loan_beginning_balance_post_to_ledger($id);
+        
+        if ($result) {
+            $this->session->set_flashdata('message', lang('loan_beginning_balance_post_success'));
+        } else {
+            $this->session->set_flashdata('warning', lang('loan_beginning_balance_post_fail'));
+        }
+        
+        redirect(current_lang() . '/loan/loan_beginning_balance_list?fiscal_year_id=' . $balance->fiscal_year_id, 'refresh');
+    }
+
+    // Member Autosuggest Methods for Loan Beginning Balance
+    function autosuggest_member($id) {
+        $pin = current_user()->PIN;
+        $q = strtolower($_GET["q"]);
+        if (!$q)
+            return;
+        
+        $auto = $this->db->query("SELECT PID, firstname, middlename, lastname, member_id FROM members WHERE PIN='$pin' AND (PID LIKE '$q%' OR member_id LIKE '$q%' OR firstname LIKE '$q%' OR lastname LIKE '$q%')")->result();
+
+        foreach ($auto as $key => $value) {
+            if ($id == 'pid') {
+                echo $value->PID . ' - ' . $value->firstname . ' ' . $value->middlename . ' ' . $value->lastname . "\n";
+            } else if ($id == 'mid') {
+                echo $value->member_id . ' - ' . $value->firstname . ' ' . $value->middlename . ' ' . $value->lastname . "\n";
+            }
+        }
+    }
+
+    function search_member() {
+        $value = trim($this->input->post('value'));
+        $column = trim($this->input->post('column'));
+        
+        // Validate input
+        if (empty($value) || empty($column)) {
+            $status = array();
+            $status['success'] = 'N';
+            $status['error'] = lang('invalid_member_id');
+            echo json_encode($status);
+            return;
+        }
+        
+        // Handle autocomplete format: "2005-00173 - BRENDALOU SALES" or just "2005-00173"
+        // Check if value contains " - " (space-dash-space) which separates ID from name
+        if (strpos($value, ' - ') !== false) {
+            // Extract everything before " - " as the ID
+            $explode = explode(' - ', $value);
+            $value = trim($explode[0]);
+        } else {
+            // If no " - " separator, the value might be just the ID or formatted differently
+            // Try to extract just the ID part if it contains dashes
+            if (preg_match('/^[\d\-]+/', $value, $matches)) {
+                $value = trim($matches[0]);
+            }
+        }
+        
+        if (empty($value)) {
+            $status = array();
+            $status['success'] = 'N';
+            $status['error'] = lang('invalid_member_id');
+            echo json_encode($status);
+            return;
+        }
+        
+        $pid = null;
+        $member_id = null;
+        $error = '';
+        if ($column == 'PID') {
+            $pid = trim($value);
+            $error = lang('invalid_PID');
+        } else if ($column == 'MID') {
+            $member_id = trim($value);
+            $error = lang('invalid_member_id');
+        } else {
+            $status = array();
+            $status['success'] = 'N';
+            $status['error'] = lang('invalid_member_id');
+            echo json_encode($status);
+            return;
+        }
+        
+        // Ensure values are not empty after trimming
+        if (($column == 'PID' && empty($pid)) || ($column == 'MID' && empty($member_id))) {
+            $status = array();
+            $status['success'] = 'N';
+            $status['error'] = $error;
+            echo json_encode($status);
+            return;
+        }
+        
+        // Query member using member_model method
+        $member_query = $this->member_model->member_basic_info(null, $pid, $member_id);
+        $member = $member_query->row();
+
+        $status = array();
+        // Check if member exists and has valid PID
+        if ($member_query->num_rows() > 0 && $member && isset($member->PID) && !empty($member->PID)) {
+            $contact = $this->member_model->member_contact($member->PID);
+            $status['success'] = 'Y';
+            $status['data'] = $member;
+            $status['contact'] = $contact;
+            echo json_encode($status);
+        } else {
+            $status['success'] = 'N';
+            $status['error'] = $error;
+            echo json_encode($status);
         }
     }
 

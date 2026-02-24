@@ -246,6 +246,10 @@ else:
 <div class="action-buttons">
     <!-- Hidden field to ensure 'save' parameter is always sent -->
     <input type="hidden" name="save" value="1" />
+    
+    <!-- Hidden fields will be added dynamically by JavaScript for unchecked checkboxes only -->
+    <!-- This prevents conflicts where both hidden field and checkbox send values -->
+    
     <button type="submit" class="btn btn-primary btn-save" id="btn-save-privileges">
         <i class="fa fa-save"></i> <?php echo lang('privillege_btn_save'); ?>
     </button>
@@ -260,7 +264,14 @@ else:
 
 <script>
 // Ensure form submission works properly
-$(document).ready(function() {
+(function() {
+    function initScripts() {
+        if (typeof jQuery === 'undefined') {
+            setTimeout(initScripts, 50);
+            return;
+        }
+        
+        $(document).ready(function() {
     var form = $('form').has('.assign-role-container');
     
     if (form.length === 0) {
@@ -274,32 +285,189 @@ $(document).ready(function() {
         }
     });
     
+    // Initialize: Setup checkboxes on page load - keep ALL checkboxes ENABLED for user interaction
+    $('.privilege-checkbox').each(function() {
+        var $checkbox = $(this);
+        var name = $checkbox.attr('name');
+        
+        // Ensure all checkboxes are enabled (user can interact with them)
+        $checkbox.prop('disabled', false);
+        
+        if ($checkbox.is(':checked')) {
+            // Checked: Remove any hidden fields
+            $('input[type="hidden"][name="' + name + '"]').remove();
+        } else {
+            // Unchecked: Remove existing hidden fields first, then add one with value 0
+            $('input[type="hidden"][name="' + name + '"]').remove();
+            $('<input>').attr({
+                type: 'hidden',
+                name: name,
+                value: '0'
+            }).insertAfter($checkbox);
+        }
+    });
+    
+    // Handle checkbox changes - add/remove hidden fields (ALWAYS keep checkboxes ENABLED)
+    $('.privilege-checkbox').on('change', function() {
+        var $checkbox = $(this);
+        var name = $checkbox.attr('name');
+        var isChecked = $checkbox.is(':checked');
+        
+        // CRITICAL: Always keep checkbox enabled so user can interact with it
+        $checkbox.prop('disabled', false);
+        
+        // Remove any existing hidden field with same name
+        $('input[type="hidden"][name="' + name + '"]').remove();
+        
+        if (!isChecked) {
+            // Unchecked: Add hidden field with value 0 (will be used during form submit)
+            $('<input>').attr({
+                type: 'hidden',
+                name: name,
+                value: '0'
+            }).insertAfter($checkbox);
+            console.log('Checkbox unchecked - added hidden field (0), checkbox remains enabled:', name);
+        } else {
+            console.log('Checkbox checked - removed hidden field, checkbox enabled:', name);
+        }
+    });
+    
     // Handle form submission - DO NOT prevent default
     form.on('submit', function(e) {
+        console.log('========================================');
         console.log('Form submit event triggered');
+        console.log('========================================');
         
         // Count checked checkboxes and log them
         var checkedBoxes = [];
-        $('.privilege-checkbox:checked').each(function() {
-            checkedBoxes.push($(this).attr('name') + '=' + $(this).val());
+        var allBoxes = [];
+        $('.privilege-checkbox').each(function() {
+            var name = $(this).attr('name');
+            var checked = $(this).is(':checked');
+            allBoxes.push(name + '=' + (checked ? '1' : 'NOT CHECKED'));
+            if (checked) {
+                checkedBoxes.push(name + '=1');
+            }
         });
+        console.log('All checkboxes:', allBoxes);
         console.log('Checked checkboxes:', checkedBoxes.length, checkedBoxes);
         
         // Log all form data that will be submitted
         var formData = $(this).serialize();
-        console.log('Form data to submit:', formData.substring(0, 200) + '...');
+        console.log('Form data to submit:', formData);
+        console.log('Form data length:', formData.length);
         
         // Verify save hidden field
-        console.log('Save hidden field:', $('input[name="save"]').val());
+        var saveField = $('input[name="save"]');
+        console.log('Save hidden field exists:', saveField.length > 0);
+        console.log('Save hidden field value:', saveField.val());
         
-        // Set button state AFTER allowing form to submit
-        setTimeout(function() {
+        // Check specifically for saving_account_list
+        var savingListCheckbox = $('input[name*="saving_account_list"], input[id*="saving_account_list"]');
+        console.log('saving_account_list checkbox found:', savingListCheckbox.length);
+        if (savingListCheckbox.length > 0) {
+            console.log('saving_account_list checkbox name:', savingListCheckbox.attr('name'));
+            console.log('saving_account_list checkbox checked:', savingListCheckbox.is(':checked'));
+        }
+        
+        // Check specifically for Edit_saving_account
+        var editCheckbox = $('input[name*="Edit_saving_account"], input[id*="Edit_saving_account"]');
+        console.log('Edit_saving_account checkbox found:', editCheckbox.length);
+        if (editCheckbox.length > 0) {
+            console.log('Edit_saving_account checkbox name:', editCheckbox.attr('name'));
+            console.log('Edit_saving_account checkbox checked:', editCheckbox.is(':checked'));
+        }
+        
+        console.log('========================================');
+        console.log('PAUSING FOR 3 SECONDS - Check console above');
+        console.log('Form will submit after delay...');
+        console.log('========================================');
+        
+        // Set button state
             var btn = $('#btn-save-privileges');
             btn.prop('disabled', true);
             btn.html('<i class="fa fa-spinner fa-spin"></i> Saving...');
-        }, 10);
         
-        // CRITICAL: Do NOT prevent default - let form submit normally
+        // Show saving message
+        var savingMsg = $('<div class="alert alert-info" style="margin:15px 0;"><i class="fa fa-spinner fa-spin"></i> Saving permissions, please wait...</div>');
+        $('.assign-role-container').prepend(savingMsg);
+        
+        // Don't prevent default - let form submit normally
+        // The delay was just for viewing console, but we need actual submission
+        // Remove the delay and submit immediately
+        console.log('========================================');
+        console.log('Submitting form now...');
+        console.log('========================================');
+        
+        // CRITICAL: Ensure unchecked checkboxes send value 0
+        // Strategy: Temporarily disable unchecked checkboxes during submit
+        // This prevents them from sending value 1, only hidden field with 0 will be sent
+        $('.privilege-checkbox').each(function() {
+            var $checkbox = $(this);
+            var name = $checkbox.attr('name');
+            if (name) {
+                if (!$checkbox.is(':checked')) {
+                    // For unchecked: Temporarily disable checkbox during submit
+                    // This ensures only hidden field (value 0) is sent, not checkbox value
+                    $checkbox.data('was-enabled', true);
+                    $checkbox.prop('disabled', true);
+                    
+                    // Ensure hidden field with 0 exists (should already exist from change handler)
+                    if (!$('input[type="hidden"][name="' + name + '"]').length) {
+                        $('<input>').attr({
+                            type: 'hidden',
+                            name: name,
+                            value: '0'
+                        }).insertAfter($checkbox);
+                    }
+                    console.log('Unchecked checkbox - temporarily disabled for submit, hidden field (0) will be sent:', name);
+                } else {
+                    // For checked: Ensure checkbox is enabled and NO hidden field exists
+                    $checkbox.prop('disabled', false);
+                    // Remove any hidden field to prevent conflicts
+                    $('input[type="hidden"][name="' + name + '"]').remove();
+                    console.log('Checked checkbox - enabled, will send value 1 (no hidden field):', name);
+                }
+            }
+        });
+        
+        // Re-enable all checkboxes after form submits (in case submission fails or is prevented)
+        setTimeout(function() {
+            $('.privilege-checkbox').each(function() {
+                if ($(this).data('was-enabled')) {
+                    $(this).prop('disabled', false);
+                    $(this).removeData('was-enabled');
+                }
+            });
+        }, 100);
+        
+        // Final check - log what will be submitted
+        var finalFormData = form.serialize();
+        console.log('Final form data length:', finalFormData.length);
+        
+        var savingListCheckbox = $('input[name*="saving_account_list"], input[id*="saving_account_list"]');
+        var editCheckbox = $('input[name*="Edit_saving_account"], input[id*="Edit_saving_account"]');
+        
+        if (savingListCheckbox.length > 0) {
+            var savingName = savingListCheckbox.attr('name');
+            var savingChecked = savingListCheckbox.is(':checked');
+            var savingInData = finalFormData.indexOf(savingName + '=1') !== -1 || finalFormData.indexOf(savingName + '=0') !== -1;
+            console.log('saving_account_list - Checked:', savingChecked, 'In form data:', savingInData);
+            if (!savingInData) {
+                console.error('ERROR: saving_account_list NOT in form data!');
+            }
+        }
+        if (editCheckbox.length > 0) {
+            var editName = editCheckbox.attr('name');
+            var editChecked = editCheckbox.is(':checked');
+            var editInData = finalFormData.indexOf(editName + '=1') !== -1 || finalFormData.indexOf(editName + '=0') !== -1;
+            console.log('Edit_saving_account - Checked:', editChecked, 'In form data:', editInData);
+            if (!editInData) {
+                console.error('ERROR: Edit_saving_account NOT in form data!');
+            }
+        }
+        
+        // Allow form to submit normally
         return true;
     });
     
@@ -316,5 +484,8 @@ $(document).ready(function() {
         console.log('Form action:', form.attr('action'));
         console.log('Form method:', form.attr('method') || 'GET (default)');
     }
-});
+        });
+    }
+    initScripts();
+})();
 </script>

@@ -47,7 +47,7 @@
 
                                 $open_balance_label = 0;
 
-                                if (count($value1['current']) > 0) {
+                                if (isset($value1['current']) && is_object($value1['current']) && isset($value1['current']->credit) && isset($value1['current']->debit)) {
 
                                     $tmp = $value1['current']->credit - $value1['current']->debit;
 
@@ -97,7 +97,7 @@
 
                                 $open_balance_label = '-';
 
-                                if (count($value1['current']) > 0) {
+                                if (isset($value1['current']) && is_object($value1['current']) && isset($value1['current']->credit) && isset($value1['current']->debit)) {
 
                                     $tmp = $value1['current']->debit - $value1['current']->credit;
 

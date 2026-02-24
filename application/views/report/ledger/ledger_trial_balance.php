@@ -47,7 +47,7 @@
                                 $sub_debit = 0;
                                 $open_balance_label = '-';
 
-                                if (count($value1['current']) > 0) {
+                                if (!empty($value1['current'])) {
                                     $sub_credit += $value1['current']->credit;
                                     $sub_debit += $value1['current']->debit;
 
@@ -61,8 +61,8 @@
                                 ?>
                                 <tr>
                                     <td style="padding-left: 40px;"><?php echo $account_info->name; ?></td>
-                                    <td style="text-align: right;"><?php echo (count($value1['current']) > 0 ? ($value1['current']->debit > 0 ? number_format($value1['current']->debit, 2) : '-') : '-'); ?></td>
-                                    <td style="text-align: right;"><?php echo (count($value1['current']) > 0 ? ($value1['current']->credit > 0 ? number_format($value1['current']->credit, 2) : '-') : '-'); ?></td>
+                                    <td style="text-align: right;"><?php echo (!empty($value1['current']) ? ($value1['current']->debit > 0 ? number_format($value1['current']->debit, 2) : '-') : '-'); ?></td>
+                                    <td style="text-align: right;"><?php echo (!empty($value1['current']) ? ($value1['current']->credit > 0 ? number_format($value1['current']->credit, 2) : '-') : '-'); ?></td>
 
                                 </tr>  
                             <?php }
@@ -85,7 +85,7 @@
                                 $sub_debit = 0;
                                 $open_balance_label = '-';
 
-                                if (count($value1['current']) > 0) {
+                                if (!empty($value1['current'])) {
                                     
                                     $sub_credit += $value1['current']->credit;
                                     $sub_debit += $value1['current']->debit;
@@ -101,8 +101,8 @@
                                 <tr>
                                     <td style="padding-left: 40px;"><?php echo $account_info->name; ?></td>
                                    
-                                    <td style="text-align: right;"><?php echo (count($value1['current']) > 0 ? ($value1['current']->debit > 0 ? number_format($value1['current']->debit, 2) : '-') : '-'); ?></td>
-                                    <td style="text-align: right;"><?php echo (count($value1['current']) > 0 ? ($value1['current']->credit > 0 ? number_format($value1['current']->credit, 2) : '-') : '-'); ?></td>
+                                    <td style="text-align: right;"><?php echo (!empty($value1['current']) ? ($value1['current']->debit > 0 ? number_format($value1['current']->debit, 2) : '-') : '-'); ?></td>
+                                    <td style="text-align: right;"><?php echo (!empty($value1['current']) ? ($value1['current']->credit > 0 ? number_format($value1['current']->credit, 2) : '-') : '-'); ?></td>
                                    
                                 </tr>  
                             <?php }
@@ -166,7 +166,7 @@
                                     $total_credit += (-1 * $open_balance);
                                 }
                                 
-                                if (count($value1['current']) > 0) {
+                                if (!empty($value1['current'])) {
                                     $sub_credit += $value1['current']->credit;
                                     $sub_debit += $value1['current']->debit;
 

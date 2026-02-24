@@ -1,4 +1,3 @@
-<script type="text/javascript" src="<?php echo base_url(); ?>media/js/jquery.autocomplete_buysahre.js" ></script>
 <link href="<?php echo base_url(); ?>media/css/jquery.autocomplete.css" rel="stylesheet">
 <?php echo form_open_multipart(current_lang() . "/share/share_buy", 'class="form-horizontal"'); ?>
 
@@ -98,7 +97,29 @@ if (isset($message) && !empty($message)) {
 <?php echo form_close(); ?>
 
 <script type="text/javascript">
-    $(document).ready(function(){
+    (function() {
+        function initScripts() {
+            if (typeof jQuery === 'undefined') {
+                setTimeout(initScripts, 50);
+                return;
+            }
+            // Load custom autocomplete plugin AFTER jQuery (template loads jQuery at page bottom)
+            var existingScript = document.querySelector('script[src*="jquery.autocomplete_buysahre.js"]');
+            if (existingScript) {
+                runMainScript();
+                return;
+            }
+            var autocompleteScript = document.createElement('script');
+            autocompleteScript.src = '<?php echo base_url(); ?>media/js/jquery.autocomplete_buysahre.js';
+            autocompleteScript.onload = function() { runMainScript(); };
+            autocompleteScript.onerror = function() {
+                console.error('Failed to load autocomplete plugin');
+                runMainScript();
+            };
+            document.head.appendChild(autocompleteScript);
+
+            function runMainScript() {
+                $(document).ready(function(){
         
            function addCommas(nStr)
         {
@@ -354,4 +375,8 @@ if (isset($message) && !empty($message)) {
         
         
     });
+            }
+        }
+        initScripts();
+    })();
 </script>

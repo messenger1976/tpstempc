@@ -46,8 +46,24 @@
                                 ?>
                                 <tr>
                                     <td style="text-align: right; padding-right: 4px;"><?php echo $i++; ?>.</td>
-                                    <td><?php echo $value->account ?></td>
-                                    <td><?php echo $value->member_id; ?></td>
+                                    <td>
+                                        <?php 
+                                        if (!empty($value->old_members_acct)) {
+                                            echo htmlspecialchars($value->old_members_acct, ENT_QUOTES, 'UTF-8');
+                                        } else {
+                                            echo htmlspecialchars($value->account, ENT_QUOTES, 'UTF-8');
+                                        }
+                                        ?>
+                                    </td>
+                                    <td>
+                                        <?php 
+                                        if (!empty($value->members_member_id)) {
+                                            echo htmlspecialchars($value->members_member_id, ENT_QUOTES, 'UTF-8');
+                                        } else {
+                                            echo htmlspecialchars($value->member_id, ENT_QUOTES, 'UTF-8');
+                                        }
+                                        ?>
+                                    </td>
                                     <td><?php echo $this->report_model->saving_account_name($value->RFID, $value->tablename); ?></td>
                                     <td><?php echo $account->name ?></td>
                                     <td style="text-align: right;"><?php echo number_format($value->balance, 2); ?></td>
@@ -69,6 +85,8 @@
                 </div>
                 <div style="text-align: center">
                     <a href="<?php echo site_url(current_lang() . '/report_saving/saving_account_accountlist_print/' . $link_cat . '/' . $id); ?>" class="btn btn-primary">Print</a>
+                    &nbsp; &nbsp; &nbsp; &nbsp;
+                    <a href="<?php echo site_url(current_lang() . '/report_saving/saving_account_accountlist_export/' . $link_cat . '/' . $id); ?>" class="btn btn-success">Export to Excel</a>
                     &nbsp; &nbsp; &nbsp; &nbsp;
                     <a href="<?php echo site_url(current_lang() . '/report_saving/saving_account_report_title/' . $link_cat . '/' . $id); ?>" class="btn btn-primary">Edit</a>
                 </div>

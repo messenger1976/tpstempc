@@ -3,7 +3,8 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?php echo lang('cash_disbursement_print'); ?></title>
+    <?php $company = function_exists('company_info_detail') ? company_info_detail() : null; $company_name = ($company && isset($company->name) && $company->name !== '') ? $company->name : 'Cooperative'; ?>
+    <title><?php echo htmlspecialchars($company_name); ?> | <?php echo lang('cash_disbursement_print'); ?></title>
     <style>
         body {
             font-family: Arial, sans-serif;

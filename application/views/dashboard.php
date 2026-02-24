@@ -14,7 +14,8 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-    <title>Talibon Public School Teachers and Employees Multi-Purpose Cooperative  | <?php echo $current_title; ?></title>
+    <?php $company = company_info_detail(); $company_name = (isset($company->name) && $company->name !== '') ? $company->name : 'Cooperative'; ?>
+    <title><?php echo htmlspecialchars($company_name); ?> | <?php echo $current_title; ?></title>
 
     <link href="<?php echo base_url(); ?>media/css/bootstrap.min.css" rel="stylesheet">
     <link href="<?php echo base_url(); ?>assets/font-awesome/css/font-awesome.css?v=4.7.0" rel="stylesheet">

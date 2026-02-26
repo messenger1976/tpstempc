@@ -754,6 +754,16 @@ class Member extends CI_Controller {
         $this->load->view('template', $this->data);
     }
 
+    function soft_delete_member($id) {
+        $id = decode_id($id);
+        if ($this->member_model->soft_delete_member($id)) {
+            $this->session->set_flashdata('message', lang('member_deleted'));
+        } else {
+            $this->session->set_flashdata('warning', lang('member_delete_fail'));
+        }
+        redirect(current_lang() . '/member/member_list', 'refresh');
+    }
+
     function membergroup($id) {
         $id = decode_id($id);
         $this->data['title'] = lang('member_addgroup');

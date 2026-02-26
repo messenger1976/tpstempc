@@ -312,7 +312,7 @@ class Member_Model extends CI_Model {
 
     function count_member($key = null, $searchstatus = null, $searchmember = null) {
         $pin = current_user()->PIN;
-        $sql = "SELECT * FROM members WHERE PIN='$pin' ";
+        $sql = "SELECT * FROM members WHERE PIN='$pin' AND status != 2 ";
 
         if (!is_null($key)) {
             $sql.= " AND ( PID  LIKE '%$key%' OR member_id LIKE '%$key%' OR firstname LIKE '%$key%' OR
@@ -331,7 +331,7 @@ class Member_Model extends CI_Model {
     function search_member($key, $searchstatus, $searchmember,$limit, $start) {
 
         $pin = current_user()->PIN;
-        $sql = "SELECT * FROM members WHERE PIN='$pin' ";
+        $sql = "SELECT * FROM members WHERE PIN='$pin' AND status != 2 ";
 
         if (!is_null($key)) {
             $sql.= " AND ( PID  LIKE '%$key%' OR member_id LIKE '%$key%' OR firstname LIKE '%$key%' OR
@@ -347,6 +347,14 @@ class Member_Model extends CI_Model {
         $sql.= " ORDER BY ABS(member_id) asc LIMIT $start,$limit";
 
         return $this->db->query($sql)->result();
+    }
+
+    function soft_delete_member($id) {
+        $pin = current_user()->PIN;
+        $this->db->where('id', $id);
+        $this->db->where('PIN', $pin);
+        $this->db->update('members', array('status' => 2));
+        return $this->db->affected_rows() > 0;
     }
 
     function member_group_cross($pid) {

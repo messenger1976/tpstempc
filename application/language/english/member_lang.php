@@ -45,6 +45,9 @@ $lang['member_created_date'] = 'Created Date';
 $lang['member_edit_btn'] = 'Edit Information';
 $lang['member_edited_fail'] = 'Editing fail, Please try again';
 $lang['member_edited_success'] = 'Member Information edited successfully';
+$lang['member_deleted'] = 'Member deleted successfully';
+$lang['member_delete_fail'] = 'Failed to delete member. Please try again.';
+$lang['member_delete_confirm_text'] = 'Are you sure you want to delete this member?';
 
 //link
 $lang['member_basic_info'] ='Basic Information';

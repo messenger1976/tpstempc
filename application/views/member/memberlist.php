@@ -88,7 +88,10 @@ if (isset($message) && !empty($message)) {
                     
                     <td><?php echo ($value->status == 1? anchor(current_lang().'/member/deactivate/'.  encode_id($value->id),  lang('member_active')): anchor(current_lang().'/member/activate/'.  encode_id($value->id),  lang('member_inactive'))); ?></td>
                     
-                    <td><?php echo anchor(current_lang() . "/member/memberinfo/" . encode_id($value->id), ' <i class="fa fa-edit"></i> ' . lang('button_edit'),' class="btn btn-primary btn-xs"'); ?></td>
+                    <td>
+                        <?php echo anchor(current_lang() . "/member/memberinfo/" . encode_id($value->id), ' <i class="fa fa-edit"></i> ' . lang('button_edit'),' class="btn btn-primary btn-xs"'); ?>
+                        <a href="#" class="btn btn-danger btn-xs btn-delete-member" data-id="<?php echo encode_id($value->id); ?>" data-name="<?php echo htmlspecialchars($value->firstname . ' ' . $value->lastname, ENT_QUOTES, 'UTF-8'); ?>"><i class="fa fa-trash"></i> <?php echo lang('button_delete'); ?></a>
+                    </td>
                 </tr>
             <?php } ?>
         </tbody>
@@ -100,3 +103,50 @@ if (isset($message) && !empty($message)) {
    
     
 </div>
+
+<script>
+(function() {
+    function initDeleteMembers() {
+        var buttons = document.querySelectorAll('.btn-delete-member');
+        var deleteBaseUrl = '<?php echo site_url(current_lang() . '/member/soft_delete_member'); ?>';
+        var deleteTitle = "<?php echo addslashes(lang('button_delete')); ?>?";
+        var deleteText = "<?php echo addslashes(lang('member_delete_confirm_text')); ?> ";
+        var confirmText = "<?php echo addslashes(lang('yes')); ?>";
+        var cancelText = "<?php echo addslashes(lang('button_cancel')); ?>";
+        for (var i = 0; i < buttons.length; i++) {
+            buttons[i].addEventListener('click', function(e) {
+                e.preventDefault();
+                var memberId = this.getAttribute('data-id');
+                var memberName = this.getAttribute('data-name');
+                var deleteUrl = deleteBaseUrl + '/' + memberId;
+                if (typeof swal !== 'undefined') {
+                    swal({
+                        title: deleteTitle,
+                        text: deleteText + memberName,
+                        type: "warning",
+                        showCancelButton: true,
+                        confirmButtonColor: "#DD6B55",
+                        confirmButtonText: confirmText,
+                        cancelButtonText: cancelText,
+                        closeOnConfirm: false,
+                        closeOnCancel: true
+                    }, function(isConfirm) {
+                        if (isConfirm) {
+                            window.location.href = deleteUrl;
+                        }
+                    });
+                } else {
+                    if (confirm(deleteText + memberName)) {
+                        window.location.href = deleteUrl;
+                    }
+                }
+            });
+        }
+    }
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initDeleteMembers);
+    } else {
+        initDeleteMembers();
+    }
+})();
+</script>

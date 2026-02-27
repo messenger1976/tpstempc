@@ -256,13 +256,247 @@ class Loan_Model extends CI_Model {
         return $this->db->query("SELECT * FROM loan_contract WHERE PIN='$pin' AND status=4 AND disburse=0 ORDER BY applicationdate DESC")->result();
     }
 
+    /**
+     * Get GL account code for loan disbursement credit (source of funds) from payment method.
+     * Uses paymentmenthod.gl_account_code if set, else fallback search by name in account_chart.
+     */
+    function get_credit_account_for_payment_method($payment_method_id) {
+        $pin = current_user()->PIN;
+        $payment_method_id = (int) $payment_method_id;
+        if ($payment_method_id <= 0) {
+            return null;
+        }
+        $this->load->model('payment_method_config_model');
+        $pm = $this->payment_method_config_model->get_payment_method_by_id($payment_method_id, $pin);
+        if (!$pm) {
+            return null;
+        }
+        if (!empty($pm->gl_account_code)) {
+            $ac = $this->db->query('SELECT account FROM account_chart WHERE account = ? AND PIN = ? LIMIT 1', array(trim($pm->gl_account_code), $pin))->row();
+            if ($ac) {
+                return $ac->account;
+            }
+        }
+        $payment_method_name = trim((string) $pm->name);
+        if ($payment_method_name === '') {
+            $payment_method_name = 'Cash';
+        }
+        $account = $this->db->query(
+            'SELECT account FROM account_chart WHERE PIN = ? AND name LIKE ? AND account_type IN (1, 10000) LIMIT 1',
+            array($pin, '%' . $this->db->escape_like_str($payment_method_name) . '%')
+        )->row();
+        if ($account) {
+            return $account->account;
+        }
+        $mapping = array('Cash' => 'Cash', 'Cheque' => 'Bank', 'Bank Transfer' => 'Bank', 'BANK DEPOSIT' => 'Bank', 'Bank Deposit' => 'Bank', 'M-PESA' => 'Mobile Money', 'TIGO PESA' => 'Mobile Money');
+        $name = isset($mapping[$payment_method_name]) ? $mapping[$payment_method_name] : 'Cash';
+        $account = $this->db->query(
+            'SELECT account FROM account_chart WHERE PIN = ? AND name LIKE ? AND account_type IN (1, 10000) LIMIT 1',
+            array($pin, '%' . $this->db->escape_like_str($name) . '%')
+        )->row();
+        if ($account) {
+            return $account->account;
+        }
+        $account = $this->db->query(
+            'SELECT account FROM account_chart WHERE PIN = ? AND (name LIKE ? OR name LIKE ?) AND account_type IN (1, 10000) LIMIT 1',
+            array($pin, '%Cash%', '%Bank%')
+        )->row();
+        return $account ? $account->account : null;
+    }
+
+    /**
+     * Get next loan disbursement number (e.g. LD-00001, LD-00002). Same pattern as cash disbursement.
+     */
+    function get_next_loan_disburse_no() {
+        $pin = current_user()->PIN;
+        if (!$this->db->query("SHOW COLUMNS FROM loan_contract_disburse LIKE 'disburse_no'")->row()) {
+            return 'LD-00001';
+        }
+        $this->db->select('disburse_no');
+        $this->db->where('PIN', $pin);
+        $this->db->where('disburse_no IS NOT NULL');
+        $this->db->where('disburse_no !=', '');
+        $this->db->order_by('createdon', 'DESC');
+        $this->db->limit(1);
+        $last = $this->db->get('loan_contract_disburse')->row();
+        if ($last && !empty($last->disburse_no)) {
+            preg_match('/\d+/', $last->disburse_no, $matches);
+            if (!empty($matches)) {
+                $next_num = (int) $matches[0] + 1;
+                return 'LD-' . str_pad($next_num, 5, '0', STR_PAD_LEFT);
+            }
+        }
+        return 'LD-00001';
+    }
+
+    /**
+     * Check if loan disbursement number already exists for this PIN.
+     * @param string $disburse_no
+     * @param string|null $exclude_lid Optional LID to exclude (e.g. when editing)
+     */
+    function loan_disburse_no_exists($disburse_no, $exclude_lid = null) {
+        $pin = current_user()->PIN;
+        if (!$this->db->query("SHOW COLUMNS FROM loan_contract_disburse LIKE 'disburse_no'")->row()) {
+            return false;
+        }
+        $this->db->where('PIN', $pin);
+        $this->db->where('disburse_no', $disburse_no);
+        if ($exclude_lid !== null && $exclude_lid !== '') {
+            $this->db->where('LID !=', $exclude_lid);
+        }
+        return $this->db->count_all_results('loan_contract_disburse') > 0;
+    }
+
+    /**
+     * Save loan disbursement GL line items (for new disbursement entry UI).
+     * $line_items = array of array('account' => ..., 'debit' => ..., 'credit' => ..., 'description' => ...)
+     */
+    function save_disbursement_gl_items($LID, $pin, $line_items) {
+        if (!$this->db->table_exists('loan_disbursement_gl_items')) {
+            return true;
+        }
+        $this->db->delete('loan_disbursement_gl_items', array('LID' => $LID, 'PIN' => $pin));
+        foreach ($line_items as $item) {
+            $debit = isset($item['debit']) ? floatval($item['debit']) : 0;
+            $credit = isset($item['credit']) ? floatval($item['credit']) : 0;
+            if (empty($item['account']) || ($debit <= 0 && $credit <= 0)) {
+                continue;
+            }
+            $this->db->insert('loan_disbursement_gl_items', array(
+                'LID' => $LID,
+                'PIN' => $pin,
+                'account' => $item['account'],
+                'debit' => $debit,
+                'credit' => $credit,
+                'description' => isset($item['description']) ? $item['description'] : null,
+            ));
+        }
+        return true;
+    }
+
+    /**
+     * Get saved loan disbursement GL line items for a loan (by LID).
+     */
+    function get_disbursement_gl_items($LID, $pin) {
+        if (!$this->db->table_exists('loan_disbursement_gl_items')) {
+            return array();
+        }
+        $this->db->where('LID', $LID);
+        $this->db->where('PIN', $pin);
+        $this->db->order_by('id', 'ASC');
+        $rows = $this->db->get('loan_disbursement_gl_items')->result();
+        $items = array();
+        foreach ($rows as $r) {
+            $items[] = array(
+                'account' => $r->account,
+                'debit' => floatval($r->debit),
+                'credit' => floatval($r->credit),
+                'description' => $r->description,
+            );
+        }
+        return $items;
+    }
+
+    /**
+     * Post loan disbursement accounting lines to general ledger.
+     * $line_items = array of array('account' => ..., 'debit' => ..., 'credit' => ...)
+     * $loan_info = row from loan_info() for LID (must have PID, member_id).
+     */
+    function post_loan_disbursement_to_gl($LID, $pin, $line_items, $disburse_date, $loan_info) {
+        if (empty($line_items)) {
+            return false;
+        }
+        $ledger_entry = array('date' => $disburse_date, 'PIN' => $pin);
+        $this->db->insert('general_ledger_entry', $ledger_entry);
+        $ledger_entry_id = $this->db->insert_id();
+        if (!$ledger_entry_id) {
+            return false;
+        }
+        $base_ledger = array(
+            'journalID' => 4,
+            'entryid' => $ledger_entry_id,
+            'LID' => $LID,
+            'date' => $disburse_date,
+            'description' => 'Loan Disbursed',
+            'linkto' => 'loan_contract.LID',
+            'fromtable' => 'loan_contract',
+            'paid' => 0,
+            'PID' => $loan_info->PID,
+            'member_id' => $loan_info->member_id,
+            'PIN' => $pin,
+        );
+        foreach ($line_items as $item) {
+            $debit = isset($item['debit']) ? floatval($item['debit']) : 0;
+            $credit = isset($item['credit']) ? floatval($item['credit']) : 0;
+            if (empty($item['account']) || ($debit <= 0 && $credit <= 0)) {
+                continue;
+            }
+            $accountinfo = account_row_info($item['account']);
+            if (!$accountinfo) {
+                continue;
+            }
+            $ledger = $base_ledger;
+            $ledger['account'] = $item['account'];
+            $ledger['debit'] = $debit;
+            $ledger['credit'] = $credit;
+            $ledger['account_type'] = $accountinfo->account_type;
+            $ledger['sub_account_type'] = isset($accountinfo->sub_account_type) ? $accountinfo->sub_account_type : null;
+            $this->db->insert('general_ledger', $ledger);
+        }
+        return true;
+    }
+
     function loan_repay_list() {
         $pin = current_user()->PIN;
         return $this->db->query("SELECT loan_contract.*,members.firstname,members.middlename,members.lastname  FROM loan_contract INNER JOIN members ON members.PID=loan_contract.PID WHERE loan_contract.PIN='$pin' AND loan_contract.status=4 AND loan_contract.disburse=1 ORDER BY loan_contract.LID ASC")->result();
     }
 
-    function count_loan($key = null) {
+    /**
+     * Count released loans (status=4, disburse=1) that still have outstanding balance (open installments).
+     */
+    function count_loan_repayment_list_released_with_balance($key = null) {
         $pin = current_user()->PIN;
+        $sql = "SELECT COUNT(DISTINCT lc.LID) AS cnt FROM loan_contract lc
+                INNER JOIN members m ON m.PID = lc.PID
+                INNER JOIN loan_contract_repayment_schedule rs ON rs.LID = lc.LID AND rs.status = 0 AND rs.PIN = " . (int)$pin . "
+                WHERE lc.PIN = " . (int)$pin . " AND lc.status = 4 AND lc.disburse = 1";
+        if (!is_null($key) && trim($key) !== '') {
+            $key_esc = $this->db->escape_like_str($key);
+            $sql .= " AND (lc.LID LIKE " . $this->db->escape($key_esc . '%') . " OR lc.member_id LIKE " . $this->db->escape($key_esc . '%') . " OR m.firstname LIKE " . $this->db->escape('%' . $key_esc . '%') . " OR m.lastname LIKE " . $this->db->escape('%' . $key_esc . '%') . ")";
+        }
+        $row = $this->db->query($sql)->row();
+        return $row ? (int)$row->cnt : 0;
+    }
+
+    /**
+     * Get released loans (status=4, disburse=1) that still have outstanding balance, for repayment list page (pagination).
+     */
+    function loan_repayment_list_released_with_balance($key, $limit, $start) {
+        $pin = current_user()->PIN;
+        $sql = "SELECT lc.*, m.firstname, m.middlename, m.lastname
+                FROM loan_contract lc
+                INNER JOIN members m ON m.PID = lc.PID
+                INNER JOIN loan_contract_repayment_schedule rs ON rs.LID = lc.LID AND rs.status = 0 AND rs.PIN = " . (int)$pin . "
+                WHERE lc.PIN = " . (int)$pin . " AND lc.status = 4 AND lc.disburse = 1";
+        if (!is_null($key) && trim($key) !== '') {
+            $key_esc = $this->db->escape_like_str($key);
+            $sql .= " AND (lc.LID LIKE " . $this->db->escape($key_esc . '%') . " OR lc.member_id LIKE " . $this->db->escape($key_esc . '%') . " OR m.firstname LIKE " . $this->db->escape('%' . $key_esc . '%') . " OR m.lastname LIKE " . $this->db->escape('%' . $key_esc . '%') . ")";
+        }
+        $sql .= " GROUP BY lc.LID ORDER BY lc.applicationdate ASC LIMIT " . (int)$limit . " OFFSET " . (int)$start;
+        return $this->db->query($sql)->result();
+    }
+
+    function count_loan($key = null, $status = null) {
+        $pin = current_user()->PIN;
+        
+        // When status filter is set, count only loan_contract with that status
+        if ($status !== null && $status !== '') {
+            $sql = "SELECT loan_contract.LID FROM loan_contract INNER JOIN members ON members.PID=loan_contract.PID WHERE loan_contract.PIN='$pin' AND loan_contract.status=" . $this->db->escape($status);
+            if (!is_null($key)) {
+                $sql .= " AND (loan_contract.LID LIKE " . $this->db->escape($key . '%') . " OR loan_contract.member_id LIKE " . $this->db->escape($key . '%') . " OR members.firstname LIKE " . $this->db->escape($key . '%') . " OR members.lastname LIKE " . $this->db->escape($key . '%') . ")";
+            }
+            return $this->db->query($sql)->num_rows();
+        }
         
         // Count regular loans from loan_contract
         $sql = "SELECT loan_contract.* FROM loan_contract INNER JOIN members ON members.PID=loan_contract.PID WHERE loan_contract.PIN='$pin'  ";
@@ -288,9 +522,20 @@ class Loan_Model extends CI_Model {
         return $count + $count_bb;
     }
 
-    function search_loan($key, $limit, $start) {
+    function search_loan($key, $limit, $start, $status = null) {
         $pin = current_user()->PIN;
         $results = array();
+        
+        // When status filter is set, get only loan_contract with that status (no beginning balances)
+        if ($status !== null && $status !== '') {
+            $sql = "SELECT loan_contract.*,loan_status.name FROM loan_contract INNER JOIN members ON members.PID=loan_contract.PID ";
+            $sql .= " INNER JOIN loan_status ON loan_status.code=loan_contract.status WHERE loan_contract.PIN='$pin' AND loan_contract.status=" . $this->db->escape($status);
+            if (!is_null($key)) {
+                $sql .= " AND ( loan_contract.LID LIKE '$key%' OR loan_contract.member_id LIKE '$key%' OR members.firstname LIKE '$key%' OR members.lastname LIKE '$key%')";
+            }
+            $sql .= " ORDER BY loan_contract.applicationdate ASC LIMIT " . (int)$limit . " OFFSET " . (int)$start;
+            return $this->db->query($sql)->result();
+        }
         
         // Get regular loans from loan_contract
         $sql = "SELECT loan_contract.*,loan_status.name FROM loan_contract INNER JOIN members ON members.PID=loan_contract.PID ";
@@ -366,7 +611,7 @@ class Loan_Model extends CI_Model {
         return 0;
     }
 
-    function loan_repay_receipt($LID, $amount, $paydate) {
+    function loan_repay_receipt($LID, $amount, $paydate, $receipt_no = null) {
         $pin = current_user()->PIN;
         $receipt = $this->receiptNo();
         $array = array(
@@ -377,6 +622,9 @@ class Loan_Model extends CI_Model {
             'createdby' => current_user()->id,
             'PIN' => $pin,
         );
+        if ($receipt_no !== null && $receipt_no !== '') {
+            $array['receipt_no'] = $receipt_no;
+        }
 
         $this->db->insert('loan_repayment_receipt', $array);
         return $receipt;
@@ -671,6 +919,18 @@ class Loan_Model extends CI_Model {
     function get_transaction($receipt) {
         $this->db->where('receipt', $receipt);
         return $this->db->get('loan_repayment_receipt')->row();
+    }
+
+    /**
+     * Check if receipt_no already exists in loan_repayment_receipt (for shared series with Cash Receipt).
+     */
+    function receipt_no_exists_loan_repayment($receipt_no) {
+        if (empty($receipt_no)) return false;
+        $has = $this->db->query("SHOW COLUMNS FROM loan_repayment_receipt LIKE 'receipt_no'")->row();
+        if (!$has) return false;
+        $this->db->where('PIN', current_user()->PIN);
+        $this->db->where('receipt_no', $receipt_no);
+        return $this->db->count_all_results('loan_repayment_receipt') > 0;
     }
 
     function loan_holder_name($LID) {

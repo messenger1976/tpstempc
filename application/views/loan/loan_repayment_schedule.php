@@ -116,5 +116,9 @@
 
     </table>
 
-    <div style="text-align: center;"><a class="btn btn-primary" href="<?php echo site_url(current_lang() . '/loan/print_repayment_schedule/' . $loanid); ?>"><?php echo lang('print'); ?></a> </div>
+    <div style="text-align: center;">
+        <a class="btn btn-primary" href="<?php echo site_url(current_lang() . '/loan/print_repayment_schedule/' . $loanid); ?>"><?php echo lang('print'); ?></a>
+        <a class="btn btn-info" href="<?php echo site_url(current_lang() . '/loan/loan_disbursement_print/' . $loanid); ?>" target="_blank"><?php echo lang('loan_print_disbursement'); ?></a>
+        <a class="btn btn-success" href="<?php echo site_url(current_lang() . '/loan/export_repayment_schedule/' . $loanid); ?>"><?php echo lang('export_to_excel'); ?></a>
+    </div>
 </div>

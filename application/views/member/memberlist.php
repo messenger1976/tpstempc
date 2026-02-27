@@ -90,7 +90,9 @@ if (isset($message) && !empty($message)) {
                     
                     <td>
                         <?php echo anchor(current_lang() . "/member/memberinfo/" . encode_id($value->id), ' <i class="fa fa-edit"></i> ' . lang('button_edit'),' class="btn btn-primary btn-xs"'); ?>
+                        <?php if ($this->ion_auth->is_admin()) { ?>
                         <a href="#" class="btn btn-danger btn-xs btn-delete-member" data-id="<?php echo encode_id($value->id); ?>" data-name="<?php echo htmlspecialchars($value->firstname . ' ' . $value->lastname, ENT_QUOTES, 'UTF-8'); ?>"><i class="fa fa-trash"></i> <?php echo lang('button_delete'); ?></a>
+                        <?php } ?>
                     </td>
                 </tr>
             <?php } ?>

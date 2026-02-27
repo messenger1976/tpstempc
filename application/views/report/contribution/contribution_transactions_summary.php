@@ -86,6 +86,8 @@
                 <div style="text-align: center">
                     <a href="<?php echo site_url(current_lang() . '/report_contribution/contribution_transaction_summary_print/' . $link_cat . '/' . $id); ?>" class="btn btn-primary">Print</a>
                     &nbsp; &nbsp; &nbsp; &nbsp;
+                    <a href="<?php echo site_url(current_lang() . '/report_contribution/contribution_transaction_summary_export/' . $link_cat . '/' . $id); ?>" class="btn btn-success">Export to Excel</a>
+                    &nbsp; &nbsp; &nbsp; &nbsp;
                     <a href="<?php echo site_url(current_lang() . '/report_contribution/create_contribution_report_title/' . $link_cat . '/' . $id); ?>" class="btn btn-primary">Edit</a>
                 </div>
             </div>

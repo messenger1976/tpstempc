@@ -26,6 +26,10 @@
         <!-- Sweet Alert -->
         <link href="<?php echo base_url(); ?>media/css/plugins/sweetalert/sweetalert.css" rel="stylesheet">
 
+        <!-- jQuery + Bootstrap from CDN first so they exist even if local files 404 (fixes modal on loan repayment, etc.) -->
+        <script src="https://code.jquery.com/jquery-1.10.2.min.js"></script>
+        <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/js/bootstrap.min.js"></script>
+
  <style type="text/css">
         div#member_info img{
             height: 50px;
@@ -112,9 +116,12 @@
             </div>
         </div>
 
-        <!-- Mainly scripts -->
-        <script src="<?php echo base_url(); ?>media/js/jquery-1.10.2.js"></script>
-        <script src="<?php echo base_url(); ?>media/js/bootstrap.min.js"></script>
+        <!-- Mainly scripts (jQuery + Bootstrap already in head from CDN; load local only if missing) -->
+        <script>if (typeof window.jQuery === 'undefined') { document.write('<script src="<?php echo base_url(); ?>media/js/jquery-1.10.2.js"><\/script>'); }</script>
+        <script>window.jQuery || document.write('<script src="https://code.jquery.com/jquery-1.10.2.min.js"><\/script>');</script>
+        <script>if (typeof window.jQuery.fn.modal === 'undefined') { document.write('<script src="<?php echo base_url(); ?>media/js/bootstrap.min.js"><\/script>'); }</script>
+        <script src="<?php echo base_url(); ?>media/js/script/moment.js"></script>
+        <script src="<?php echo base_url(); ?>media/js/plugins/datapicker/bootstrap-datepicker.js"></script>
         <script src="<?php echo base_url(); ?>media/js/plugins/metisMenu/jquery.metisMenu.js"></script>
         <script src="<?php echo base_url(); ?>media/js/plugins/slimscroll/jquery.slimscroll.min.js"></script>
 

@@ -70,6 +70,23 @@ class Payment_method_config_model extends CI_Model {
         return $this->db->get('paymentmenthod')->row();
     }
 
+    /**
+     * Get payment method by ID (for loan disbursement credit account lookup)
+     */
+    public function get_payment_method_by_id($id, $PIN = null) {
+        if ($PIN === null) {
+            $PIN = current_user()->PIN;
+        }
+        $id = (int) $id;
+        if ($id <= 0) {
+            return null;
+        }
+        $this->db->where('id', $id);
+        $this->db->where('PIN', $PIN);
+        $this->db->where('status', 1);
+        return $this->db->get('paymentmenthod')->row();
+    }
+
 }
 ?>
 

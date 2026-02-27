@@ -755,6 +755,11 @@ class Member extends CI_Controller {
     }
 
     function soft_delete_member($id) {
+        if (!$this->ion_auth->is_admin()) {
+            $this->session->set_flashdata('warning', lang('member_delete_fail'));
+            redirect(current_lang() . '/member/member_list', 'refresh');
+            return;
+        }
         $id = decode_id($id);
         if ($this->member_model->soft_delete_member($id)) {
             $this->session->set_flashdata('message', lang('member_deleted'));

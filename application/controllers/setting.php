@@ -699,6 +699,51 @@ class Setting extends CI_Controller {
         }
 
         $this->data['default_list'] = $this->db->get_where('global_setting',array('PIN'=>current_user()->PIN))->result();
+
+        // Load full chart of accounts for dropdown selection (used by RETAINED_EARNINGS_ACCOUNT)
+        $account_list_raw = $this->finance_model->account_chart(null, null, null)->result();
+        $account_tree = array();
+        foreach ($account_list_raw as $account) {
+            $type_key = isset($account->account_type) ? $account->account_type : 'OTHER';
+            if (!isset($account_tree[$type_key])) {
+                $account_tree[$type_key] = array(
+                    'info' => (object) array(
+                        'name' => isset($account->account_type) ? $account->account_type : 'Accounts'
+                    ),
+                    'data' => array()
+                );
+            }
+
+            $account_str = str_pad((string)$account->account, 7, '0', STR_PAD_LEFT);
+            $level = 0;
+            if (strlen($account_str) >= 4) {
+                $last_4 = substr($account_str, -4);
+                $last_2 = substr($account_str, -2);
+                $last_1 = substr($account_str, -1);
+                if ($last_4 == '0000') {
+                    $level = 0;
+                } else if ($last_2 == '00') {
+                    $level = 1;
+                } else if ($last_1 == '0') {
+                    $level = 2;
+                } else {
+                    $level = 3;
+                }
+            }
+            $account->display_level = (int)$level;
+            $account_tree[$type_key]['data'][] = $account;
+        }
+
+        // Sort accounts within each type
+        foreach ($account_tree as $key => $type_data) {
+            $accounts = $type_data['data'];
+            usort($accounts, function($a, $b) {
+                return (int)$a->account - (int)$b->account;
+            });
+            $account_tree[$key]['data'] = $accounts;
+        }
+
+        $this->data['account_list'] = $account_tree;
         $this->data['content'] = 'setting/global_setting';
         $this->load->view('template', $this->data);
     }

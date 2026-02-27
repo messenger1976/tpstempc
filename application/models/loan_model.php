@@ -643,7 +643,7 @@ class Loan_Model extends CI_Model {
         }
     }
 
-    function record_loan_repayment($array_data, $repay_schedule_ref) {
+    function record_loan_repayment($array_data, $repay_schedule_ref, $cash_account = null) {
         $pin = current_user()->PIN;
         $this->db->trans_start();
         $insert = $this->db->insert('loan_contract_repayment', $array_data);
@@ -656,6 +656,8 @@ class Loan_Model extends CI_Model {
         $LID = $array_data['LID'];
         $infodata = $this->loan_model->loan_info($LID)->row();
         $product = $this->setting_model->loanproduct($infodata->product_type)->row();
+        // Determine cash/bank account for this repayment (fallback to 11110 for backward compatibility)
+        $debit_account = $cash_account ? $cash_account : 11110;
         //prepare to enter ledger
         //ledger data
         $ledger = array(
@@ -673,8 +675,7 @@ class Loan_Model extends CI_Model {
             'member_id' => $infodata->member_id,
         );
 
-        //bank account
-        $debit_account = 1010001;
+        //bank account (cash/bank in from member)
         $ledger['account'] = $debit_account;
         $ledger['debit'] = $array_data['principle'];
         $infoaccount = account_row_info($ledger['account']);
@@ -694,10 +695,9 @@ class Loan_Model extends CI_Model {
 
         //interest
         //debit account
-        //bank account
+        //bank account for interest cash-in
         $ledger['credit'] = 0;
         $ledger['debit'] = 0;
-        $debit_account = 1010001;
         $ledger['account'] = $debit_account;
         $ledger['debit'] = $array_data['interest'];
         //$ledger['account_type'] = account_row_info($ledger['account'])->account_type;
@@ -717,11 +717,14 @@ class Loan_Model extends CI_Model {
       $ledger['sub_account_type'] = $infoaccount->sub_account_type;
         $this->db->insert('general_ledger', $ledger);
 
+        // Determine equity account (Retained Earnings) from global settings (fallback to 3000002)
+        $equity_account_setting = function_exists('default_text_value') ? default_text_value('RETAINED_EARNINGS_ACCOUNT') : '';
+        $equity_account = (is_numeric($equity_account_setting) && (int)$equity_account_setting > 0) ? (int)$equity_account_setting : 3000002;
 
         //credit equity
         $ledger['credit'] = 0;
         $ledger['debit'] = 0;
-        $ledger['account'] = 3000002;
+        $ledger['account'] = $equity_account;
        // $ledger['account_type'] = account_row_info($ledger['account'])->account_type;
  $infoaccount = account_row_info($ledger['account']);
         $ledger['account_type'] = $infoaccount->account_type;
@@ -734,7 +737,6 @@ class Loan_Model extends CI_Model {
         if (array_key_exists('penalt', $array_data)) {
             $ledger['credit'] = 0;
             $ledger['debit'] = 0;
-            $debit_account = 1010001;
             $ledger['account'] = $debit_account;
             $ledger['debit'] = $array_data['penalt'];
             //$ledger['account_type'] = account_row_info($ledger['account'])->account_type;
@@ -758,7 +760,7 @@ class Loan_Model extends CI_Model {
             //credit equity
             $ledger['credit'] = 0;
             $ledger['debit'] = 0;
-            $ledger['account'] = 3000002;
+            $ledger['account'] = $equity_account;
             //$ledger['account_type'] = account_row_info($ledger['account'])->account_type;
  $infoaccount = account_row_info($ledger['account']);
         $ledger['account_type'] = $infoaccount->account_type;
@@ -776,7 +778,7 @@ class Loan_Model extends CI_Model {
     
     
     //paying all loan before the end of the given duration
-     function record_loan_repayment_all($array_data, $repay_schedule_ref, $loan_id) {
+    function record_loan_repayment_all($array_data, $repay_schedule_ref, $loan_id, $cash_account = null) {
         $pin = current_user()->PIN;
         $this->db->trans_start();
         $insert = $this->db->insert('loan_contract_repayment', $array_data);
@@ -789,6 +791,8 @@ class Loan_Model extends CI_Model {
         $LID = $array_data['LID'];
         $infodata = $this->loan_model->loan_info($LID)->row();
         $product = $this->setting_model->loanproduct($infodata->product_type)->row();
+        // Determine cash/bank account for this repayment (fallback to 11110 for backward compatibility)
+        $debit_account = $cash_account ? $cash_account : 11110;
         //prepare to enter ledger
         //ledger data
         $ledger = array(
@@ -806,8 +810,7 @@ class Loan_Model extends CI_Model {
             'member_id' => $infodata->member_id,
         );
 
-        //bank account
-        $debit_account = 1010001;
+        //bank account (cash/bank in from member)
         $ledger['account'] = $debit_account;
         $ledger['debit'] = $array_data['principle'];
         $infoaccount = account_row_info($ledger['account']);
@@ -827,10 +830,9 @@ class Loan_Model extends CI_Model {
 
         //interest
         //debit account
-        //bank account
+        //bank account for interest cash-in
         $ledger['credit'] = 0;
         $ledger['debit'] = 0;
-        $debit_account = 1010001;
         $ledger['account'] = $debit_account;
         $ledger['debit'] = $array_data['interest'];
         //$ledger['account_type'] = account_row_info($ledger['account'])->account_type;
@@ -850,11 +852,14 @@ class Loan_Model extends CI_Model {
       $ledger['sub_account_type'] = $infoaccount->sub_account_type;
         $this->db->insert('general_ledger', $ledger);
 
+        // Determine equity account (Retained Earnings) from global settings (fallback to 3000002)
+        $equity_account_setting = function_exists('default_text_value') ? default_text_value('RETAINED_EARNINGS_ACCOUNT') : '';
+        $equity_account = (is_numeric($equity_account_setting) && (int)$equity_account_setting > 0) ? (int)$equity_account_setting : 3000002;
 
         //credit equity
         $ledger['credit'] = 0;
         $ledger['debit'] = 0;
-        $ledger['account'] = 3000002;
+        $ledger['account'] = $equity_account;
        // $ledger['account_type'] = account_row_info($ledger['account'])->account_type;
  $infoaccount = account_row_info($ledger['account']);
         $ledger['account_type'] = $infoaccount->account_type;
@@ -867,7 +872,6 @@ class Loan_Model extends CI_Model {
         if (array_key_exists('penalt', $array_data)) {
             $ledger['credit'] = 0;
             $ledger['debit'] = 0;
-            $debit_account = 1010001;
             $ledger['account'] = $debit_account;
             $ledger['debit'] = $array_data['penalt'];
             //$ledger['account_type'] = account_row_info($ledger['account'])->account_type;
@@ -891,7 +895,7 @@ class Loan_Model extends CI_Model {
             //credit equity
             $ledger['credit'] = 0;
             $ledger['debit'] = 0;
-            $ledger['account'] = 3000002;
+            $ledger['account'] = $equity_account;
             //$ledger['account_type'] = account_row_info($ledger['account'])->account_type;
  $infoaccount = account_row_info($ledger['account']);
         $ledger['account_type'] = $infoaccount->account_type;

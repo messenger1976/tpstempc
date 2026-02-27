@@ -265,6 +265,11 @@ if (isset($message) && !empty($message)) {
         </div>
         <div class="panel-body">
 
+            <?php if (!empty($loaninfo->disburse)): ?>
+            <p>
+                <a href="<?php echo site_url(current_lang() . '/loan/loan_disbursement_print/' . encode_id($loaninfo->LID)); ?>" class="btn btn-info btn-sm" target="_blank"><i class="fa fa-print"></i> <?php echo lang('loan_print_disbursement'); ?></a>
+            </p>
+            <?php endif; ?>
 
             <?php
             $evaluation_histry = $this->loan_model->loan_disburse_history($loaninfo->LID)->result();

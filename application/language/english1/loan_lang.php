@@ -81,6 +81,12 @@ $lang['loan_approval_comment'] = 'Approve Comment';
 $lang['loan_disburse_inaction'] = 'Loan Disbursement';
 $lang['loan_disburse_info'] = 'Loan Disbursement Informations';
 $lang['loan_disburse_link'] = 'Disburse';
+$lang['loan_disburse_date'] = 'Disbursement Date';
+$lang['loan_print_disbursement'] = 'Print Disbursement';
+$lang['loan_disbursement_print'] = 'Loan Disbursement Print';
+$lang['loan_disbursement_statement'] = 'Loan Disbursement Statement';
+$lang['loan_disbursement_voucher'] = 'Loan Disbursement Voucher';
+$lang['loan_release_loan'] = 'Release Loan';
 
 $lang['loan_startrepay_date'] = 'Repayment Start Date';
 $lang['loan_view_detail'] = 'Details';

@@ -28,7 +28,7 @@
                 echo $value->number_istallment.' '.$interval->description; ?></td>
                 <td style="text-align: right;"><?php echo number_format($value->installment_amount,2) ?></td>
                 <td style="text-align: right;"><?php echo number_format($value->total_interest_amount,2) ?></td>
-                 <td><?php echo anchor(current_lang() . "/loan/loan_disburse_action/" . encode_id($value->LID), ' <i class="fa fa-file"></i> ' . lang('loan_disburse_link')); ?></td>
+                 <td><?php echo anchor(current_lang() . "/loan/loan_disburse_entry/" . encode_id($value->LID), ' <i class="fa fa-file"></i> ' . lang('loan_disburse_link')); ?></td>
             </tr>
                 <?php }
                 ?>

@@ -266,7 +266,7 @@ if (isset($message) && !empty($message)) {
             <div class="col-lg-6">
 <?php echo form_open_multipart(current_lang() . "/loan/loan_disburse_action/" . $loanid); ?>
 
-                <label class="control-label"><?php echo lang('loan_startrepay_date'); ?>  : <span class="required">*</span></label><br/>
+                <label class="control-label"><?php echo lang('loan_disburse_date'); ?>  : <span class="required">*</span></label><br/>
 
                 <div class="input-group date" id="datetimepicker" >
                     <input type="text" name="disbursedate" placeholder="<?php echo lang('hint_date'); ?>" value="<?php echo set_value('disbursedate'); ?>"  data-date-format="DD-MM-YYYY" class="form-control"/> 
@@ -295,7 +295,7 @@ if (isset($message) && !empty($message)) {
                 foreach ($evaluation_histry as $key => $value) {
                     ?>
                     <div style="border-bottom: 1px solid #ccc; margin-bottom: 20px;">
-                        <strong><?php echo lang('loan_startrepay_date'); ?></strong> : <?php echo format_date($value->disbursedate, false); ?><br/>
+                        <strong><?php echo lang('loan_disburse_date'); ?></strong> : <?php echo format_date($value->disbursedate, false); ?><br/>
                         <strong><?php echo lang('loan_comment'); ?></strong> : <?php echo $value->comment; ?><br/>
                         <strong><?php echo lang('loan_recorder'); ?></strong> : <?php echo $value->first_name . ' ' . $value->last_name . ' &nbsp; &nbsp; ' . $value->createdon; ?>
                     </div>
@@ -307,23 +307,47 @@ if (isset($message) && !empty($message)) {
 
 </div>
 
-<script src="<?php echo base_url() ?>media/js/script/moment.js"></script>
-<script src="<?php echo base_url() ?>media/js/plugins/datapicker/bootstrap-datepicker.js"></script>
-
 <script type="text/javascript">
-    (function() {
-        function initScripts() {
-            if (typeof jQuery === 'undefined') {
-                setTimeout(initScripts, 50);
-                return;
-            }
-            
+(function() {
+    function loadScript(src, callback) {
+        var script = document.createElement('script');
+        script.src = src;
+        script.onload = callback;
+        script.onerror = function() { if (callback) callback(); };
+        document.head.appendChild(script);
+    }
+    function initDatePicker() {
+        if (typeof jQuery === 'undefined') {
+            setTimeout(initDatePicker, 50);
+            return;
+        }
+        var $ = jQuery;
+        if (typeof $.fn.datetimepicker !== 'undefined') {
             $(function() {
-                $('#datetimepicker').datetimepicker({
-                    pickTime: false
+                $('#datetimepicker').datetimepicker({ pickTime: false });
+            });
+            return;
+        }
+        if (typeof moment === 'undefined') {
+            loadScript('<?php echo base_url(); ?>media/js/script/moment.js', function() {
+                loadScript('<?php echo base_url(); ?>media/js/plugins/datapicker/bootstrap-datepicker.js', function() {
+                    $(function() {
+                        $('#datetimepicker').datetimepicker({ pickTime: false });
+                    });
+                });
+            });
+        } else {
+            loadScript('<?php echo base_url(); ?>media/js/plugins/datapicker/bootstrap-datepicker.js', function() {
+                $(function() {
+                    $('#datetimepicker').datetimepicker({ pickTime: false });
                 });
             });
         }
-        initScripts();
-    })();
+    }
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initDatePicker);
+    } else {
+        initDatePicker();
+    }
+})();
 </script>

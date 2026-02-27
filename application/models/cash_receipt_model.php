@@ -387,6 +387,48 @@ class Cash_receipt_model extends CI_Model {
     }
 
     /**
+     * Get next receipt number (shared series with loan repayment - same format as Cash Receipt).
+     * Use this so Cash Receipt and Loan Repayment share one sequence: CR-00001, CR-00002, ...
+     */
+    function get_next_shared_receipt_no() {
+        $pin = current_user()->PIN;
+        $max_num = 0;
+
+        // Max from cash_receipts
+        $this->db->select('receipt_no');
+        $this->db->where('PIN', $pin);
+        $this->db->order_by('id', 'DESC');
+        $this->db->limit(5000);
+        $rows = $this->db->get('cash_receipts')->result();
+        foreach ($rows as $r) {
+            if (!empty($r->receipt_no) && preg_match('/\d+/', $r->receipt_no, $m)) {
+                $n = intval($m[0]);
+                if ($n > $max_num) $max_num = $n;
+            }
+        }
+
+        // Max from loan_repayment_receipt if receipt_no column exists
+        if ($this->db->table_exists('loan_repayment_receipt')) {
+            $has_col = $this->db->query("SHOW COLUMNS FROM loan_repayment_receipt LIKE 'receipt_no'")->row();
+            if ($has_col) {
+                $this->db->select('receipt_no');
+                $this->db->where('PIN', $pin);
+                $this->db->order_by('id', 'DESC');
+                $this->db->limit(5000);
+                $lr = $this->db->get('loan_repayment_receipt')->result();
+                foreach ($lr as $r) {
+                    if (!empty($r->receipt_no) && preg_match('/\d+/', $r->receipt_no, $m)) {
+                        $n = intval($m[0]);
+                        if ($n > $max_num) $max_num = $n;
+                    }
+                }
+            }
+        }
+
+        return 'CR-' . str_pad($max_num + 1, 5, '0', STR_PAD_LEFT);
+    }
+
+    /**
      * Get next receipt number
      */
     function get_next_receipt_no() {

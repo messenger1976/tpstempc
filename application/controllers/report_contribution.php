@@ -420,7 +420,168 @@ class Report_Contribution extends CI_Controller {
         $this->export_to_pdf($html, 'Contribution_Transactions', $reportinfo->page);
         
     }
-    
+
+    function contribution_transaction_export($link, $id) {
+        if (ob_get_level()) {
+            ob_end_clean();
+        }
+        while (@ob_end_clean());
+
+        $this->output->enable_profiler(FALSE);
+        $this->output->set_output('');
+
+        $this->load->library('excel');
+
+        $encoded_id = $id;
+        if (!is_null($id)) {
+            $id = decode_id($id);
+        }
+
+        $reportinfo = $this->report_model->report_contribution($id)->row();
+        $transaction = $this->report_model->contribution_transactions($reportinfo->fromdate, $reportinfo->todate);
+
+        if (empty($transaction) || !is_array($transaction) || count($transaction) == 0) {
+            if (ob_get_level()) {
+                ob_end_clean();
+            }
+            $this->session->set_flashdata('warning', 'No data available to export');
+            redirect(current_lang() . '/report_contribution/contribution_transaction_view/' . $link . '/' . $encoded_id, 'refresh');
+            exit();
+        }
+
+        $objPHPExcel = new PHPExcel();
+        $objPHPExcel->getProperties()->setCreator(company_info()->name)
+            ->setTitle('Member CBU Transactions')
+            ->setSubject('Member CBU Transactions Export')
+            ->setDescription('Member CBU Transactions exported from ' . company_info()->name);
+
+        $objPHPExcel->setActiveSheetIndex(0);
+        $sheet = $objPHPExcel->getActiveSheet();
+        $sheet->setTitle('CBU Transactions');
+
+        $sheet->setCellValue('A1', company_info()->name);
+        $sheet->mergeCells('A1:G1');
+        $sheet->getStyle('A1')->getFont()->setBold(true)->setSize(14);
+        $sheet->getStyle('A1')->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_CENTER);
+
+        $sheet->setCellValue('A2', 'Member CBU Transactions');
+        $sheet->mergeCells('A2:G2');
+        $sheet->getStyle('A2')->getFont()->setBold(true)->setSize(12);
+        $sheet->getStyle('A2')->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_CENTER);
+
+        $sheet->setCellValue('A3', 'For the period from ' . format_date($reportinfo->fromdate, false) . ' to ' . format_date($reportinfo->todate, false));
+        $sheet->mergeCells('A3:G3');
+        $sheet->getStyle('A3')->getFont()->setSize(10);
+        $sheet->getStyle('A3')->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_CENTER);
+
+        $sheet->setCellValue('A5', 'S/No');
+        $sheet->setCellValue('B5', 'Date');
+        $sheet->setCellValue('C5', 'Member ID');
+        $sheet->setCellValue('D5', 'Member Name');
+        $sheet->setCellValue('E5', 'Method');
+        $sheet->setCellValue('F5', 'Debit [DR]');
+        $sheet->setCellValue('G5', 'Credit [CR]');
+
+        $headerStyle = array(
+            'font' => array(
+                'bold' => true,
+                'color' => array('rgb' => 'FFFFFF'),
+            ),
+            'fill' => array(
+                'type' => PHPExcel_Style_Fill::FILL_SOLID,
+                'color' => array('rgb' => '4472C4')
+            ),
+            'alignment' => array(
+                'horizontal' => PHPExcel_Style_Alignment::HORIZONTAL_CENTER,
+            ),
+            'borders' => array(
+                'allborders' => array(
+                    'style' => PHPExcel_Style_Border::BORDER_THIN
+                )
+            ),
+        );
+        $sheet->getStyle('A5:G5')->applyFromArray($headerStyle);
+
+        $sheet->getColumnDimension('A')->setWidth(8);
+        $sheet->getColumnDimension('B')->setWidth(12);
+        $sheet->getColumnDimension('C')->setWidth(18);
+        $sheet->getColumnDimension('D')->setWidth(35);
+        $sheet->getColumnDimension('E')->setWidth(14);
+        $sheet->getColumnDimension('F')->setWidth(14);
+        $sheet->getColumnDimension('G')->setWidth(14);
+
+        $row = 6;
+        $i = 1;
+        $total_debit = 0;
+        $total_credit = 0;
+        foreach ($transaction as $value) {
+            $dt = explode(' ', $value->createdon);
+            $trans_date = isset($dt[0]) ? format_date($dt[0], false) : '';
+            $member_name = $this->member_model->member_name($value->member_id);
+
+            $sheet->setCellValue('A' . $row, $i++);
+            $sheet->setCellValue('B' . $row, $trans_date);
+            $sheet->setCellValue('C' . $row, $value->member_id);
+            $sheet->setCellValue('D' . $row, $member_name);
+            $sheet->setCellValue('E' . $row, $value->paymethod);
+            $sheet->setCellValue('F' . $row, $value->debit > 0 ? number_format($value->debit, 2) : '');
+            $sheet->setCellValue('G' . $row, $value->credit > 0 ? number_format($value->credit, 2) : '');
+
+            $total_debit += $value->debit;
+            $total_credit += $value->credit;
+
+            $sheet->getStyle('A' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_RIGHT);
+            $sheet->getStyle('B' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_CENTER);
+            $sheet->getStyle('C' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_LEFT);
+            $sheet->getStyle('D' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_LEFT);
+            $sheet->getStyle('E' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_LEFT);
+            $sheet->getStyle('F' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_RIGHT);
+            $sheet->getStyle('G' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_RIGHT);
+            $sheet->getStyle('A' . $row . ':G' . $row)->applyFromArray(array(
+                'borders' => array(
+                    'allborders' => array(
+                        'style' => PHPExcel_Style_Border::BORDER_THIN
+                    )
+                )
+            ));
+            $row++;
+        }
+
+        $sheet->setCellValue('A' . $row, '');
+        $sheet->setCellValue('B' . $row, '');
+        $sheet->setCellValue('C' . $row, '');
+        $sheet->setCellValue('D' . $row, '');
+        $sheet->setCellValue('E' . $row, '');
+        $sheet->setCellValue('F' . $row, number_format($total_debit, 2));
+        $sheet->setCellValue('G' . $row, number_format($total_credit, 2));
+        $totalStyle = array(
+            'font' => array('bold' => true),
+            'borders' => array(
+                'top' => array('style' => PHPExcel_Style_Border::BORDER_THIN),
+                'bottom' => array('style' => PHPExcel_Style_Border::BORDER_THIN),
+                'left' => array('style' => PHPExcel_Style_Border::BORDER_THIN),
+                'right' => array('style' => PHPExcel_Style_Border::BORDER_THIN),
+            ),
+        );
+        $sheet->getStyle('A' . $row . ':G' . $row)->applyFromArray($totalStyle);
+        $sheet->getStyle('F' . $row . ':G' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_RIGHT);
+
+        if (ob_get_level()) {
+            ob_end_clean();
+        }
+        while (@ob_end_clean());
+
+        $filename = 'CBU_Transactions_' . date('Y-m-d_His') . '.xls';
+        header('Content-Type: application/vnd.ms-excel');
+        header('Content-Disposition: attachment;filename="' . $filename . '"');
+        header('Cache-Control: must-revalidate, post-check=0, pre-check=0');
+        header('Pragma: public');
+        header('Expires: 0');
+
+        $objWriter = PHPExcel_IOFactory::createWriter($objPHPExcel, 'Excel5');
+        $objWriter->save('php://output');
+        exit();
+    }
     
     function contribution_transaction_summary_view($link, $id) {
         $this->data['title'] = lang('member_contribution_transactions_summary');
@@ -452,6 +613,186 @@ class Report_Contribution extends CI_Controller {
        
         $html = $this->load->view('report/contribution/print/contribution_transactions_summary_print', $this->data, true);
         $this->export_to_pdf($html, 'contribution_trans_summary', $reportinfo->page);
+    }
+
+    function contribution_transaction_summary_export($link, $id) {
+        if (ob_get_level()) {
+            ob_end_clean();
+        }
+        while (@ob_end_clean());
+
+        $this->output->enable_profiler(FALSE);
+        $this->output->set_output('');
+
+        $this->load->library('excel');
+
+        $encoded_id = $id;
+        if (!is_null($id)) {
+            $id = decode_id($id);
+        }
+
+        $reportinfo = $this->report_model->report_contribution($id)->row();
+        $transaction = $this->report_model->contribution_transactions_summary($reportinfo->fromdate, $reportinfo->todate);
+
+        if (empty($transaction) || !is_array($transaction) || count($transaction) == 0) {
+            if (ob_get_level()) {
+                ob_end_clean();
+            }
+            $this->session->set_flashdata('warning', 'No data available to export');
+            redirect(current_lang() . '/report_contribution/contribution_transaction_summary_view/' . $link . '/' . $encoded_id, 'refresh');
+            exit();
+        }
+
+        $objPHPExcel = new PHPExcel();
+        $objPHPExcel->getProperties()->setCreator(company_info()->name)
+            ->setTitle('Member CBU Transactions Summary')
+            ->setSubject('Member CBU Transactions Summary Export')
+            ->setDescription('Member CBU Transactions Summary exported from ' . company_info()->name);
+
+        $objPHPExcel->setActiveSheetIndex(0);
+        $sheet = $objPHPExcel->getActiveSheet();
+        $sheet->setTitle('CBU Transactions Summary');
+
+        $sheet->setCellValue('A1', company_info()->name);
+        $sheet->mergeCells('A1:G1');
+        $sheet->getStyle('A1')->getFont()->setBold(true)->setSize(14);
+        $sheet->getStyle('A1')->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_CENTER);
+
+        $sheet->setCellValue('A2', 'Member CBU Transactions Summary');
+        $sheet->mergeCells('A2:G2');
+        $sheet->getStyle('A2')->getFont()->setBold(true)->setSize(12);
+        $sheet->getStyle('A2')->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_CENTER);
+
+        $sheet->setCellValue('A3', 'For the period from ' . format_date($reportinfo->fromdate, false) . ' to ' . format_date($reportinfo->todate, false));
+        $sheet->mergeCells('A3:G3');
+        $sheet->getStyle('A3')->getFont()->setSize(10);
+        $sheet->getStyle('A3')->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_CENTER);
+
+        $sheet->setCellValue('A5', 'S/No');
+        $sheet->setCellValue('B5', 'Member ID');
+        $sheet->setCellValue('C5', 'Member Name');
+        $sheet->setCellValue('D5', 'Opening Balance');
+        $sheet->setCellValue('E5', 'Debit [DR]');
+        $sheet->setCellValue('F5', 'Credit [CR]');
+        $sheet->setCellValue('G5', 'Closing Balance');
+
+        $headerStyle = array(
+            'font' => array(
+                'bold' => true,
+                'color' => array('rgb' => 'FFFFFF'),
+            ),
+            'fill' => array(
+                'type' => PHPExcel_Style_Fill::FILL_SOLID,
+                'color' => array('rgb' => '4472C4')
+            ),
+            'alignment' => array(
+                'horizontal' => PHPExcel_Style_Alignment::HORIZONTAL_CENTER,
+            ),
+            'borders' => array(
+                'allborders' => array(
+                    'style' => PHPExcel_Style_Border::BORDER_THIN
+                )
+            ),
+        );
+        $sheet->getStyle('A5:G5')->applyFromArray($headerStyle);
+
+        $sheet->getColumnDimension('A')->setWidth(8);
+        $sheet->getColumnDimension('B')->setWidth(18);
+        $sheet->getColumnDimension('C')->setWidth(35);
+        $sheet->getColumnDimension('D')->setWidth(18);
+        $sheet->getColumnDimension('E')->setWidth(14);
+        $sheet->getColumnDimension('F')->setWidth(14);
+        $sheet->getColumnDimension('G')->setWidth(18);
+
+        $row = 6;
+        $i = 1;
+        $total_debit = 0;
+        $total_credit = 0;
+        foreach ($transaction as $value) {
+            $balance_open = $this->report_model->contribution_transactions_summary_previous($reportinfo->fromdate, $value->member_id);
+            $balance_tmp = 0;
+            if ($balance_open) {
+                $balance_tmp = $balance_open->credit - $balance_open->debit;
+            }
+            $close_balance = $balance_tmp - $value->debit + $value->credit;
+
+            $opening_label = number_format($balance_tmp, 2);
+            if ($balance_tmp > 0) {
+                $opening_label = number_format($balance_tmp, 2) . ' Cr';
+            } elseif ($balance_tmp < 0) {
+                $opening_label = number_format((-1 * $balance_tmp), 2) . ' Dr';
+            }
+            $closing_label = number_format($close_balance, 2);
+            if ($close_balance > 0) {
+                $closing_label = number_format($close_balance, 2) . ' Cr';
+            } elseif ($close_balance < 0) {
+                $closing_label = number_format((-1 * $close_balance), 2) . ' Dr';
+            }
+
+            $member_name = $this->member_model->member_name($value->member_id);
+
+            $sheet->setCellValue('A' . $row, $i++);
+            $sheet->setCellValue('B' . $row, $value->member_id);
+            $sheet->setCellValue('C' . $row, $member_name);
+            $sheet->setCellValue('D' . $row, $opening_label);
+            $sheet->setCellValue('E' . $row, $value->debit > 0 ? number_format($value->debit, 2) : '');
+            $sheet->setCellValue('F' . $row, $value->credit > 0 ? number_format($value->credit, 2) : '');
+            $sheet->setCellValue('G' . $row, $closing_label);
+
+            $total_debit += $value->debit;
+            $total_credit += $value->credit;
+
+            $sheet->getStyle('A' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_RIGHT);
+            $sheet->getStyle('B' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_LEFT);
+            $sheet->getStyle('C' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_LEFT);
+            $sheet->getStyle('D' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_RIGHT);
+            $sheet->getStyle('E' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_RIGHT);
+            $sheet->getStyle('F' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_RIGHT);
+            $sheet->getStyle('G' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_RIGHT);
+            $sheet->getStyle('A' . $row . ':G' . $row)->applyFromArray(array(
+                'borders' => array(
+                    'allborders' => array(
+                        'style' => PHPExcel_Style_Border::BORDER_THIN
+                    )
+                )
+            ));
+            $row++;
+        }
+
+        $sheet->setCellValue('A' . $row, '');
+        $sheet->setCellValue('B' . $row, '');
+        $sheet->setCellValue('C' . $row, '');
+        $sheet->setCellValue('D' . $row, '');
+        $sheet->setCellValue('E' . $row, number_format($total_debit, 2));
+        $sheet->setCellValue('F' . $row, number_format($total_credit, 2));
+        $sheet->setCellValue('G' . $row, '');
+        $totalStyle = array(
+            'font' => array('bold' => true),
+            'borders' => array(
+                'top' => array('style' => PHPExcel_Style_Border::BORDER_THIN),
+                'bottom' => array('style' => PHPExcel_Style_Border::BORDER_THIN),
+                'left' => array('style' => PHPExcel_Style_Border::BORDER_THIN),
+                'right' => array('style' => PHPExcel_Style_Border::BORDER_THIN),
+            ),
+        );
+        $sheet->getStyle('A' . $row . ':G' . $row)->applyFromArray($totalStyle);
+        $sheet->getStyle('E' . $row . ':F' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_RIGHT);
+
+        if (ob_get_level()) {
+            ob_end_clean();
+        }
+        while (@ob_end_clean());
+
+        $filename = 'CBU_Transactions_Summary_' . date('Y-m-d_His') . '.xls';
+        header('Content-Type: application/vnd.ms-excel');
+        header('Content-Disposition: attachment;filename="' . $filename . '"');
+        header('Cache-Control: must-revalidate, post-check=0, pre-check=0');
+        header('Pragma: public');
+        header('Expires: 0');
+
+        $objWriter = PHPExcel_IOFactory::createWriter($objPHPExcel, 'Excel5');
+        $objWriter->save('php://output');
+        exit();
     }
             
     

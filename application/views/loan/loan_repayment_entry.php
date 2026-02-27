@@ -95,7 +95,7 @@ if (isset($message) && !empty($message)) {
                         </div>
                     </div>
 
-                    <!-- Amount -->
+                    <!-- Amount & Payment Method -->
                     <div class="row">
                         <div class="col-md-6">
                             <div class="form-group">
@@ -103,6 +103,26 @@ if (isset($message) && !empty($message)) {
                                 <div class="col-lg-8">
                                     <input type="text" name="amount" value="<?php echo set_value('amount'); ?>" class="form-control amountformat" required/>
                                     <?php echo form_error('amount'); ?>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label class="col-lg-4 control-label"><?php echo lang('cash_receipt_payment_method'); ?> : <span class="required">*</span></label>
+                                <div class="col-lg-8">
+                                    <select name="payment_method" id="payment_method" class="form-control" required>
+                                        <option value=""><?php echo lang('select_default_text'); ?></option>
+                                        <?php
+                                        $selected_pm = set_value('payment_method', isset($default_payment_method_id) ? $default_payment_method_id : '');
+                                        if (isset($payment_methods) && is_array($payment_methods)) {
+                                            foreach ($payment_methods as $pm_id => $pm_name) {
+                                                $sel = ((string)$selected_pm !== '' && (string)$selected_pm === (string)$pm_id) ? 'selected="selected"' : '';
+                                                echo '<option value="' . htmlspecialchars($pm_id) . '" ' . $sel . '>' . htmlspecialchars($pm_name) . '</option>';
+                                            }
+                                        }
+                                        ?>
+                                    </select>
+                                    <?php echo form_error('payment_method'); ?>
                                 </div>
                             </div>
                         </div>

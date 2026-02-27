@@ -1294,8 +1294,30 @@ $pin = current_user()->PIN;
         $this->data['title'] = lang('loan_repayment') . ' - ' . lang('loan_repay_btn');
         $this->data['loaninfo'] = $loaninfo;
         $this->data['loanid'] = $loanid;
+
+        // Shared receipt number series with Cash Receipt
         $this->load->model('cash_receipt_model');
         $this->data['next_receipt_no'] = $this->cash_receipt_model->get_next_shared_receipt_no();
+
+        // Payment methods (for choosing cash/bank GL account instead of hard-coded 1010001)
+        $this->load->model('payment_method_config_model');
+        $payment_methods = $this->payment_method_config_model->get_all_payment_methods();
+        $this->data['payment_methods'] = array();
+        $default_payment_method_id = null;
+        $cash_id = null;
+        $first_id = null;
+        foreach ($payment_methods as $pm) {
+            $this->data['payment_methods'][$pm->id] = $pm->name;
+            if ($first_id === null) {
+                $first_id = $pm->id;
+            }
+            if ($cash_id === null && isset($pm->name) && strcasecmp(trim($pm->name), 'cash') === 0) {
+                $cash_id = $pm->id;
+            }
+        }
+        $default_payment_method_id = $cash_id !== null ? $cash_id : $first_id;
+        $this->data['default_payment_method_id'] = $default_payment_method_id;
+
         $this->data['content'] = 'loan/loan_repayment_entry';
         $this->load->view('template', $this->data);
     }
@@ -1317,6 +1339,7 @@ $pin = current_user()->PIN;
         $this->form_validation->set_rules('loanid', lang('loan_LID'), 'required');
         $this->form_validation->set_rules('repaydate', lang('loan_repay_date'), 'required|valid_date');
         $this->form_validation->set_rules('receipt_no', lang('cash_receipt_no'), 'required');
+        $this->form_validation->set_rules('payment_method', lang('cash_receipt_payment_method'), 'required');
 
         $LID = trim($this->input->post('loanid'));
         $loanid_encoded = encode_id($LID);
@@ -1331,6 +1354,7 @@ $pin = current_user()->PIN;
         $amount = trim($this->input->post('amount'));
         $paydate = format_date(trim($this->input->post('repaydate')));
         $receipt_no = trim($this->input->post('receipt_no'));
+        $payment_method_id = (int) $this->input->post('payment_method');
 
         $this->load->model('cash_receipt_model');
         if ($this->cash_receipt_model->receipt_no_exists($receipt_no)) {
@@ -1349,6 +1373,14 @@ $pin = current_user()->PIN;
             $this->session->set_flashdata('warning', 'Loan not found.');
             redirect($redirect_back, 'refresh');
             return;
+        }
+        // Determine cash/bank GL account from payment method (fallback to 1010001 if not configured)
+        $cash_account = null;
+        if ($payment_method_id > 0) {
+            $cash_account = $this->loan_model->get_credit_account_for_payment_method($payment_method_id);
+        }
+        if (!$cash_account) {
+            $cash_account = 1010001;
         }
         $product = $this->setting_model->loanproduct($loaninfo->product_type)->row();
         $open_repayment = $this->loan_model->open_repayment_installment($LID);
@@ -1392,7 +1424,7 @@ $pin = current_user()->PIN;
                             'interest' => $value->interest, 'principle' => $new_principle, 'duedate' => $value->repaydate,
                             'balance' => 0, 'iliyobaki' => round($amount_tmp, 2), 'createdby' => current_user()->id, 'PIN' => $pin,
                         );
-                        $this->loan_model->record_loan_repayment_all($array_data, $value->id, $value->LID);
+                        $this->loan_model->record_loan_repayment_all($array_data, $value->id, $value->LID, $cash_account);
                         break;
                     } else {
                         $amount_tmp -= $repay_amount_install;
@@ -1402,7 +1434,7 @@ $pin = current_user()->PIN;
                             'interest' => $value->interest, 'principle' => $value->principle, 'duedate' => $value->repaydate,
                             'balance' => $value->balance, 'iliyobaki' => round($amount_tmp, 2), 'createdby' => current_user()->id, 'PIN' => $pin,
                         );
-                        $this->loan_model->record_loan_repayment($array_data, $value->id);
+                        $this->loan_model->record_loan_repayment($array_data, $value->id, $cash_account);
                     }
                 } else {
                     $d1 = new DateTime($max_date);
@@ -1429,7 +1461,7 @@ $pin = current_user()->PIN;
                                 'iliyobaki' => round($amount_tmp, 2), 'penalt' => ($penalt_avail * $number_months), 'penalty_months' => $number_months,
                                 'createdby' => current_user()->id, 'PIN' => $pin,
                             );
-                            $this->loan_model->record_loan_repayment_all($array_data, $value->id, $value->LID);
+                            $this->loan_model->record_loan_repayment_all($array_data, $value->id, $value->LID, $cash_account);
                             break;
                         } else {
                             $amount_tmp -= $repay_amount_install;
@@ -1440,7 +1472,7 @@ $pin = current_user()->PIN;
                                 'iliyobaki' => round($amount_tmp, 2), 'penalt' => ($penalt_avail * $number_months), 'penalty_months' => $number_months,
                                 'createdby' => current_user()->id, 'PIN' => $pin,
                             );
-                            $this->loan_model->record_loan_repayment($array_data, $value->id);
+                            $this->loan_model->record_loan_repayment($array_data, $value->id, $cash_account);
                         }
                     } else {
                         $this->loan_model->add_remain_balance($LID, round($amount_tmp, 2));

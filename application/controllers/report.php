@@ -197,6 +197,10 @@ class Report extends CI_Controller {
                     'page' => $page,
                     'PIN' => current_user()->PIN,
                 );
+                if ($link == 1) {
+                    $account = trim($this->input->post('account'));
+                    $array['account'] = ($account !== '' ? $account : null);
+                }
                 if (is_null($id)) {
                     $this->db->insert('report_table', $array);
                 } else {
@@ -214,6 +218,10 @@ class Report extends CI_Controller {
             $this->data['reportinfo'] = $this->report_model->report_list($id)->row();
         }
 
+        if ($link == 1) {
+            $this->data['account_list'] = $this->finance_model->account_chart(null, null, null)->result();
+        }
+
         $this->data['content'] = 'report/ledger/create_ledger_trans_title';
         $this->load->view('template', $this->data);
     }
@@ -227,7 +235,13 @@ class Report extends CI_Controller {
         }
         $reportinfo = $this->report_model->report_list($id)->row();
         $this->data['reportinfo'] = $reportinfo;
-        $this->data['transaction'] = $this->report_model->ledger_trans($reportinfo->fromdate, $reportinfo->todate);
+        $account = (!empty($reportinfo->account) ? $reportinfo->account : null);
+        $this->data['transaction'] = $this->report_model->ledger_trans($reportinfo->fromdate, $reportinfo->todate, $account);
+        $this->data['account_name'] = null;
+        if (!empty($reportinfo->account)) {
+            $ac = $this->finance_model->account_chart(null, $reportinfo->account)->row();
+            $this->data['account_name'] = $ac ? $ac->name : $reportinfo->account;
+        }
 
         $this->data['content'] = 'report/ledger/ledger_transaction';
         $this->load->view('template', $this->data);
@@ -345,7 +359,13 @@ class Report extends CI_Controller {
         }
         $reportinfo = $this->report_model->report_list($id)->row();
         $this->data['reportinfo'] = $reportinfo;
-        $this->data['transaction'] = $this->report_model->ledger_trans($reportinfo->fromdate, $reportinfo->todate);
+        $account = (!empty($reportinfo->account) ? $reportinfo->account : null);
+        $this->data['transaction'] = $this->report_model->ledger_trans($reportinfo->fromdate, $reportinfo->todate, $account);
+        $this->data['account_name'] = null;
+        if (!empty($reportinfo->account)) {
+            $ac = $this->finance_model->account_chart(null, $reportinfo->account)->row();
+            $this->data['account_name'] = $ac ? $ac->name : $reportinfo->account;
+        }
 
         $html = $this->load->view('report/ledger/print/ledger_transaction', $this->data, true);
         $this->export_to_pdf($html, 'Ledger_transaction', $reportinfo->page);

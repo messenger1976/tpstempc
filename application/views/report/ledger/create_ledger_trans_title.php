@@ -38,6 +38,20 @@ if (isset($message) && !empty($message)) {
 </div>
 <?php } ?>
 
+<?php if ($link_cat == 1 && !empty($account_list)) { ?>
+<div class="form-group"><label class="col-lg-3 control-label"><?php echo 'Account'; ?>  :</label>
+    <div class="col-lg-6">
+        <select name="account" class="form-control">
+            <option value=""><?php echo 'All accounts'; ?></option>
+            <?php foreach ($account_list as $acc) { ?>
+            <option value="<?php echo htmlspecialchars($acc->account); ?>" <?php echo (isset($reportinfo) && $reportinfo->account === $acc->account ? 'selected="selected"' : ''); ?>><?php echo htmlspecialchars($acc->account . ' - ' . $acc->name); ?></option>
+            <?php } ?>
+        </select>
+        <span class="help-block">Leave as "All accounts" for full GL, or select one account (e.g. Cash on Hand) for that account's transactions only.</span>
+    </div>
+</div>
+<?php } ?>
+
 <div class="form-group"><label class="col-lg-3 control-label"><?php echo 'Description'; ?>  : <span class="required">*</span></label>
     <div class="col-lg-6">
         <textarea type="text" name="description" class="form-control"><?php echo (isset($reportinfo) ? $reportinfo->description : set_value('description')); ?> </textarea>

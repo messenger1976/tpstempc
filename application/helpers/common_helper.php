@@ -210,6 +210,50 @@ if (!function_exists('decode_id')) {
 
 }
 
+if (!function_exists('get_gl_reference_url')) {
+
+    /**
+     * Return URL path for a GL transaction reference (for use with site_url or anchor).
+     * Returns empty string if no view is available for the given fromtable.
+     *
+     * @param string $fromtable general_ledger.fromtable
+     * @param mixed  $refferenceID general_ledger.refferenceID
+     * @return string Path segment (e.g. 'finance/journal_entry_view/xxx') or ''
+     */
+    function get_gl_reference_url($fromtable, $refferenceID) {
+        if (empty($fromtable) || (empty($refferenceID) && $refferenceID !== '0')) {
+            return '';
+        }
+        $ref = $refferenceID;
+        switch ($fromtable) {
+            case 'journal_entry':
+            case 'general_journal':
+                return current_lang() . '/finance/journal_entry_view/' . (is_numeric($ref) || ctype_digit((string)$ref) ? encode_id($ref) : $ref);
+            case 'sales_invoice':
+                return current_lang() . '/customer/sales_invoice_view/' . (is_numeric($ref) || ctype_digit((string)$ref) ? encode_id($ref) : $ref);
+            case 'purchase_invoice':
+                return current_lang() . '/supplier/purchase_invoice_view/' . (is_numeric($ref) || ctype_digit((string)$ref) ? encode_id($ref) : $ref);
+            case 'savings_transaction':
+                return current_lang() . '/saving/receipt_view/' . $ref;
+            case 'contribution_settings':
+                return current_lang() . '/contribution/receipt_view/' . $ref;
+            case 'cash_receipt':
+                return current_lang() . '/cash_receipt/cash_receipt_view/' . (is_numeric($ref) || ctype_digit((string)$ref) ? encode_id($ref) : $ref);
+            case 'cash_disbursement':
+                return current_lang() . '/cash_disbursement/cash_disbursement_view/' . (is_numeric($ref) || ctype_digit((string)$ref) ? encode_id($ref) : $ref);
+            case 'loan_contract':
+            case 'loan_contract_repayment':
+                return current_lang() . '/loan/view_repayment_schedule/' . $ref;
+            case 'loan_beginning_balances':
+                return current_lang() . '/loan/loan_viewlist';
+            case 'member_registrationfee':
+                return current_lang() . '/report_member/member_report_title/2';
+            default:
+                return '';
+        }
+    }
+}
+
 if (!function_exists('mobile_code')) {
 
     function mobile_code() {

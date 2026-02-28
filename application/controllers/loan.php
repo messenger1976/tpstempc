@@ -1318,6 +1318,18 @@ $pin = current_user()->PIN;
         $default_payment_method_id = $cash_id !== null ? $cash_id : $first_id;
         $this->data['default_payment_method_id'] = $default_payment_method_id;
 
+        // Account list for line items (same as cash receipt create)
+        $this->data['account_list'] = $this->finance_model->account_chart_by_accounttype();
+
+        // Pre-fill line items: debit = cash/bank (from payment method), credit = loan principle account
+        $product = $this->setting_model->loanproduct($loaninfo->product_type)->row();
+        $this->data['default_debit_account'] = $this->loan_model->get_credit_account_for_payment_method($default_payment_method_id);
+        $this->data['loan_credit_account'] = $product ? $product->loan_principle_account : '';
+        $this->data['payment_method_gl_accounts'] = array();
+        foreach ($payment_methods as $pm) {
+            $this->data['payment_method_gl_accounts'][$pm->id] = $this->loan_model->get_credit_account_for_payment_method($pm->id);
+        }
+
         $this->data['content'] = 'loan/loan_repayment_entry';
         $this->load->view('template', $this->data);
     }

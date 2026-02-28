@@ -801,15 +801,74 @@ FROM
         return $this->db->query($sql)->result();
     }
 
-    function loan_transactions($fromdate, $untill) {
+    function loan_transactions($fromdate, $untill, $loan_type_id = null, $member_id = null) {
         $pin = current_user()->PIN;
-        $sql = "SELECT * FROM loan_repayment_receipt WHERE PIN='$pin' AND  paydate >= '$fromdate' AND paydate <= '$untill'  ORDER BY paydate ASC";
+        $fromdate = $this->db->escape($fromdate);
+        $untill = $this->db->escape($untill);
+        $use_filter = ($loan_type_id !== null && $loan_type_id !== '' && $loan_type_id !== 'all')
+            || ($member_id !== null && $member_id !== '' && $member_id !== 'all');
+        if ($use_filter) {
+            $sql = "SELECT lrr.* FROM loan_repayment_receipt lrr
+                INNER JOIN loan_contract lc ON lc.LID = lrr.LID AND lc.PIN = lrr.PIN
+                WHERE lrr.PIN='$pin' AND lrr.paydate >= $fromdate AND lrr.paydate <= $untill";
+            if ($loan_type_id !== null && $loan_type_id !== '' && $loan_type_id !== 'all') {
+                $lid = $this->db->escape($loan_type_id);
+                $sql .= " AND lc.product_type = $lid";
+            }
+            if ($member_id !== null && $member_id !== '' && $member_id !== 'all') {
+                $mid = $this->db->escape($member_id);
+                $sql .= " AND lc.member_id = $mid";
+            }
+            $sql .= " ORDER BY lrr.paydate ASC";
+            return $this->db->query($sql)->result();
+        }
+        $sql = "SELECT * FROM loan_repayment_receipt WHERE PIN='$pin' AND paydate >= $fromdate AND paydate <= $untill ORDER BY paydate ASC";
         return $this->db->query($sql)->result();
     }
 
-    function loan_transactions_summary($fromdate, $untill) {
+    /**
+     * Get distinct loan types (products) and members that have transactions in the date range, for filter dropdowns.
+     */
+    function loan_transaction_filter_options($fromdate, $untill) {
         $pin = current_user()->PIN;
-        $sql = "SELECT LID, SUM(amount) as amount FROM loan_repayment_receipt WHERE PIN='$pin' AND paydate >= '$fromdate' AND paydate <= '$untill' GROUP BY LID ";
+        $fromdate = $this->db->escape($fromdate);
+        $untill = $this->db->escape($untill);
+        $loan_types = $this->db->query("SELECT id, name FROM loan_product WHERE PIN = " . $this->db->escape($pin) . " ORDER BY name")->result();
+        $members_sql = "SELECT DISTINCT lc.member_id,
+                CONCAT(m.firstname, ' ', m.middlename, ' ', m.lastname) AS member_name
+            FROM loan_repayment_receipt lrr
+            INNER JOIN loan_contract lc ON lc.LID = lrr.LID AND lc.PIN = lrr.PIN
+            LEFT JOIN members m ON m.member_id = lc.member_id AND m.PIN = lc.PIN
+            WHERE lrr.PIN = " . $this->db->escape($pin) . "
+            AND lrr.paydate >= $fromdate AND lrr.paydate <= $untill
+            AND lc.member_id IS NOT NULL AND lc.member_id != ''
+            ORDER BY member_name";
+        $members = $this->db->query($members_sql)->result();
+        return array('loan_types' => $loan_types, 'members' => $members);
+    }
+
+    function loan_transactions_summary($fromdate, $untill, $loan_type_id = null, $member_id = null) {
+        $pin = current_user()->PIN;
+        $fromdate_esc = $this->db->escape($fromdate);
+        $untill_esc = $this->db->escape($untill);
+        $use_filter = ($loan_type_id !== null && $loan_type_id !== '' && $loan_type_id !== 'all')
+            || ($member_id !== null && $member_id !== '' && $member_id !== 'all');
+        if ($use_filter) {
+            $sql = "SELECT lrr.LID, SUM(lrr.amount) as amount FROM loan_repayment_receipt lrr
+                INNER JOIN loan_contract lc ON lc.LID = lrr.LID AND lc.PIN = lrr.PIN
+                WHERE lrr.PIN='$pin' AND lrr.paydate >= $fromdate_esc AND lrr.paydate <= $untill_esc";
+            if ($loan_type_id !== null && $loan_type_id !== '' && $loan_type_id !== 'all') {
+                $lid = $this->db->escape($loan_type_id);
+                $sql .= " AND lc.product_type = $lid";
+            }
+            if ($member_id !== null && $member_id !== '' && $member_id !== 'all') {
+                $mid = $this->db->escape($member_id);
+                $sql .= " AND lc.member_id = $mid";
+            }
+            $sql .= " GROUP BY lrr.LID ORDER BY lrr.LID";
+            return $this->db->query($sql)->result();
+        }
+        $sql = "SELECT LID, SUM(amount) as amount FROM loan_repayment_receipt WHERE PIN='$pin' AND paydate >= $fromdate_esc AND paydate <= $untill_esc GROUP BY LID ORDER BY LID";
         return $this->db->query($sql)->result();
     }
 

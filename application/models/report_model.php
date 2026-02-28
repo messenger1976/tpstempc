@@ -323,7 +323,7 @@ class Report_Model extends CI_Model {
                     $m = $this->db->query('SELECT CONCAT(firstname, " ", middlename, " ", lastname) AS name, member_id FROM members WHERE PID = ? AND PIN = ? LIMIT 1', array($ct->PID, $pin))->row();
                     if ($m) {
                         $name = trim($m->name);
-                        $url = current_lang() . '/contribution/receipt_view/' . $ref;
+                        $url = current_lang() . '/report_member/member_profile/?member=' . urlencode($m->member_id);
                     }
                 }
                 break;

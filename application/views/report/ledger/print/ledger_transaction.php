@@ -28,6 +28,7 @@
                             <th style="text-align: center;">Date</th>
                             <th style="text-align: center;">#</th>
                             <th>Account</th>
+                            <th>Person/Member/Item</th>
                             <th style="text-align: right; padding-right: 20px; width: 200px;">Debit</th>
                             <th style="text-align: right; padding-right: 20px; width: 200px;">Credit</th>
                             <th>Remarks</th>
@@ -47,6 +48,7 @@
                                 <td style="text-align: center;"><?php echo format_date($value->date,false); ?></td>
                                 <td style="text-align: center;"><?php echo ($value->invoiceid > 0 ? '#'.$value->invoiceid:''); ?></td>
                                 <td style="<?php echo ($value->credit > 0 ? 'padding-left:30px;':'');  ?>"> <?php echo htmlspecialchars($value->account); ?> - <?php echo $value->name; ?></td>
+                                <td><?php echo (isset($value->related_entity_name) && $value->related_entity_name !== '') ? htmlspecialchars($value->related_entity_name) : '&mdash;'; ?></td>
                                 <td style="text-align: right; padding-right: 20px;"><?php echo ($value->debit > 0 ? number_format($value->debit,2):''); ?></td>
                                 <td style="text-align: right; padding-right: 20px;"><?php echo ($value->credit > 0 ? number_format($value->credit,2):''); ?></td>
                                 <td><?php echo isset($value->description) ? htmlspecialchars($value->description) : '&mdash;'; ?></td>
@@ -55,6 +57,7 @@
                         ?>
                             <tr>
                               <td style="border-top: 1px solid #000; border-bottom:  1px solid #000;"></td>
+                                <td style="border-top: 1px solid #000; border-bottom:  1px solid #000;"></td>
                                 <td style="border-top: 1px solid #000; border-bottom:  1px solid #000;"></td>
                                 <td style="border-top: 1px solid #000; border-bottom:  1px solid #000;"></td>
                                 <td style="border-top: 1px solid #000; border-bottom:  1px solid #000;"></td>

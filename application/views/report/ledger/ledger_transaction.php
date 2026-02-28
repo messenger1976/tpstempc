@@ -19,6 +19,7 @@
                             <th style="text-align: center;">Date</th>
                             <th style="text-align: center;">#</th>
                             <th>Account</th>
+                            <th>Person/Member/Item</th>
                             <th style="text-align: right; padding-right: 20px; width: 200px;">Debit</th>
                             <th style="text-align: right; padding-right: 20px; width: 200px;">Credit</th>
                             <th>Remarks</th>
@@ -50,6 +51,19 @@
                                     }
                                 ?></td>
                                 <td style="<?php echo ($value->credit > 0 ? 'padding-left:30px;':'');  ?>"> <?php echo htmlspecialchars($value->account); ?> - <?php echo $value->name; ?></td>
+                                <td><?php
+                                    $rel_name = isset($value->related_entity_name) ? $value->related_entity_name : '';
+                                    $rel_url = isset($value->related_entity_url) ? $value->related_entity_url : '';
+                                    if ($rel_name !== '') {
+                                        if ($rel_url !== '') {
+                                            echo anchor($rel_url, htmlspecialchars($rel_name), array('title' => 'View'));
+                                        } else {
+                                            echo htmlspecialchars($rel_name);
+                                        }
+                                    } else {
+                                        echo '&mdash;';
+                                    }
+                                ?></td>
                                 <td style="text-align: right; padding-right: 20px;"><?php echo ($value->debit > 0 ? number_format($value->debit,2):''); ?></td>
                                 <td style="text-align: right; padding-right: 20px;"><?php echo ($value->credit > 0 ? number_format($value->credit,2):''); ?></td>
                                 <td><?php echo isset($value->description) ? htmlspecialchars($value->description) : '&mdash;'; ?></td>
@@ -58,6 +72,7 @@
                         ?>
                             <tr>
                               <td style="border-top: 1px solid #000; border-bottom:  1px solid #000;"></td>
+                                <td style="border-top: 1px solid #000; border-bottom:  1px solid #000;"></td>
                                 <td style="border-top: 1px solid #000; border-bottom:  1px solid #000;"></td>
                                 <td style="border-top: 1px solid #000; border-bottom:  1px solid #000;"></td>
                                 <td style="border-top: 1px solid #000; border-bottom:  1px solid #000;"></td>
@@ -73,6 +88,10 @@
             <div style="text-align: center">
                 <a href="<?php echo site_url(current_lang().'/report/ledger_trans_print/'.$link_cat.'/'.$id); ?>" class="btn btn-primary">Print</a>
                 &nbsp; &nbsp; &nbsp; &nbsp;
+                <?php if ((int)$link_cat === 1) { ?>
+                <a href="<?php echo site_url(current_lang().'/report/ledger_trans_export/'.$link_cat.'/'.$id); ?>" class="btn btn-success"><i class="fa fa-file-excel-o"></i> Export to Excel</a>
+                &nbsp; &nbsp; &nbsp; &nbsp;
+                <?php } ?>
                 <a href="<?php echo site_url(current_lang().'/report/create_ledger_trans_title/'.$link_cat.'/'.$id); ?>" class="btn btn-primary">Edit</a>
             </div>
         </div>

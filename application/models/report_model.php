@@ -218,6 +218,140 @@ class Report_Model extends CI_Model {
         return $this->db->query($sql)->result();
     }
 
+    /**
+     * Get related entity (Person/Member/Item) name and URL for a GL transaction row.
+     * Returns array('name' => string, 'url' => string). Empty url means no link.
+     */
+    function get_gl_related_entity($row) {
+        $name = '';
+        $url = '';
+        $pin = current_user()->PIN;
+        $fromtable = isset($row->fromtable) ? $row->fromtable : '';
+        $ref = isset($row->refferenceID) ? $row->refferenceID : null;
+        if (empty($fromtable) || ($ref === null && $ref !== '0' && $ref !== 0)) {
+            return array('name' => '', 'url' => '');
+        }
+        $ref_int = (is_numeric($ref) || ctype_digit((string)$ref)) ? (int)$ref : 0;
+
+        switch ($fromtable) {
+            case 'sales_invoice':
+                $inv = $this->db->query('SELECT customerid FROM sales_invoice WHERE id = ? AND PIN = ? LIMIT 1', array($ref_int, $pin))->row();
+                if ($inv && !empty($inv->customerid)) {
+                    $c = $this->db->query('SELECT id, name FROM customer WHERE customerid = ? AND PIN = ? LIMIT 1', array($inv->customerid, $pin))->row();
+                    if ($c) {
+                        $name = $c->name;
+                        $url = current_lang() . '/customer/sales_invoice_view/' . encode_id($ref_int);
+                    }
+                }
+                break;
+            case 'purchase_invoice':
+                $inv = $this->db->query('SELECT supplierid FROM purchase_invoice WHERE id = ? AND PIN = ? LIMIT 1', array($ref_int, $pin))->row();
+                if ($inv && !empty($inv->supplierid)) {
+                    $s = $this->db->query('SELECT id, name FROM supplier WHERE supplierid = ? AND PIN = ? LIMIT 1', array($inv->supplierid, $pin))->row();
+                    if ($s) {
+                        $name = $s->name;
+                        $url = current_lang() . '/supplier/purchase_invoice_view/' . encode_id($ref_int);
+                    }
+                }
+                break;
+            case 'journal_entry':
+                $je = $this->db->query('SELECT reference_type, reference_id FROM journal_entry WHERE id = ? AND PIN = ? LIMIT 1', array($ref_int, $pin))->row();
+                if ($je && isset($je->reference_type)) {
+                    if ($je->reference_type === 'cash_receipt' && !empty($je->reference_id)) {
+                        $r = $this->db->query('SELECT received_from FROM cash_receipts WHERE id = ? AND PIN = ? LIMIT 1', array((int)$je->reference_id, $pin))->row();
+                        if ($r) {
+                            $name = $r->received_from;
+                            $url = current_lang() . '/cash_receipt/cash_receipt_view/' . encode_id((int)$je->reference_id);
+                        }
+                    } elseif ($je->reference_type === 'cash_disbursement' && !empty($je->reference_id)) {
+                        $d = $this->db->query('SELECT paid_to FROM cash_disbursements WHERE id = ? AND PIN = ? LIMIT 1', array((int)$je->reference_id, $pin))->row();
+                        if ($d) {
+                            $name = $d->paid_to;
+                            $url = current_lang() . '/cash_disbursement/cash_disbursement_view/' . encode_id((int)$je->reference_id);
+                        }
+                    }
+                }
+                if ($name === '' && $ref_int > 0) {
+                    $url = current_lang() . '/finance/journal_entry_view/' . encode_id($ref_int);
+                    $name = 'Journal Entry #' . $ref_int;
+                }
+                break;
+            case 'loan_contract':
+            case 'loan_contract_repayment':
+                $LID = isset($row->LID) ? $row->LID : null;
+                if (!$LID && $ref) {
+                    $LID = $ref;
+                }
+                if ($LID) {
+                    if ($fromtable === 'loan_contract_repayment' && $ref_int > 0) {
+                        $rep = $this->db->query('SELECT LID FROM loan_contract_repayment WHERE id = ? AND PIN = ? LIMIT 1', array($ref_int, $pin))->row();
+                        if ($rep) $LID = $rep->LID;
+                    }
+                    $lc = $this->db->query('SELECT member_id, PID FROM loan_contract WHERE LID = ? AND PIN = ? LIMIT 1', array($LID, $pin))->row();
+                    if ($lc && (isset($lc->member_id) || isset($lc->PID))) {
+                        $m = $this->db->query('SELECT CONCAT(firstname, " ", middlename, " ", lastname) AS name, member_id FROM members WHERE PID = ? AND PIN = ? LIMIT 1', array($lc->PID, $pin))->row();
+                        if ($m) {
+                            $name = trim($m->name) . ' (' . $LID . ')';
+                            $url = current_lang() . '/loan/view_repayment_schedule/' . $LID;
+                        }
+                    }
+                }
+                break;
+            case 'loan_beginning_balances':
+                $lb = $this->db->query('SELECT member_id FROM loan_beginning_balances WHERE id = ? AND PIN = ? LIMIT 1', array($ref_int, $pin))->row();
+                if ($lb && !empty($lb->member_id)) {
+                    $m = $this->db->query('SELECT CONCAT(firstname, " ", middlename, " ", lastname) AS name FROM members WHERE member_id = ? AND PIN = ? LIMIT 1', array($lb->member_id, $pin))->row();
+                    if ($m) {
+                        $name = trim($m->name);
+                        $url = current_lang() . '/report_member/member_profile/?member=' . urlencode($lb->member_id);
+                    }
+                }
+                break;
+            case 'member_registrationfee':
+                $mr = $this->db->query('SELECT PID FROM member_registrationfee WHERE id = ? AND PIN = ? LIMIT 1', array($ref_int, $pin))->row();
+                if ($mr && !empty($mr->PID)) {
+                    $m = $this->db->query('SELECT CONCAT(firstname, " ", middlename, " ", lastname) AS name, member_id FROM members WHERE PID = ? AND PIN = ? LIMIT 1', array($mr->PID, $pin))->row();
+                    if ($m) {
+                        $name = trim($m->name);
+                        $url = current_lang() . '/report_member/member_profile/?member=' . urlencode($m->member_id);
+                    }
+                }
+                break;
+            case 'contribution_settings':
+                $ct = $this->db->query('SELECT PID FROM contribution_transaction WHERE receipt = ? AND PIN = ? LIMIT 1', array($ref, $pin))->row();
+                if ($ct && !empty($ct->PID)) {
+                    $m = $this->db->query('SELECT CONCAT(firstname, " ", middlename, " ", lastname) AS name, member_id FROM members WHERE PID = ? AND PIN = ? LIMIT 1', array($ct->PID, $pin))->row();
+                    if ($m) {
+                        $name = trim($m->name);
+                        $url = current_lang() . '/contribution/receipt_view/' . $ref;
+                    }
+                }
+                break;
+            case 'savings_transaction':
+                $st = $this->db->query('SELECT account FROM savings_transaction WHERE receipt = ? AND PIN = ? LIMIT 1', array($ref, $pin))->row();
+                if ($st && !empty($st->account)) {
+                    $ma = $this->db->query('SELECT account, RFID FROM members_account WHERE account = ? AND PIN = ? LIMIT 1', array($st->account, $pin))->row();
+                    if ($ma && !empty($ma->RFID)) {
+                        $m = $this->db->query('SELECT CONCAT(firstname, " ", middlename, " ", lastname) AS name, member_id FROM members WHERE PID = ? AND PIN = ? LIMIT 1', array($ma->RFID, $pin))->row();
+                        if ($m) {
+                            $name = trim($m->name);
+                            $url = current_lang() . '/saving/receipt_view/' . $ref;
+                        }
+                    }
+                }
+                break;
+            case 'general_journal':
+                if ($ref_int > 0) {
+                    $name = 'Journal Entry #' . $ref_int;
+                    $url = current_lang() . '/finance/journal_entry_view/' . encode_id($ref_int);
+                }
+                break;
+            default:
+                break;
+        }
+        return array('name' => $name, 'url' => $url);
+    }
+
     function journal_trans($from, $until, $journal_id) {
         $pin = current_user()->PIN;
         

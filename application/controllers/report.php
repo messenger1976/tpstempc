@@ -237,6 +237,11 @@ class Report extends CI_Controller {
         $this->data['reportinfo'] = $reportinfo;
         $account = (!empty($reportinfo->account) ? $reportinfo->account : null);
         $this->data['transaction'] = $this->report_model->ledger_trans($reportinfo->fromdate, $reportinfo->todate, $account);
+        foreach ($this->data['transaction'] as $t) {
+            $ent = $this->report_model->get_gl_related_entity($t);
+            $t->related_entity_name = $ent['name'];
+            $t->related_entity_url = $ent['url'];
+        }
         $this->data['account_name'] = null;
         if (!empty($reportinfo->account)) {
             $ac = $this->finance_model->account_chart(null, $reportinfo->account)->row();
@@ -361,6 +366,11 @@ class Report extends CI_Controller {
         $this->data['reportinfo'] = $reportinfo;
         $account = (!empty($reportinfo->account) ? $reportinfo->account : null);
         $this->data['transaction'] = $this->report_model->ledger_trans($reportinfo->fromdate, $reportinfo->todate, $account);
+        foreach ($this->data['transaction'] as $t) {
+            $ent = $this->report_model->get_gl_related_entity($t);
+            $t->related_entity_name = $ent['name'];
+            $t->related_entity_url = $ent['url'];
+        }
         $this->data['account_name'] = null;
         if (!empty($reportinfo->account)) {
             $ac = $this->finance_model->account_chart(null, $reportinfo->account)->row();
@@ -369,6 +379,109 @@ class Report extends CI_Controller {
 
         $html = $this->load->view('report/ledger/print/ledger_transaction', $this->data, true);
         $this->export_to_pdf($html, 'Ledger_transaction', $reportinfo->page);
+    }
+
+    /**
+     * Export General Ledger Transactions to Excel (link=1 only).
+     */
+    function ledger_trans_export($link, $id) {
+        if ((int)$link !== 1) {
+            $this->session->set_flashdata('error', 'Export is only available for General Ledger Transactions.');
+            redirect(current_lang() . '/report/general_leger_transaction/' . $link);
+            return;
+        }
+        if (!is_null($id)) {
+            $id = decode_id($id);
+        }
+        $reportinfo = $this->report_model->report_list($id)->row();
+        if (!$reportinfo) {
+            $this->session->set_flashdata('error', 'Report not found.');
+            redirect(current_lang() . '/report/general_leger_transaction/' . $link);
+            return;
+        }
+        $account = (!empty($reportinfo->account) ? $reportinfo->account : null);
+        $transaction = $this->report_model->ledger_trans($reportinfo->fromdate, $reportinfo->todate, $account);
+        foreach ($transaction as $t) {
+            $ent = $this->report_model->get_gl_related_entity($t);
+            $t->related_entity_name = $ent['name'];
+        }
+        $account_name = null;
+        if (!empty($reportinfo->account)) {
+            $ac = $this->finance_model->account_chart(null, $reportinfo->account)->row();
+            $account_name = $ac ? $ac->name : $reportinfo->account;
+        }
+        if (ob_get_level()) { ob_end_clean(); }
+        while (@ob_end_clean());
+        $this->load->library('excel');
+        $objPHPExcel = new PHPExcel();
+        $objPHPExcel->getProperties()->setCreator(company_info()->name)
+            ->setTitle('General Ledger Transactions')
+            ->setSubject('GL Transactions');
+        $sheet = $objPHPExcel->setActiveSheetIndex(0);
+        $sheet->setTitle('GL Transactions');
+        $row = 1;
+        $sheet->setCellValue('A' . $row, company_info()->name);
+        $row++;
+        $sheet->setCellValue('A' . $row, 'General Ledger Transactions');
+        $row++;
+        $sheet->setCellValue('A' . $row, 'For the period from ' . format_date($reportinfo->fromdate, false) . ' to ' . format_date($reportinfo->todate, false));
+        $row++;
+        if ($account_name) {
+            $sheet->setCellValue('A' . $row, 'Account: ' . $account_name);
+            $row++;
+        }
+        $row++;
+        $headers = array('Type', 'Date', '#', 'Account', 'Person/Member/Item', 'Debit', 'Credit', 'Remarks');
+        $col = 'A';
+        foreach ($headers as $h) {
+            $sheet->setCellValue($col . $row, $h);
+            $col++;
+        }
+        $sheet->getStyle('A' . $row . ':H' . $row)->getFont()->setBold(true);
+        $sheet->getStyle('A' . $row . ':H' . $row)->getFill()->setFillType(PHPExcel_Style_Fill::FILL_SOLID);
+        $sheet->getStyle('A' . $row . ':H' . $row)->getFill()->getStartColor()->setRGB('E0E0E0');
+        $row++;
+        $debittotal = 0;
+        $credittotal = 0;
+        foreach ($transaction as $value) {
+            $debittotal += $value->debit;
+            $credittotal += $value->credit;
+            $journal_type = isset($value->trans_comment) ? $value->trans_comment : '';
+            $ref_no = (isset($value->invoiceid) && $value->invoiceid > 0) ? '#' . $value->invoiceid : (isset($value->refferenceID) ? '#' . $value->refferenceID : '');
+            $account_display = $value->account . ' - ' . $value->name;
+            $rel_name = isset($value->related_entity_name) ? $value->related_entity_name : '';
+            $desc = isset($value->description) ? $value->description : '';
+            $sheet->setCellValue('A' . $row, $journal_type);
+            $sheet->setCellValue('B' . $row, format_date($value->date, false));
+            $sheet->setCellValue('C' . $row, $ref_no);
+            $sheet->setCellValue('D' . $row, $account_display);
+            $sheet->setCellValue('E' . $row, $rel_name);
+            $sheet->setCellValue('F' . $row, $value->debit > 0 ? number_format($value->debit, 2) : '');
+            $sheet->setCellValue('G' . $row, $value->credit > 0 ? number_format($value->credit, 2) : '');
+            $sheet->setCellValue('H' . $row, $desc);
+            $sheet->getStyle('F' . $row . ':G' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_RIGHT);
+            $row++;
+        }
+        $sheet->setCellValue('A' . $row, '');
+        $sheet->setCellValue('B' . $row, '');
+        $sheet->setCellValue('C' . $row, '');
+        $sheet->setCellValue('D' . $row, '');
+        $sheet->setCellValue('E' . $row, '');
+        $sheet->setCellValue('F' . $row, number_format($debittotal, 2));
+        $sheet->setCellValue('G' . $row, number_format($credittotal, 2));
+        $sheet->setCellValue('H' . $row, '');
+        $sheet->getStyle('F' . $row . ':G' . $row)->getFont()->setBold(true);
+        $sheet->getStyle('F' . $row . ':G' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_RIGHT);
+        foreach (range('A', 'H') as $c) {
+            $sheet->getColumnDimension($c)->setAutoSize(true);
+        }
+        $filename = 'General_Ledger_Transactions_' . date('Y-m-d_His') . '.xls';
+        header('Content-Type: application/vnd.ms-excel');
+        header('Content-Disposition: attachment;filename="' . $filename . '"');
+        header('Cache-Control: max-age=0');
+        $objWriter = PHPExcel_IOFactory::createWriter($objPHPExcel, 'Excel5');
+        $objWriter->save('php://output');
+        exit;
     }
 
     function journal_trans_print($link, $id) {

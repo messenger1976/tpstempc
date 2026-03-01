@@ -1226,6 +1226,28 @@ $pin = current_user()->PIN;
         $this->load->view('template', $this->data);
     }
 
+    /**
+     * Loan Ledger page: loan info header + datatable of ledger transactions + total amount.
+     */
+    function loan_ledger($loanid) {
+        $this->data['title'] = lang('loan_ledger');
+        $LID = decode_id($loanid);
+        $loaninfo = $this->loan_model->loan_info($LID)->row();
+        if (!$loaninfo) {
+            show_404();
+            return;
+        }
+        $pin = current_user()->PIN;
+        if ((string)$loaninfo->PIN !== (string)$pin) {
+            show_404();
+            return;
+        }
+        $this->data['loaninfo'] = $loaninfo;
+        $this->data['ledger_transactions'] = $this->loan_model->get_loan_ledger_transactions($LID);
+        $this->data['content'] = 'loan/loan_ledger';
+        $this->load->view('template', $this->data);
+    }
+
     function loan_repayment() {
         $this->load->library('pagination');
         $pin = current_user()->PIN;

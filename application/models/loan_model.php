@@ -955,6 +955,58 @@ class Loan_Model extends CI_Model {
         return $installment;
     }
 
+    /**
+     * Get loan ledger transactions for a single loan (disbursement + repayments) in date order.
+     * Returns array of objects: date, description, debit, credit.
+     */
+    function get_loan_ledger_transactions($LID) {
+        $pin = current_user()->PIN;
+        $LID = $this->db->escape_str($LID);
+        $rows = array();
+
+        // Disbursement row(s) from loan_contract_disburse
+        if ($this->db->table_exists('loan_contract_disburse')) {
+            $this->db->select('lcd.disbursedate as date, lc.basic_amount');
+            $this->db->from('loan_contract_disburse lcd');
+            $this->db->join('loan_contract lc', 'lc.LID = lcd.LID AND lc.PIN = lcd.PIN');
+            $this->db->where('lcd.LID', $LID);
+            $this->db->where('lcd.PIN', $pin);
+            $this->db->order_by('lcd.disbursedate', 'ASC');
+            $disburse = $this->db->get()->result();
+            foreach ($disburse as $d) {
+                $rows[] = (object)array(
+                    'date' => $d->date,
+                    'description' => lang('loan_ledger_disbursement'),
+                    'debit' => 0,
+                    'credit' => isset($d->basic_amount) ? floatval($d->basic_amount) : 0
+                );
+            }
+        }
+
+        // If no disbursement row (e.g. not yet disbursed), skip disbursement in ledger
+        // Repayment rows from loan_contract_repayment
+        $this->db->select('paydate as date, installment, amount, receipt');
+        $this->db->where('LID', $LID);
+        $this->db->where('PIN', $pin);
+        $this->db->order_by('paydate', 'ASC');
+        $repays = $this->db->get('loan_contract_repayment')->result();
+        foreach ($repays as $r) {
+            $rows[] = (object)array(
+                'date' => $r->date,
+                'description' => lang('loan_ledger_repayment') . ' #' . (isset($r->installment) ? $r->installment : ''),
+                'debit' => isset($r->amount) ? floatval($r->amount) : 0,
+                'credit' => 0
+            );
+        }
+
+        // Sort all by date
+        usort($rows, function ($a, $b) {
+            return strcmp($a->date, $b->date);
+        });
+
+        return $rows;
+    }
+
     // Loan Beginning Balances Methods
     function loan_beginning_balance_list($fiscal_year_id = null, $id = null, $loan_product_id = null) {
         $pin = current_user()->PIN;

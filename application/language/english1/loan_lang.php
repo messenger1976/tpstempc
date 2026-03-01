@@ -101,6 +101,16 @@ $lang['loan_max_reached'] = 'Loan balance is 0';
 
 
 $lang['loan_view_repayment_schedule'] = 'Loan Repayment Schedule';
+$lang['loan_ledger'] = 'Loan Ledger';
+$lang['loan_ledger_date'] = 'Date';
+$lang['loan_ledger_description'] = 'Description';
+$lang['loan_ledger_debit'] = 'Debit';
+$lang['loan_ledger_credit'] = 'Credit';
+$lang['loan_ledger_balance'] = 'Balance';
+$lang['loan_ledger_total'] = 'Total';
+$lang['loan_ledger_no_transactions'] = 'No ledger transactions found.';
+$lang['loan_ledger_disbursement'] = 'Disbursement';
+$lang['loan_ledger_repayment'] = 'Repayment';
 $lang['due_date'] = 'Due date';
 $lang['total_loan_amount'] = 'Total Loan :';
 $lang['repayment_schedule'] = 'LOAN REPAYMENT SCHEDULE';

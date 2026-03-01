@@ -180,7 +180,7 @@ $activefunction = ($this->uri->segment(3)) ? $this->uri->segment(3) : 'X';
 
             <?php if (access_module(6)) { ?>
 
-                <li class="<?php echo (($active == 'finance' || $active == 'customer' || $active == 'supplier' || $active == 'cash_receipt' || $active == 'cash_disbursement') ? 'active' : ''); ?>">
+                <li class="<?php echo (($active == 'finance' || $active == 'customer' || $active == 'supplier' || $active == 'cash_receipt' || $active == 'cash_disbursement' || $active == 'ar') ? 'active' : ''); ?>">
                     <a href="#"><i class="fa fa-dollar"></i> <span class="nav-label"><?php echo lang('page_finance'); ?></span><span class="fa arrow"></span></a>
                     <ul class="nav nav-second-level">
                         <?php if (has_role(6, 'Manage_account_chart')) { ?>
@@ -203,6 +203,9 @@ $activefunction = ($this->uri->segment(3)) ? $this->uri->segment(3) : 'X';
                         <?php } ?>
                         <?php if (has_role(6, 'Manage_customer')) { ?>
                             <li class="<?php echo ($activefunction == 'customerlist' ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/customer/customerlist'); ?>"><?php echo lang('customer'); ?></a></li>
+                        <?php } ?>
+                        <?php if (has_role(6, 'View_AR')) { ?>
+                            <li class="<?php echo ($activefunction == 'ar_balances' || $activefunction == 'ar_ledger' || $activefunction == 'ar_aging' ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/ar/ar_balances'); ?>"><?php echo lang('ar_module_title'); ?></a></li>
                         <?php } ?>
                         <?php if (has_role(6, 'Create_sales_quote')) { ?>
                             <li class="<?php echo ($activefunction == 'customersales_quote_list' ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/customer/customersales_quote_list'); ?>"><?php echo lang('customersales_quote'); ?></a></li>

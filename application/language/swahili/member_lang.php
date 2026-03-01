@@ -118,5 +118,7 @@ $lang['report_share_statement'] = 'Members Share Statement ';
 $lang['report_share_transactions'] = 'Members Share Transactions ';
 $lang['report_share_transactions_summary'] = 'Members Share Transactions Summary';
 
+$lang['member_current_savings'] = 'Savings';
+
 
 ?>

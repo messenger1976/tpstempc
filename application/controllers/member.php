@@ -900,6 +900,8 @@ class Member extends CI_Controller {
         $this->data['member_state'] = $this->member_model->search_member($key, '1','1',$config["per_page"], $page);
 
 
+        $this->load->model('finance_model');
+
       
 
         $this->data['content'] = 'member/memberstate';

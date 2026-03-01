@@ -14,11 +14,12 @@ if (isset($message) && !empty($message)) {
 $sp = isset($jxy) ? $jxy : array();
 $search_key = isset($jxy['key']) ? $jxy['key'] : (isset($_GET['key']) ? $_GET['key'] : '');
 $account_type_filter = isset($account_type_filter) ? $account_type_filter : (isset($_GET['account_type_filter']) ? $_GET['account_type_filter'] : 'all');
+$gl_posted_filter = isset($gl_posted_filter) ? $gl_posted_filter : (isset($_GET['gl_posted_filter']) ? $_GET['gl_posted_filter'] : 'all');
 $status_filter = isset($status_filter) ? $status_filter : (isset($_GET['status_filter']) ? $_GET['status_filter'] : '1');
 ?>
 
 <div class="form-group col-lg-12">
-    <div class="col-lg-3">
+    <div class="col-lg-2">
         <input type="text" class="form-control" id="accountno" name="key" placeholder="<?php echo lang('search_account_member'); ?>" value="<?php echo htmlspecialchars($search_key, ENT_QUOTES, 'UTF-8'); ?>"/> 
     </div>
     <div class="col-lg-2">
@@ -29,16 +30,23 @@ $status_filter = isset($status_filter) ? $status_filter : (isset($_GET['status_f
         </select>
     </div>
     <div class="col-lg-2">
+        <select name="gl_posted_filter" class="form-control">
+            <option value="all" <?php echo ($gl_posted_filter == 'all' ? 'selected="selected"' : ''); ?>><?php echo lang('saving_account_gl_filter_all'); ?></option>
+            <option value="posted" <?php echo ($gl_posted_filter == 'posted' ? 'selected="selected"' : ''); ?>><?php echo lang('saving_account_gl_posted'); ?></option>
+            <option value="not_posted" <?php echo ($gl_posted_filter == 'not_posted' ? 'selected="selected"' : ''); ?>><?php echo lang('saving_account_gl_not_posted'); ?></option>
+        </select>
+    </div>
+    <div class="col-lg-2">
         <select name="status_filter" class="form-control">
             <option value="all" <?php echo ($status_filter == 'all' ? 'selected="selected"' : ''); ?>><?php echo lang('all_status'); ?></option>
             <option value="1" <?php echo ($status_filter == '1' ? 'selected="selected"' : ''); ?>><?php echo lang('account_status_active'); ?></option>
             <option value="0" <?php echo ($status_filter == '0' ? 'selected="selected"' : ''); ?>><?php echo lang('account_status_inactive'); ?></option>
         </select>
     </div>
-    <div class="col-lg-2">
+    <div class="col-lg-1">
         <input type="submit" value="<?php echo lang('button_search'); ?>" class="btn btn-primary"/>
     </div>
-    <div class="col-lg-4" style="text-align: right;">
+    <div class="col-lg-3" style="text-align: right;">
         <?php 
         // Build export URL with current search parameters
         $export_url = current_lang().'/saving/saving_account_list_export';
@@ -48,6 +56,9 @@ $status_filter = isset($status_filter) ? $status_filter : (isset($_GET['status_f
         }
         if (!empty($account_type_filter) && $account_type_filter != 'all') {
             $export_params['account_type_filter'] = $account_type_filter;
+        }
+        if (!empty($gl_posted_filter) && $gl_posted_filter != 'all') {
+            $export_params['gl_posted_filter'] = $gl_posted_filter;
         }
         // Always pass status_filter to export (including 'all' or default '1')
         if (isset($status_filter) && $status_filter != '') {
@@ -80,6 +91,7 @@ $status_filter = isset($status_filter) ? $status_filter : (isset($_GET['status_f
 <?php echo form_open(current_lang() . '/saving/post_selected_to_gl', array('id' => 'form_post_selected_gl', 'onsubmit' => 'return confirm(\'' . addslashes(lang('saving_account_post_selected_to_gl_confirm')) . '\');')); ?>
 <?php if (!empty($search_key)) { ?><input type="hidden" name="redirect_key" value="<?php echo htmlspecialchars($search_key, ENT_QUOTES, 'UTF-8'); ?>"/><?php } ?>
 <?php if (!empty($account_type_filter) && $account_type_filter != 'all') { ?><input type="hidden" name="redirect_account_type_filter" value="<?php echo htmlspecialchars($account_type_filter, ENT_QUOTES, 'UTF-8'); ?>"/><?php } ?>
+<?php if (!empty($gl_posted_filter) && $gl_posted_filter != 'all') { ?><input type="hidden" name="redirect_gl_posted_filter" value="<?php echo htmlspecialchars($gl_posted_filter, ENT_QUOTES, 'UTF-8'); ?>"/><?php } ?>
 <?php if (isset($status_filter) && $status_filter !== '') { ?><input type="hidden" name="redirect_status_filter" value="<?php echo htmlspecialchars($status_filter, ENT_QUOTES, 'UTF-8'); ?>"/><?php } ?>
 <div class="form-group col-lg-12" style="margin-bottom: 10px;">
     <button type="submit" name="post_selected" id="btn_post_selected_gl" class="btn btn-warning" disabled="disabled">

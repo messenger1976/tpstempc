@@ -51,12 +51,20 @@ if (isset($message) && !empty($message)) {
             <h4><?php echo lang('loan_ledger'); ?></h4>
         </div>
         <div class="panel-body">
+            <div class="alert alert-info small" style="margin-bottom: 15px;">
+                <strong><?php echo lang('loan_ledger_advancement_lock_note_title'); ?></strong>
+                <?php echo lang('loan_ledger_advancement_lock_note'); ?>
+            </div>
             <div class="table-responsive">
                 <table class="table table-bordered table-striped table-hover dataTables-example" id="loanLedgerTable">
                     <thead>
                         <tr>
                             <th><?php echo lang('loan_ledger_date'); ?></th>
                             <th><?php echo lang('loan_ledger_description'); ?></th>
+                            <th><?php echo lang('loan_ledger_schedule'); ?></th>
+                            <th style="text-align: right;"><?php echo lang('loan_ledger_interest'); ?></th>
+                            <th style="text-align: right;"><?php echo lang('loan_ledger_penalty'); ?></th>
+                            <th style="text-align: right;"><?php echo lang('loan_ledger_amount_paid'); ?></th>
                             <th style="text-align: right;"><?php echo lang('loan_ledger_debit'); ?></th>
                             <th style="text-align: right;"><?php echo lang('loan_ledger_credit'); ?></th>
                             <th style="text-align: right;"><?php echo lang('loan_ledger_balance'); ?></th>
@@ -68,10 +76,22 @@ if (isset($message) && !empty($message)) {
                         $running_balance = 0;
                         foreach ($ledger_transactions as $row) {
                             $running_balance += (float)$row->credit - (float)$row->debit;
+                            $is_repayment = isset($row->type) && $row->type === 'repayment';
+                            $schedule_text = '—';
+                            if ($is_repayment && (isset($row->schedule_installment) || isset($row->duedate))) {
+                                $p = array();
+                                if (!empty($row->schedule_installment)) $p[] = lang('loan_installment') . ' ' . $row->schedule_installment;
+                                if (!empty($row->duedate)) $p[] = format_date($row->duedate, FALSE);
+                                $schedule_text = implode(' / ', $p);
+                            }
                             ?>
                         <tr>
                             <td><?php echo format_date($row->date, FALSE); ?></td>
                             <td><?php echo htmlspecialchars($row->description); ?></td>
+                            <td><?php echo $schedule_text; ?></td>
+                            <td style="text-align: right;"><?php echo $is_repayment && isset($row->interest) && $row->interest > 0 ? number_format($row->interest, 2) : '—'; ?></td>
+                            <td style="text-align: right;"><?php echo $is_repayment && isset($row->penalt) && $row->penalt > 0 ? number_format($row->penalt, 2) : '—'; ?></td>
+                            <td style="text-align: right;"><?php echo $is_repayment && isset($row->amount_paid) && $row->amount_paid > 0 ? number_format($row->amount_paid, 2) : '—'; ?></td>
                             <td style="text-align: right;"><?php echo $row->debit > 0 ? number_format($row->debit, 2) : ''; ?></td>
                             <td style="text-align: right;"><?php echo $row->credit > 0 ? number_format($row->credit, 2) : ''; ?></td>
                             <td style="text-align: right;"><?php echo number_format($running_balance, 2); ?></td>
@@ -80,7 +100,14 @@ if (isset($message) && !empty($message)) {
                     </tbody>
                     <tfoot>
                         <tr class="info">
-                            <th colspan="2" style="text-align: right;"><?php echo lang('loan_ledger_total'); ?></th>
+                            <th colspan="5" style="text-align: right;"><?php echo lang('loan_ledger_total'); ?></th>
+                            <th style="text-align: right;"><?php
+                                $sum_paid = 0;
+                                foreach ($ledger_transactions as $r) {
+                                    if (isset($r->type) && $r->type === 'repayment' && !empty($r->amount_paid)) $sum_paid += (float)$r->amount_paid;
+                                }
+                                echo number_format($sum_paid, 2);
+                            ?></th>
                             <th style="text-align: right;"><?php
                                 $total_debit = 0;
                                 $total_credit = 0;

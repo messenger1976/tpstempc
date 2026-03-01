@@ -672,18 +672,19 @@ class Finance_Model extends CI_Model {
         return $entries;
     }
 
-    function get_total_savings_amount($key=null, $account_type_filter=null, $status_filter=null) {
+    function get_total_savings_amount($key=null, $account_type_filter=null, $status_filter=null, $gl_posted_filter=null) {
         $pin = current_user()->PIN;
+        $pin_esc = $this->db->escape($pin);
         $this->db->select_sum('ma.balance');
         $this->db->from('members_account ma');
-        $this->db->join('saving_account_type sat', 'ma.account_cat = sat.account AND sat.PIN = ' . $this->db->escape($pin), 'left');
+        $this->db->join('saving_account_type sat', 'ma.account_cat = sat.account AND sat.PIN = ' . $pin_esc, 'left');
         $this->db->where('ma.PIN', $pin);
         if (!is_null($account_type_filter) && $account_type_filter != '' && $account_type_filter != 'all') {
             if ($account_type_filter == 'special') {
-                $this->db->join('account_chart ac', 'sat.account_setup = ac.account AND ac.PIN = ' . $this->db->escape($pin), 'left');
+                $this->db->join('account_chart ac', 'sat.account_setup = ac.account AND ac.PIN = ' . $pin_esc, 'left');
                 $this->db->where("((sat.account_setup IS NOT NULL AND sat.account_setup != '' AND (LEFT(sat.account_setup, 2) = '10' OR ac.account_type = 10 OR ac.account_type = '10')) OR LOWER(sat.name) LIKE '%special%' OR LOWER(sat.description) LIKE '%special%')", NULL, FALSE);
             } else if ($account_type_filter == 'mso') {
-                $this->db->join('account_chart ac', 'sat.account_setup = ac.account AND ac.PIN = ' . $this->db->escape($pin), 'left');
+                $this->db->join('account_chart ac', 'sat.account_setup = ac.account AND ac.PIN = ' . $pin_esc, 'left');
                 $this->db->where("((sat.account_setup IS NOT NULL AND sat.account_setup != '' AND (LEFT(sat.account_setup, 2) = '40' OR ac.account_type = 40 OR ac.account_type = '40')) OR LOWER(sat.name) LIKE '%mso%' OR LOWER(sat.description) LIKE '%mso%')", NULL, FALSE);
             }
         }
@@ -694,6 +695,14 @@ class Finance_Model extends CI_Model {
                 } else {
                     $this->db->where('ma.status', $status_filter);
                 }
+            }
+        }
+        // Filter by GL posted status
+        if (!is_null($gl_posted_filter) && $gl_posted_filter != '' && $gl_posted_filter != 'all') {
+            if ($gl_posted_filter == 'posted') {
+                $this->db->where("(SELECT COUNT(DISTINCT gl.id) FROM savings_transaction st INNER JOIN general_ledger gl ON gl.fromtable = 'savings_transaction' AND gl.refferenceID = st.receipt AND gl.PIN = st.PIN WHERE st.account = ma.account AND st.PIN = " . $pin_esc . ") > 0", NULL, FALSE);
+            } else if ($gl_posted_filter == 'not_posted') {
+                $this->db->where("(SELECT COUNT(DISTINCT gl.id) FROM savings_transaction st INNER JOIN general_ledger gl ON gl.fromtable = 'savings_transaction' AND gl.refferenceID = st.receipt AND gl.PIN = st.PIN WHERE st.account = ma.account AND st.PIN = " . $pin_esc . ") = 0", NULL, FALSE);
             }
         }
         if (!is_null($key) && $key != '') {
@@ -2133,21 +2142,22 @@ $pin=current_user()->PIN;
         return count($this->db->get('members_account')->result());
     }
 
-    function count_saving_account($key=null, $account_type_filter=null, $status_filter=null) {
+    function count_saving_account($key=null, $account_type_filter=null, $status_filter=null, $gl_posted_filter=null) {
         $pin = current_user()->PIN;
+        $pin_esc = $this->db->escape($pin);
         $this->db->from('members_account ma');
-        $this->db->join('saving_account_type sat', 'ma.account_cat = sat.account AND sat.PIN = ' . $this->db->escape($pin), 'left');
+        $this->db->join('saving_account_type sat', 'ma.account_cat = sat.account AND sat.PIN = ' . $pin_esc, 'left');
         $this->db->where('ma.PIN', $pin);
         
         // Filter by account type (Special or MSO)
         if (!is_null($account_type_filter) && $account_type_filter != '' && $account_type_filter != 'all') {
             if ($account_type_filter == 'special') {
                 // Special accounts: check account_setup prefix, account_type, or name/description contains "special"
-                $this->db->join('account_chart ac', 'sat.account_setup = ac.account AND ac.PIN = ' . $this->db->escape($pin), 'left');
+                $this->db->join('account_chart ac', 'sat.account_setup = ac.account AND ac.PIN = ' . $pin_esc, 'left');
                 $this->db->where("((sat.account_setup IS NOT NULL AND sat.account_setup != '' AND (LEFT(sat.account_setup, 2) = '10' OR ac.account_type = 10 OR ac.account_type = '10')) OR LOWER(sat.name) LIKE '%special%' OR LOWER(sat.description) LIKE '%special%')", NULL, FALSE);
             } else if ($account_type_filter == 'mso') {
                 // MSO accounts: check account_setup prefix, account_type, or name/description contains "mso"
-                $this->db->join('account_chart ac', 'sat.account_setup = ac.account AND ac.PIN = ' . $this->db->escape($pin), 'left');
+                $this->db->join('account_chart ac', 'sat.account_setup = ac.account AND ac.PIN = ' . $pin_esc, 'left');
                 $this->db->where("((sat.account_setup IS NOT NULL AND sat.account_setup != '' AND (LEFT(sat.account_setup, 2) = '40' OR ac.account_type = 40 OR ac.account_type = '40')) OR LOWER(sat.name) LIKE '%mso%' OR LOWER(sat.description) LIKE '%mso%')", NULL, FALSE);
             }
         }
@@ -2163,6 +2173,15 @@ $pin=current_user()->PIN;
                 } else {
                     $this->db->where('ma.status', $status_filter);
                 }
+            }
+        }
+        
+        // Filter by GL posted status
+        if (!is_null($gl_posted_filter) && $gl_posted_filter != '' && $gl_posted_filter != 'all') {
+            if ($gl_posted_filter == 'posted') {
+                $this->db->where("(SELECT COUNT(DISTINCT gl.id) FROM savings_transaction st INNER JOIN general_ledger gl ON gl.fromtable = 'savings_transaction' AND gl.refferenceID = st.receipt AND gl.PIN = st.PIN WHERE st.account = ma.account AND st.PIN = " . $pin_esc . ") > 0", NULL, FALSE);
+            } else if ($gl_posted_filter == 'not_posted') {
+                $this->db->where("(SELECT COUNT(DISTINCT gl.id) FROM savings_transaction st INNER JOIN general_ledger gl ON gl.fromtable = 'savings_transaction' AND gl.refferenceID = st.receipt AND gl.PIN = st.PIN WHERE st.account = ma.account AND st.PIN = " . $pin_esc . ") = 0", NULL, FALSE);
             }
         }
         
@@ -2218,7 +2237,7 @@ $pin=current_user()->PIN;
         return $this->db->count_all_results();
     }
 
-    function search_saving_account($key=null, $limit=40, $start=0, $account_type_filter=null, $status_filter=null) {
+    function search_saving_account($key=null, $limit=40, $start=0, $account_type_filter=null, $status_filter=null, $gl_posted_filter=null) {
         $pin = current_user()->PIN;
         $pin_esc = $this->db->escape($pin);
         $this->db->select('ma.*, m.firstname, m.middlename, m.lastname, m.member_id as member_id_display, mg.name as group_name, sat.description as account_type_name, sat.account as account_type_code, sat.name as account_type_name_display');
@@ -2252,6 +2271,15 @@ $pin=current_user()->PIN;
                 } else {
                     $this->db->where('ma.status', $status_filter);
                 }
+            }
+        }
+        
+        // Filter by GL posted status
+        if (!is_null($gl_posted_filter) && $gl_posted_filter != '' && $gl_posted_filter != 'all') {
+            if ($gl_posted_filter == 'posted') {
+                $this->db->where("(SELECT COUNT(DISTINCT gl.id) FROM savings_transaction st INNER JOIN general_ledger gl ON gl.fromtable = 'savings_transaction' AND gl.refferenceID = st.receipt AND gl.PIN = st.PIN WHERE st.account = ma.account AND st.PIN = " . $pin_esc . ") > 0", NULL, FALSE);
+            } else if ($gl_posted_filter == 'not_posted') {
+                $this->db->where("(SELECT COUNT(DISTINCT gl.id) FROM savings_transaction st INNER JOIN general_ledger gl ON gl.fromtable = 'savings_transaction' AND gl.refferenceID = st.receipt AND gl.PIN = st.PIN WHERE st.account = ma.account AND st.PIN = " . $pin_esc . ") = 0", NULL, FALSE);
             }
         }
         

@@ -5,6 +5,7 @@
                 <h3><strong><?php echo company_info()->name; ?></strong></h3>
                 <h1><strong>Loan Aging Report</strong></h1>
                 <h4><strong>As of <?php echo format_date($reportinfo->fromdate, false); ?></strong></h4>
+                <p class="text-muted" style="margin-top: 8px; font-size: 14px;"><strong><?php echo lang('report_loan_aging_status'); ?></strong></p>
                 <?php if (!empty($reportinfo->description)) { ?>
                     <h5><strong><?php echo $reportinfo->description; ?></strong></h5>
                 <?php } ?>

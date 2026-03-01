@@ -52,6 +52,7 @@ $lang['account_status_inactive'] = 'Inactive';
 $lang['all_status'] = 'All Status';
 $lang['saving_account_gl_posted'] = 'Posted';
 $lang['saving_account_gl_not_posted'] = 'Not posted';
+$lang['saving_account_gl_filter_all'] = 'All (GL)';
 $lang['saving_account_gl_status'] = 'GL Status';
 $lang['saving_account_post_to_gl'] = 'Post to GL';
 $lang['saving_account_post_to_gl_success_one'] = 'transaction posted to General Ledger';

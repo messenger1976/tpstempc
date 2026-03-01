@@ -74,6 +74,14 @@ class Saving extends CI_Controller {
             $account_type_filter = $_GET['account_type_filter'];
         }
         
+        // GL posted filter (posted / not posted to General Ledger)
+        $gl_posted_filter = null;
+        if (isset($_POST['gl_posted_filter']) && $_POST['gl_posted_filter'] != '') {
+            $gl_posted_filter = $_POST['gl_posted_filter'];
+        } else if (isset($_GET['gl_posted_filter']) && $_GET['gl_posted_filter'] != '') {
+            $gl_posted_filter = $_GET['gl_posted_filter'];
+        }
+        
         // Status filter - default to '1' (Active)
         $status_filter = '1'; // Default to Active
         if (isset($_POST['status_filter']) && $_POST['status_filter'] != '') {
@@ -92,12 +100,17 @@ class Saving extends CI_Controller {
             $suffix_array['account_type_filter'] = $account_type_filter;
         }
         
+        if (!is_null($gl_posted_filter) && $gl_posted_filter != '' && $gl_posted_filter != 'all') {
+            $suffix_array['gl_posted_filter'] = $gl_posted_filter;
+        }
+        
         if ($status_filter != '') {
             $suffix_array['status_filter'] = $status_filter;
         }
         
         $this->data['jxy'] = $suffix_array;
         $this->data['account_type_filter'] = $account_type_filter;
+        $this->data['gl_posted_filter'] = $gl_posted_filter;
         $this->data['status_filter'] = $status_filter;
         if (count($suffix_array) > 0) {
             $query_string = http_build_query($suffix_array, '', '&');
@@ -106,7 +119,7 @@ class Saving extends CI_Controller {
         
         
         $config["base_url"] = site_url(current_lang() . '/saving/saving_account_list');
-        $config["total_rows"] = $this->finance_model->count_saving_account($key, $account_type_filter, $status_filter);
+        $config["total_rows"] = $this->finance_model->count_saving_account($key, $account_type_filter, $status_filter, $gl_posted_filter);
         $config["uri_segment"] = 4;
         
         $config['full_tag_open'] = '<div class="pagination" style="background-color:#fff; margin-left:0px;">';
@@ -140,8 +153,8 @@ class Saving extends CI_Controller {
         $page = ($this->uri->segment(4) ? $this->uri->segment(4) : 0);
         $this->data['links'] = $this->pagination->create_links();
         
-        $this->data['saving_accounts'] = $this->finance_model->search_saving_account($key, $config["per_page"], $page, $account_type_filter, $status_filter);
-        $this->data['total_savings_amount'] = $this->finance_model->get_total_savings_amount($key, $account_type_filter, $status_filter);
+        $this->data['saving_accounts'] = $this->finance_model->search_saving_account($key, $config["per_page"], $page, $account_type_filter, $status_filter, $gl_posted_filter);
+        $this->data['total_savings_amount'] = $this->finance_model->get_total_savings_amount($key, $account_type_filter, $status_filter, $gl_posted_filter);
         
         $this->data['content'] = 'saving/saving_account_list';
         $this->load->view('template', $this->data);
@@ -186,6 +199,12 @@ class Saving extends CI_Controller {
             $account_type_filter = $_GET['account_type_filter'];
         }
         
+        // GL posted filter for export
+        $gl_posted_filter = null;
+        if (isset($_GET['gl_posted_filter']) && $_GET['gl_posted_filter'] != '' && $_GET['gl_posted_filter'] != 'all') {
+            $gl_posted_filter = $_GET['gl_posted_filter'];
+        }
+        
         // Status filter - must match saving_account_list logic exactly
         // Default to '1' (Active) if not provided
         $status_filter = '1'; // Default to Active
@@ -194,13 +213,13 @@ class Saving extends CI_Controller {
         }
         
         // Get total count first to use as limit for export (get all records)
-        $total_count = $this->finance_model->count_saving_account($key, $account_type_filter, $status_filter);
+        $total_count = $this->finance_model->count_saving_account($key, $account_type_filter, $status_filter, $gl_posted_filter);
         
         // Get all accounts (use total count + 1000 as limit to ensure we get all records)
         // If total_count is 0, use a reasonable default limit
         $limit = ($total_count > 0) ? $total_count + 1000 : 10000;
-        $saving_accounts = $this->finance_model->search_saving_account($key, $limit, 0, $account_type_filter, $status_filter);
-        $total_savings_amount = $this->finance_model->get_total_savings_amount($key, $account_type_filter, $status_filter);
+        $saving_accounts = $this->finance_model->search_saving_account($key, $limit, 0, $account_type_filter, $status_filter, $gl_posted_filter);
+        $total_savings_amount = $this->finance_model->get_total_savings_amount($key, $account_type_filter, $status_filter, $gl_posted_filter);
         
         // Check if we have data
         if (!$saving_accounts || !is_array($saving_accounts) || count($saving_accounts) == 0) {
@@ -453,6 +472,7 @@ class Saving extends CI_Controller {
         $query = array();
         if ($this->input->post('redirect_key') !== false && $this->input->post('redirect_key') !== '') $query['key'] = $this->input->post('redirect_key');
         if ($this->input->post('redirect_account_type_filter') !== false && $this->input->post('redirect_account_type_filter') !== '') $query['account_type_filter'] = $this->input->post('redirect_account_type_filter');
+        if ($this->input->post('redirect_gl_posted_filter') !== false && $this->input->post('redirect_gl_posted_filter') !== '') $query['gl_posted_filter'] = $this->input->post('redirect_gl_posted_filter');
         if ($this->input->post('redirect_status_filter') !== false && $this->input->post('redirect_status_filter') !== '') $query['status_filter'] = $this->input->post('redirect_status_filter');
         $url = current_lang() . '/saving/saving_account_list';
         if (!empty($query)) $url .= '?' . http_build_query($query);

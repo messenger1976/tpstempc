@@ -46,6 +46,7 @@ $lang['saving_account_transactions_summary'] = 'Saving  Transactions Summary';
 $lang['account_type_code'] = 'Account Type Code';
 $lang['saving_account_gl_posted'] = 'Posted';
 $lang['saving_account_gl_not_posted'] = 'Not posted';
+$lang['saving_account_gl_filter_all'] = 'All (GL)';
 $lang['saving_account_gl_status'] = 'GL Status';
 $lang['saving_account_post_to_gl'] = 'Post to GL';
 $lang['saving_account_post_to_gl_success_one'] = 'transaction posted to General Ledger';

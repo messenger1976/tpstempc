@@ -1260,6 +1260,7 @@ $pin=current_user()->PIN;
     }
 
     function saving_account_balance($account) {
+        $pin = current_user()->PIN;
         // Ensure account is treated as string for consistent comparison
         // This handles cases where account might be numeric like "18" or string like "Account#1"
         $account_str = trim((string)$account);
@@ -1267,6 +1268,7 @@ $pin=current_user()->PIN;
         // Compare account - use string comparison to handle both numeric and string accounts
         // CodeIgniter will properly escape this value
         $this->db->where('account', $account_str);
+        $this->db->where('PIN', $pin);
         return $this->db->get('members_account')->row();
     }
 
@@ -1619,22 +1621,42 @@ $pin=current_user()->PIN;
 
     function count_transaction($key, $from, $upto) {
         $pin = current_user()->PIN;
-        $and = " PIN ='$pin' AND trans_date >= '$from 00:00:00' AND trans_date <= '$upto 23:59:59'";
-        if (!is_null($key)) {
-            $and.=" AND account = '$key'";
+        $this->db->from('savings_transaction st');
+        $this->db->join('members_account ma', 'ma.account = st.account AND ma.PIN = st.PIN', 'left');
+        $this->db->where('st.PIN', $pin);
+        $this->db->where('st.trans_date >=', $from . ' 00:00:00');
+        $this->db->where('st.trans_date <=', $upto . ' 23:59:59');
+
+        if (!is_null($key) && $key !== '') {
+            $this->db->group_start();
+            $this->db->where('st.account', $key);
+            $this->db->or_where('ma.old_members_acct', $key);
+            $this->db->group_end();
         }
 
-        return count($this->db->query("SELECT * FROM savings_transaction WHERE $and ORDER BY trans_date DESC")->result());
+        return $this->db->count_all_results();
     }
 
     function search_transaction($key, $from, $upto, $limit, $start) {
         $pin = current_user()->PIN;
-        $and = " PIN ='$pin' AND trans_date >= '$from 00:00:00' AND trans_date <= '$upto 23:59:59'";
-        if (!is_null($key)) {
-            $and.=" AND account = '$key'";
+        $this->db->select("st.*, COALESCE(NULLIF(ma.old_members_acct, ''), st.account) AS account_no_display", FALSE);
+        $this->db->from('savings_transaction st');
+        $this->db->join('members_account ma', 'ma.account = st.account AND ma.PIN = st.PIN', 'left');
+        $this->db->where('st.PIN', $pin);
+        $this->db->where('st.trans_date >=', $from . ' 00:00:00');
+        $this->db->where('st.trans_date <=', $upto . ' 23:59:59');
+
+        if (!is_null($key) && $key !== '') {
+            $this->db->group_start();
+            $this->db->where('st.account', $key);
+            $this->db->or_where('ma.old_members_acct', $key);
+            $this->db->group_end();
         }
 
-        return $this->db->query("SELECT * FROM savings_transaction WHERE $and ORDER BY trans_date DESC LIMIT $start,$limit")->result();
+        $this->db->order_by('st.trans_date', 'DESC');
+        $this->db->limit((int) $limit, (int) $start);
+
+        return $this->db->get()->result();
     }
 
     function credit($account = null, $amount = 0, $paymethod = null, $comment = '', $cheque_num = '', $customer_name = '', $pid = null, $systemcomment = '', $start_up = 0, $posted_date='', $refno = '') {
@@ -1830,6 +1852,73 @@ $pin=current_user()->PIN;
             }
         }
         return array('posted' => $posted, 'failed' => $failed, 'errors' => $errors);
+    }
+
+    /**
+     * Void/Reverse all GL postings for a savings account.
+     * This deletes the general_ledger entries linked to the account's savings transactions.
+     * 
+     * @param string $account The savings account number
+     * @return array Array with 'voided' count, 'failed' count, and 'errors' array
+     */
+    function void_savings_account_gl($account) {
+        $pin = current_user()->PIN;
+        
+        // Get all receipts that have been posted to GL for this account
+        // Query general_ledger directly and match with savings_transaction
+        $this->db->distinct();
+        $this->db->select('gl.refferenceID as receipt');
+        $this->db->from('general_ledger gl');
+        $this->db->where('gl.fromtable', 'savings_transaction');
+        $this->db->where('gl.PIN', $pin);
+        $this->db->where("gl.refferenceID IN (SELECT receipt FROM savings_transaction WHERE account = '" . $this->db->escape_str($account) . "' AND PIN = " . intval($pin) . ")", NULL, FALSE);
+        $posted_transactions = $this->db->get()->result();
+        
+        if (empty($posted_transactions)) {
+            return array('voided' => 0, 'failed' => 0, 'errors' => array());
+        }
+        
+        $voided = 0;
+        $failed = 0;
+        $errors = array();
+        
+        // Start transaction
+        $this->db->trans_start();
+        
+        foreach ($posted_transactions as $trans) {
+            try {
+                // Delete from general_ledger
+                $this->db->where('refferenceID', $trans->receipt);
+                $this->db->where('fromtable', 'savings_transaction');
+                $this->db->where('PIN', $pin);
+                $this->db->delete('general_ledger');
+                
+                $affected = $this->db->affected_rows();
+                
+                if ($affected > 0) {
+                    $voided++;
+                    log_message('info', 'Voided GL posting for savings receipt: ' . $trans->receipt);
+                } else {
+                    $failed++;
+                    $errors[] = 'Receipt ' . $trans->receipt . ': no GL entries found to void';
+                    log_message('warning', 'No GL entries found to void for receipt: ' . $trans->receipt);
+                }
+            } catch (Exception $e) {
+                $failed++;
+                $errors[] = 'Receipt ' . $trans->receipt . ': ' . $e->getMessage();
+                log_message('error', 'Failed to void GL posting for receipt ' . $trans->receipt . ': ' . $e->getMessage());
+            }
+        }
+        
+        // Complete transaction
+        $this->db->trans_complete();
+        
+        if ($this->db->trans_status() === FALSE) {
+            log_message('error', 'Transaction failed while voiding GL postings for account: ' . $account);
+            return array('voided' => 0, 'failed' => count($posted_transactions), 'errors' => array('Database transaction failed'));
+        }
+        
+        return array('voided' => $voided, 'failed' => $failed, 'errors' => $errors);
     }
 
     function saving_account_name($account) {

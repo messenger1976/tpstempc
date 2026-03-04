@@ -101,7 +101,7 @@ class Report_Saving extends CI_Controller {
                     'page' => $page,
                      'PIN' => current_user()->PIN,
                 );
-                if ($link == 1) {
+                if ($link == 1 || $link == 2) {
 
                     $account_type = $this->input->post('account_type');
                     $array['account_type'] = $account_type;

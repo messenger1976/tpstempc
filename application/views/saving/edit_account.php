@@ -83,7 +83,7 @@ $account_info = isset($account_info) ? $account_info : null;
             <label class="col-lg-3 control-label">&nbsp;</label>
             <div class="col-lg-6">
                 <input class="btn btn-primary" value="<?php echo lang('button_update'); ?>" type="submit"/>
-                <?php echo anchor(current_lang() . '/saving/saving_account_list', lang('button_cancel'), 'class="btn btn-default"'); ?>
+                <?php echo anchor(current_lang() . '/saving/saving_account_listing', lang('button_cancel'), 'class="btn btn-default"'); ?>
             </div>
         </div>
     </div>

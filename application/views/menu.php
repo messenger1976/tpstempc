@@ -105,7 +105,7 @@ $activefunction = ($this->uri->segment(3)) ? $this->uri->segment(3) : 'X';
                     <a href="#"><i class="fa fa-credit-card"></i> <span class="nav-label"><?php echo lang('page_saving'); ?></span><span class="fa arrow"></span></a>
                     <ul class="nav nav-second-level">
                         <?php if (has_role(3, 'saving_account_list')) { ?>
-                            <li class="<?php echo ($activefunction == 'saving_account_list' ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/saving/saving_account_list'); ?>"><?php echo lang('saving_account_list'); ?></a></li>
+                            <li class="<?php echo ($activefunction == 'saving_account_listing' ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/saving/saving_account_listing'); ?>"><?php echo lang('saving_account_list'); ?></a></li>
                         <?php } ?>
                         <?php if (has_role(3, 'Create_saving_account')) { ?>
                             <li class="<?php echo ($activefunction == 'create_saving_account' ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/saving/create_saving_account'); ?>"><?php echo lang('create_saving_account'); ?></a></li>
@@ -115,9 +115,6 @@ $activefunction = ($this->uri->segment(3)) ? $this->uri->segment(3) : 'X';
                         <?php } ?>
                         <?php if (has_role(3, 'Savings_transactions')) { ?>
                             <li class="<?php echo ($activefunction == 'transaction_search' ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/saving/transaction_search'); ?>"><?php echo lang('saving_transaction_search'); ?></a></li>
-                        <?php } ?>
-                        <?php if ($this->ion_auth->is_admin()) { ?>
-                            <li class="<?php echo ($activefunction == 'savings_beginning_balance_list' ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/saving/savings_beginning_balance_list'); ?>"><?php echo lang('savings_beginning_balance_list'); ?></a></li>
                         <?php } ?>
                     </ul>
                 </li>

@@ -56,20 +56,18 @@ if (isset($message) && !empty($message)) {
                 
                 $share_row = $this->member_model->member_share_balance_by_member($value->PID, $value->member_id);
                 $share = 0;
-                if ($share_row && (isset($share_row->amount) || isset($share_row->remainbalance))) {
-                    $amt = isset($share_row->amount) && is_numeric($share_row->amount) ? floatval($share_row->amount) : 0;
-                    $rem = isset($share_row->remainbalance) && is_numeric($share_row->remainbalance) ? floatval($share_row->remainbalance) : 0;
-                    $share = $amt + $rem;
+                if ($share_row && isset($share_row->totalshare) && is_numeric($share_row->totalshare)) {
+                    $share = floatval($share_row->totalshare);
                 }
-                if(is_numeric($share)){
+                if (is_numeric($share)) {
                     $total_share += $share;
-                if ($share < 0) {
-                    $share_label = '(' . number_format((-1 * $share), 2) . ')';                                
-                  } else {
-                      $share_label = number_format($share, 2);
-                  }
+                    if ($share < 0) {
+                        $share_label = '(' . number_format((-1 * $share), 0) . ')';
+                    } else {
+                        $share_label = number_format($share, 0);
+                    }
                 } else {
-                   $share_label = number_format(0, 2); 
+                    $share_label = number_format(0, 0);
                 }
                 
                 

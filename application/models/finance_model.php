@@ -1283,7 +1283,8 @@ $pin=current_user()->PIN;
         $payment_method_upper = strtoupper(trim($payment_method));
         
         // For ADJUSTMENT (beginning balances), use an adjustment/equity account instead of cash
-        if ($payment_method_upper == 'ADJUSTMENT') {
+        // Also handles combinations like "OTHER - ADJUSTMENT" or "OTHERS - ADJUSTMENT"
+        if (strpos($payment_method_upper, 'ADJUSTMENT') !== FALSE) {
             // Try to find an adjustment account or opening balance equity account
             $this->db->where('PIN', $pin);
             
@@ -1325,24 +1326,60 @@ $pin=current_user()->PIN;
             return $account->account;
         }
         
-        // Map payment methods to account names (case-insensitive matching) for cash transactions
-        $account_mapping = array(
-            'CASH' => 'Cash',
-            'CHEQUE' => 'Bank',
-            'BANK TRANSFER' => 'Bank',
-            'BANK' => 'Bank',
-            'MOBILE MONEY' => 'Mobile Money',
-            'MOBILE' => 'Mobile Money',
-            'MPESA' => 'Mobile Money',
-            'AIRTEL MONEY' => 'Mobile Money',
-            'TIGO PESA' => 'Mobile Money'
-        );
-        
-        $account_name = 'Cash'; // Default
-        foreach ($account_mapping as $key => $value) {
-            if (strpos($payment_method_upper, $key) !== FALSE) {
-                $account_name = $value;
-                break;
+        // For OTHER payment method, use a miscellaneous/suspense account
+        // Also handles combinations like "OTHERS - ADJUSTMENT" or "OTHER SOURCES"
+        if (strpos($payment_method_upper, 'OTHER') !== FALSE) {
+            // Try to find Suspense, Miscellaneous, or Other account
+            $this->db->where('PIN', $pin);
+            
+            // Search for other-related accounts (Suspense, Miscellaneous, etc.)
+            $other_account_names = array('Suspense', 'Miscellaneous', 'Other', 'Pending Transactions', 'Clearing');
+            $where_clause = "(";
+            foreach ($other_account_names as $index => $name) {
+                if ($index > 0) {
+                    $where_clause .= " OR ";
+                }
+                $escaped_name = $this->db->escape_like_str($name);
+                $where_clause .= "name LIKE '%" . $escaped_name . "%'";
+            }
+            $where_clause .= ")";
+            
+            $this->db->where($where_clause, NULL, FALSE);
+            // Asset accounts (type 1 or 10000) or Liability (2, 20000) for suspense accounts
+            $this->db->where_in('account_type', array(1, 2, 10000, 20000));
+            $this->db->order_by('account', 'ASC');
+            $this->db->limit(1);
+            
+            $account = $this->db->get('account_chart')->row();
+            
+            if ($account) {
+                log_message('info', 'Using OTHER payment method account: ' . $account->account . ' (' . $account->name . ')');
+                return $account->account;
+            }
+            
+            // Fallback: use Cash account for OTHER if no Suspense/Miscellaneous account found
+            log_message('warning', 'No Suspense/Miscellaneous account found for OTHER payment method. Falling back to Cash account.');
+            $account_name = 'Cash';
+        } else {
+            // Map payment methods to account names (case-insensitive matching) for cash transactions
+            $account_mapping = array(
+                'CASH' => 'Cash',
+                'CHEQUE' => 'Bank',
+                'BANK TRANSFER' => 'Bank',
+                'BANK' => 'Bank',
+                'MOBILE MONEY' => 'Mobile Money',
+                'MOBILE' => 'Mobile Money',
+                'MPESA' => 'Mobile Money',
+                'AIRTEL MONEY' => 'Mobile Money',
+                'TIGO PESA' => 'Mobile Money'
+            );
+            
+            $account_name = 'Cash'; // Default
+            foreach ($account_mapping as $key => $value) {
+                if (strpos($payment_method_upper, $key) !== FALSE) {
+                    $account_name = $value;
+                    break;
+                }
             }
         }
         
@@ -1478,7 +1515,8 @@ $pin=current_user()->PIN;
         }
         
         // Determine description prefix based on transaction type
-        $is_adjustment = (strtoupper(trim($paymethod)) == 'ADJUSTMENT');
+        // Check if payment method contains "ADJUSTMENT" (handles "ADJUSTMENT", "OTHER - ADJUSTMENT", etc.)
+        $is_adjustment = (strpos(strtoupper(trim($paymethod)), 'ADJUSTMENT') !== FALSE);
         if ($is_withdrawal) {
             $description_prefix = 'Savings Withdrawal';
         } elseif ($is_interest) {
@@ -1493,10 +1531,18 @@ $pin=current_user()->PIN;
             $description_prefix = 'Savings Deposit';
         }
         
-        // Check if Journal ID 9 exists, if not use 5 as fallback
-        $this->db->where('id', 9);
-        $journal_check = $this->db->get('journal')->row();
-        $journal_id = ($journal_check) ? 9 : 5; // Use 9 for Savings Journal, fallback to 5 for Manual Journal
+        // Determine journal based on transaction type
+        // Adjustments are Journal Voucher entries, use Manual Journal (ID 5)
+        // Regular transactions use Savings Journal (ID 9)
+        if ($is_adjustment) {
+            $journal_id = 5; // Manual Journal for JV/Adjustment entries
+            $description_prefix = '[JV] ' . $description_prefix; // Prefix with [JV] to indicate Journal Voucher
+        } else {
+            // Check if Journal ID 9 (Savings Journal) exists, if not use 5 as fallback
+            $this->db->where('id', 9);
+            $journal_check = $this->db->get('journal')->row();
+            $journal_id = ($journal_check) ? 9 : 5; // Use 9 for Savings Journal, fallback to 5 for Manual Journal
+        }
         
         // Start transaction
         $this->db->trans_start();
@@ -1516,8 +1562,15 @@ $pin=current_user()->PIN;
                 return false;
             }
             
+            // Log JV entries for audit trail
+            if ($is_adjustment) {
+                log_message('info', 'Creating Journal Voucher (JV) entry for savings account: ' . $account . ', receipt: ' . $receipt . ', amount: ' . $amount);
+            }
+            
             // Prepare base ledger data with appropriate description (is_adjustment already defined above)
-            $description = $description_prefix . ' - ' . ($customer_name ? $customer_name : 'Member ' . $member_id) . ' (Account: ' . $account . ', Receipt: ' . $receipt . ')';
+            // Include payment method in description for audit trail (skip for pure ADJUSTMENT types)
+            $paymethod_info = (!$is_adjustment) ? ', Payment Method: ' . $paymethod : '';
+            $description = $description_prefix . ' - ' . ($customer_name ? $customer_name : 'Member ' . $member_id) . ' (Account: ' . $account . ', Receipt: ' . $receipt . $paymethod_info . ')';
             
             $ledger_base = array(
                 'journalID' => $journal_id,

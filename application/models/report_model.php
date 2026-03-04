@@ -537,7 +537,7 @@ FROM member_registrationfee INNER JOIN members ON member_registrationfee.member_
 
     function account_saving_statement($fromdate, $until, $account) {
         $pin = current_user()->PIN;
-        $sql = "SELECT  id, amount, account, trans_date,comment,system_comment,trans_type,paymethod,
+        $sql = "SELECT  id, amount, account, trans_date,comment,system_comment,trans_type,paymethod,receipt,
 case when trans_type = 'CR' then amount else 0 end as credit,
 case when trans_type = 'DR' then amount else 0 end as debit,
 previous_balance, (SELECT SUM(CASE when trans_type = 'CR' then amount else 0 end) FROM savings_transaction WHERE account='$account' AND trans_date < '$fromdate 00:00:00' ) as credit_total,

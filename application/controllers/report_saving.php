@@ -675,6 +675,218 @@ class Report_Saving extends CI_Controller {
         
     }
     
+    function saving_account_statement_export($link, $id) {
+        // Clear ALL output buffers first
+        if (ob_get_level()) {
+            ob_end_clean();
+        }
+        while (@ob_end_clean());
+        
+        // Disable CodeIgniter's output completely
+        $this->output->enable_profiler(FALSE);
+        $this->output->set_output('');
+        
+        // Load Excel library
+        $this->load->library('excel');
+        
+        // Store original encoded ID for redirect
+        $encoded_id = $id;
+        if (!is_null($id)) {
+            $id = decode_id($id);
+        }
+        
+        $reportinfo = $this->report_model->report_saving($id)->row();
+        $transaction = $this->report_model->account_saving_statement($reportinfo->fromdate, $reportinfo->todate, $reportinfo->description);
+        
+        // Check if we have data
+        if (empty($transaction) || !is_array($transaction) || count($transaction) == 0) {
+            // Clear buffers before redirect
+            if (ob_get_level()) {
+                ob_end_clean();
+            }
+            $this->session->set_flashdata('warning', 'No data available to export');
+            redirect(current_lang() . '/report_saving/saving_account_statement_view/' . $link . '/' . $encoded_id, 'refresh');
+            exit();
+        }
+        
+        // Get account info
+        $account_info = $this->finance_model->saving_account_balance($reportinfo->description);
+        
+        // Create new PHPExcel object
+        $objPHPExcel = new PHPExcel();
+        
+        // Set document properties
+        $objPHPExcel->getProperties()->setCreator(company_info()->name)
+                                     ->setTitle("Account Statement")
+                                     ->setSubject("Account Statement Export")
+                                     ->setDescription("Account Statement exported from " . company_info()->name);
+        
+        // Set active sheet index to the first sheet
+        $objPHPExcel->setActiveSheetIndex(0);
+        $sheet = $objPHPExcel->getActiveSheet();
+        
+        // Set sheet title
+        $sheet->setTitle('Account Statement');
+        
+        // Add company name and report title
+        $sheet->setCellValue('A1', company_info()->name);
+        $sheet->mergeCells('A1:E1');
+        $sheet->getStyle('A1')->getFont()->setBold(true)->setSize(14);
+        $sheet->getStyle('A1')->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_CENTER);
+        
+        $sheet->setCellValue('A2', 'Account Statement');
+        $sheet->mergeCells('A2:E2');
+        $sheet->getStyle('A2')->getFont()->setBold(true)->setSize(12);
+        $sheet->getStyle('A2')->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_CENTER);
+        
+        $sheet->setCellValue('A3', 'For the period from ' . format_date($reportinfo->fromdate, false) . ' to ' . format_date($reportinfo->todate, false));
+        $sheet->mergeCells('A3:E3');
+        $sheet->getStyle('A3')->getFont()->setSize(10);
+        $sheet->getStyle('A3')->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_CENTER);
+        
+        // Account details
+        $account_number = !empty($account_info) && !empty($account_info->old_members_acct) ? $account_info->old_members_acct : $reportinfo->description;
+        $account_name = $this->finance_model->saving_account_name($reportinfo->description);
+        $sheet->setCellValue('A4', 'Account Number: ' . $account_number);
+        $sheet->setCellValue('A5', 'Account Name: ' . $account_name);
+        
+        // Set column headers
+        $sheet->setCellValue('A7', 'Date');
+        $sheet->setCellValue('B7', 'Description');
+        $sheet->setCellValue('C7', 'Debit [DR]');
+        $sheet->setCellValue('D7', 'Credit [CR]');
+        $sheet->setCellValue('E7', 'Balance');
+        
+        // Style the header row
+        $headerStyle = array(
+            'font' => array(
+                'bold' => true,
+                'color' => array('rgb' => 'FFFFFF'),
+            ),
+            'fill' => array(
+                'type' => PHPExcel_Style_Fill::FILL_SOLID,
+                'color' => array('rgb' => '4472C4')
+            ),
+            'alignment' => array(
+                'horizontal' => PHPExcel_Style_Alignment::HORIZONTAL_CENTER,
+            ),
+            'borders' => array(
+                'allborders' => array(
+                    'style' => PHPExcel_Style_Border::BORDER_THIN
+                )
+            ),
+        );
+        
+        $sheet->getStyle('A7:E7')->applyFromArray($headerStyle);
+        
+        // Set column widths
+        $sheet->getColumnDimension('A')->setWidth(15);
+        $sheet->getColumnDimension('B')->setWidth(40);
+        $sheet->getColumnDimension('C')->setWidth(15);
+        $sheet->getColumnDimension('D')->setWidth(15);
+        $sheet->getColumnDimension('E')->setWidth(15);
+        
+        // Populate data
+        $row = 8;
+        $balance = 0;
+        $credit = 0;
+        $debit = 0;
+        
+        if (count($transaction) > 0) {
+            $balance = $transaction[0]->credit_total - $transaction[0]->debit_total;
+            // Write brought forward balance
+            $sheet->setCellValue('B' . $row, 'BROUGHT FORWARD BALANCE');
+            $sheet->setCellValue('E' . $row, number_format($balance, 2));
+            $sheet->getStyle('A' . $row . ':E' . $row)->applyFromArray(array(
+                'borders' => array(
+                    'allborders' => array(
+                        'style' => PHPExcel_Style_Border::BORDER_THIN
+                    )
+                )
+            ));
+            $row++;
+        }
+        
+        foreach ($transaction as $value) {
+            $dt = explode(' ', $value->trans_date);
+            if ($value->debit > 0) {
+                $balance -= $value->debit;
+                $debit += $value->debit;
+            } else if ($value->credit > 0) {
+                $balance += $value->credit;
+                $credit += $value->credit;
+            }
+            
+            // Write data to cells
+            $sheet->setCellValue('A' . $row, format_date($dt[0], FALSE));
+            $sheet->setCellValue('B' . $row, $value->system_comment . ' [' . $value->paymethod . '] ' . $value->comment);
+            $sheet->setCellValue('C' . $row, $value->debit > 0 ? number_format($value->debit, 2) : '');
+            $sheet->setCellValue('D' . $row, $value->credit > 0 ? number_format($value->credit, 2) : '');
+            $sheet->setCellValue('E' . $row, number_format($balance, 2));
+            
+            // Set alignment
+            $sheet->getStyle('A' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_CENTER);
+            $sheet->getStyle('B' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_LEFT);
+            $sheet->getStyle('C' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_RIGHT);
+            $sheet->getStyle('D' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_RIGHT);
+            $sheet->getStyle('E' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_RIGHT);
+            
+            // Add borders to cells
+            $sheet->getStyle('A' . $row . ':E' . $row)->applyFromArray(array(
+                'borders' => array(
+                    'allborders' => array(
+                        'style' => PHPExcel_Style_Border::BORDER_THIN
+                    )
+                )
+            ));
+            
+            $row++;
+        }
+        
+        // Add totals row
+        $sheet->setCellValue('C' . $row, number_format($debit, 2));
+        $sheet->setCellValue('D' . $row, number_format($credit, 2));
+        $sheet->setCellValue('E' . $row, number_format($balance, 2));
+        
+        $sheet->getStyle('A' . $row . ':E' . $row)->applyFromArray(array(
+            'borders' => array(
+                'allborders' => array(
+                    'style' => PHPExcel_Style_Border::BORDER_THIN
+                )
+            ),
+            'font' => array(
+                'bold' => true
+            )
+        ));
+        
+        $sheet->getStyle('C' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_RIGHT);
+        $sheet->getStyle('D' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_RIGHT);
+        $sheet->getStyle('E' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_RIGHT);
+        
+        // Generate filename
+        $filename = 'Account_Statement_' . date('Y-m-d_His') . '.xls';
+        
+        // Clear any remaining output buffers before sending headers
+        if (ob_get_level()) {
+            ob_end_clean();
+        }
+        while (@ob_end_clean());
+        
+        // Set headers - MUST be before any output
+        header('Content-Type: application/vnd.ms-excel');
+        header('Content-Disposition: attachment;filename="' . $filename . '"');
+        header('Cache-Control: must-revalidate, post-check=0, pre-check=0');
+        header('Pragma: public');
+        header('Expires: 0');
+        
+        // Create writer and output directly
+        $objWriter = PHPExcel_IOFactory::createWriter($objPHPExcel, 'Excel5');
+        $objWriter->save('php://output');
+        
+        // Exit immediately to prevent any further output
+        exit();
+    }
+    
     
        function saving_account_transaction_view($link, $id) {
         $this->data['title'] = lang('saving_account_transactions');
@@ -815,6 +1027,73 @@ class Report_Saving extends CI_Controller {
             echo json_encode(array('success'=>1,'message'=>'Process Failed','balance'=>$balance));
         }
         
+    }
+
+    /**
+     * Get transaction ledger entries for display in modal
+     * Fetches accounting entries from general_ledger table based on receipt number
+     */
+    function get_transaction_ledger_entries() {
+        $pin = current_user()->PIN;
+        $receipt = $this->input->post('receipt');
+        
+        if (empty($receipt)) {
+            echo json_encode(array(
+                'success' => false,
+                'message' => 'Receipt number is required'
+            ));
+            return;
+        }
+        
+        try {
+            // Query general_ledger table to get accounting entries for this transaction
+            $sql = "SELECT gl.id, gl.account, gl.debit, gl.credit, gl.description, gl.date, gl.linkto,
+                           ac.name as account_name
+                    FROM general_ledger gl
+                    LEFT JOIN account_chart ac ON gl.account = ac.account AND gl.PIN = ac.PIN
+                    WHERE gl.refferenceID = ? 
+                    AND gl.fromtable = 'savings_transaction'
+                    AND gl.PIN = ?
+                    ORDER BY gl.id ASC";
+            
+            $query = $this->db->query($sql, array($receipt, $pin));
+            $entries = $query->result();
+            
+            if (empty($entries)) {
+                // No entries found, return success with empty array
+                echo json_encode(array(
+                    'success' => true,
+                    'entries' => array(),
+                    'message' => 'No accounting entries found'
+                ));
+                return;
+            }
+            
+            // Format entries for display
+            $formatted_entries = array();
+            foreach ($entries as $entry) {
+                $formatted_entries[] = array(
+                    'account' => $entry->account,
+                    'account_name' => $entry->account_name ? $entry->account_name : 'Unknown Account',
+                    'debit' => $entry->debit,
+                    'credit' => $entry->credit,
+                    'description' => $entry->description,
+                    'date' => $entry->date,
+                    'linkto' => $entry->linkto
+                );
+            }
+            
+            echo json_encode(array(
+                'success' => true,
+                'entries' => $formatted_entries
+            ));
+            
+        } catch (Exception $e) {
+            echo json_encode(array(
+                'success' => false,
+                'message' => 'Error fetching ledger entries: ' . $e->getMessage()
+            ));
+        }
     }
 
 }

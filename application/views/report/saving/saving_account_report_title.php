@@ -57,8 +57,15 @@ if (isset($message) && !empty($message)) {
 
                 foreach ($account_list as $key => $value) {
                     $acc_name = $this->finance_model->saving_account_name($value->account);
+                    
+                    // Format display text: account_cat - [old_members_acct] account_name
+                    $display_text = $value->account_cat;
+                    if (!empty($value->old_members_acct)) {
+                        $display_text .= ' - [' . $value->old_members_acct . ']';
+                    }
+                    $display_text .= ' ' . $acc_name;
                     ?>
-                    <option data-account-cat="<?php echo $value->account_cat; ?>" <?php echo ($selected ? ($selected == $value->account ? 'selected="selected"' : '') : ''); ?> value="<?php echo $value->account; ?>"> <?php echo $value->account . ' :::: ' . $acc_name; ?></option>
+                    <option data-account-cat="<?php echo $value->account_cat; ?>" <?php echo ($selected ? ($selected == $value->account ? 'selected="selected"' : '') : ''); ?> value="<?php echo $value->account; ?>"> <?php echo $display_text; ?></option>
                 <?php }
                 ?>
             </select>

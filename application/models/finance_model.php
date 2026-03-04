@@ -1124,6 +1124,7 @@ $pin=current_user()->PIN;
         if (!is_null($id)) {
             $this->db->where('id', $id);
         }
+        $this->db->where('status', 1);
         return $this->db->get('paymentmenthod')->result();
     }
 

@@ -178,6 +178,60 @@ class MY_DB_mysqli_driver extends CI_DB_mysqli_driver {
     }
 
     /**
+     * Start a WHERE group (for grouping multiple conditions with parentheses)
+     * Delegates to parent class if available
+     */
+    public function group_start() {
+        if (method_exists($this, 'ar_where')) {
+            // CodeIgniter 2.x and older syntax
+            if (isset($this->ar_where) && count($this->ar_where) > 0) {
+                $this->ar_where[] = '( ';
+            }
+        }
+        
+        // Try to call parent method if it exists
+        if (method_exists('CI_DB_mysqli_driver', 'group_start')) {
+            return parent::group_start();
+        }
+        
+        // Fallback: manually track group in where clause
+        if (!isset($this->_where_group_stack)) {
+            $this->_where_group_stack = 0;
+        }
+        $this->_where_group_stack++;
+        
+        return $this;
+    }
+
+    /**
+     * End a WHERE group
+     * Delegates to parent class if available
+     */
+    public function group_end() {
+        if (method_exists($this, 'ar_where')) {
+            // CodeIgniter 2.x and older syntax
+            if (isset($this->ar_where) && count($this->ar_where) > 0) {
+                $this->ar_where[] = ' )';
+            }
+        }
+        
+        // Try to call parent method if it exists
+        if (method_exists('CI_DB_mysqli_driver', 'group_end')) {
+            return parent::group_end();
+        }
+        
+        // Fallback: decrement group stack
+        if (!isset($this->_where_group_stack)) {
+            $this->_where_group_stack = 0;
+        }
+        if ($this->_where_group_stack > 0) {
+            $this->_where_group_stack--;
+        }
+        
+        return $this;
+    }
+
+    /**
      * Log database activity to activity_logs table
      * 
      * @param string $action Action type: create, update, delete

@@ -347,7 +347,28 @@ class Report_Loan extends CI_Controller {
 
         $reportinfo = $this->report_model->report_loan($id)->row();
         $this->data['reportinfo'] = $reportinfo;
-        $this->data['transaction'] = $this->report_model->loan_transactions($reportinfo->fromdate, $reportinfo->todate);
+
+        $filter_loan_type = $this->input->get('filter_loan_type');
+        $filter_member = $this->input->get('filter_member');
+        if ($filter_loan_type === null || $filter_loan_type === '') {
+            $filter_loan_type = 'all';
+        }
+        if ($filter_member === null || $filter_member === '') {
+            $filter_member = 'all';
+        }
+        $this->data['filter_loan_type'] = $filter_loan_type;
+        $this->data['filter_member'] = $filter_member;
+
+        $filter_options = $this->report_model->loan_transaction_filter_options($reportinfo->fromdate, $reportinfo->todate);
+        $this->data['filter_loan_types'] = $filter_options['loan_types'];
+        $this->data['filter_members'] = $filter_options['members'];
+
+        $this->data['transaction'] = $this->report_model->loan_transactions(
+            $reportinfo->fromdate,
+            $reportinfo->todate,
+            $filter_loan_type,
+            $filter_member
+        );
 
         $this->data['content'] = 'report/loan/loan_transaction';
         $this->load->view('template', $this->data);
@@ -363,7 +384,24 @@ class Report_Loan extends CI_Controller {
 
         $reportinfo = $this->report_model->report_loan($id)->row();
         $this->data['reportinfo'] = $reportinfo;
-        $this->data['transaction'] = $this->report_model->loan_transactions($reportinfo->fromdate, $reportinfo->todate);
+
+        $filter_loan_type = $this->input->get('filter_loan_type');
+        $filter_member = $this->input->get('filter_member');
+        if ($filter_loan_type === null || $filter_loan_type === false || $filter_loan_type === '') {
+            $filter_loan_type = 'all';
+        }
+        if ($filter_member === null || $filter_member === false || $filter_member === '') {
+            $filter_member = 'all';
+        }
+        $this->data['filter_loan_type'] = $filter_loan_type;
+        $this->data['filter_member'] = $filter_member;
+
+        $this->data['transaction'] = $this->report_model->loan_transactions(
+            $reportinfo->fromdate,
+            $reportinfo->todate,
+            $filter_loan_type,
+            $filter_member
+        );
         $html = $this->load->view('report/loan/print/loan_transaction_print', $this->data, true);
         $this->export_to_pdf($html, 'Loan_transactions', $reportinfo->page);
     }
@@ -378,7 +416,28 @@ class Report_Loan extends CI_Controller {
 
         $reportinfo = $this->report_model->report_loan($id)->row();
         $this->data['reportinfo'] = $reportinfo;
-        $this->data['transaction'] = $this->report_model->loan_transactions_summary($reportinfo->fromdate, $reportinfo->todate);
+
+        $filter_loan_type = $this->input->get('filter_loan_type');
+        $filter_member = $this->input->get('filter_member');
+        if ($filter_loan_type === null || $filter_loan_type === '') {
+            $filter_loan_type = 'all';
+        }
+        if ($filter_member === null || $filter_member === '') {
+            $filter_member = 'all';
+        }
+        $this->data['filter_loan_type'] = $filter_loan_type;
+        $this->data['filter_member'] = $filter_member;
+
+        $filter_options = $this->report_model->loan_transaction_filter_options($reportinfo->fromdate, $reportinfo->todate);
+        $this->data['filter_loan_types'] = $filter_options['loan_types'];
+        $this->data['filter_members'] = $filter_options['members'];
+
+        $this->data['transaction'] = $this->report_model->loan_transactions_summary(
+            $reportinfo->fromdate,
+            $reportinfo->todate,
+            $filter_loan_type,
+            $filter_member
+        );
 
         $this->data['content'] = 'report/loan/loan_transaction_summary';
         $this->load->view('template', $this->data);
@@ -394,8 +453,24 @@ class Report_Loan extends CI_Controller {
 
         $reportinfo = $this->report_model->report_loan($id)->row();
         $this->data['reportinfo'] = $reportinfo;
-        $this->data['transaction'] = $this->report_model->loan_transactions_summary($reportinfo->fromdate, $reportinfo->todate);
 
+        $filter_loan_type = $this->input->get('filter_loan_type');
+        $filter_member = $this->input->get('filter_member');
+        if ($filter_loan_type === null || $filter_loan_type === false || $filter_loan_type === '') {
+            $filter_loan_type = 'all';
+        }
+        if ($filter_member === null || $filter_member === false || $filter_member === '') {
+            $filter_member = 'all';
+        }
+        $this->data['filter_loan_type'] = $filter_loan_type;
+        $this->data['filter_member'] = $filter_member;
+
+        $this->data['transaction'] = $this->report_model->loan_transactions_summary(
+            $reportinfo->fromdate,
+            $reportinfo->todate,
+            $filter_loan_type,
+            $filter_member
+        );
 
         $html = $this->load->view('report/loan/print/loan_transaction_summary_print', $this->data, true);
         $this->export_to_pdf($html, 'Loan_transactions_summary', $reportinfo->page);

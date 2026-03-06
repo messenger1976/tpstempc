@@ -8,6 +8,40 @@
             </div>
             <div style="padding-top: 20px;">
 
+                <?php
+                $filter_loan_type = isset($filter_loan_type) ? $filter_loan_type : 'all';
+                $filter_member = isset($filter_member) ? $filter_member : 'all';
+                $filter_query_string = '?filter_loan_type=' . urlencode($filter_loan_type) . '&filter_member=' . urlencode($filter_member);
+                ?>
+                <form method="get" action="<?php echo site_url(current_lang() . '/report_loan/loan_transaction_view/' . $link_cat . '/' . $id); ?>" class="form-inline" style="margin-bottom: 15px;">
+                    <label for="filter_loan_type" style="margin-right: 8px;">Filter by Loan Type:</label>
+                    <select name="filter_loan_type" id="filter_loan_type" class="form-control" style="margin-right: 20px; min-width: 180px;">
+                        <option value="all"<?php echo ($filter_loan_type === 'all') ? ' selected="selected"' : ''; ?>>All</option>
+                        <?php
+                        if (!empty($filter_loan_types)) {
+                            foreach ($filter_loan_types as $lt) {
+                                $sel = ($filter_loan_type === (string)$lt->id) ? ' selected="selected"' : '';
+                                echo '<option value="' . htmlspecialchars($lt->id) . '"' . $sel . '>' . htmlspecialchars($lt->name) . '</option>';
+                            }
+                        }
+                        ?>
+                    </select>
+                    <label for="filter_member" style="margin-right: 8px;">Filter by Member:</label>
+                    <select name="filter_member" id="filter_member" class="form-control" style="margin-right: 15px; min-width: 200px;">
+                        <option value="all"<?php echo ($filter_member === 'all') ? ' selected="selected"' : ''; ?>>All</option>
+                        <?php
+                        if (!empty($filter_members)) {
+                            foreach ($filter_members as $mem) {
+                                $sel = ($filter_member === (string)$mem->member_id) ? ' selected="selected"' : '';
+                                $name = isset($mem->member_name) ? $mem->member_name : $mem->member_id;
+                                echo '<option value="' . htmlspecialchars($mem->member_id) . '"' . $sel . '>' . htmlspecialchars($name) . '</option>';
+                            }
+                        }
+                        ?>
+                    </select>
+                    <button type="submit" class="btn btn-default">Apply</button>
+                </form>
+
                 <style type="text/css">
                    
                 </style>
@@ -68,7 +102,7 @@
 
         </div>
         <div style="text-align: center; padding-top: 20px; border-top: 1px solid #000;">
-                    <a href="<?php echo site_url(current_lang() . '/report_loan/loan_transaction_print/' . $link_cat . '/' . $id); ?>" class="btn btn-primary">Print</a>
+                    <a href="<?php echo site_url(current_lang() . '/report_loan/loan_transaction_print/' . $link_cat . '/' . $id . $filter_query_string); ?>" class="btn btn-primary" target="_blank">Print</a>
                     &nbsp; &nbsp; &nbsp; &nbsp;
                     <a href="<?php echo site_url(current_lang() . '/report_loan/create_loan_report_title/' . $link_cat . '/' . $id); ?>" class="btn btn-primary">Edit</a>
                 </div>

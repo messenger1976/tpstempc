@@ -672,18 +672,19 @@ class Finance_Model extends CI_Model {
         return $entries;
     }
 
-    function get_total_savings_amount($key=null, $account_type_filter=null, $status_filter=null) {
+    function get_total_savings_amount($key=null, $account_type_filter=null, $status_filter=null, $gl_posted_filter=null) {
         $pin = current_user()->PIN;
+        $pin_esc = $this->db->escape($pin);
         $this->db->select_sum('ma.balance');
         $this->db->from('members_account ma');
-        $this->db->join('saving_account_type sat', 'ma.account_cat = sat.account AND sat.PIN = ' . $this->db->escape($pin), 'left');
+        $this->db->join('saving_account_type sat', 'ma.account_cat = sat.account AND sat.PIN = ' . $pin_esc, 'left');
         $this->db->where('ma.PIN', $pin);
         if (!is_null($account_type_filter) && $account_type_filter != '' && $account_type_filter != 'all') {
             if ($account_type_filter == 'special') {
-                $this->db->join('account_chart ac', 'sat.account_setup = ac.account AND ac.PIN = ' . $this->db->escape($pin), 'left');
+                $this->db->join('account_chart ac', 'sat.account_setup = ac.account AND ac.PIN = ' . $pin_esc, 'left');
                 $this->db->where("((sat.account_setup IS NOT NULL AND sat.account_setup != '' AND (LEFT(sat.account_setup, 2) = '10' OR ac.account_type = 10 OR ac.account_type = '10')) OR LOWER(sat.name) LIKE '%special%' OR LOWER(sat.description) LIKE '%special%')", NULL, FALSE);
             } else if ($account_type_filter == 'mso') {
-                $this->db->join('account_chart ac', 'sat.account_setup = ac.account AND ac.PIN = ' . $this->db->escape($pin), 'left');
+                $this->db->join('account_chart ac', 'sat.account_setup = ac.account AND ac.PIN = ' . $pin_esc, 'left');
                 $this->db->where("((sat.account_setup IS NOT NULL AND sat.account_setup != '' AND (LEFT(sat.account_setup, 2) = '40' OR ac.account_type = 40 OR ac.account_type = '40')) OR LOWER(sat.name) LIKE '%mso%' OR LOWER(sat.description) LIKE '%mso%')", NULL, FALSE);
             }
         }
@@ -694,6 +695,14 @@ class Finance_Model extends CI_Model {
                 } else {
                     $this->db->where('ma.status', $status_filter);
                 }
+            }
+        }
+        // Filter by GL posted status
+        if (!is_null($gl_posted_filter) && $gl_posted_filter != '' && $gl_posted_filter != 'all') {
+            if ($gl_posted_filter == 'posted') {
+                $this->db->where("(SELECT COUNT(DISTINCT gl.id) FROM savings_transaction st INNER JOIN general_ledger gl ON gl.fromtable = 'savings_transaction' AND gl.refferenceID = st.receipt AND gl.PIN = st.PIN WHERE st.account = ma.account AND st.PIN = " . $pin_esc . ") > 0", NULL, FALSE);
+            } else if ($gl_posted_filter == 'not_posted') {
+                $this->db->where("(SELECT COUNT(DISTINCT gl.id) FROM savings_transaction st INNER JOIN general_ledger gl ON gl.fromtable = 'savings_transaction' AND gl.refferenceID = st.receipt AND gl.PIN = st.PIN WHERE st.account = ma.account AND st.PIN = " . $pin_esc . ") = 0", NULL, FALSE);
             }
         }
         if (!is_null($key) && $key != '') {
@@ -1115,6 +1124,7 @@ $pin=current_user()->PIN;
         if (!is_null($id)) {
             $this->db->where('id', $id);
         }
+        $this->db->where('status', 1);
         return $this->db->get('paymentmenthod')->result();
     }
 
@@ -1251,6 +1261,7 @@ $pin=current_user()->PIN;
     }
 
     function saving_account_balance($account) {
+        $pin = current_user()->PIN;
         // Ensure account is treated as string for consistent comparison
         // This handles cases where account might be numeric like "18" or string like "Account#1"
         $account_str = trim((string)$account);
@@ -1258,6 +1269,7 @@ $pin=current_user()->PIN;
         // Compare account - use string comparison to handle both numeric and string accounts
         // CodeIgniter will properly escape this value
         $this->db->where('account', $account_str);
+        $this->db->where('PIN', $pin);
         return $this->db->get('members_account')->row();
     }
 
@@ -1272,7 +1284,8 @@ $pin=current_user()->PIN;
         $payment_method_upper = strtoupper(trim($payment_method));
         
         // For ADJUSTMENT (beginning balances), use an adjustment/equity account instead of cash
-        if ($payment_method_upper == 'ADJUSTMENT') {
+        // Also handles combinations like "OTHER - ADJUSTMENT" or "OTHERS - ADJUSTMENT"
+        if (strpos($payment_method_upper, 'ADJUSTMENT') !== FALSE) {
             // Try to find an adjustment account or opening balance equity account
             $this->db->where('PIN', $pin);
             
@@ -1314,24 +1327,60 @@ $pin=current_user()->PIN;
             return $account->account;
         }
         
-        // Map payment methods to account names (case-insensitive matching) for cash transactions
-        $account_mapping = array(
-            'CASH' => 'Cash',
-            'CHEQUE' => 'Bank',
-            'BANK TRANSFER' => 'Bank',
-            'BANK' => 'Bank',
-            'MOBILE MONEY' => 'Mobile Money',
-            'MOBILE' => 'Mobile Money',
-            'MPESA' => 'Mobile Money',
-            'AIRTEL MONEY' => 'Mobile Money',
-            'TIGO PESA' => 'Mobile Money'
-        );
-        
-        $account_name = 'Cash'; // Default
-        foreach ($account_mapping as $key => $value) {
-            if (strpos($payment_method_upper, $key) !== FALSE) {
-                $account_name = $value;
-                break;
+        // For OTHER payment method, use a miscellaneous/suspense account
+        // Also handles combinations like "OTHERS - ADJUSTMENT" or "OTHER SOURCES"
+        if (strpos($payment_method_upper, 'OTHER') !== FALSE) {
+            // Try to find Suspense, Miscellaneous, or Other account
+            $this->db->where('PIN', $pin);
+            
+            // Search for other-related accounts (Suspense, Miscellaneous, etc.)
+            $other_account_names = array('Suspense', 'Miscellaneous', 'Other', 'Pending Transactions', 'Clearing');
+            $where_clause = "(";
+            foreach ($other_account_names as $index => $name) {
+                if ($index > 0) {
+                    $where_clause .= " OR ";
+                }
+                $escaped_name = $this->db->escape_like_str($name);
+                $where_clause .= "name LIKE '%" . $escaped_name . "%'";
+            }
+            $where_clause .= ")";
+            
+            $this->db->where($where_clause, NULL, FALSE);
+            // Asset accounts (type 1 or 10000) or Liability (2, 20000) for suspense accounts
+            $this->db->where_in('account_type', array(1, 2, 10000, 20000));
+            $this->db->order_by('account', 'ASC');
+            $this->db->limit(1);
+            
+            $account = $this->db->get('account_chart')->row();
+            
+            if ($account) {
+                log_message('info', 'Using OTHER payment method account: ' . $account->account . ' (' . $account->name . ')');
+                return $account->account;
+            }
+            
+            // Fallback: use Cash account for OTHER if no Suspense/Miscellaneous account found
+            log_message('warning', 'No Suspense/Miscellaneous account found for OTHER payment method. Falling back to Cash account.');
+            $account_name = 'Cash';
+        } else {
+            // Map payment methods to account names (case-insensitive matching) for cash transactions
+            $account_mapping = array(
+                'CASH' => 'Cash',
+                'CHEQUE' => 'Bank',
+                'BANK TRANSFER' => 'Bank',
+                'BANK' => 'Bank',
+                'MOBILE MONEY' => 'Mobile Money',
+                'MOBILE' => 'Mobile Money',
+                'MPESA' => 'Mobile Money',
+                'AIRTEL MONEY' => 'Mobile Money',
+                'TIGO PESA' => 'Mobile Money'
+            );
+            
+            $account_name = 'Cash'; // Default
+            foreach ($account_mapping as $key => $value) {
+                if (strpos($payment_method_upper, $key) !== FALSE) {
+                    $account_name = $value;
+                    break;
+                }
             }
         }
         
@@ -1467,7 +1516,8 @@ $pin=current_user()->PIN;
         }
         
         // Determine description prefix based on transaction type
-        $is_adjustment = (strtoupper(trim($paymethod)) == 'ADJUSTMENT');
+        // Check if payment method contains "ADJUSTMENT" (handles "ADJUSTMENT", "OTHER - ADJUSTMENT", etc.)
+        $is_adjustment = (strpos(strtoupper(trim($paymethod)), 'ADJUSTMENT') !== FALSE);
         if ($is_withdrawal) {
             $description_prefix = 'Savings Withdrawal';
         } elseif ($is_interest) {
@@ -1482,10 +1532,18 @@ $pin=current_user()->PIN;
             $description_prefix = 'Savings Deposit';
         }
         
-        // Check if Journal ID 9 exists, if not use 5 as fallback
-        $this->db->where('id', 9);
-        $journal_check = $this->db->get('journal')->row();
-        $journal_id = ($journal_check) ? 9 : 5; // Use 9 for Savings Journal, fallback to 5 for Manual Journal
+        // Determine journal based on transaction type
+        // Adjustments are Journal Voucher entries, use Manual Journal (ID 5)
+        // Regular transactions use Savings Journal (ID 9)
+        if ($is_adjustment) {
+            $journal_id = 5; // Manual Journal for JV/Adjustment entries
+            $description_prefix = '[JV] ' . $description_prefix; // Prefix with [JV] to indicate Journal Voucher
+        } else {
+            // Check if Journal ID 9 (Savings Journal) exists, if not use 5 as fallback
+            $this->db->where('id', 9);
+            $journal_check = $this->db->get('journal')->row();
+            $journal_id = ($journal_check) ? 9 : 5; // Use 9 for Savings Journal, fallback to 5 for Manual Journal
+        }
         
         // Start transaction
         $this->db->trans_start();
@@ -1505,8 +1563,15 @@ $pin=current_user()->PIN;
                 return false;
             }
             
+            // Log JV entries for audit trail
+            if ($is_adjustment) {
+                log_message('info', 'Creating Journal Voucher (JV) entry for savings account: ' . $account . ', receipt: ' . $receipt . ', amount: ' . $amount);
+            }
+            
             // Prepare base ledger data with appropriate description (is_adjustment already defined above)
-            $description = $description_prefix . ' - ' . ($customer_name ? $customer_name : 'Member ' . $member_id) . ' (Account: ' . $account . ', Receipt: ' . $receipt . ')';
+            // Include payment method in description for audit trail (skip for pure ADJUSTMENT types)
+            $paymethod_info = (!$is_adjustment) ? ', Payment Method: ' . $paymethod : '';
+            $description = $description_prefix . ' - ' . ($customer_name ? $customer_name : 'Member ' . $member_id) . ' (Account: ' . $account . ', Receipt: ' . $receipt . $paymethod_info . ')';
             
             $ledger_base = array(
                 'journalID' => $journal_id,
@@ -1610,22 +1675,42 @@ $pin=current_user()->PIN;
 
     function count_transaction($key, $from, $upto) {
         $pin = current_user()->PIN;
-        $and = " PIN ='$pin' AND trans_date >= '$from 00:00:00' AND trans_date <= '$upto 23:59:59'";
-        if (!is_null($key)) {
-            $and.=" AND account = '$key'";
+        $this->db->from('savings_transaction st');
+        $this->db->join('members_account ma', 'ma.account = st.account AND ma.PIN = st.PIN', 'left');
+        $this->db->where('st.PIN', $pin);
+        $this->db->where('st.trans_date >=', $from . ' 00:00:00');
+        $this->db->where('st.trans_date <=', $upto . ' 23:59:59');
+
+        if (!is_null($key) && $key !== '') {
+            $this->db->group_start();
+            $this->db->where('st.account', $key);
+            $this->db->or_where('ma.old_members_acct', $key);
+            $this->db->group_end();
         }
 
-        return count($this->db->query("SELECT * FROM savings_transaction WHERE $and ORDER BY trans_date DESC")->result());
+        return $this->db->count_all_results();
     }
 
     function search_transaction($key, $from, $upto, $limit, $start) {
         $pin = current_user()->PIN;
-        $and = " PIN ='$pin' AND trans_date >= '$from 00:00:00' AND trans_date <= '$upto 23:59:59'";
-        if (!is_null($key)) {
-            $and.=" AND account = '$key'";
+        $this->db->select("st.*, COALESCE(NULLIF(ma.old_members_acct, ''), st.account) AS account_no_display", FALSE);
+        $this->db->from('savings_transaction st');
+        $this->db->join('members_account ma', 'ma.account = st.account AND ma.PIN = st.PIN', 'left');
+        $this->db->where('st.PIN', $pin);
+        $this->db->where('st.trans_date >=', $from . ' 00:00:00');
+        $this->db->where('st.trans_date <=', $upto . ' 23:59:59');
+
+        if (!is_null($key) && $key !== '') {
+            $this->db->group_start();
+            $this->db->where('st.account', $key);
+            $this->db->or_where('ma.old_members_acct', $key);
+            $this->db->group_end();
         }
 
-        return $this->db->query("SELECT * FROM savings_transaction WHERE $and ORDER BY trans_date DESC LIMIT $start,$limit")->result();
+        $this->db->order_by('st.trans_date', 'DESC');
+        $this->db->limit((int) $limit, (int) $start);
+
+        return $this->db->get()->result();
     }
 
     function credit($account = null, $amount = 0, $paymethod = null, $comment = '', $cheque_num = '', $customer_name = '', $pid = null, $systemcomment = '', $start_up = 0, $posted_date='', $refno = '') {
@@ -1821,6 +1906,73 @@ $pin=current_user()->PIN;
             }
         }
         return array('posted' => $posted, 'failed' => $failed, 'errors' => $errors);
+    }
+
+    /**
+     * Void/Reverse all GL postings for a savings account.
+     * This deletes the general_ledger entries linked to the account's savings transactions.
+     * 
+     * @param string $account The savings account number
+     * @return array Array with 'voided' count, 'failed' count, and 'errors' array
+     */
+    function void_savings_account_gl($account) {
+        $pin = current_user()->PIN;
+        
+        // Get all receipts that have been posted to GL for this account
+        // Query general_ledger directly and match with savings_transaction
+        $this->db->distinct();
+        $this->db->select('gl.refferenceID as receipt');
+        $this->db->from('general_ledger gl');
+        $this->db->where('gl.fromtable', 'savings_transaction');
+        $this->db->where('gl.PIN', $pin);
+        $this->db->where("gl.refferenceID IN (SELECT receipt FROM savings_transaction WHERE account = '" . $this->db->escape_str($account) . "' AND PIN = " . intval($pin) . ")", NULL, FALSE);
+        $posted_transactions = $this->db->get()->result();
+        
+        if (empty($posted_transactions)) {
+            return array('voided' => 0, 'failed' => 0, 'errors' => array());
+        }
+        
+        $voided = 0;
+        $failed = 0;
+        $errors = array();
+        
+        // Start transaction
+        $this->db->trans_start();
+        
+        foreach ($posted_transactions as $trans) {
+            try {
+                // Delete from general_ledger
+                $this->db->where('refferenceID', $trans->receipt);
+                $this->db->where('fromtable', 'savings_transaction');
+                $this->db->where('PIN', $pin);
+                $this->db->delete('general_ledger');
+                
+                $affected = $this->db->affected_rows();
+                
+                if ($affected > 0) {
+                    $voided++;
+                    log_message('info', 'Voided GL posting for savings receipt: ' . $trans->receipt);
+                } else {
+                    $failed++;
+                    $errors[] = 'Receipt ' . $trans->receipt . ': no GL entries found to void';
+                    log_message('warning', 'No GL entries found to void for receipt: ' . $trans->receipt);
+                }
+            } catch (Exception $e) {
+                $failed++;
+                $errors[] = 'Receipt ' . $trans->receipt . ': ' . $e->getMessage();
+                log_message('error', 'Failed to void GL posting for receipt ' . $trans->receipt . ': ' . $e->getMessage());
+            }
+        }
+        
+        // Complete transaction
+        $this->db->trans_complete();
+        
+        if ($this->db->trans_status() === FALSE) {
+            log_message('error', 'Transaction failed while voiding GL postings for account: ' . $account);
+            return array('voided' => 0, 'failed' => count($posted_transactions), 'errors' => array('Database transaction failed'));
+        }
+        
+        return array('voided' => $voided, 'failed' => $failed, 'errors' => $errors);
     }
 
     function saving_account_name($account) {
@@ -2133,21 +2285,22 @@ $pin=current_user()->PIN;
         return count($this->db->get('members_account')->result());
     }
 
-    function count_saving_account($key=null, $account_type_filter=null, $status_filter=null) {
+    function count_saving_account($key=null, $account_type_filter=null, $status_filter=null, $gl_posted_filter=null) {
         $pin = current_user()->PIN;
+        $pin_esc = $this->db->escape($pin);
         $this->db->from('members_account ma');
-        $this->db->join('saving_account_type sat', 'ma.account_cat = sat.account AND sat.PIN = ' . $this->db->escape($pin), 'left');
+        $this->db->join('saving_account_type sat', 'ma.account_cat = sat.account AND sat.PIN = ' . $pin_esc, 'left');
         $this->db->where('ma.PIN', $pin);
         
         // Filter by account type (Special or MSO)
         if (!is_null($account_type_filter) && $account_type_filter != '' && $account_type_filter != 'all') {
             if ($account_type_filter == 'special') {
                 // Special accounts: check account_setup prefix, account_type, or name/description contains "special"
-                $this->db->join('account_chart ac', 'sat.account_setup = ac.account AND ac.PIN = ' . $this->db->escape($pin), 'left');
+                $this->db->join('account_chart ac', 'sat.account_setup = ac.account AND ac.PIN = ' . $pin_esc, 'left');
                 $this->db->where("((sat.account_setup IS NOT NULL AND sat.account_setup != '' AND (LEFT(sat.account_setup, 2) = '10' OR ac.account_type = 10 OR ac.account_type = '10')) OR LOWER(sat.name) LIKE '%special%' OR LOWER(sat.description) LIKE '%special%')", NULL, FALSE);
             } else if ($account_type_filter == 'mso') {
                 // MSO accounts: check account_setup prefix, account_type, or name/description contains "mso"
-                $this->db->join('account_chart ac', 'sat.account_setup = ac.account AND ac.PIN = ' . $this->db->escape($pin), 'left');
+                $this->db->join('account_chart ac', 'sat.account_setup = ac.account AND ac.PIN = ' . $pin_esc, 'left');
                 $this->db->where("((sat.account_setup IS NOT NULL AND sat.account_setup != '' AND (LEFT(sat.account_setup, 2) = '40' OR ac.account_type = 40 OR ac.account_type = '40')) OR LOWER(sat.name) LIKE '%mso%' OR LOWER(sat.description) LIKE '%mso%')", NULL, FALSE);
             }
         }
@@ -2163,6 +2316,15 @@ $pin=current_user()->PIN;
                 } else {
                     $this->db->where('ma.status', $status_filter);
                 }
+            }
+        }
+        
+        // Filter by GL posted status
+        if (!is_null($gl_posted_filter) && $gl_posted_filter != '' && $gl_posted_filter != 'all') {
+            if ($gl_posted_filter == 'posted') {
+                $this->db->where("(SELECT COUNT(DISTINCT gl.id) FROM savings_transaction st INNER JOIN general_ledger gl ON gl.fromtable = 'savings_transaction' AND gl.refferenceID = st.receipt AND gl.PIN = st.PIN WHERE st.account = ma.account AND st.PIN = " . $pin_esc . ") > 0", NULL, FALSE);
+            } else if ($gl_posted_filter == 'not_posted') {
+                $this->db->where("(SELECT COUNT(DISTINCT gl.id) FROM savings_transaction st INNER JOIN general_ledger gl ON gl.fromtable = 'savings_transaction' AND gl.refferenceID = st.receipt AND gl.PIN = st.PIN WHERE st.account = ma.account AND st.PIN = " . $pin_esc . ") = 0", NULL, FALSE);
             }
         }
         
@@ -2218,7 +2380,7 @@ $pin=current_user()->PIN;
         return $this->db->count_all_results();
     }
 
-    function search_saving_account($key=null, $limit=40, $start=0, $account_type_filter=null, $status_filter=null) {
+    function search_saving_account($key=null, $limit=40, $start=0, $account_type_filter=null, $status_filter=null, $gl_posted_filter=null) {
         $pin = current_user()->PIN;
         $pin_esc = $this->db->escape($pin);
         $this->db->select('ma.*, m.firstname, m.middlename, m.lastname, m.member_id as member_id_display, mg.name as group_name, sat.description as account_type_name, sat.account as account_type_code, sat.name as account_type_name_display');
@@ -2252,6 +2414,15 @@ $pin=current_user()->PIN;
                 } else {
                     $this->db->where('ma.status', $status_filter);
                 }
+            }
+        }
+        
+        // Filter by GL posted status
+        if (!is_null($gl_posted_filter) && $gl_posted_filter != '' && $gl_posted_filter != 'all') {
+            if ($gl_posted_filter == 'posted') {
+                $this->db->where("(SELECT COUNT(DISTINCT gl.id) FROM savings_transaction st INNER JOIN general_ledger gl ON gl.fromtable = 'savings_transaction' AND gl.refferenceID = st.receipt AND gl.PIN = st.PIN WHERE st.account = ma.account AND st.PIN = " . $pin_esc . ") > 0", NULL, FALSE);
+            } else if ($gl_posted_filter == 'not_posted') {
+                $this->db->where("(SELECT COUNT(DISTINCT gl.id) FROM savings_transaction st INNER JOIN general_ledger gl ON gl.fromtable = 'savings_transaction' AND gl.refferenceID = st.receipt AND gl.PIN = st.PIN WHERE st.account = ma.account AND st.PIN = " . $pin_esc . ") = 0", NULL, FALSE);
             }
         }
         

@@ -107,6 +107,22 @@ $lang['loan_max_reached'] = 'Loan balance is 0';
 
 
 $lang['loan_view_repayment_schedule'] = 'Loan Repayment Schedule';
+$lang['loan_ledger'] = 'Loan Ledger';
+$lang['loan_ledger_date'] = 'Date';
+$lang['loan_ledger_description'] = 'Description';
+$lang['loan_ledger_debit'] = 'Debit';
+$lang['loan_ledger_credit'] = 'Credit';
+$lang['loan_ledger_balance'] = 'Balance';
+$lang['loan_ledger_total'] = 'Total';
+$lang['loan_ledger_no_transactions'] = 'No ledger transactions found.';
+$lang['loan_ledger_disbursement'] = 'Disbursement';
+$lang['loan_ledger_repayment'] = 'Repayment';
+$lang['loan_ledger_schedule'] = 'Schedule (Inst / Due)';
+$lang['loan_ledger_interest'] = 'Interest';
+$lang['loan_ledger_penalty'] = 'Penalty';
+$lang['loan_ledger_amount_paid'] = 'Amount Paid';
+$lang['loan_ledger_advancement_lock_note_title'] = 'Advancement & lock of payment:';
+$lang['loan_ledger_advancement_lock_note'] = 'When a member pays enough to clear the full remaining balance (advancement / early pay-off), the system records one repayment for that installment and marks all remaining schedule installments as closed—no further payments are accepted for that loan and the loan status becomes Closed. If there are no open installments left, the system does not allow new payments (payment is locked) and the loan is automatically set to Closed.';
 $lang['due_date'] = 'Due date';
 $lang['total_loan_amount'] = 'Total Loan :';
 $lang['repayment_schedule'] = 'LOAN REPAYMENT SCHEDULE';
@@ -122,6 +138,7 @@ $lang['report_loan_transaction'] = 'Loan Transactions';
 $lang['report_loan_transaction_summary'] = 'Loan Transactions Summary';
 $lang['report_loan_processing_fee_collection'] = 'Loan Processing Fee Collection';
 $lang['report_loan_aging'] = 'Loan Aging Report';
+$lang['report_loan_aging_status'] = 'Active or Accepted (disbursed) loans only';
 
 // Loan Beginning Balances
 $lang['loan_beginning_balance_list'] = 'Loan Beginning Balances';

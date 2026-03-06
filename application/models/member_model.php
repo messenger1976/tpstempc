@@ -413,6 +413,38 @@ class Member_Model extends CI_Model {
         return $return;
     }
     
+    /**
+     * Get share balance row by PID and member_id (amount + remainbalance = total share balance).
+     */
+    function member_share_balance_by_member($pid, $member_id) {
+        $this->db->where('PIN', current_user()->PIN);
+        $this->db->where('PID', $pid);
+        $this->db->where('member_id', $member_id);
+        $return = $this->db->get('members_share')->row();
+        if (empty($return) || $return === NULL) {
+            $fields = $this->db->list_fields('members_share');
+            $fieldschange = array_flip($fields);
+            foreach ($fieldschange as $key => $value) {
+                $fieldschange[$key] = '';
+            }
+            $return = (Object) $fieldschange;
+        }
+        return $return;
+    }
+    
+    /**
+     * Sum of total_balance from loan_beginning_balances for a member (excluding those that have loan_contract).
+     */
+    function member_loan_beginning_balances_sum($member_id) {
+        $pin = current_user()->PIN;
+        $this->db->select('COALESCE(SUM(total_balance), 0) as total', FALSE);
+        $this->db->where('PIN', $pin);
+        $this->db->where('member_id', $member_id);
+        $this->db->where('(loan_id IS NULL OR loan_id NOT IN (SELECT LID FROM loan_contract WHERE PIN = ' . $this->db->escape($pin) . '))', NULL, FALSE);
+        $row = $this->db->get('loan_beginning_balances')->row();
+        return ($row && is_numeric($row->total)) ? floatval($row->total) : 0;
+    }
+    
     function member_current_total_loan($pid) {
          $this->db->where('PID', $pid);
          $this->db->where('status', '4');

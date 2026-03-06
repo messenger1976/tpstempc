@@ -34,6 +34,16 @@ class Saving extends CI_Controller {
     }
  //Added by Herald
     function saving_account_list() {
+        // Redirect to new URL while preserving all query parameters
+        $query_string = '';
+        if (!empty($_GET)) {
+            $query_string = '?' . http_build_query($_GET);
+        }
+        redirect(current_lang() . '/saving/saving_account_listing' . $query_string, 'location', 301);
+    }
+    
+    // New method: saving_account_listing (copy of saving_account_list)
+    function saving_account_listing() {
         $this->load->library('pagination');
         $this->data['title'] = lang('saving_account_list');
         
@@ -74,6 +84,14 @@ class Saving extends CI_Controller {
             $account_type_filter = $_GET['account_type_filter'];
         }
         
+        // GL posted filter (posted / not posted to General Ledger)
+        $gl_posted_filter = null;
+        if (isset($_POST['gl_posted_filter']) && $_POST['gl_posted_filter'] != '') {
+            $gl_posted_filter = $_POST['gl_posted_filter'];
+        } else if (isset($_GET['gl_posted_filter']) && $_GET['gl_posted_filter'] != '') {
+            $gl_posted_filter = $_GET['gl_posted_filter'];
+        }
+        
         // Status filter - default to '1' (Active)
         $status_filter = '1'; // Default to Active
         if (isset($_POST['status_filter']) && $_POST['status_filter'] != '') {
@@ -92,12 +110,17 @@ class Saving extends CI_Controller {
             $suffix_array['account_type_filter'] = $account_type_filter;
         }
         
+        if (!is_null($gl_posted_filter) && $gl_posted_filter != '' && $gl_posted_filter != 'all') {
+            $suffix_array['gl_posted_filter'] = $gl_posted_filter;
+        }
+        
         if ($status_filter != '') {
             $suffix_array['status_filter'] = $status_filter;
         }
         
         $this->data['jxy'] = $suffix_array;
         $this->data['account_type_filter'] = $account_type_filter;
+        $this->data['gl_posted_filter'] = $gl_posted_filter;
         $this->data['status_filter'] = $status_filter;
         if (count($suffix_array) > 0) {
             $query_string = http_build_query($suffix_array, '', '&');
@@ -105,8 +128,8 @@ class Saving extends CI_Controller {
         }
         
         
-        $config["base_url"] = site_url(current_lang() . '/saving/saving_account_list');
-        $config["total_rows"] = $this->finance_model->count_saving_account($key, $account_type_filter, $status_filter);
+        $config["base_url"] = site_url(current_lang() . '/saving/saving_account_listing');
+        $config["total_rows"] = $this->finance_model->count_saving_account($key, $account_type_filter, $status_filter, $gl_posted_filter);
         $config["uri_segment"] = 4;
         
         $config['full_tag_open'] = '<div class="pagination" style="background-color:#fff; margin-left:0px;">';
@@ -140,10 +163,10 @@ class Saving extends CI_Controller {
         $page = ($this->uri->segment(4) ? $this->uri->segment(4) : 0);
         $this->data['links'] = $this->pagination->create_links();
         
-        $this->data['saving_accounts'] = $this->finance_model->search_saving_account($key, $config["per_page"], $page, $account_type_filter, $status_filter);
-        $this->data['total_savings_amount'] = $this->finance_model->get_total_savings_amount($key, $account_type_filter, $status_filter);
+        $this->data['saving_accounts'] = $this->finance_model->search_saving_account($key, $config["per_page"], $page, $account_type_filter, $status_filter, $gl_posted_filter);
+        $this->data['total_savings_amount'] = $this->finance_model->get_total_savings_amount($key, $account_type_filter, $status_filter, $gl_posted_filter);
         
-        $this->data['content'] = 'saving/saving_account_list';
+        $this->data['content'] = 'saving/saving_account_listing';
         $this->load->view('template', $this->data);
     }
     
@@ -186,6 +209,12 @@ class Saving extends CI_Controller {
             $account_type_filter = $_GET['account_type_filter'];
         }
         
+        // GL posted filter for export
+        $gl_posted_filter = null;
+        if (isset($_GET['gl_posted_filter']) && $_GET['gl_posted_filter'] != '' && $_GET['gl_posted_filter'] != 'all') {
+            $gl_posted_filter = $_GET['gl_posted_filter'];
+        }
+        
         // Status filter - must match saving_account_list logic exactly
         // Default to '1' (Active) if not provided
         $status_filter = '1'; // Default to Active
@@ -194,13 +223,13 @@ class Saving extends CI_Controller {
         }
         
         // Get total count first to use as limit for export (get all records)
-        $total_count = $this->finance_model->count_saving_account($key, $account_type_filter, $status_filter);
+        $total_count = $this->finance_model->count_saving_account($key, $account_type_filter, $status_filter, $gl_posted_filter);
         
         // Get all accounts (use total count + 1000 as limit to ensure we get all records)
         // If total_count is 0, use a reasonable default limit
         $limit = ($total_count > 0) ? $total_count + 1000 : 10000;
-        $saving_accounts = $this->finance_model->search_saving_account($key, $limit, 0, $account_type_filter, $status_filter);
-        $total_savings_amount = $this->finance_model->get_total_savings_amount($key, $account_type_filter, $status_filter);
+        $saving_accounts = $this->finance_model->search_saving_account($key, $limit, 0, $account_type_filter, $status_filter, $gl_posted_filter);
+        $total_savings_amount = $this->finance_model->get_total_savings_amount($key, $account_type_filter, $status_filter, $gl_posted_filter);
         
         // Check if we have data
         if (!$saving_accounts || !is_array($saving_accounts) || count($saving_accounts) == 0) {
@@ -449,10 +478,74 @@ class Saving extends CI_Controller {
         $this->_redirect_saving_list();
     }
 
+    /**
+     * Void/Reverse GL postings for multiple selected savings accounts.
+     * This deletes the GL entries from general_ledger table for the selected accounts.
+     */
+    function void_selected_gl() {
+        if (!$this->ion_auth->logged_in()) {
+            redirect('auth/login', 'refresh');
+        }
+        if (!has_role(3, 'saving_account_list')) {
+            $this->session->set_flashdata('warning', lang('access_denied'));
+            redirect('dashboard', 'refresh');
+            return;
+        }
+        
+        $ids = $this->input->post('void_ids');
+        if (!is_array($ids) || count($ids) == 0) {
+            $this->session->set_flashdata('warning', lang('saving_account_void_gl_none_selected'));
+            $this->_redirect_saving_list();
+            return;
+        }
+        
+        $total_voided = 0;
+        $total_failed = 0;
+        $accounts_processed = 0;
+        $errors = array();
+        
+        foreach ($ids as $encoded_id) {
+            $encoded_id = trim($encoded_id);
+            if (empty($encoded_id)) continue;
+            
+            $decoded_id = decode_id($encoded_id);
+            $account_info = $this->finance_model->get_saving_account_info($decoded_id);
+            
+            if (!$account_info || empty($account_info->account)) continue;
+            
+            $result = $this->finance_model->void_savings_account_gl($account_info->account);
+            
+            $accounts_processed++;
+            $total_voided += $result['voided'];
+            $total_failed += $result['failed'];
+            
+            if (!empty($result['errors'])) {
+                $errors = array_merge($errors, $result['errors']);
+            }
+        }
+        
+        if ($accounts_processed == 0) {
+            $this->session->set_flashdata('warning', lang('invalid_account'));
+        } elseif ($total_voided > 0) {
+            $msg = $total_voided . ' ' . ($total_voided == 1 ? lang('saving_account_void_gl_success_one') : lang('saving_account_void_gl_success_many'));
+            if ($total_failed > 0) {
+                $msg .= '. ' . $total_failed . ' ' . lang('saving_account_void_gl_partial_fail');
+            }
+            $this->session->set_flashdata('message', $msg);
+        } elseif ($total_failed > 0) {
+            $this->session->set_flashdata('warning', lang('saving_account_void_gl_fail'));
+        } else {
+            $this->session->set_flashdata('message', lang('saving_account_void_gl_nothing_to_void'));
+        }
+        
+        $this->_redirect_saving_list();
+    }
+
     private function _redirect_saving_list() {
         $query = array();
         if ($this->input->post('redirect_key') !== false && $this->input->post('redirect_key') !== '') $query['key'] = $this->input->post('redirect_key');
         if ($this->input->post('redirect_account_type_filter') !== false && $this->input->post('redirect_account_type_filter') !== '') $query['account_type_filter'] = $this->input->post('redirect_account_type_filter');
+        if ($this->input->post('redirect_gl_posted_filter') !== false && $this->input->post('redirect_gl_posted_filter') !== '') $query['gl_posted_filter'] = $this->input->post('redirect_gl_posted_filter');
         if ($this->input->post('redirect_status_filter') !== false && $this->input->post('redirect_status_filter') !== '') $query['status_filter'] = $this->input->post('redirect_status_filter');
         $url = current_lang() . '/saving/saving_account_list';
         if (!empty($query)) $url .= '?' . http_build_query($query);
@@ -732,8 +825,10 @@ class Saving extends CI_Controller {
         $to = null;
         if (isset($_POST['key']) && $_POST['key'] != '') {
             $key = $_POST['key'];
-            $expl = explode('-', $key);
-            $key = $expl[0];
+            if (strpos($key, ' - ') !== FALSE) {
+                $expl = explode(' - ', $key, 2);
+                $key = $expl[0];
+            }
         } else if (isset($_GET['key'])) {
             $key = $_GET['key'];
         }
@@ -838,12 +933,19 @@ class Saving extends CI_Controller {
         if (!$q)
             return;
 
-        $auto = $this->db->query("SELECT a.account,a.old_members_acct,b.firstname, b.middlename, b.lastname FROM members_account as a INNER JOIN members as b ON a.RFID=b.PID   WHERE b.PIN='$pin' AND ( a.account LIKE '$q%'  OR b.firstname LIKE '$q%' OR b.lastname LIKE '$q%') ")->result();
+        $auto = $this->db->query("SELECT a.account,a.old_members_acct,b.firstname, b.middlename, b.lastname, sat.name as account_type_name, sat.description as account_type_desc, sat.account_setup FROM members_account as a INNER JOIN members as b ON a.RFID=b.PID LEFT JOIN saving_account_type as sat ON a.account_cat = sat.account AND sat.PIN = a.PIN WHERE b.PIN='$pin' AND ( a.account LIKE '$q%'  OR b.firstname LIKE '$q%' OR b.lastname LIKE '$q%') ")->result();
 
 
         foreach ($auto as $key => $value) {
-
-            echo $value->account . ' - [' . $value->old_members_acct . '] ' . $value->firstname . ' ' . $value->middlename . ' ' . $value->lastname . "\n";
+            $account_type = $this->detect_member_account_type($value->account_type_name, $value->account_type_desc, $value->account_setup);
+            $type_label = '';
+            if ($account_type === 'special') {
+                $type_label = ' (Special)';
+            } else if ($account_type === 'mso') {
+                $type_label = ' (MSO)';
+            }
+            
+            echo $value->account . ' - [' . $value->old_members_acct . '] ' . $value->firstname . ' ' . $value->middlename . ' ' . $value->lastname . $type_label . "\n";
         }
     }
 
@@ -963,9 +1065,12 @@ class Saving extends CI_Controller {
 
             if (!empty($member) && isset($member->PID)) {
                 $contact = $this->member_model->member_contact($member->PID);
+                $account_type_data = $this->member_account_type_totals($member->PID, $account_info->account);
                 $status['success'] = 'Y';
                 $status['data'] = $member;
                 $status['contact'] = $contact;
+                $status['account_totals'] = $account_type_data['totals'];
+                $status['selected_account_type'] = $account_type_data['selected_type'];
                 echo json_encode($status);
             } else {
                 $status['success'] = 'N';
@@ -977,6 +1082,63 @@ class Saving extends CI_Controller {
             $status['error'] = $error;
             echo json_encode($status);
         }
+    }
+
+    private function detect_member_account_type($account_type_name = '', $account_type_desc = '', $account_setup = '') {
+        $name = strtolower(trim((string) $account_type_name));
+        $desc = strtolower(trim((string) $account_type_desc));
+        $setup = trim((string) $account_setup);
+
+        if (strpos($name, 'mso') !== false || strpos($desc, 'mso') !== false || strpos($setup, '40') === 0) {
+            return 'mso';
+        }
+
+        if (strpos($name, 'special') !== false || strpos($desc, 'special') !== false || strpos($setup, '10') === 0) {
+            return 'special';
+        }
+
+        return '';
+    }
+
+    private function member_account_type_totals($member_pid, $selected_account = null) {
+        $pin = current_user()->PIN;
+        $totals = array(
+            'special' => 0,
+            'mso' => 0,
+        );
+        $selected_type = '';
+
+        $this->db->select('ma.account, ma.balance, sat.name as account_type_name, sat.description as account_type_desc, sat.account_setup');
+        $this->db->from('members_account ma');
+        $this->db->join('saving_account_type sat', 'ma.account_cat = sat.account AND sat.PIN = ma.PIN', 'left');
+        $this->db->where('ma.PIN', $pin);
+        $this->db->where('ma.RFID', $member_pid);
+        $member_accounts = $this->db->get()->result();
+
+        foreach ($member_accounts as $member_account) {
+            $account_type_key = $this->detect_member_account_type($member_account->account_type_name, $member_account->account_type_desc, $member_account->account_setup);
+            if ($account_type_key === '') {
+                continue;
+            }
+
+            $totals[$account_type_key] += floatval($member_account->balance);
+            if (!empty($selected_account) && (string) $member_account->account === (string) $selected_account) {
+                $selected_type = $account_type_key;
+            }
+        }
+
+        if ($selected_type === '') {
+            if ($totals['special'] > 0) {
+                $selected_type = 'special';
+            } else if ($totals['mso'] > 0) {
+                $selected_type = 'mso';
+            }
+        }
+
+        return array(
+            'totals' => $totals,
+            'selected_type' => $selected_type,
+        );
     }
 
     function search_member() {

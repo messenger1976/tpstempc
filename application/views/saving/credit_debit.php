@@ -279,10 +279,114 @@ if (isset($message) && !empty($message)) {
             return x1 + x2;
         }
 
-        
-        var pid = '<?php echo set_value('pid'); ?>';
+        function renderMemberInfo(json){
+            var userdata = json['data'];
+            var contact = json['contact'];
+            var account_balance = json['accountinfo'];
+            var accountTotals = json['account_totals'] || {};
+            var selectedType = (json['selected_account_type'] || '').toLowerCase();
+
+            function accountTypeLabel(typeKey){
+                if(typeKey === 'special'){
+                    return 'Special';
+                }
+                if(typeKey === 'mso'){
+                    return 'MSO';
+                }
+                return '-';
+            }
+
+            var specialTotal = parseFloat(accountTotals['special'] || 0);
+            var msoTotal = parseFloat(accountTotals['mso'] || 0);
+
+            if(selectedType !== 'special' && selectedType !== 'mso'){
+                if (specialTotal > 0) {
+                    selectedType = 'special';
+                } else if (msoTotal > 0) {
+                    selectedType = 'mso';
+                }
+            }
+
+            var activeBalance = parseFloat(account_balance['balance'] || 0);
+            if(selectedType === 'special'){
+                activeBalance = specialTotal;
+            }else if(selectedType === 'mso'){
+                activeBalance = msoTotal;
+            }
+
+            var customername = userdata["firstname"]+' '+userdata["middlename"]+' '+userdata["lastname"];
+            $("#customer_name").val(customername);
+            var output = '<div style="border:1px solid  #ccc;font-size:15px;"><table style="width:100%;"><tr><td style="width:70%;">';
+            output += '<div style="border-bottom:1px dashed #ccc;"><strong><?php echo lang('member_fullname'); ?> : </strong> '+userdata["firstname"]+' '+userdata["middlename"]+' '+userdata["lastname"]+'</div>';
+            output += '<div style="border-bottom:1px dashed #ccc;"><strong><?php echo lang('member_gender'); ?> : </strong> '+userdata["gender"]+'</div>';
+            output += '<div style="border-bottom:1px dashed #ccc;"><strong><?php echo lang('member_dob'); ?> : </strong> '+userdata["dob"]+'</div>';
+            output += '<div style="border-bottom:1px dashed #ccc;"><strong><?php echo lang('member_join_date'); ?> : </strong> '+userdata["joiningdate"]+'</div>';
+            output += '<div style="border-bottom:1px dashed #ccc;"><strong><?php echo lang('member_contact_phone1'); ?> : </strong> '+contact["phone1"]+'</div>';
+            output += '<div style="border-bottom:1px dashed #ccc;"><strong><?php echo lang('member_contact_phone2'); ?> : </strong> '+contact["phone2"]+'</div>';
+            output += '<div style="border-bottom:1px dashed #ccc;"><strong><?php echo lang('member_contact_email'); ?> : </strong> '+contact["email"]+'</div>';
+            output += '<div style="border-bottom:1px dashed #ccc;"><strong>Savings Account Type : </strong> <span id="member_savings_type_label">'+accountTypeLabel(selectedType)+'</span></div>';
+            output +='</td><td>  <img style=" height:120px;" src="<?php echo base_url(); ?>uploads/memberphoto/'+userdata["photo"].toString()+'"/></td></tr></table></div>';
+
+            output += '<div style="margin-top:10px;">';
+            output += '<strong>Account Type :</strong> ';
+            output += '<select id="member_account_type" style="padding:4px; margin-left:6px;">';
+            output += '<option value="special" '+(selectedType === 'special' ? 'selected="selected"' : '')+'>Special</option>';
+            output += '<option value="mso" '+(selectedType === 'mso' ? 'selected="selected"' : '')+'>MSO</option>';
+            output += '</select>';
+            output += '</div>';
+
+            output += '<div style="font-size:30px;"><strong><?php echo lang('balance'); ?> : </strong> <span id="member_balance_value">'+addCommas(activeBalance.toFixed(2))+'</span></div>';
+            $('#member_info').html(output);
+
+            $('#member_account_type').off('change').on('change', function(){
+                var selected = $(this).val();
+                var selectedBalance = 0;
+                if(selected === 'special'){
+                    selectedBalance = specialTotal;
+                }else if(selected === 'mso'){
+                    selectedBalance = msoTotal;
+                }
+                $('#member_savings_type_label').text(accountTypeLabel(selected));
+                $('#member_balance_value').text(addCommas(parseFloat(selectedBalance).toFixed(2)));
+            });
+        }
+
+        function handleSearchAccountResponse(data){
+            var json;
             
-        if(pid.length > 0){
+            // Check if data is already an object (jQuery auto-parsed it)
+            if (typeof data === 'object' && data !== null) {
+                json = data;
+            } else if (typeof data === 'string') {
+                // If it's a string, trim and parse it
+                data = data.trim();
+                
+                if (!data || data.length === 0) {
+                    $('#member_info').html('<div style="color:red;">Error: Invalid response from server. Please try again.</div>');
+                    return;
+                }
+                
+                try {
+                    json = JSON.parse(data);
+                } catch (e) {
+                    console.error('JSON Parse Error:', e);
+                    console.error('Response data:', data);
+                    $('#member_info').html('<div style="color:red;">Error: Invalid response from server. Please try again.</div>');
+                    return;
+                }
+            } else {
+                $('#member_info').html('<div style="color:red;">Error: Invalid response from server. Please try again.</div>');
+                return;
+            }
+
+            if(json['success'].toString() == 'N'){
+                $('#member_info').html('<div style="color:red;">'+json['error'].toString()+'</div>');
+            }else{
+                renderMemberInfo(json);
+            }
+        }
+
+        function lookupAccountByPid(pid){
             $('#member_info').html('<?php echo lang("please_wait"); ?>');
             $.ajax({
                 url:'<?php echo site_url(current_lang() . '/saving/search_account/'); ?>',
@@ -290,61 +394,58 @@ if (isset($message) && !empty($message)) {
                 data:{
                     value:pid,
                     column :'PID'
-                },                              
-                success: function(data){
-                    // Trim whitespace that might cause JSON parse errors
-                    data = data.trim();
-                    
-                    // Check if response is empty or not valid JSON
-                    if (!data || data.length === 0) {
-                        $('#member_info').html('<div style="color:red;">Error: Invalid response from server. Please try again.</div>');
-                        return;
-                    }
-                    
-                    // Try to parse JSON, handle errors gracefully
-                    var json;
-                    try {
-                        json = JSON.parse(data);
-                    } catch (e) {
-                        console.error('JSON Parse Error:', e);
-                        console.error('Response data:', data);
-                        $('#member_info').html('<div style="color:red;">Error: Invalid response from server. Please try again.</div>');
-                        return;
-                    }
-                    
-                    if(json['success'].toString() == 'N'){
-                        $('#member_info').html('<div style="color:red;">'+json['error'].toString()+'</div>');
-                    }else{
-                        var userdata = json['data'];
-                        var contact = json['contact'];
-                        var account_balance = json['accountinfo'];
-                        var customername = userdata["firstname"]+' '+userdata["middlename"]+' '+userdata["lastname"];
-                        $("#customer_name").val(customername);
-                        var output = '<div style="border:1px solid  #ccc;font-size:15px;"><table style="width:100%;"><tr><td style="width:70%;">';
-                        output += '<div style="border-bottom:1px dashed #ccc;"><strong><?php echo lang('member_fullname'); ?> : </strong> '+userdata["firstname"]+' '+userdata["middlename"]+' '+userdata["lastname"]+'</div>';
-                        output += '<div style="border-bottom:1px dashed #ccc;"><strong><?php echo lang('member_gender'); ?> : </strong> '+userdata["gender"]+'</div>';
-                        output += '<div style="border-bottom:1px dashed #ccc;"><strong><?php echo lang('member_dob'); ?> : </strong> '+userdata["dob"]+'</div>';
-                        output += '<div style="border-bottom:1px dashed #ccc;"><strong><?php echo lang('member_join_date'); ?> : </strong> '+userdata["joiningdate"]+'</div>';
-                        output += '<div style="border-bottom:1px dashed #ccc;"><strong><?php echo lang('member_contact_phone1'); ?> : </strong> '+contact["phone1"]+'</div>';
-                        output += '<div style="border-bottom:1px dashed #ccc;"><strong><?php echo lang('member_contact_phone2'); ?> : </strong> '+contact["phone2"]+'</div>';
-                        output += '<div style="border-bottom:1px dashed #ccc;"><strong><?php echo lang('member_contact_email'); ?> : </strong> '+contact["email"]+'</div>';
-                        output +='</td><td>  <img style=" height:120px;" src="<?php echo base_url(); ?>uploads/memberphoto/'+userdata["photo"].toString()+'"/></td></tr></table>       </div>'
-                        output += '<div style="font-size:30px;"><strong><?php echo lang('balance'); ?> : </strong> '+  addCommas(parseFloat(account_balance["balance"]).toFixed(2))+'</div>';
-                        $('#member_info').html(output);   
-                    }
-                        
-                        
                 },
+                success: handleSearchAccountResponse,
                 error:function(xhr,textStatus,errorThrown){
                     console.error('AJAX Error:', textStatus, errorThrown);
                     console.error('Response:', xhr.responseText);
                     $('#member_info').html('<div style="color:red;">Error: Unable to connect to server. Please try again.</div>');
                 }
             });
+        }
+
+        var lastLookupPid = '';
+        function normalizePidInput(rawPid){
+            if(!rawPid){
+                return '';
+            }
+            var cleaned = $.trim(rawPid.toString());
+            if(cleaned.indexOf(' - ') !== -1){
+                cleaned = $.trim(cleaned.split(' - ')[0]);
+            }
+            return cleaned;
+        }
+
+        function triggerLookupFromPidField(forceLookup){
+            var currentRaw = $('#pid').val();
+            var normalizedPid = normalizePidInput(currentRaw);
+            if(normalizedPid.length === 0){
+                return;
+            }
+            if(forceLookup === true || normalizedPid !== lastLookupPid){
+                lastLookupPid = normalizedPid;
+                lookupAccountByPid(normalizedPid);
+            }
+        }
+
+        
+        var pid = '<?php echo set_value('pid'); ?>';
+            
+        if(pid.length > 0){
+            lastLookupPid = normalizePidInput(pid);
+            lookupAccountByPid(lastLookupPid);
                 
                 
                 
         }
+
+        $('#pid').on('change blur', function(){
+            triggerLookupFromPidField(false);
+        });
+
+        $('#pid').on('result', function(){
+            triggerLookupFromPidField(false);
+        });
         
         
         $("#search_pid").click(function(){
@@ -352,65 +453,7 @@ if (isset($message) && !empty($message)) {
             var pid = $("#pid").val();
             
             if(pid.length > 0){
-                $('#member_info').html('<?php echo lang("please_wait"); ?>');
-                $.ajax({
-                    url:'<?php echo site_url(current_lang() . '/saving/search_account/'); ?>',
-                    type:'POST',
-                    data:{
-                        value:pid,
-                        column :'PID'
-                    },                              
-                    success: function(data){
-                        // Trim whitespace that might cause JSON parse errors
-                        data = data.trim();
-                        
-                        // Check if response is empty or not valid JSON
-                        if (!data || data.length === 0) {
-                            $('#member_info').html('<div style="color:red;">Error: Invalid response from server. Please try again.</div>');
-                            return;
-                        }
-                        
-                        // Try to parse JSON, handle errors gracefully
-                        var json;
-                        try {
-                            json = JSON.parse(data);
-                        } catch (e) {
-                            console.error('JSON Parse Error:', e);
-                            console.error('Response data:', data);
-                            $('#member_info').html('<div style="color:red;">Error: Invalid response from server. Please try again.</div>');
-                            return;
-                        }
-                        
-                        if(json['success'].toString() == 'N'){
-                            $('#member_info').html('<div style="color:red;">'+json['error'].toString()+'</div>');
-                        }else{
-                            var userdata = json['data'];
-                            var contact = json['contact'];
-                            var account_balance = json['accountinfo'];
-                            var customername = userdata["firstname"]+' '+userdata["middlename"]+' '+userdata["lastname"];
-                            $("#customer_name").val(customername);
-                        
-                            var output = '<div style="border:1px solid  #ccc;font-size:15px;"><table style="width:100%;"><tr><td style="width:70%;">';
-                            output += '<div style="border-bottom:1px dashed #ccc;"><strong><?php echo lang('member_fullname'); ?> : </strong> '+userdata["firstname"]+' '+userdata["middlename"]+' '+userdata["lastname"]+'</div>';
-                            output += '<div style="border-bottom:1px dashed #ccc;"><strong><?php echo lang('member_gender'); ?> : </strong> '+userdata["gender"]+'</div>';
-                            output += '<div style="border-bottom:1px dashed #ccc;"><strong><?php echo lang('member_dob'); ?> : </strong> '+userdata["dob"]+'</div>';
-                            output += '<div style="border-bottom:1px dashed #ccc;"><strong><?php echo lang('member_join_date'); ?> : </strong> '+userdata["joiningdate"]+'</div>';
-                            output += '<div style="border-bottom:1px dashed #ccc;"><strong><?php echo lang('member_contact_phone1'); ?> : </strong> '+contact["phone1"]+'</div>';
-                            output += '<div style="border-bottom:1px dashed #ccc;"><strong><?php echo lang('member_contact_phone2'); ?> : </strong> '+contact["phone2"]+'</div>';
-                            output += '<div style="border-bottom:1px dashed #ccc;"><strong><?php echo lang('member_contact_email'); ?> : </strong> '+contact["email"]+'</div>';
-                            output +='</td><td>  <img style=" height:120px;" src="<?php echo base_url(); ?>uploads/memberphoto/'+userdata["photo"].toString()+'"/></td></tr></table>       </div>'
-                            output += '<div style="font-size:30px;"><strong><?php echo lang('balance'); ?>  : </strong> '+  addCommas(parseFloat(account_balance["balance"]).toFixed(2))+'</div>';
-                            $('#member_info').html(output);   
-                        }
-                        
-                        
-                    },
-                    error:function(xhr,textStatus,errorThrown){
-                        console.error('AJAX Error:', textStatus, errorThrown);
-                        console.error('Response:', xhr.responseText);
-                        $('#member_info').html('<div style="color:red;">Error: Unable to connect to server. Please try again.</div>');
-                    }
-                });
+                triggerLookupFromPidField(true);
                 
                 
                 

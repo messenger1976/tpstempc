@@ -57,8 +57,15 @@ if (isset($message) && !empty($message)) {
 
                 foreach ($account_list as $key => $value) {
                     $acc_name = $this->finance_model->saving_account_name($value->account);
+                    
+                    // Format display text: account_cat - [old_members_acct] account_name
+                    $display_text = $value->account_cat;
+                    if (!empty($value->old_members_acct)) {
+                        $display_text .= ' - [' . $value->old_members_acct . ']';
+                    }
+                    $display_text .= ' ' . $acc_name;
                     ?>
-                    <option <?php echo ($selected ? ($selected == $value->account ? 'selected="selected"' : '') : ''); ?> value="<?php echo $value->account; ?>"> <?php echo $value->account . ' :::: ' . $acc_name; ?></option>
+                    <option data-account-cat="<?php echo $value->account_cat; ?>" <?php echo ($selected ? ($selected == $value->account ? 'selected="selected"' : '') : ''); ?> value="<?php echo $value->account; ?>"> <?php echo $display_text; ?></option>
                 <?php }
                 ?>
             </select>
@@ -70,13 +77,13 @@ if (isset($message) && !empty($message)) {
 <?php } ?>
 
 <?php
-if ($link_cat == 1) {
+if ($link_cat == 1 || $link_cat == 2) {
     $account = $this->finance_model->saving_account_list()->result();
     ?>
-    <div class="form-group"><label class="col-lg-3 control-label"><?php echo 'Saving Account Type'; ?>  :</label>
+    <div class="form-group"><label class="col-lg-3 control-label"><?php echo 'Account Type'; ?>  :</label>
         <div class="col-lg-6">
-            <select name="account_type" class="form-control">
-                <option value="">All Saving Account Type</option>
+            <select name="account_type" class="form-control" id="account_type">
+                <option value="">All</option>
                 <?php
                 $select = (isset($reportinfo) ? $reportinfo->account_type : set_value('account_type'));
                 foreach ($account as $key => $value) {
@@ -149,4 +156,57 @@ if ($link_cat == 1) {
         }
         initScripts();
     })();
+</script>
+<script type="text/javascript">
+    // Filter accounts by account type for link_cat = 2
+    <?php if ($link_cat == 2) { ?>
+    (function() {
+        function initAccountFilter() {
+            if (typeof jQuery === 'undefined') {
+                setTimeout(initAccountFilter, 50);
+                return;
+            }
+            
+            $(function() {
+                var allOptions = $('#description option').clone(); // Store all options
+                
+                $('#account_type').on('change', function() {
+                    var selectedType = $(this).val();
+                    var currentValue = $('#description').val();
+                    
+                    // Clear and rebuild options
+                    $('#description').empty();
+                    $('#description').append('<option value=""><?php echo lang('select_default_text'); ?></option>');
+                    
+                    if (selectedType === '') {
+                        // Show all accounts
+                        allOptions.each(function() {
+                            if ($(this).val() !== '') {
+                                $('#description').append($(this).clone());
+                            }
+                        });
+                    } else {
+                        // Filter by account type
+                        allOptions.each(function() {
+                            if ($(this).val() !== '' && $(this).data('account-cat') == selectedType) {
+                                $('#description').append($(this).clone());
+                            }
+                        });
+                    }
+                    
+                    // Try to restore previous selection if still available
+                    if ($('#description option[value="' + currentValue + '"]').length > 0) {
+                        $('#description').val(currentValue);
+                    }
+                    
+                    // Refresh chosen if it's initialized
+                    if (typeof $('#description').chosen !== 'undefined') {
+                        $('#description').trigger('chosen:updated');
+                    }
+                });
+            });
+        }
+        initAccountFilter();
+    })();
+    <?php } ?>
 </script>

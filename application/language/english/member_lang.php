@@ -168,6 +168,7 @@ $lang['member_current_mortuary'] = 'Mortuary Balance';
 $lang['member_current_share'] = 'Share Balance';
 $lang['member_current_loan'] = 'Loan Amount';
 $lang['member_current_loan_payment'] = 'Loan Paid Amount';
+$lang['member_current_savings'] = 'Savings';
 
 
 ?>

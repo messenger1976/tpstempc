@@ -42,6 +42,11 @@
                     <a href="<?php echo site_url(current_lang().'/report/general_leger_transaction/3'); ?>">Trial Balance</a>
                     <a href="<?php echo site_url(current_lang().'/report/general_leger_transaction/2'); ?>">General Ledger Summary</a>
                     <a href="<?php echo site_url(current_lang().'/report/general_leger_transaction/1'); ?>">General Ledger Transactions</a>
+                    <?php if (function_exists('has_role') && has_role(6, 'View_AR')) { ?>
+                    <a href="<?php echo site_url(current_lang().'/ar/ar_balances'); ?>">AR Balances</a>
+                    <a href="<?php echo site_url(current_lang().'/ar/ar_ledger'); ?>">AR Ledger</a>
+                    <a href="<?php echo site_url(current_lang().'/ar/ar_aging'); ?>">AR Aging Report</a>
+                    <?php } ?>
                 </div>
 
             </div>

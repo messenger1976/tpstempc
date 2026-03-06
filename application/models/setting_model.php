@@ -302,6 +302,7 @@ $this->db->where('PIN',  current_user()->PIN);
         $this->db->from('paymentmenthod pm');
         $this->db->join('account_chart ac', 'pm.gl_account_code = ac.account AND ac.PIN = ' . $this->db->escape($pin), 'left');
         $this->db->where('pm.PIN', $pin);
+        $this->db->where('pm.status', 1);
         if (!is_null($id)) {
             $this->db->where('pm.id', $id);
         }

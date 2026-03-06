@@ -1,4 +1,4 @@
-<?php echo form_open(current_lang() . "/saving/saving_account_list", 'class="form-horizontal"'); ?>
+<?php echo form_open(current_lang() . "/saving/saving_account_listing", 'class="form-horizontal"'); ?>
 
 <?php
 if (isset($message) && !empty($message)) {
@@ -88,23 +88,31 @@ $status_filter = isset($status_filter) ? $status_filter : (isset($_GET['status_f
     </div>
 </div>
 
-<?php echo form_open(current_lang() . '/saving/post_selected_to_gl', array('id' => 'form_post_selected_gl', 'onsubmit' => 'return confirm(\'' . addslashes(lang('saving_account_post_selected_to_gl_confirm')) . '\');')); ?>
+<?php echo form_open('', array('id' => 'form_bulk_gl', 'method' => 'post')); ?>
 <?php if (!empty($search_key)) { ?><input type="hidden" name="redirect_key" value="<?php echo htmlspecialchars($search_key, ENT_QUOTES, 'UTF-8'); ?>"/><?php } ?>
 <?php if (!empty($account_type_filter) && $account_type_filter != 'all') { ?><input type="hidden" name="redirect_account_type_filter" value="<?php echo htmlspecialchars($account_type_filter, ENT_QUOTES, 'UTF-8'); ?>"/><?php } ?>
 <?php if (!empty($gl_posted_filter) && $gl_posted_filter != 'all') { ?><input type="hidden" name="redirect_gl_posted_filter" value="<?php echo htmlspecialchars($gl_posted_filter, ENT_QUOTES, 'UTF-8'); ?>"/><?php } ?>
 <?php if (isset($status_filter) && $status_filter !== '') { ?><input type="hidden" name="redirect_status_filter" value="<?php echo htmlspecialchars($status_filter, ENT_QUOTES, 'UTF-8'); ?>"/><?php } ?>
 <div class="form-group col-lg-12" style="margin-bottom: 10px;">
-    <button type="submit" name="post_selected" id="btn_post_selected_gl" class="btn btn-warning" disabled="disabled">
+    <button type="submit" name="post_selected" id="btn_post_selected_gl" class="btn btn-warning" disabled="disabled" formaction="<?php echo base_url() . current_lang(); ?>/saving/post_selected_to_gl">
         <i class="fa fa-book"></i> <?php echo lang('saving_account_post_selected_to_gl'); ?>
     </button>
     <span id="post_selected_hint" class="text-muted" style="margin-left: 10px;"></span>
+    <button type="submit" name="void_selected" id="btn_void_selected_gl" class="btn btn-danger" disabled="disabled" style="margin-left: 8px;" formaction="<?php echo base_url() . current_lang(); ?>/saving/void_selected_gl">
+        <i class="fa fa-undo"></i> <?php echo lang('saving_account_void_selected_gl'); ?>
+    </button>
+    <span id="void_selected_hint" class="text-muted" style="margin-left: 10px;"></span>
 </div>
+
 <div class="table-responsive">
     <table class="table table-bordered table-striped" id="saving_account_list_table">
         <thead>
             <tr>
                 <th style="width: 40px; text-align: center;">
                     <input type="checkbox" id="select_all_post_gl" title="<?php echo htmlspecialchars(lang('saving_account_select_all_post_gl'), ENT_QUOTES, 'UTF-8'); ?>"/>
+                </th>
+                <th style="width: 40px; text-align: center;">
+                    <input type="checkbox" id="select_all_void_gl" title="<?php echo htmlspecialchars(lang('saving_account_select_all_void_gl'), ENT_QUOTES, 'UTF-8'); ?>"/>
                 </th>
                 <th><?php echo lang('account_number'); ?></th>
                 <th><?php echo lang('member_member_id'); ?></th>
@@ -122,14 +130,23 @@ $status_filter = isset($status_filter) ? $status_filter : (isset($_GET['status_f
             <?php if (isset($saving_accounts) && count($saving_accounts) > 0) { ?>
                 <?php foreach ($saving_accounts as $key => $value) {
                     $unposted_count = isset($value->unposted_count) ? intval($value->unposted_count) : 0;
+                    $gl_posted_count = isset($value->gl_posted_count) ? intval($value->gl_posted_count) : 0;
                     $can_post = $unposted_count > 0;
+                    $can_void = $gl_posted_count > 0;
                 ?>
                     <tr>
                         <td style="text-align: center;">
                             <?php if ($can_post) { ?>
                                 <input type="checkbox" name="ids[]" value="<?php echo htmlspecialchars(encode_id($value->id), ENT_QUOTES, 'UTF-8'); ?>" class="cb_post_gl"/>
                             <?php } else { ?>
-                                <input type="checkbox" disabled="disabled" title="<?php echo htmlspecialchars(lang('saving_account_gl_not_posted'), ENT_QUOTES, 'UTF-8'); ?>"/>
+                                <input type="checkbox" disabled="disabled" title="<?php echo htmlspecialchars(lang('saving_account_no_unposted'), ENT_QUOTES, 'UTF-8'); ?>"/>
+                            <?php } ?>
+                        </td>
+                        <td style="text-align: center;">
+                            <?php if ($can_void) { ?>
+                                <input type="checkbox" name="void_ids[]" value="<?php echo htmlspecialchars(encode_id($value->id), ENT_QUOTES, 'UTF-8'); ?>" class="cb_void_gl"/>
+                            <?php } else { ?>
+                                <input type="checkbox" disabled="disabled" title="<?php echo htmlspecialchars(lang('saving_account_no_posted_to_void'), ENT_QUOTES, 'UTF-8'); ?>"/>
                             <?php } ?>
                         </td>
                         <td><?php echo htmlspecialchars($value->account, ENT_QUOTES, 'UTF-8'); ?></td>
@@ -208,7 +225,7 @@ $status_filter = isset($status_filter) ? $status_filter : (isset($_GET['status_f
                 <?php } ?>
             <?php } else { ?>
                 <tr>
-                    <td colspan="11" style="text-align: center;"><?php echo lang('no_records_found'); ?></td>
+                    <td colspan="12" style="text-align: center;"><?php echo lang('no_records_found'); ?></td>
                 </tr>
             <?php } ?>
         </tbody>
@@ -221,30 +238,80 @@ $status_filter = isset($status_filter) ? $status_filter : (isset($_GET['status_f
 
 <script>
 (function() {
-    var selectAll = document.getElementById('select_all_post_gl');
-    var checkboxes = document.querySelectorAll('.cb_post_gl');
-    var btn = document.getElementById('btn_post_selected_gl');
-    var hint = document.getElementById('post_selected_hint');
+    // Post GL functionality
+    var selectAllPost = document.getElementById('select_all_post_gl');
+    var postCheckboxes = document.querySelectorAll('.cb_post_gl');
+    var postBtn = document.getElementById('btn_post_selected_gl');
+    var postHint = document.getElementById('post_selected_hint');
 
-    function updateButton() {
+    function updatePostButton() {
         var n = 0;
-        for (var i = 0; i < checkboxes.length; i++) {
-            if (checkboxes[i].checked) n++;
+        for (var i = 0; i < postCheckboxes.length; i++) {
+            if (postCheckboxes[i].checked) n++;
         }
-        btn.disabled = n === 0;
-        hint.textContent = n > 0 ? (n === 1 ? '<?php echo addslashes(lang('saving_account_1_selected')); ?>' : n + ' <?php echo addslashes(lang('saving_account_n_selected')); ?>') : '';
+        postBtn.disabled = n === 0;
+        postHint.textContent = n > 0 ? (n === 1 ? '<?php echo addslashes(lang('saving_account_1_selected')); ?>' : n + ' <?php echo addslashes(lang('saving_account_n_selected')); ?>') : '';
     }
 
-    if (selectAll) {
-        selectAll.onclick = function() {
+    if (selectAllPost) {
+        selectAllPost.onclick = function() {
             var checked = this.checked;
-            for (var i = 0; i < checkboxes.length; i++) checkboxes[i].checked = checked;
-            updateButton();
+            for (var i = 0; i < postCheckboxes.length; i++) postCheckboxes[i].checked = checked;
+            updatePostButton();
         };
     }
-    for (var i = 0; i < checkboxes.length; i++) {
-        checkboxes[i].onclick = updateButton;
+    for (var i = 0; i < postCheckboxes.length; i++) {
+        postCheckboxes[i].onclick = updatePostButton;
     }
-    updateButton();
+    updatePostButton();
+
+    // Add confirmation for post button
+    if (postBtn) {
+        postBtn.onclick = function(e) {
+            if (postBtn.disabled) {
+                e.preventDefault();
+                return false;
+            }
+            return confirm('<?php echo addslashes(lang('saving_account_post_selected_to_gl_confirm')); ?>');
+        };
+    }
+
+    // Void GL functionality
+    var selectAllVoid = document.getElementById('select_all_void_gl');
+    var voidCheckboxes = document.querySelectorAll('.cb_void_gl');
+    var voidBtn = document.getElementById('btn_void_selected_gl');
+    var voidHint = document.getElementById('void_selected_hint');
+
+    function updateVoidButton() {
+        var n = 0;
+        for (var i = 0; i < voidCheckboxes.length; i++) {
+            if (voidCheckboxes[i].checked) n++;
+        }
+        voidBtn.disabled = n === 0;
+        voidHint.textContent = n > 0 ? (n === 1 ? '<?php echo addslashes(lang('saving_account_1_selected_void')); ?>' : n + ' <?php echo addslashes(lang('saving_account_n_selected_void')); ?>') : '';
+    }
+
+    if (selectAllVoid) {
+        selectAllVoid.onclick = function() {
+            var checked = this.checked;
+            for (var i = 0; i < voidCheckboxes.length; i++) voidCheckboxes[i].checked = checked;
+            updateVoidButton();
+        };
+    }
+    for (var i = 0; i < voidCheckboxes.length; i++) {
+        voidCheckboxes[i].onclick = updateVoidButton;
+    }
+    updateVoidButton();
+
+    // Add confirmation for void button
+    if (voidBtn) {
+        voidBtn.onclick = function(e) {
+            if (voidBtn.disabled) {
+                e.preventDefault();
+                return false;
+            }
+            return confirm('<?php echo addslashes(lang('saving_account_void_selected_gl_confirm')); ?>');
+        };
+    }
 })();
 </script>

@@ -76,13 +76,15 @@ if (isset($message) && !empty($message)) {
                  if($value->edit == 0){
                      echo anchor(current_lang().'/loan/loan_editing/'.encode_id($value->LID),' |  <i class="fa fa-edit"></i> ' . lang('button_edit'));
                  }
-                 if (isset($value->status) && (string)$value->status === '4') {
+                 if (isset($value->status) && ((string)$value->status === '4' || (string)$value->status === '5')) {
                      $schedule_url = site_url(current_lang() . '/loan/view_repayment_schedule_popup/' . encode_id($value->LID));
                      echo ' | <a href="' . htmlspecialchars($schedule_url) . '" class="repayment-schedule-popup" data-schedule-url="' . htmlspecialchars($schedule_url) . '" title="' . htmlspecialchars(lang('loan_view_repayment_schedule')) . '"><i class="fa fa-calendar-check-o"></i> ' . lang('loan_view_repayment_schedule') . '</a>';
                      if (!empty($value->disburse)) {
                          $print_disburse_url = site_url(current_lang() . '/loan/loan_disbursement_print/' . encode_id($value->LID));
                          echo ' | <a href="' . htmlspecialchars($print_disburse_url) . '" target="_blank" title="' . htmlspecialchars(lang('loan_print_disbursement')) . '"><i class="fa fa-print"></i> ' . lang('loan_print_disbursement') . '</a>';
                      }
+                     $ledger_url = site_url(current_lang() . '/loan/loan_ledger/' . encode_id($value->LID));
+                     echo ' | <a href="' . htmlspecialchars($ledger_url) . '" title="' . htmlspecialchars(lang('loan_ledger')) . '"><i class="fa fa-book"></i> ' . lang('loan_ledger') . '</a>';
                  }
                  ?></td>
             </tr>

@@ -52,6 +52,7 @@ $lang['account_status_inactive'] = 'Inactive';
 $lang['all_status'] = 'All Status';
 $lang['saving_account_gl_posted'] = 'Posted';
 $lang['saving_account_gl_not_posted'] = 'Not posted';
+$lang['saving_account_gl_filter_all'] = 'All (GL)';
 $lang['saving_account_gl_status'] = 'GL Status';
 $lang['saving_account_post_to_gl'] = 'Post to GL';
 $lang['saving_account_post_to_gl_success_one'] = 'transaction posted to General Ledger';
@@ -65,6 +66,21 @@ $lang['saving_account_select_all_post_gl'] = 'Select all (accounts with unposted
 $lang['saving_account_1_selected'] = '1 account selected';
 $lang['saving_account_n_selected'] = 'accounts selected';
 $lang['saving_account_post_selected_to_gl_confirm'] = 'Post all unposted transactions for the selected accounts to the General Ledger?';
+
+// Void GL posting related keys
+$lang['saving_account_void_selected_gl'] = 'Void selected GL postings';
+$lang['saving_account_select_all_void_gl'] = 'Select all (accounts with posted transactions)';
+$lang['saving_account_1_selected_void'] = '1 account selected for void';
+$lang['saving_account_n_selected_void'] = 'accounts selected for void';
+$lang['saving_account_void_selected_gl_confirm'] = 'Void/Reverse ALL General Ledger postings for the selected accounts? This action will delete GL entries. Are you sure?';
+$lang['saving_account_void_gl_none_selected'] = 'No accounts selected for voiding';
+$lang['saving_account_void_gl_success_one'] = 'GL posting voided';
+$lang['saving_account_void_gl_success_many'] = 'GL postings voided';
+$lang['saving_account_void_gl_partial_fail'] = 'failed to void';
+$lang['saving_account_void_gl_fail'] = 'Failed to void GL postings';
+$lang['saving_account_void_gl_nothing_to_void'] = 'No GL postings found to void for the selected accounts';
+$lang['saving_account_no_unposted'] = 'No unposted transactions';
+$lang['saving_account_no_posted_to_void'] = 'No posted transactions to void';
 
 
 // general journal

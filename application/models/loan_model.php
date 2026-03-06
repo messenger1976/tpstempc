@@ -955,6 +955,71 @@ class Loan_Model extends CI_Model {
         return $installment;
     }
 
+    /**
+     * Get loan ledger transactions for a single loan (disbursement + repayments) in date order.
+     * Returns array of objects: date, description, debit, credit, type ('disbursement'|'repayment'),
+     * and for repayments: schedule_installment, duedate, interest, penalt, amount_paid.
+     */
+    function get_loan_ledger_transactions($LID) {
+        $pin = current_user()->PIN;
+        $LID = $this->db->escape_str($LID);
+        $rows = array();
+
+        // Disbursement row(s) from loan_contract_disburse
+        if ($this->db->table_exists('loan_contract_disburse')) {
+            $this->db->select('lcd.disbursedate as date, lc.basic_amount');
+            $this->db->from('loan_contract_disburse lcd');
+            $this->db->join('loan_contract lc', 'lc.LID = lcd.LID AND lc.PIN = lcd.PIN');
+            $this->db->where('lcd.LID', $LID);
+            $this->db->where('lcd.PIN', $pin);
+            $this->db->order_by('lcd.disbursedate', 'ASC');
+            $disburse = $this->db->get()->result();
+            foreach ($disburse as $d) {
+                $rows[] = (object)array(
+                    'date' => $d->date,
+                    'description' => lang('loan_ledger_disbursement'),
+                    'debit' => 0,
+                    'credit' => isset($d->basic_amount) ? floatval($d->basic_amount) : 0,
+                    'type' => 'disbursement',
+                    'schedule_installment' => null,
+                    'duedate' => null,
+                    'interest' => null,
+                    'penalt' => null,
+                    'amount_paid' => null
+                );
+            }
+        }
+
+        // Repayment rows from loan_contract_repayment (with full detail: schedule, interest, penalty, amount)
+        $this->db->select('paydate as date, installment as schedule_installment, duedate, interest, penalt, amount, receipt');
+        $this->db->where('LID', $LID);
+        $this->db->where('PIN', $pin);
+        $this->db->order_by('paydate', 'ASC');
+        $repays = $this->db->get('loan_contract_repayment')->result();
+        foreach ($repays as $r) {
+            $amount = isset($r->amount) ? floatval($r->amount) : 0;
+            $rows[] = (object)array(
+                'date' => $r->date,
+                'description' => lang('loan_ledger_repayment') . ' #' . (isset($r->schedule_installment) ? $r->schedule_installment : ''),
+                'debit' => $amount,
+                'credit' => 0,
+                'type' => 'repayment',
+                'schedule_installment' => isset($r->schedule_installment) ? $r->schedule_installment : null,
+                'duedate' => isset($r->duedate) ? $r->duedate : null,
+                'interest' => isset($r->interest) ? floatval($r->interest) : 0,
+                'penalt' => isset($r->penalt) ? floatval($r->penalt) : 0,
+                'amount_paid' => $amount
+            );
+        }
+
+        // Sort all by date
+        usort($rows, function ($a, $b) {
+            return strcmp($a->date, $b->date);
+        });
+
+        return $rows;
+    }
+
     // Loan Beginning Balances Methods
     function loan_beginning_balance_list($fiscal_year_id = null, $id = null, $loan_product_id = null) {
         $pin = current_user()->PIN;

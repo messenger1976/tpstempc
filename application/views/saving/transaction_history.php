@@ -71,7 +71,7 @@ $_GET['upto'] = format_date($jxy['upto'],FALSE);
                     
                     <td><?php echo $index++; ?></td>
                     <td><?php echo $value->receipt; ?></td>
-                    <td><?php echo $value->account; ?></td>
+                    <td><?php echo !empty($value->account_no_display) ? $value->account_no_display : $value->account; ?></td>
                     <td><?php echo $this->finance_model->saving_account_name($value->account); ?></td>
                     <td><?php echo $value->trans_type; ?></td>
                     <td><?php echo $value->paymethod; ?></td>

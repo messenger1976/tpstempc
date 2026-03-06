@@ -36,10 +36,10 @@ if (isset($message) && !empty($message)) {
                 <th><?php echo lang('member_member_id'); ?></th>
                 <th><?php echo lang('contribution_member_name'); ?></th>
                 <th><?php echo lang('member_current_contribution'); ?></th>
-                <th><?php echo lang('member_current_mortuary'); ?></th>
                 <th><?php echo lang('member_current_share'); ?></th>
                 <th><?php echo lang('member_current_loan'); ?></th>
                 <th><?php echo lang('member_current_loan_payment'); ?></th>
+                <th><?php echo lang('member_current_savings'); ?></th>
 
               
             </tr>
@@ -50,20 +50,24 @@ if (isset($message) && !empty($message)) {
             $total_loan = 0;
             $total_share = 0;
             $total_contribution = 0;
-            $total_mortuary = 0;
             $total_loan_paid = 0;
+            $total_savings = 0;
             foreach ($member_state as $key => $value) { 
                 
-                $share = $this->member_model->member_share_balance($value->PID)->amount;
-                if(is_numeric($share)){
-                    $total_share+=$share;
-                if ($share < 0) {
-                    $share_label = '(' . number_format((-1 * $share), 2) . ')';                                
-                  } else {
-                      $share_label = number_format($share, 2);
-                  }
+                $share_row = $this->member_model->member_share_balance_by_member($value->PID, $value->member_id);
+                $share = 0;
+                if ($share_row && isset($share_row->totalshare) && is_numeric($share_row->totalshare)) {
+                    $share = floatval($share_row->totalshare);
+                }
+                if (is_numeric($share)) {
+                    $total_share += $share;
+                    if ($share < 0) {
+                        $share_label = '(' . number_format((-1 * $share), 0) . ')';
+                    } else {
+                        $share_label = number_format($share, 0);
+                    }
                 } else {
-                   $share_label = number_format(0, 2); 
+                    $share_label = number_format(0, 0);
                 }
                 
                 
@@ -79,26 +83,26 @@ if (isset($message) && !empty($message)) {
                    $contribution_label = number_format(0, 2); 
                 }
                 
-                $mortuary = $this->member_model->member_mortuary_balance($value->PID)->balance;
-                if(is_numeric($mortuary)){
-                    $total_mortuary+=$mortuary;
-                    if ($mortuary < 0) {
-                        $mortuary_label = '(' . number_format((-1 * $mortuary), 2) . ')';
-                    } else {
-                        $mortuary_label = number_format($mortuary, 2);
-                    }
+                $loan_row = $this->member_model->member_current_total_loan($value->PID);
+                $loan = isset($loan_row->total_loan) ? $loan_row->total_loan : null;
+                $loan_id = isset($loan_row->LID) ? $loan_row->LID : null;
+                
+                $loan_bb_sum = $this->member_model->member_loan_beginning_balances_sum($value->member_id);
+                if (is_numeric($loan)) {
+                    $loan = floatval($loan) + floatval($loan_bb_sum);
                 } else {
-                    $mortuary_label = number_format(0, 2);
+                    $loan = $loan_bb_sum;
                 }
                 
+                if ($loan_id !== null && $loan_id !== '') {
+                    $loan_paid_row = $this->member_model->member_current_loan_payment($loan_id);
+                    $loan_paid = isset($loan_paid_row->total_paid_amount) ? $loan_paid_row->total_paid_amount : null;
+                } else {
+                    $loan_paid = null;
+                }
                 
-                
-                 $loan_row = $this->member_model->member_current_total_loan($value->PID);
-                 $loan =  $loan_row->total_loan;
-                 $loan_id = $loan_row->LID;
-                 
                 if(is_numeric($loan)){
-                    $total_loan+=$loan;
+                    $total_loan += $loan;
                 if ($loan < 0) {
                     $loan_label = '(' . number_format((-1 * $loan), 2) . ')';                                
                   } else {
@@ -108,12 +112,8 @@ if (isset($message) && !empty($message)) {
                    $loan_label = number_format(0, 2); 
                 }
                 
-                
-                
-                
-                $loan_paid = $this->member_model->member_current_loan_payment($loan_id)->total_paid_amount;
                 if(is_numeric($loan_paid)){
-                    $total_loan_paid+=$loan_paid;
+                    $total_loan_paid += $loan_paid;
                 if ($loan_paid < 0) {
                     $loan_paid_label = '(' . number_format((-1 * $loan_paid), 2) . ')';                                
                   } else {
@@ -123,6 +123,14 @@ if (isset($message) && !empty($message)) {
                    $loan_paid_label = number_format(0, 2); 
                 }
                 
+                $saving = $this->finance_model->saving_account_balance_PID($value->PID, $value->member_id);
+                $savings_balance = ($saving && is_numeric($saving->balance)) ? $saving->balance : 0;
+                $total_savings += $savings_balance;
+                if ($savings_balance < 0) {
+                    $savings_label = '(' . number_format((-1 * $savings_balance), 2) . ')';
+                } else {
+                    $savings_label = number_format($savings_balance, 2);
+                }
                 
                 
                 ?>
@@ -132,10 +140,10 @@ if (isset($message) && !empty($message)) {
                     <td><?php echo htmlspecialchars($value->member_id, ENT_QUOTES, 'UTF-8'); ?></td>
                     <td><?php echo htmlspecialchars($value->firstname." ".$value->middlename." ".$value->lastname, ENT_QUOTES, 'UTF-8'); ?></td>
                     <td style="text-align: right"><?php echo $contribution_label;  ?></td>
-                    <td style="text-align: right"><?php echo $mortuary_label;  ?></td>
                     <td style="text-align: right"><?php echo $share_label;  ?></td>
                     <td style="text-align: right"><?php echo $loan_label;  ?></td> 
                     <td style="text-align: right"><?php echo $loan_paid_label;  ?></td> 
+                    <td style="text-align: right"><?php echo $savings_label;  ?></td> 
                     
                     
                     </tr>

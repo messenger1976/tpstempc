@@ -23,14 +23,24 @@ $_GET['upto'] = format_date($jxy['upto'],FALSE);
 
 <div class="form-group col-lg-12">
 
-    <div class="col-lg-4">
+    <?php $selected_trans_type = isset($selected_trans_type) ? strtoupper($selected_trans_type) : 'ALL'; ?>
+
+    <div class="col-lg-3">
         <input type="text" class="form-control" name="key" id="accountno" placeholder="<?php echo lang('account_no').' / '.  lang('finance_account_name'); ?>" value="<?php echo (isset($_GET['key']) ? $_GET['key'] : ''); ?>"/> 
     </div>
-    <div class="col-lg-3">
+    <div class="col-lg-2">
         <input type="text" class="form-control" id="from" data-date-format="DD-MM-YYYY" placeholder="<?php echo lang('hint_date'); ?>" name="from" value="<?php echo (isset($_GET['from']) ? $_GET['from'] : ''); ?>"/> 
     </div>
-    <div class="col-lg-3">
+    <div class="col-lg-2">
         <input type="text" class="form-control" id="upto" data-date-format="DD-MM-YYYY" placeholder="<?php echo lang('hint_date'); ?>" name="upto" value="<?php echo (isset($_GET['upto']) ? $_GET['upto'] : ''); ?>"/> 
+    </div>
+    <div class="col-lg-2">
+        <select name="trans_type" class="form-control">
+            <option value="ALL" <?php echo ($selected_trans_type == 'ALL' ? 'selected="selected"' : ''); ?>>ALL</option>
+            <option value="DEPOSIT" <?php echo ($selected_trans_type == 'DEPOSIT' ? 'selected="selected"' : ''); ?>>DEPOSIT</option>
+            <option value="WITHDRAWAL" <?php echo ($selected_trans_type == 'WITHDRAWAL' ? 'selected="selected"' : ''); ?>>WITHDRAWAL</option>
+            <option value="INTEREST" <?php echo ($selected_trans_type == 'INTEREST' ? 'selected="selected"' : ''); ?>>INTEREST</option>
+        </select>
     </div>
     <div class="col-lg-1">
         <input type="submit" value="<?php echo lang('button_search'); ?>" class="btn btn-primary"/>
@@ -81,7 +91,13 @@ $_GET['upto'] = format_date($jxy['upto'],FALSE);
                     </td>
                     <td><?php echo !empty($value->account_no_display) ? $value->account_no_display : $value->account; ?></td>
                     <td><?php echo $this->finance_model->saving_account_name($value->account); ?></td>
-                    <td><?php echo $value->trans_type; ?></td>
+                    <td>
+                        <?php
+                        $trans_type_label = isset($value->trans_type_display) ? strtoupper(trim($value->trans_type_display)) : strtoupper(trim($value->trans_type));
+                        $is_interest = ($trans_type_label === 'INTEREST');
+                        echo $trans_type_label;
+                        ?>
+                    </td>
                     <td>
                         <?php echo $value->paymethod; ?>
                         <?php if (isset($value->is_void_entry) && $value->is_void_entry && !empty($value->void_original_method)): ?>

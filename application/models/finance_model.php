@@ -1698,13 +1698,24 @@ $pin=current_user()->PIN;
         return $this->db->get('members_account')->row();
     }
 
-    function count_transaction($key, $from, $upto) {
+    function count_transaction($key, $from, $upto, $trans_type = 'ALL') {
         $pin = current_user()->PIN;
+        $interest_condition = "(UPPER(TRIM(st.trans_type)) IN ('INT','IN','INTEREST','IR') OR UPPER(COALESCE(st.system_comment, '')) LIKE '%INTEREST%' OR UPPER(COALESCE(st.comment, '')) LIKE '%INTEREST%')";
         $this->db->from('savings_transaction st');
         $this->db->join('members_account ma', 'ma.account = st.account AND ma.PIN = st.PIN', 'left');
         $this->db->where('st.PIN', $pin);
         $this->db->where('st.trans_date >=', $from . ' 00:00:00');
         $this->db->where('st.trans_date <=', $upto . ' 23:59:59');
+
+        $trans_type = strtoupper(trim((string) $trans_type));
+        if ($trans_type === 'DEPOSIT') {
+            $this->db->where("UPPER(TRIM(st.trans_type)) = 'CR'", NULL, FALSE);
+            $this->db->where("NOT " . $interest_condition, NULL, FALSE);
+        } elseif ($trans_type === 'WITHDRAWAL') {
+            $this->db->where("UPPER(TRIM(st.trans_type)) = 'DR'", NULL, FALSE);
+        } elseif ($trans_type === 'INTEREST') {
+            $this->db->where($interest_condition, NULL, FALSE);
+        }
 
         if (!is_null($key) && $key !== '') {
             $this->db->group_start();
@@ -1721,14 +1732,26 @@ $pin=current_user()->PIN;
         return false;
     }
 
-    function search_transaction($key, $from, $upto, $limit, $start) {
+    function search_transaction($key, $from, $upto, $limit, $start, $trans_type = 'ALL') {
         $pin = current_user()->PIN;
+        $interest_condition = "(UPPER(TRIM(st.trans_type)) IN ('INT','IN','INTEREST','IR') OR UPPER(COALESCE(st.system_comment, '')) LIKE '%INTEREST%' OR UPPER(COALESCE(st.comment, '')) LIKE '%INTEREST%')";
         $this->db->select("st.*, COALESCE(NULLIF(ma.old_members_acct, ''), st.account) AS account_no_display", FALSE);
+        $this->db->select("CASE WHEN " . $interest_condition . " THEN 'INTEREST' WHEN UPPER(TRIM(st.trans_type)) = 'CR' THEN 'DEPOSIT' WHEN UPPER(TRIM(st.trans_type)) = 'DR' THEN 'WITHDRAWAL' ELSE UPPER(TRIM(st.trans_type)) END AS trans_type_display", FALSE);
         $this->db->from('savings_transaction st');
         $this->db->join('members_account ma', 'ma.account = st.account AND ma.PIN = st.PIN', 'left');
         $this->db->where('st.PIN', $pin);
         $this->db->where('st.trans_date >=', $from . ' 00:00:00');
         $this->db->where('st.trans_date <=', $upto . ' 23:59:59');
+
+        $trans_type = strtoupper(trim((string) $trans_type));
+        if ($trans_type === 'DEPOSIT') {
+            $this->db->where("UPPER(TRIM(st.trans_type)) = 'CR'", NULL, FALSE);
+            $this->db->where("NOT " . $interest_condition, NULL, FALSE);
+        } elseif ($trans_type === 'WITHDRAWAL') {
+            $this->db->where("UPPER(TRIM(st.trans_type)) = 'DR'", NULL, FALSE);
+        } elseif ($trans_type === 'INTEREST') {
+            $this->db->where($interest_condition, NULL, FALSE);
+        }
 
         if (!is_null($key) && $key !== '') {
             $this->db->group_start();

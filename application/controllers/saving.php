@@ -823,6 +823,7 @@ class Saving extends CI_Controller {
         $key = null;
         $from = null;
         $to = null;
+        $trans_type = 'ALL';
         if (isset($_POST['key']) && $_POST['key'] != '') {
             $key = $_POST['key'];
             if (strpos($key, ' - ') !== FALSE) {
@@ -859,6 +860,28 @@ class Saving extends CI_Controller {
             $this->session->set_userdata('TRANS_SEARCH_UPTO', $upto);
         }
 
+        if (isset($_POST['trans_type']) && $_POST['trans_type'] != '') {
+            $trans_type = strtoupper(trim($_POST['trans_type']));
+            $this->session->set_userdata('TRANS_SEARCH_TRANS_TYPE', $trans_type);
+        } else if (isset($_GET['trans_type']) && $_GET['trans_type'] != '') {
+            $trans_type = strtoupper(trim($_GET['trans_type']));
+            $this->session->set_userdata('TRANS_SEARCH_TRANS_TYPE', $trans_type);
+        } else if ($this->session->userdata('TRANS_SEARCH_TRANS_TYPE')) {
+            $trans_type = strtoupper(trim($this->session->userdata('TRANS_SEARCH_TRANS_TYPE')));
+        }
+
+        $allowed_trans_types = array('ALL', 'DEPOSIT', 'WITHDRAWAL', 'INTEREST');
+        if (!in_array($trans_type, $allowed_trans_types)) {
+            $trans_type = 'ALL';
+        }
+
+        if ($trans_type === 'INTEREST' && $from === date('Y-m-d') && $upto === date('Y-m-d')) {
+            $from = '2000-01-01';
+            $upto = date('Y-m-d');
+            $this->session->set_userdata('TRANS_SEARCH_FROM', $from);
+            $this->session->set_userdata('TRANS_SEARCH_UPTO', $upto);
+        }
+
 
         $suffix_array = array();
 
@@ -873,7 +896,11 @@ class Saving extends CI_Controller {
         if (!is_null($upto)) {
             $suffix_array['upto'] = $upto;
         }
+        if (!is_null($trans_type)) {
+            $suffix_array['trans_type'] = $trans_type;
+        }
         $this->data['jxy'] = $suffix_array;
+        $this->data['selected_trans_type'] = $trans_type;
 
         if (count($suffix_array) > 0) {
             $query_string = http_build_query($suffix_array, '', '&');
@@ -881,7 +908,7 @@ class Saving extends CI_Controller {
         }
 
         $config["base_url"] = site_url(current_lang() . '/saving/transaction_search/');
-        $config["total_rows"] = $this->finance_model->count_transaction($key, $from, $upto);
+        $config["total_rows"] = $this->finance_model->count_transaction($key, $from, $upto, $trans_type);
         $config["uri_segment"] = 4;
 
         $config['full_tag_open'] = '<div class="pagination" style="background-color:#fff; margin-left:0px;">';
@@ -909,7 +936,8 @@ class Saving extends CI_Controller {
         $page = ($this->uri->segment(4) ? $this->uri->segment(4) : 0);
         $this->data['links'] = $this->pagination->create_links();
 
-        $transactions = $this->finance_model->search_transaction($key, $from, $upto, $config["per_page"], $page);
+        $transactions = $this->finance_model->search_transaction($key, $from, $upto, $config["per_page"], $page, $trans_type);
+
         
         // Add voided status and void entry information to each transaction
         foreach ($transactions as $trans) {
@@ -924,7 +952,7 @@ class Saving extends CI_Controller {
                 }
             }
         }
-        
+
         $this->data['transactionlist'] = $transactions;
 
 

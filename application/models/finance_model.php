@@ -722,6 +722,15 @@ class Finance_Model extends CI_Model {
         return $count > 0;
     }
 
+    function is_savings_receipt_posted_to_gl($receipt) {
+        $pin = current_user()->PIN;
+        $this->db->where('refferenceID', $receipt);
+        $this->db->where('fromtable', 'savings_transaction');
+        $this->db->where('PIN', $pin);
+        $count = $this->db->count_all_results('general_ledger');
+        return $count > 0;
+    }
+
     /**
      * Void (remove) GL posting for a journal entry. Deletes general_ledger rows only;
      * journal entry stays active and can be reposted.
@@ -1319,8 +1328,20 @@ $pin=current_user()->PIN;
             }
             
             if (!$account) {
-                log_message('error', 'No adjustment/equity account found for ADJUSTMENT payment method');
-                return null;
+                log_message('warning', 'No adjustment/equity account found for ADJUSTMENT payment method. Using cash account fallback.');
+                // Ultimate fallback: use cash account
+                $this->db->where('PIN', $pin);
+                $escaped = $this->db->escape_like_str('Cash');
+                $this->db->where("(name LIKE '%" . $escaped . "%' OR description LIKE '%" . $escaped . "%')", NULL, FALSE);
+                $this->db->where_in('account_type', array(1, 10000)); // Asset: Cash account
+                $this->db->order_by('account', 'ASC');
+                $this->db->limit(1);
+                $account = $this->db->get('account_chart')->row();
+                
+                if (!$account) {
+                    log_message('error', 'No cash account found as fallback for ADJUSTMENT payment method');
+                    return null;
+                }
             }
             
             log_message('debug', 'Using adjustment account: ' . $account->account . ' (' . $account->name . ') for ADJUSTMENT payment method');
@@ -1456,7 +1477,7 @@ $pin=current_user()->PIN;
      * @param string $systemcomment Transaction type: OPEN ACCOUNT, BEGINNING BALANCE, NORMAL DEPOSIT, NORMAL WITHDRAWAL, INTEREST
      * @return bool True if successful, False otherwise
      */
-    function post_savings_to_gl($account, $amount, $paymethod, $account_cat, $receipt, $trans_date, $pid, $member_id, $customer_name = '', $systemcomment = '') {
+    function post_savings_to_gl($account, $amount, $paymethod, $account_cat, $receipt, $trans_date, $pid, $member_id, $customer_name = '', $systemcomment = '', $trans_type = '') {
         $pin = current_user()->PIN;
         
         // Skip if amount is zero
@@ -1493,11 +1514,13 @@ $pin=current_user()->PIN;
         }
         
         $sys_upper = strtoupper(trim($systemcomment));
-        $is_withdrawal = (strpos($sys_upper, 'NORMAL WITHDRAWAL') !== FALSE);
-        $is_interest = (strpos($sys_upper, 'INTEREST') !== FALSE);
+        $type_upper = strtoupper(trim($trans_type));
+        $is_withdrawal = ($type_upper === 'DR' || strpos($sys_upper, 'NORMAL WITHDRAWAL') !== FALSE);
+        $is_interest = ($type_upper === 'INT' || strpos($sys_upper, 'INTEREST') !== FALSE);
+        $is_void_interest = (strpos($sys_upper, 'VOID TRANSACTION') !== FALSE && strpos($sys_upper, 'ORIG_TYPE:INT') !== FALSE);
         
         // For INTEREST: debit = interest expense account; for deposit/withdrawal: debit/credit = cash or liability
-        if ($is_interest) {
+        if ($is_interest || $is_void_interest) {
             $debit_account = $this->get_interest_expense_account_for_savings();
         } else {
             $debit_account = $this->get_cash_account_for_savings($paymethod);
@@ -1518,7 +1541,9 @@ $pin=current_user()->PIN;
         // Determine description prefix based on transaction type
         // Check if payment method contains "ADJUSTMENT" (handles "ADJUSTMENT", "OTHER - ADJUSTMENT", etc.)
         $is_adjustment = (strpos(strtoupper(trim($paymethod)), 'ADJUSTMENT') !== FALSE);
-        if ($is_withdrawal) {
+        if ($is_void_interest) {
+            $description_prefix = 'Savings Interest Void';
+        } elseif ($is_withdrawal) {
             $description_prefix = 'Savings Withdrawal';
         } elseif ($is_interest) {
             $description_prefix = 'Savings Interest';
@@ -1656,7 +1681,7 @@ $pin=current_user()->PIN;
                 return false;
             }
             
-            $type_label = $is_withdrawal ? 'Withdrawal' : ($is_interest ? 'Interest' : ($is_adjustment ? 'Adjustment' : 'Deposit/Opening'));
+            $type_label = $is_void_interest ? 'Void Interest' : ($is_withdrawal ? 'Withdrawal' : ($is_interest ? 'Interest' : ($is_adjustment ? 'Adjustment' : 'Deposit/Opening')));
             log_message('info', 'Savings posted to GL: Account ' . $account . ', Receipt ' . $receipt . ', Amount ' . $amount . ', Type: ' . $type_label);
             return true;
             
@@ -1783,7 +1808,7 @@ $pin=current_user()->PIN;
                 $member_id = isset($account_info->member_id) ? $account_info->member_id : '';
                 
                 // Post to General Ledger
-                $gl_post_result = $this->post_savings_to_gl($account, $amount, $paymethod, $account_info->account_cat, $receipt, $posted_date ? $posted_date : date('Y-m-d'), $pid, $member_id, $customer_name, $systemcomment);
+                $gl_post_result = $this->post_savings_to_gl($account, $amount, $paymethod, $account_info->account_cat, $receipt, $posted_date ? $posted_date : date('Y-m-d'), $pid, $member_id, $customer_name, $systemcomment, 'CR');
                 
                 if (!$gl_post_result) {
                     log_message('error', 'Savings account GL posting failed for account: ' . $account . ', receipt: ' . $receipt . ', type: ' . $systemcomment);
@@ -1839,7 +1864,7 @@ $pin=current_user()->PIN;
             if (strpos($systemcomment, 'NORMAL WITHDRAWAL') !== FALSE) {
                 $member_id = isset($account_info->member_id) ? $account_info->member_id : '';
                 $pid_val = !empty($pid) ? $pid : $account_info->RFID;
-                $gl_post_result = $this->post_savings_to_gl($account, $amount, $paymethod, $account_info->account_cat, $receipt, $posted_date ? $posted_date : date('Y-m-d'), $pid_val, $member_id, $customer_name, $systemcomment);
+                $gl_post_result = $this->post_savings_to_gl($account, $amount, $paymethod, $account_info->account_cat, $receipt, $posted_date ? $posted_date : date('Y-m-d'), $pid_val, $member_id, $customer_name, $systemcomment, 'DR');
                 if (!$gl_post_result) {
                     log_message('error', 'Savings withdrawal GL posting failed: account ' . $account . ', receipt ' . $receipt);
                 }
@@ -1975,8 +2000,47 @@ $pin=current_user()->PIN;
         if ($this->db->trans_status() === FALSE) {
             return array('success' => false, 'message' => 'Database error occurred');
         }
-        
-        return array('success' => true, 'message' => 'Transaction voided successfully', 'void_receipt' => $void_receipt);
+
+        // Auto-post the void reversing entry to GL so accounting remains adjusted
+        $member_id = ($account_info && isset($account_info->member_id)) ? $account_info->member_id : '';
+        $pid = isset($trans->PID) ? $trans->PID : (($account_info && isset($account_info->RFID)) ? $account_info->RFID : '');
+        $customer_name = isset($trans->customer_name) ? $trans->customer_name : '';
+        $account_cat = isset($trans->account_cat) ? $trans->account_cat : (($account_info && isset($account_info->account_cat)) ? $account_info->account_cat : '');
+        $void_trans_date = date('Y-m-d');
+
+        $gl_posted = $this->post_savings_to_gl(
+            $trans->account,
+            floatval($trans->amount),
+            $trans->paymethod,
+            $account_cat,
+            $void_receipt,
+            $void_trans_date,
+            $pid,
+            $member_id,
+            $customer_name,
+            $void_system_comment,
+            $void_trans_type
+        );
+
+        // Verify if reversing receipt is posted; if not, fallback to posting all unposted savings transactions for this account
+        $is_void_receipt_posted = $this->is_savings_receipt_posted_to_gl($void_receipt);
+        if (!$gl_posted || !$is_void_receipt_posted) {
+            $fallback_result = $this->post_savings_account_to_gl($trans->account);
+            $is_void_receipt_posted = $this->is_savings_receipt_posted_to_gl($void_receipt);
+
+            if (!$is_void_receipt_posted) {
+                return array(
+                    'success' => true,
+                    'message' => 'Transaction voided but GL posting is still pending. Please use Post to GL.',
+                    'void_receipt' => $void_receipt,
+                    'gl_posted' => false,
+                    'fallback_posted' => isset($fallback_result['posted']) ? $fallback_result['posted'] : 0,
+                    'fallback_failed' => isset($fallback_result['failed']) ? $fallback_result['failed'] : 0
+                );
+            }
+        }
+
+        return array('success' => true, 'message' => 'Transaction voided and posted to GL successfully', 'void_receipt' => $void_receipt, 'gl_posted' => true);
     }
     
     function get_next_savings_transaction_id() {
@@ -2030,7 +2094,8 @@ $pin=current_user()->PIN;
                 $pid,
                 $member_id,
                 isset($st->customer_name) ? $st->customer_name : '',
-                isset($st->system_comment) ? $st->system_comment : ''
+                isset($st->system_comment) ? $st->system_comment : '',
+                isset($st->trans_type) ? $st->trans_type : ''
             );
             if ($ok) {
                 $posted++;
@@ -2040,6 +2105,66 @@ $pin=current_user()->PIN;
             }
         }
         return array('posted' => $posted, 'failed' => $failed, 'errors' => $errors);
+    }
+
+    /**
+     * Post a single savings transaction receipt to GL.
+     *
+     * @param string $receipt Savings transaction receipt
+     * @return array ['success' => bool, 'message' => string]
+     */
+    function post_savings_receipt_to_gl($receipt) {
+        $pin = current_user()->PIN;
+
+        if (empty($receipt)) {
+            return array('success' => false, 'message' => 'Invalid receipt');
+        }
+
+        $this->db->where('receipt', $receipt);
+        $this->db->where('PIN', $pin);
+        $st = $this->db->get('savings_transaction')->row();
+
+        if (!$st) {
+            return array('success' => false, 'message' => 'Transaction not found');
+        }
+
+        if ($this->is_savings_receipt_posted_to_gl($receipt)) {
+            return array('success' => true, 'message' => 'Transaction already posted to GL');
+        }
+
+        $account_info = $this->saving_account_balance($st->account);
+        if (!$account_info) {
+            return array('success' => false, 'message' => 'Account not found for GL posting');
+        }
+
+        $member_id = isset($account_info->member_id) ? $account_info->member_id : '';
+        $pid = isset($st->PID) ? $st->PID : (isset($account_info->RFID) ? $account_info->RFID : '');
+        $account_cat = isset($st->account_cat) ? $st->account_cat : (isset($account_info->account_cat) ? $account_info->account_cat : '');
+        $trans_date = isset($st->trans_date) ? date('Y-m-d', strtotime($st->trans_date)) : date('Y-m-d');
+
+        $ok = $this->post_savings_to_gl(
+            $st->account,
+            floatval($st->amount),
+            isset($st->paymethod) ? $st->paymethod : 'Cash',
+            $account_cat,
+            $st->receipt,
+            $trans_date,
+            $pid,
+            $member_id,
+            isset($st->customer_name) ? $st->customer_name : '',
+            isset($st->system_comment) ? $st->system_comment : '',
+            isset($st->trans_type) ? $st->trans_type : ''
+        );
+
+        if (!$ok) {
+            return array('success' => false, 'message' => 'Failed to post transaction to GL');
+        }
+
+        if (!$this->is_savings_receipt_posted_to_gl($receipt)) {
+            return array('success' => false, 'message' => 'GL posting pending. Please try again');
+        }
+
+        return array('success' => true, 'message' => 'Transaction posted to GL successfully');
     }
 
     /**

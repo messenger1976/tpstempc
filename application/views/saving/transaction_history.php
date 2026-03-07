@@ -98,6 +98,22 @@ $_GET['upto'] = format_date($jxy['upto'],FALSE);
 
                     <td>
                         <?php echo anchor(current_lang() . "/saving/receipt_view/" . $value->receipt, ' <i class="fa fa-edit"></i> ' . lang('view_link')); ?>
+                        &nbsp;&nbsp;
+                        <?php if (isset($value->is_gl_posted) && $value->is_gl_posted): ?>
+                            <span class="label label-success" title="Posted to General Ledger">
+                                <i class="fa fa-book"></i> GL Posted
+                            </span>
+                        <?php else: ?>
+                            <span class="label label-default" title="Not yet posted to General Ledger">
+                                <i class="fa fa-book"></i> GL Not Posted
+                            </span>
+                            <?php if (has_role(3, 'saving_account_list')): ?>
+                                &nbsp;
+                                <a href="<?php echo site_url(current_lang() . '/saving/post_receipt_to_gl/' . $value->receipt); ?>" class="btn btn-warning btn-xs" onclick="return confirm('Post this transaction to GL now?');" title="Post this transaction to GL">
+                                    <i class="fa fa-book"></i> Post to GL
+                                </a>
+                            <?php endif; ?>
+                        <?php endif; ?>
                         <?php if (has_role(3, 'void_transaction') && !$value->is_void_entry): ?>
                             &nbsp;&nbsp;
                             <?php if (isset($value->is_voided) && $value->is_voided): ?>

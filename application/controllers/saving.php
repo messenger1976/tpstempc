@@ -916,6 +916,7 @@ class Saving extends CI_Controller {
             $trans->is_voided = $this->finance_model->is_savings_transaction_voided($trans->receipt);
             $trans->is_void_entry = $this->finance_model->is_void_entry($trans);
             $trans->voided_receipt = $this->finance_model->get_voided_receipt($trans);
+            $trans->is_gl_posted = $this->finance_model->is_savings_receipt_posted_to_gl($trans->receipt);
             $trans->void_original_method = '';
             if ($trans->is_void_entry && !empty($trans->system_comment)) {
                 if (preg_match('/ORIG_METHOD:([^|]+)/', $trans->system_comment, $matches)) {
@@ -973,9 +974,40 @@ class Saving extends CI_Controller {
         $result = $this->finance_model->void_savings_deposit_withdrawal_transaction($receipt, $reason);
 
         if ($result['success']) {
-            $this->session->set_flashdata('message', lang('saving_void_success'));
+            $this->session->set_flashdata('message', isset($result['message']) ? $result['message'] : lang('saving_void_success'));
         } else {
             $this->session->set_flashdata('warning', isset($result['message']) ? $result['message'] : lang('transaction_fail'));
+        }
+
+        redirect(current_lang() . '/saving/transaction_search', 'refresh');
+    }
+
+    /**
+     * Manually post a single savings transaction receipt to GL.
+     */
+    function post_receipt_to_gl($receipt = null) {
+        if (!$this->ion_auth->logged_in()) {
+            redirect('auth/login', 'refresh');
+        }
+
+        if (!has_role(3, 'saving_account_list')) {
+            $this->session->set_flashdata('warning', lang('access_denied'));
+            redirect(current_lang() . '/saving/transaction_search', 'refresh');
+            return;
+        }
+
+        if (!$receipt) {
+            $this->session->set_flashdata('warning', lang('invalid_receipt'));
+            redirect(current_lang() . '/saving/transaction_search', 'refresh');
+            return;
+        }
+
+        $result = $this->finance_model->post_savings_receipt_to_gl($receipt);
+
+        if (isset($result['success']) && $result['success']) {
+            $this->session->set_flashdata('message', isset($result['message']) ? $result['message'] : 'Transaction posted to GL successfully');
+        } else {
+            $this->session->set_flashdata('warning', isset($result['message']) ? $result['message'] : 'Failed to post transaction to GL');
         }
 
         redirect(current_lang() . '/saving/transaction_search', 'refresh');

@@ -1698,8 +1698,9 @@ $pin=current_user()->PIN;
         return $this->db->get('members_account')->row();
     }
 
-    function count_transaction($key, $from, $upto, $trans_type = 'ALL') {
+    function count_transaction($key, $from, $upto, $trans_type = 'ALL', $account_type_filter = null) {
         $pin = current_user()->PIN;
+        $pin_esc = $this->db->escape($pin);
         $interest_condition = "(UPPER(TRIM(st.trans_type)) IN ('INT','IN','INTEREST','IR') OR UPPER(COALESCE(st.system_comment, '')) LIKE '%INTEREST%' OR UPPER(COALESCE(st.comment, '')) LIKE '%INTEREST%')";
         $this->db->from('savings_transaction st');
         $this->db->join('members_account ma', 'ma.account = st.account AND ma.PIN = st.PIN', 'left');
@@ -1715,6 +1716,20 @@ $pin=current_user()->PIN;
             $this->db->where("UPPER(TRIM(st.trans_type)) = 'DR'", NULL, FALSE);
         } elseif ($trans_type === 'INTEREST') {
             $this->db->where($interest_condition, NULL, FALSE);
+        }
+
+        // Filter by account type (Special or MSO)
+        if (!is_null($account_type_filter) && $account_type_filter != '' && $account_type_filter != 'all') {
+            $this->db->join('saving_account_type sat', 'ma.account_cat = sat.account AND sat.PIN = ' . $this->db->escape($pin), 'left');
+            if ($account_type_filter == 'special') {
+                // Special accounts: check account_setup prefix, account_type, or name/description contains "special"
+                $this->db->join('account_chart ac', 'sat.account_setup = ac.account AND ac.PIN = ' . $this->db->escape($pin), 'left');
+                $this->db->where("((sat.account_setup IS NOT NULL AND sat.account_setup != '' AND (LEFT(sat.account_setup, 2) = '10' OR ac.account_type = 10 OR ac.account_type = '10')) OR LOWER(sat.name) LIKE '%special%' OR LOWER(sat.description) LIKE '%special%')", NULL, FALSE);
+            } else if ($account_type_filter == 'mso') {
+                // MSO accounts: check account_setup prefix, account_type, or name/description contains "mso"
+                $this->db->join('account_chart ac', 'sat.account_setup = ac.account AND ac.PIN = ' . $this->db->escape($pin), 'left');
+                $this->db->where("((sat.account_setup IS NOT NULL AND sat.account_setup != '' AND (LEFT(sat.account_setup, 2) = '40' OR ac.account_type = 40 OR ac.account_type = '40')) OR LOWER(sat.name) LIKE '%mso%' OR LOWER(sat.description) LIKE '%mso%')", NULL, FALSE);
+            }
         }
 
         if (!is_null($key) && $key !== '') {
@@ -1732,8 +1747,9 @@ $pin=current_user()->PIN;
         return false;
     }
 
-    function search_transaction($key, $from, $upto, $limit, $start, $trans_type = 'ALL') {
+    function search_transaction($key, $from, $upto, $limit, $start, $trans_type = 'ALL', $account_type_filter = null) {
         $pin = current_user()->PIN;
+        $pin_esc = $this->db->escape($pin);
         $interest_condition = "(UPPER(TRIM(st.trans_type)) IN ('INT','IN','INTEREST','IR') OR UPPER(COALESCE(st.system_comment, '')) LIKE '%INTEREST%' OR UPPER(COALESCE(st.comment, '')) LIKE '%INTEREST%')";
         $this->db->select("st.*, COALESCE(NULLIF(ma.old_members_acct, ''), st.account) AS account_no_display", FALSE);
         $this->db->select("CASE WHEN " . $interest_condition . " THEN 'INTEREST' WHEN UPPER(TRIM(st.trans_type)) = 'CR' THEN 'DEPOSIT' WHEN UPPER(TRIM(st.trans_type)) = 'DR' THEN 'WITHDRAWAL' ELSE UPPER(TRIM(st.trans_type)) END AS trans_type_display", FALSE);
@@ -1751,6 +1767,20 @@ $pin=current_user()->PIN;
             $this->db->where("UPPER(TRIM(st.trans_type)) = 'DR'", NULL, FALSE);
         } elseif ($trans_type === 'INTEREST') {
             $this->db->where($interest_condition, NULL, FALSE);
+        }
+
+        // Filter by account type (Special or MSO)
+        if (!is_null($account_type_filter) && $account_type_filter != '' && $account_type_filter != 'all') {
+            $this->db->join('saving_account_type sat', 'ma.account_cat = sat.account AND sat.PIN = ' . $this->db->escape($pin), 'left');
+            if ($account_type_filter == 'special') {
+                // Special accounts: check account_setup prefix, account_type, or name/description contains "special"
+                $this->db->join('account_chart ac', 'sat.account_setup = ac.account AND ac.PIN = ' . $this->db->escape($pin), 'left');
+                $this->db->where("((sat.account_setup IS NOT NULL AND sat.account_setup != '' AND (LEFT(sat.account_setup, 2) = '10' OR ac.account_type = 10 OR ac.account_type = '10')) OR LOWER(sat.name) LIKE '%special%' OR LOWER(sat.description) LIKE '%special%')", NULL, FALSE);
+            } else if ($account_type_filter == 'mso') {
+                // MSO accounts: check account_setup prefix, account_type, or name/description contains "mso"
+                $this->db->join('account_chart ac', 'sat.account_setup = ac.account AND ac.PIN = ' . $this->db->escape($pin), 'left');
+                $this->db->where("((sat.account_setup IS NOT NULL AND sat.account_setup != '' AND (LEFT(sat.account_setup, 2) = '40' OR ac.account_type = 40 OR ac.account_type = '40')) OR LOWER(sat.name) LIKE '%mso%' OR LOWER(sat.description) LIKE '%mso%')", NULL, FALSE);
+            }
         }
 
         if (!is_null($key) && $key !== '') {

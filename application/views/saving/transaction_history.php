@@ -17,7 +17,7 @@ if (isset($message) && !empty($message)) {
 $sp = $jxy;
 $_GET['from'] = format_date($jxy['from'],FALSE);
 $_GET['upto'] = format_date($jxy['upto'],FALSE);
-
+$account_type_filter = isset($account_type_filter) ? $account_type_filter : (isset($_GET['account_type_filter']) ? $_GET['account_type_filter'] : 'all');
 
 ?>
 
@@ -25,7 +25,7 @@ $_GET['upto'] = format_date($jxy['upto'],FALSE);
 
     <?php $selected_trans_type = isset($selected_trans_type) ? strtoupper($selected_trans_type) : 'ALL'; ?>
 
-    <div class="col-lg-3">
+    <div class="col-lg-2">
         <input type="text" class="form-control" name="key" id="accountno" placeholder="<?php echo lang('account_no').' / '.  lang('finance_account_name'); ?>" value="<?php echo (isset($_GET['key']) ? $_GET['key'] : ''); ?>"/> 
     </div>
     <div class="col-lg-2">
@@ -35,6 +35,13 @@ $_GET['upto'] = format_date($jxy['upto'],FALSE);
         <input type="text" class="form-control" id="upto" data-date-format="DD-MM-YYYY" placeholder="<?php echo lang('hint_date'); ?>" name="upto" value="<?php echo (isset($_GET['upto']) ? $_GET['upto'] : ''); ?>"/> 
     </div>
     <div class="col-lg-2">
+        <select name="account_type_filter" class="form-control">
+            <option value="all" <?php echo ($account_type_filter == 'all' ? 'selected="selected"' : ''); ?>>All</option>
+            <option value="special" <?php echo ($account_type_filter == 'special' ? 'selected="selected"' : ''); ?>>Special</option>
+            <option value="mso" <?php echo ($account_type_filter == 'mso' ? 'selected="selected"' : ''); ?>>MSO</option>
+        </select>
+    </div>
+    <div class="col-lg-2">
         <select name="trans_type" class="form-control">
             <option value="ALL" <?php echo ($selected_trans_type == 'ALL' ? 'selected="selected"' : ''); ?>>ALL</option>
             <option value="DEPOSIT" <?php echo ($selected_trans_type == 'DEPOSIT' ? 'selected="selected"' : ''); ?>>DEPOSIT</option>
@@ -42,7 +49,7 @@ $_GET['upto'] = format_date($jxy['upto'],FALSE);
             <option value="INTEREST" <?php echo ($selected_trans_type == 'INTEREST' ? 'selected="selected"' : ''); ?>>INTEREST</option>
         </select>
     </div>
-    <div class="col-lg-1">
+    <div class="col-lg-2">
         <input type="submit" value="<?php echo lang('button_search'); ?>" class="btn btn-primary"/>
     </div>
 
@@ -52,7 +59,7 @@ $_GET['upto'] = format_date($jxy['upto'],FALSE);
 <?php echo form_close(); ?>
 </div>
 <div class="table-responsive" style="overflow: auto;">
-    <table class="table table-bordered table-striped" style="width: 1200px;">
+    <table class="table table-bordered table-striped" style="width: 100%;">
         <thead>
            
             <tr>

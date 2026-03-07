@@ -824,6 +824,8 @@ class Saving extends CI_Controller {
         $from = null;
         $to = null;
         $trans_type = 'ALL';
+        $account_type_filter = null;
+        
         if (isset($_POST['key']) && $_POST['key'] != '') {
             $key = $_POST['key'];
             if (strpos($key, ' - ') !== FALSE) {
@@ -875,6 +877,17 @@ class Saving extends CI_Controller {
             $trans_type = 'ALL';
         }
 
+        // Account Type Filter
+        if (isset($_POST['account_type_filter']) && $_POST['account_type_filter'] != '') {
+            $account_type_filter = $_POST['account_type_filter'];
+            $this->session->set_userdata('TRANS_SEARCH_ACCOUNT_TYPE_FILTER', $account_type_filter);
+        } else if (isset($_GET['account_type_filter']) && $_GET['account_type_filter'] != '') {
+            $account_type_filter = $_GET['account_type_filter'];
+            $this->session->set_userdata('TRANS_SEARCH_ACCOUNT_TYPE_FILTER', $account_type_filter);
+        } else if ($this->session->userdata('TRANS_SEARCH_ACCOUNT_TYPE_FILTER')) {
+            $account_type_filter = $this->session->userdata('TRANS_SEARCH_ACCOUNT_TYPE_FILTER');
+        }
+
         if ($trans_type === 'INTEREST' && $from === date('Y-m-d') && $upto === date('Y-m-d')) {
             $from = '2000-01-01';
             $upto = date('Y-m-d');
@@ -899,8 +912,13 @@ class Saving extends CI_Controller {
         if (!is_null($trans_type)) {
             $suffix_array['trans_type'] = $trans_type;
         }
+        if (!is_null($account_type_filter) && $account_type_filter != '' && $account_type_filter != 'all') {
+            $suffix_array['account_type_filter'] = $account_type_filter;
+        }
+        
         $this->data['jxy'] = $suffix_array;
         $this->data['selected_trans_type'] = $trans_type;
+        $this->data['account_type_filter'] = $account_type_filter;
 
         if (count($suffix_array) > 0) {
             $query_string = http_build_query($suffix_array, '', '&');
@@ -908,7 +926,7 @@ class Saving extends CI_Controller {
         }
 
         $config["base_url"] = site_url(current_lang() . '/saving/transaction_search/');
-        $config["total_rows"] = $this->finance_model->count_transaction($key, $from, $upto, $trans_type);
+        $config["total_rows"] = $this->finance_model->count_transaction($key, $from, $upto, $trans_type, $account_type_filter);
         $config["uri_segment"] = 4;
 
         $config['full_tag_open'] = '<div class="pagination" style="background-color:#fff; margin-left:0px;">';
@@ -936,7 +954,7 @@ class Saving extends CI_Controller {
         $page = ($this->uri->segment(4) ? $this->uri->segment(4) : 0);
         $this->data['links'] = $this->pagination->create_links();
 
-        $transactions = $this->finance_model->search_transaction($key, $from, $upto, $config["per_page"], $page, $trans_type);
+        $transactions = $this->finance_model->search_transaction($key, $from, $upto, $config["per_page"], $page, $trans_type, $account_type_filter);
 
         
         // Add voided status and void entry information to each transaction

@@ -1691,6 +1691,11 @@ $pin=current_user()->PIN;
         return $this->db->count_all_results();
     }
 
+    function count_deposit_withdrawal_transaction($key, $from, $upto) {
+        // REMOVED - Void transaction module deleted
+        return false;
+    }
+
     function search_transaction($key, $from, $upto, $limit, $start) {
         $pin = current_user()->PIN;
         $this->db->select("st.*, COALESCE(NULLIF(ma.old_members_acct, ''), st.account) AS account_no_display", FALSE);
@@ -1711,6 +1716,11 @@ $pin=current_user()->PIN;
         $this->db->limit((int) $limit, (int) $start);
 
         return $this->db->get()->result();
+    }
+
+    function search_deposit_withdrawal_transaction($key, $from, $upto, $limit, $start) {
+        // REMOVED - Void transaction module deleted
+        return array();
     }
 
     function credit($account = null, $amount = 0, $paymethod = null, $comment = '', $cheque_num = '', $customer_name = '', $pid = null, $systemcomment = '', $start_up = 0, $posted_date='', $refno = '') {
@@ -1848,6 +1858,130 @@ $pin=current_user()->PIN;
         }
 
         return FALSE;
+    }
+
+    function get_savings_transaction_by_receipt($receipt) {
+        // REMOVED - Void transaction module deleted
+        return null;
+    }
+
+    function is_savings_transaction_voided($receipt) {
+        // Check if a reversing transaction exists for this receipt
+        $this->db->where('PIN', current_user()->PIN);
+        $this->db->where('comment LIKE', '%VOID-' . $receipt . '%');
+        $query = $this->db->get('savings_transaction');
+        return $query->num_rows() > 0;
+    }
+
+    function is_void_entry($transaction) {
+        // Check if this transaction is a reversing entry (void transaction)
+        return (strpos($transaction->comment, 'VOID-') === 0);
+    }
+
+    function get_voided_receipt($transaction) {
+        // Extract the original receipt number from a void entry comment
+        // Comment format: VOID-[original_receipt] - [reason]
+        if ($this->is_void_entry($transaction)) {
+            if (preg_match('/VOID-([^ ]+)/', $transaction->comment, $matches)) {
+                return $matches[1];
+            }
+        }
+        return null;
+    }
+
+    function void_savings_deposit_withdrawal_transaction($receipt, $reason = '') {
+        $pin = current_user()->PIN;
+        
+        // Get original transaction
+        $this->db->where('receipt', $receipt);
+        $this->db->where('PIN', $pin);
+        $trans = $this->db->get('savings_transaction')->row();
+        
+        if (!$trans) {
+            return array('success' => false, 'message' => 'Transaction not found');
+        }
+        
+        // Check if already voided
+        if ($this->is_savings_transaction_voided($receipt)) {
+            return array('success' => false, 'message' => 'Transaction already voided');
+        }
+        
+        // Only allow voiding of CR (deposit), DR (withdrawal), or INT (interest) transactions
+        if (!in_array($trans->trans_type, array('CR', 'DR', 'INT'))) {
+            return array('success' => false, 'message' => 'Only deposit/withdrawal/interest transactions can be voided');
+        }
+        
+        // Begin transaction
+        $this->db->trans_start();
+        
+        // Create a reversing entry
+        // CR (deposit) and INT (interest) reverse to DR (withdrawal), DR reverses to CR
+        $void_trans_type = ($trans->trans_type == 'CR' || $trans->trans_type == 'INT') ? 'DR' : 'CR';
+        $void_comment = 'VOID-' . $receipt . ' - ' . $reason;
+        $original_method = !empty($trans->paymethod) ? $trans->paymethod : 'N/A';
+        $void_system_comment = 'VOID TRANSACTION | ORIG_TYPE:' . $trans->trans_type . ' | ORIG_METHOD:' . $original_method;
+        
+        // Get next receipt number
+        $next_id = $this->get_next_savings_transaction_id();
+        $void_receipt = 'SV' . str_pad($next_id, 8, '0', STR_PAD_LEFT);
+        
+        // Get account info for additional fields
+        $account_info = $this->get_saving_account_info($trans->account);
+        
+        // Insert reversing transaction using db->set() method like other transactions
+        $this->db->set('receipt', $void_receipt);
+        $this->db->set('account', $trans->account);
+        $this->db->set('trans_type', $void_trans_type);
+        $this->db->set('amount', $trans->amount);
+        $this->db->set('paymethod', $trans->paymethod);
+        $this->db->set('cheque_num', $trans->cheque_num ? $trans->cheque_num : '');
+        $this->db->set('trans_date', date('Y-m-d'));
+        $this->db->set('comment', $void_comment);
+        $this->db->set('system_comment', $void_system_comment);
+        $this->db->set('PIN', $pin);
+        $this->db->set('createdby', current_user()->id);
+        
+        // Add optional fields if they exist in original transaction
+        if (isset($trans->PID)) {
+            $this->db->set('PID', $trans->PID);
+        } elseif ($account_info && isset($account_info->RFID)) {
+            $this->db->set('PID', $account_info->RFID);
+        }
+        
+        if (isset($trans->account_cat)) {
+            $this->db->set('account_cat', $trans->account_cat);
+        } elseif ($account_info && isset($account_info->account_cat)) {
+            $this->db->set('account_cat', $account_info->account_cat);
+        }
+        
+        if (isset($trans->customer_name)) {
+            $this->db->set('customer_name', $trans->customer_name);
+        }
+        
+        if (isset($trans->refno)) {
+            $this->db->set('refno', $trans->refno);
+        }
+        
+        // Set previous_balance (current balance before this void transaction)
+        if ($account_info && isset($account_info->balance)) {
+            $this->db->set('previous_balance', $account_info->balance);
+        }
+        
+        $this->db->insert('savings_transaction');
+        
+        // Complete transaction
+        $this->db->trans_complete();
+        
+        if ($this->db->trans_status() === FALSE) {
+            return array('success' => false, 'message' => 'Database error occurred');
+        }
+        
+        return array('success' => true, 'message' => 'Transaction voided successfully', 'void_receipt' => $void_receipt);
+    }
+    
+    function get_next_savings_transaction_id() {
+        $query = $this->db->query("SELECT MAX(id) as id FROM savings_transaction")->row();
+        return $query && $query->id ? ($query->id + 1) : 1;
     }
 
     /**

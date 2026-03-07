@@ -835,18 +835,28 @@ class Saving extends CI_Controller {
 
         if (isset($_POST['from']) && $_POST['from'] != '') {
             $from = format_date($_POST['from']);
+            $this->session->set_userdata('TRANS_SEARCH_FROM', $from);
         } else if (isset($_GET['from'])) {
             $from = format_date($_GET['from']);
+            $this->session->set_userdata('TRANS_SEARCH_FROM', $from);
+        } else if ($this->session->userdata('TRANS_SEARCH_FROM')) {
+            $from = $this->session->userdata('TRANS_SEARCH_FROM');
         } else {
             $from = date('Y-m-d');
+            $this->session->set_userdata('TRANS_SEARCH_FROM', $from);
         }
 
         if (isset($_POST['upto']) && $_POST['upto'] != '') {
             $upto = format_date($_POST['upto']);
+            $this->session->set_userdata('TRANS_SEARCH_UPTO', $upto);
         } else if (isset($_GET['upto'])) {
             $upto = format_date($_GET['upto']);
+            $this->session->set_userdata('TRANS_SEARCH_UPTO', $upto);
+        } else if ($this->session->userdata('TRANS_SEARCH_UPTO')) {
+            $upto = $this->session->userdata('TRANS_SEARCH_UPTO');
         } else {
             $upto = date('Y-m-d');
+            $this->session->set_userdata('TRANS_SEARCH_UPTO', $upto);
         }
 
 
@@ -899,14 +909,78 @@ class Saving extends CI_Controller {
         $page = ($this->uri->segment(4) ? $this->uri->segment(4) : 0);
         $this->data['links'] = $this->pagination->create_links();
 
-        $this->data['transactionlist'] = $this->finance_model->search_transaction($key, $from, $upto, $config["per_page"], $page);
+        $transactions = $this->finance_model->search_transaction($key, $from, $upto, $config["per_page"], $page);
+        
+        // Add voided status and void entry information to each transaction
+        foreach ($transactions as $trans) {
+            $trans->is_voided = $this->finance_model->is_savings_transaction_voided($trans->receipt);
+            $trans->is_void_entry = $this->finance_model->is_void_entry($trans);
+            $trans->voided_receipt = $this->finance_model->get_voided_receipt($trans);
+            $trans->void_original_method = '';
+            if ($trans->is_void_entry && !empty($trans->system_comment)) {
+                if (preg_match('/ORIG_METHOD:([^|]+)/', $trans->system_comment, $matches)) {
+                    $trans->void_original_method = trim($matches[1]);
+                }
+            }
+        }
+        
+        $this->data['transactionlist'] = $transactions;
 
 
         $this->data['content'] = 'saving/transaction_history';
         $this->load->view('template', $this->data);
     }
 
-    
+    /**
+     * Void a savings transaction
+     * This creates a reversing entry for the transaction
+     */
+    function void_transaction($receipt = null) {
+        if (!$this->ion_auth->logged_in()) {
+            redirect('auth/login', 'refresh');
+        }
+
+        // Check permission
+        if (!has_role(3, 'void_transaction')) {
+            $this->session->set_flashdata('warning', lang('access_denied'));
+            redirect(current_lang() . '/saving/transaction_search', 'refresh');
+            return;
+        }
+
+        if (!$receipt) {
+            $this->session->set_flashdata('warning', lang('invalid_receipt'));
+            redirect(current_lang() . '/saving/transaction_search', 'refresh');
+            return;
+        }
+
+        // Check if transaction exists
+        $trans = $this->finance_model->get_transaction($receipt);
+        if (!$trans) {
+            $this->session->set_flashdata('warning', lang('transaction_not_found'));
+            redirect(current_lang() . '/saving/transaction_search', 'refresh');
+            return;
+        }
+
+        // Check if already voided
+        if ($this->finance_model->is_savings_transaction_voided($receipt)) {
+            $this->session->set_flashdata('warning', lang('saving_void_already_done'));
+            redirect(current_lang() . '/saving/transaction_search', 'refresh');
+            return;
+        }
+
+        // Process void
+        $reason = $this->input->post('void_reason') ? $this->input->post('void_reason') : 'Transaction voided by user';
+        $result = $this->finance_model->void_savings_deposit_withdrawal_transaction($receipt, $reason);
+
+        if ($result['success']) {
+            $this->session->set_flashdata('message', lang('saving_void_success'));
+        } else {
+            $this->session->set_flashdata('warning', isset($result['message']) ? $result['message'] : lang('transaction_fail'));
+        }
+
+        redirect(current_lang() . '/saving/transaction_search', 'refresh');
+    }
+
     
     function autosuggest($id) {
         $pin = current_user()->PIN;

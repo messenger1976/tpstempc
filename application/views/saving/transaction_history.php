@@ -70,17 +70,47 @@ $_GET['upto'] = format_date($jxy['upto'],FALSE);
                 <tr>
                     
                     <td><?php echo $index++; ?></td>
-                    <td><?php echo $value->receipt; ?></td>
+                    <td>
+                        <?php echo $value->receipt; ?>
+                        <?php if (isset($value->is_void_entry) && $value->is_void_entry): ?>
+                            <br/>
+                            <span class="label label-warning" title="This is a reversing entry">
+                                <i class="fa fa-reply"></i> Void of <?php echo $value->voided_receipt; ?>
+                            </span>
+                        <?php endif; ?>
+                    </td>
                     <td><?php echo !empty($value->account_no_display) ? $value->account_no_display : $value->account; ?></td>
                     <td><?php echo $this->finance_model->saving_account_name($value->account); ?></td>
                     <td><?php echo $value->trans_type; ?></td>
-                    <td><?php echo $value->paymethod; ?></td>
+                    <td>
+                        <?php echo $value->paymethod; ?>
+                        <?php if (isset($value->is_void_entry) && $value->is_void_entry && !empty($value->void_original_method)): ?>
+                            <br/>
+                            <span class="label label-info" title="Original method before void">
+                                <i class="fa fa-history"></i> Original: <?php echo $value->void_original_method; ?>
+                            </span>
+                        <?php endif; ?>
+                    </td>
                     <td><?php echo $value->cheque_num; ?></td>
                     <td><?php echo number_format($value->amount,2); ?></td>
                     <td><?php echo $value->trans_date; ?></td>
                     
 
-                    <td><?php echo anchor(current_lang() . "/saving/receipt_view/" . $value->receipt, ' <i class="fa fa-edit"></i> ' . lang('view_link')); ?></td>
+                    <td>
+                        <?php echo anchor(current_lang() . "/saving/receipt_view/" . $value->receipt, ' <i class="fa fa-edit"></i> ' . lang('view_link')); ?>
+                        <?php if (has_role(3, 'void_transaction') && !$value->is_void_entry): ?>
+                            &nbsp;&nbsp;
+                            <?php if (isset($value->is_voided) && $value->is_voided): ?>
+                                <span class="label label-danger" title="<?php echo lang('saving_void_transaction'); ?>">
+                                    <i class="fa fa-check-circle"></i> VOIDED
+                                </span>
+                            <?php else: ?>
+                                <a href="#" onclick="confirmVoid('<?php echo $value->receipt; ?>', '<?php echo site_url(current_lang() . "/saving/void_transaction/" . $value->receipt); ?>'); return false;" title="<?php echo lang('saving_void_transaction'); ?>">
+                                    <i class="fa fa-ban" style="color: red;"></i> <?php echo lang('void_link'); ?>
+                                </a>
+                            <?php endif; ?>
+                        <?php endif; ?>
+                    </td>
                 </tr>
             <?php } ?>
         </tbody>
@@ -188,4 +218,10 @@ $_GET['upto'] = format_date($jxy['upto'],FALSE);
         }
         initScripts();
     })();
+    
+    function confirmVoid(receipt, url) {
+        if (confirm('<?php echo lang('saving_void_transaction_warning'); ?>')) {
+            window.location.href = url;
+        }
+    }
 </script>

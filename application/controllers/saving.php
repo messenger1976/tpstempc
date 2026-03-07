@@ -832,8 +832,15 @@ class Saving extends CI_Controller {
                 $expl = explode(' - ', $key, 2);
                 $key = $expl[0];
             }
-        } else if (isset($_GET['key'])) {
+            $this->session->set_userdata('TRANS_SEARCH_KEY', $key);
+        } else if (isset($_GET['key']) && $_GET['key'] != '') {
             $key = $_GET['key'];
+            $this->session->set_userdata('TRANS_SEARCH_KEY', $key);
+        } else if ($this->session->userdata('TRANS_SEARCH_KEY')) {
+            $key = $this->session->userdata('TRANS_SEARCH_KEY');
+        } else {
+            $key = null;
+            $this->session->set_userdata('TRANS_SEARCH_KEY', null);
         }
 
         if (isset($_POST['from']) && $_POST['from'] != '') {
@@ -898,7 +905,7 @@ class Saving extends CI_Controller {
 
         $suffix_array = array();
 
-        if (!is_null($key)) {
+        if (!is_null($key) && $key !== '') {
             $suffix_array['key'] = $key;
         }
 
@@ -1961,6 +1968,8 @@ class Saving extends CI_Controller {
     }
 
 }
+
+?>}
 
 
 ?>

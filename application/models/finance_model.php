@@ -1704,6 +1704,7 @@ $pin=current_user()->PIN;
         $interest_condition = "(UPPER(TRIM(st.trans_type)) IN ('INT','IN','INTEREST','IR') OR UPPER(COALESCE(st.system_comment, '')) LIKE '%INTEREST%' OR UPPER(COALESCE(st.comment, '')) LIKE '%INTEREST%')";
         $this->db->from('savings_transaction st');
         $this->db->join('members_account ma', 'ma.account = st.account AND ma.PIN = st.PIN', 'left');
+        $this->db->join('members m', 'ma.RFID = m.PID AND m.PIN = st.PIN AND ma.tablename = "members"', 'left');
         $this->db->where('st.PIN', $pin);
         $this->db->where('st.trans_date >=', $from . ' 00:00:00');
         $this->db->where('st.trans_date <=', $upto . ' 23:59:59');
@@ -1732,10 +1733,15 @@ $pin=current_user()->PIN;
             }
         }
 
+        // Search by receipt number, account number, old account number, or member name
         if (!is_null($key) && $key !== '') {
             $this->db->group_start();
-            $this->db->where('st.account', $key);
-            $this->db->or_where('ma.old_members_acct', $key);
+            $this->db->like('st.receipt', $key);
+            $this->db->or_like('st.account', $key);
+            $this->db->or_like('ma.old_members_acct', $key);
+            $this->db->or_like('m.firstname', $key);
+            $this->db->or_like('m.middlename', $key);
+            $this->db->or_like('m.lastname', $key);
             $this->db->group_end();
         }
 
@@ -1755,6 +1761,7 @@ $pin=current_user()->PIN;
         $this->db->select("CASE WHEN " . $interest_condition . " THEN 'INTEREST' WHEN UPPER(TRIM(st.trans_type)) = 'CR' THEN 'DEPOSIT' WHEN UPPER(TRIM(st.trans_type)) = 'DR' THEN 'WITHDRAWAL' ELSE UPPER(TRIM(st.trans_type)) END AS trans_type_display", FALSE);
         $this->db->from('savings_transaction st');
         $this->db->join('members_account ma', 'ma.account = st.account AND ma.PIN = st.PIN', 'left');
+        $this->db->join('members m', 'ma.RFID = m.PID AND m.PIN = st.PIN AND ma.tablename = "members"', 'left');
         $this->db->where('st.PIN', $pin);
         $this->db->where('st.trans_date >=', $from . ' 00:00:00');
         $this->db->where('st.trans_date <=', $upto . ' 23:59:59');
@@ -1783,10 +1790,15 @@ $pin=current_user()->PIN;
             }
         }
 
+        // Search by receipt number, account number, old account number, or member name
         if (!is_null($key) && $key !== '') {
             $this->db->group_start();
-            $this->db->where('st.account', $key);
-            $this->db->or_where('ma.old_members_acct', $key);
+            $this->db->like('st.receipt', $key);
+            $this->db->or_like('st.account', $key);
+            $this->db->or_like('ma.old_members_acct', $key);
+            $this->db->or_like('m.firstname', $key);
+            $this->db->or_like('m.middlename', $key);
+            $this->db->or_like('m.lastname', $key);
             $this->db->group_end();
         }
 

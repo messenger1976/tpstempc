@@ -52,6 +52,8 @@ $account_type_filter = isset($account_type_filter) ? $account_type_filter : (iss
     </div>
     <div class="col-lg-2">
         <input type="submit" value="<?php echo lang('button_search'); ?>" class="btn btn-primary"/>
+        &nbsp;
+        <a href="<?php echo site_url(current_lang() . '/saving/transaction_reset'); ?>" class="btn btn-default">Reset</a>
     </div>
 
 </div>
@@ -70,7 +72,6 @@ $account_type_filter = isset($account_type_filter) ? $account_type_filter : (iss
                 <th><?php echo lang('index_name'); ?></th>
                 <th><?php echo lang('index_transtype'); ?></th>
                 <th><?php echo lang('index_transmethod'); ?></th>
-                <th><?php echo lang('index_chequeno'); ?></th>
                 <th><?php echo lang('index_amount'); ?></th>
                 <th><?php echo lang('index_trans_date'); ?></th>
                 <th><?php echo lang('index_action_th'); ?></th>
@@ -115,9 +116,8 @@ $account_type_filter = isset($account_type_filter) ? $account_type_filter : (iss
                             </span>
                         <?php endif; ?>
                     </td>
-                    <td><?php echo $value->cheque_num; ?></td>
-                    <td><?php echo number_format($value->amount,2); ?></td>
-                    <td><?php echo $value->trans_date; ?></td>
+                    <td style="text-align:right;"><?php echo number_format($value->amount,2); ?></td>
+                    <td><?php echo date('m/d/Y', strtotime($value->trans_date)); ?></td>
                     
 
                     <td>

@@ -808,6 +808,15 @@ class Saving extends CI_Controller {
         $this->load->view('template', $this->data);
     }
 
+    function transaction_reset() {
+        $this->session->unset_userdata('TRANS_SEARCH_KEY');
+        $this->session->unset_userdata('TRANS_SEARCH_FROM');
+        $this->session->unset_userdata('TRANS_SEARCH_UPTO');
+        $this->session->unset_userdata('TRANS_SEARCH_TRANS_TYPE');
+        $this->session->unset_userdata('TRANS_SEARCH_ACCOUNT_TYPE_FILTER');
+        redirect(current_lang() . '/saving/transaction_search');
+    }
+
     function transaction_search() {
         $this->load->library('pagination');
         $this->data['title'] = lang('saving_transaction_search');

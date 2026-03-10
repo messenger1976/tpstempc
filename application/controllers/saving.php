@@ -840,7 +840,7 @@ class Saving extends CI_Controller {
             $key = $this->session->userdata('TRANS_SEARCH_KEY');
         } else {
             $key = null;
-            $this->session->set_userdata('TRANS_SEARCH_KEY', null);
+            $this->session->unset_userdata('TRANS_SEARCH_KEY');
         }
 
         if (isset($_POST['from']) && $_POST['from'] != '') {
@@ -916,7 +916,7 @@ class Saving extends CI_Controller {
         if (!is_null($upto)) {
             $suffix_array['upto'] = $upto;
         }
-        if (!is_null($trans_type)) {
+        if (!is_null($trans_type) && $trans_type !== '') {
             $suffix_array['trans_type'] = $trans_type;
         }
         if (!is_null($account_type_filter) && $account_type_filter != '' && $account_type_filter != 'all') {

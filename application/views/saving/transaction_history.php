@@ -16,6 +16,8 @@ $sp = $jxy;
 $_GET['from'] = format_date($jxy['from'],FALSE);
 $_GET['upto'] = format_date($jxy['upto'],FALSE);
 $_GET['key'] = (isset($jxy['key']) && !empty($jxy['key'])) ? $jxy['key'] : '';
+$_GET['trans_type'] = isset($selected_trans_type) ? strtoupper($selected_trans_type) : 'ALL';
+$_GET['account_type_filter'] = isset($account_type_filter) ? $account_type_filter : (isset($_GET['account_type_filter']) ? $_GET['account_type_filter'] : 'all');
 $account_type_filter = isset($account_type_filter) ? $account_type_filter : (isset($_GET['account_type_filter']) ? $_GET['account_type_filter'] : 'all');
 
 ?>

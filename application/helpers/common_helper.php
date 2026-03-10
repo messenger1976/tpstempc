@@ -418,8 +418,36 @@ if (!function_exists("has_role")) {
         $CI = & get_instance();
         $user_id = $CI->session->userdata('user_id');
 
-        $user_group = $CI->ion_auth_model->get_users_groups($user_id)->row();
-        $check = $CI->db->query("SELECT * FROM access_level WHERE group_id = $user_group->id AND Module=$module_id AND link = '$link' AND allow=1")->result();
+        if (empty($user_id)) {
+            return FALSE;
+        }
+
+        $user_groups = $CI->ion_auth_model->get_users_groups($user_id);
+        $group_id = 0;
+
+        if (is_object($user_groups) && method_exists($user_groups, 'row')) {
+            $user_group = $user_groups->row();
+            $group_id = isset($user_group->id) ? (int) $user_group->id : 0;
+        } elseif (is_array($user_groups) && !empty($user_groups)) {
+            $first_group = reset($user_groups);
+            if (is_object($first_group) && isset($first_group->id)) {
+                $group_id = (int) $first_group->id;
+            } elseif (is_array($first_group) && isset($first_group['id'])) {
+                $group_id = (int) $first_group['id'];
+            }
+        }
+
+        if ($group_id <= 0) {
+            return FALSE;
+        }
+
+        $check = $CI->db
+            ->where('group_id', $group_id)
+            ->where('Module', (int) $module_id)
+            ->where('link', $link)
+            ->where('allow', 1)
+            ->get('access_level')
+            ->result();
 
         if (count($check) > 0) {
             return TRUE;
@@ -435,9 +463,36 @@ if (!function_exists("access_module")) {
     function access_module($module_id) {
         $CI = & get_instance();
         $user_id = $CI->session->userdata('user_id');
-        $user_group = $CI->ion_auth_model->get_users_groups($user_id)->row();
 
-        $check = $CI->db->query("SELECT * FROM access_level WHERE group_id = $user_group->id AND Module=$module_id AND allow != 0")->result();
+        if (empty($user_id)) {
+            return FALSE;
+        }
+
+        $user_groups = $CI->ion_auth_model->get_users_groups($user_id);
+        $group_id = 0;
+
+        if (is_object($user_groups) && method_exists($user_groups, 'row')) {
+            $user_group = $user_groups->row();
+            $group_id = isset($user_group->id) ? (int) $user_group->id : 0;
+        } elseif (is_array($user_groups) && !empty($user_groups)) {
+            $first_group = reset($user_groups);
+            if (is_object($first_group) && isset($first_group->id)) {
+                $group_id = (int) $first_group->id;
+            } elseif (is_array($first_group) && isset($first_group['id'])) {
+                $group_id = (int) $first_group['id'];
+            }
+        }
+
+        if ($group_id <= 0) {
+            return FALSE;
+        }
+
+        $check = $CI->db
+            ->where('group_id', $group_id)
+            ->where('Module', (int) $module_id)
+            ->where('allow !=', 0)
+            ->get('access_level')
+            ->result();
         if (count($check) > 0) {
 
             return TRUE;

@@ -722,6 +722,15 @@ class Finance_Model extends CI_Model {
         return $count > 0;
     }
 
+    function is_savings_receipt_posted_to_gl($receipt) {
+        $pin = current_user()->PIN;
+        $this->db->where('refferenceID', $receipt);
+        $this->db->where('fromtable', 'savings_transaction');
+        $this->db->where('PIN', $pin);
+        $count = $this->db->count_all_results('general_ledger');
+        return $count > 0;
+    }
+
     /**
      * Void (remove) GL posting for a journal entry. Deletes general_ledger rows only;
      * journal entry stays active and can be reposted.
@@ -1319,8 +1328,20 @@ $pin=current_user()->PIN;
             }
             
             if (!$account) {
-                log_message('error', 'No adjustment/equity account found for ADJUSTMENT payment method');
-                return null;
+                log_message('warning', 'No adjustment/equity account found for ADJUSTMENT payment method. Using cash account fallback.');
+                // Ultimate fallback: use cash account
+                $this->db->where('PIN', $pin);
+                $escaped = $this->db->escape_like_str('Cash');
+                $this->db->where("(name LIKE '%" . $escaped . "%' OR description LIKE '%" . $escaped . "%')", NULL, FALSE);
+                $this->db->where_in('account_type', array(1, 10000)); // Asset: Cash account
+                $this->db->order_by('account', 'ASC');
+                $this->db->limit(1);
+                $account = $this->db->get('account_chart')->row();
+                
+                if (!$account) {
+                    log_message('error', 'No cash account found as fallback for ADJUSTMENT payment method');
+                    return null;
+                }
             }
             
             log_message('debug', 'Using adjustment account: ' . $account->account . ' (' . $account->name . ') for ADJUSTMENT payment method');
@@ -1456,7 +1477,7 @@ $pin=current_user()->PIN;
      * @param string $systemcomment Transaction type: OPEN ACCOUNT, BEGINNING BALANCE, NORMAL DEPOSIT, NORMAL WITHDRAWAL, INTEREST
      * @return bool True if successful, False otherwise
      */
-    function post_savings_to_gl($account, $amount, $paymethod, $account_cat, $receipt, $trans_date, $pid, $member_id, $customer_name = '', $systemcomment = '') {
+    function post_savings_to_gl($account, $amount, $paymethod, $account_cat, $receipt, $trans_date, $pid, $member_id, $customer_name = '', $systemcomment = '', $trans_type = '') {
         $pin = current_user()->PIN;
         
         // Skip if amount is zero
@@ -1493,11 +1514,13 @@ $pin=current_user()->PIN;
         }
         
         $sys_upper = strtoupper(trim($systemcomment));
-        $is_withdrawal = (strpos($sys_upper, 'NORMAL WITHDRAWAL') !== FALSE);
-        $is_interest = (strpos($sys_upper, 'INTEREST') !== FALSE);
+        $type_upper = strtoupper(trim($trans_type));
+        $is_withdrawal = ($type_upper === 'DR' || strpos($sys_upper, 'NORMAL WITHDRAWAL') !== FALSE);
+        $is_interest = ($type_upper === 'INT' || strpos($sys_upper, 'INTEREST') !== FALSE);
+        $is_void_interest = (strpos($sys_upper, 'VOID TRANSACTION') !== FALSE && strpos($sys_upper, 'ORIG_TYPE:INT') !== FALSE);
         
         // For INTEREST: debit = interest expense account; for deposit/withdrawal: debit/credit = cash or liability
-        if ($is_interest) {
+        if ($is_interest || $is_void_interest) {
             $debit_account = $this->get_interest_expense_account_for_savings();
         } else {
             $debit_account = $this->get_cash_account_for_savings($paymethod);
@@ -1518,7 +1541,9 @@ $pin=current_user()->PIN;
         // Determine description prefix based on transaction type
         // Check if payment method contains "ADJUSTMENT" (handles "ADJUSTMENT", "OTHER - ADJUSTMENT", etc.)
         $is_adjustment = (strpos(strtoupper(trim($paymethod)), 'ADJUSTMENT') !== FALSE);
-        if ($is_withdrawal) {
+        if ($is_void_interest) {
+            $description_prefix = 'Savings Interest Void';
+        } elseif ($is_withdrawal) {
             $description_prefix = 'Savings Withdrawal';
         } elseif ($is_interest) {
             $description_prefix = 'Savings Interest';
@@ -1656,7 +1681,7 @@ $pin=current_user()->PIN;
                 return false;
             }
             
-            $type_label = $is_withdrawal ? 'Withdrawal' : ($is_interest ? 'Interest' : ($is_adjustment ? 'Adjustment' : 'Deposit/Opening'));
+            $type_label = $is_void_interest ? 'Void Interest' : ($is_withdrawal ? 'Withdrawal' : ($is_interest ? 'Interest' : ($is_adjustment ? 'Adjustment' : 'Deposit/Opening')));
             log_message('info', 'Savings posted to GL: Account ' . $account . ', Receipt ' . $receipt . ', Amount ' . $amount . ', Type: ' . $type_label);
             return true;
             
@@ -1673,37 +1698,107 @@ $pin=current_user()->PIN;
         return $this->db->get('members_account')->row();
     }
 
-    function count_transaction($key, $from, $upto) {
+    function count_transaction($key, $from, $upto, $trans_type = 'ALL', $account_type_filter = null) {
         $pin = current_user()->PIN;
+        $pin_esc = $this->db->escape($pin);
+        $interest_condition = "(UPPER(TRIM(st.trans_type)) IN ('INT','IN','INTEREST','IR') OR UPPER(COALESCE(st.system_comment, '')) LIKE '%INTEREST%' OR UPPER(COALESCE(st.comment, '')) LIKE '%INTEREST%')";
         $this->db->from('savings_transaction st');
         $this->db->join('members_account ma', 'ma.account = st.account AND ma.PIN = st.PIN', 'left');
+        $this->db->join('members m', 'ma.RFID = m.PID AND m.PIN = st.PIN AND ma.tablename = "members"', 'left');
         $this->db->where('st.PIN', $pin);
         $this->db->where('st.trans_date >=', $from . ' 00:00:00');
         $this->db->where('st.trans_date <=', $upto . ' 23:59:59');
 
+        $trans_type = strtoupper(trim((string) $trans_type));
+        if ($trans_type === 'DEPOSIT') {
+            $this->db->where("UPPER(TRIM(st.trans_type)) = 'CR'", NULL, FALSE);
+            $this->db->where("NOT " . $interest_condition, NULL, FALSE);
+        } elseif ($trans_type === 'WITHDRAWAL') {
+            $this->db->where("UPPER(TRIM(st.trans_type)) = 'DR'", NULL, FALSE);
+        } elseif ($trans_type === 'INTEREST') {
+            $this->db->where($interest_condition, NULL, FALSE);
+        }
+
+        // Filter by account type (Special or MSO)
+        if (!is_null($account_type_filter) && $account_type_filter != '' && $account_type_filter != 'all') {
+            $this->db->join('saving_account_type sat', 'ma.account_cat = sat.account AND sat.PIN = ' . $this->db->escape($pin), 'left');
+            if ($account_type_filter == 'special') {
+                // Special accounts: check account_setup prefix, account_type, or name/description contains "special"
+                $this->db->join('account_chart ac', 'sat.account_setup = ac.account AND ac.PIN = ' . $this->db->escape($pin), 'left');
+                $this->db->where("((sat.account_setup IS NOT NULL AND sat.account_setup != '' AND (LEFT(sat.account_setup, 2) = '10' OR ac.account_type = 10 OR ac.account_type = '10')) OR LOWER(sat.name) LIKE '%special%' OR LOWER(sat.description) LIKE '%special%')", NULL, FALSE);
+            } else if ($account_type_filter == 'mso') {
+                // MSO accounts: check account_setup prefix, account_type, or name/description contains "mso"
+                $this->db->join('account_chart ac', 'sat.account_setup = ac.account AND ac.PIN = ' . $this->db->escape($pin), 'left');
+                $this->db->where("((sat.account_setup IS NOT NULL AND sat.account_setup != '' AND (LEFT(sat.account_setup, 2) = '40' OR ac.account_type = 40 OR ac.account_type = '40')) OR LOWER(sat.name) LIKE '%mso%' OR LOWER(sat.description) LIKE '%mso%')", NULL, FALSE);
+            }
+        }
+
+        // Search by receipt number, account number, old account number, or member name
         if (!is_null($key) && $key !== '') {
             $this->db->group_start();
-            $this->db->where('st.account', $key);
-            $this->db->or_where('ma.old_members_acct', $key);
+            $this->db->like('st.receipt', $key);
+            $this->db->or_like('st.account', $key);
+            $this->db->or_like('ma.old_members_acct', $key);
+            $this->db->or_like('m.firstname', $key);
+            $this->db->or_like('m.middlename', $key);
+            $this->db->or_like('m.lastname', $key);
             $this->db->group_end();
         }
 
         return $this->db->count_all_results();
     }
 
-    function search_transaction($key, $from, $upto, $limit, $start) {
+    function count_deposit_withdrawal_transaction($key, $from, $upto) {
+        // REMOVED - Void transaction module deleted
+        return false;
+    }
+
+    function search_transaction($key, $from, $upto, $limit, $start, $trans_type = 'ALL', $account_type_filter = null) {
         $pin = current_user()->PIN;
+        $pin_esc = $this->db->escape($pin);
+        $interest_condition = "(UPPER(TRIM(st.trans_type)) IN ('INT','IN','INTEREST','IR') OR UPPER(COALESCE(st.system_comment, '')) LIKE '%INTEREST%' OR UPPER(COALESCE(st.comment, '')) LIKE '%INTEREST%')";
         $this->db->select("st.*, COALESCE(NULLIF(ma.old_members_acct, ''), st.account) AS account_no_display", FALSE);
+        $this->db->select("CASE WHEN " . $interest_condition . " THEN 'INTEREST' WHEN UPPER(TRIM(st.trans_type)) = 'CR' THEN 'DEPOSIT' WHEN UPPER(TRIM(st.trans_type)) = 'DR' THEN 'WITHDRAWAL' ELSE UPPER(TRIM(st.trans_type)) END AS trans_type_display", FALSE);
         $this->db->from('savings_transaction st');
         $this->db->join('members_account ma', 'ma.account = st.account AND ma.PIN = st.PIN', 'left');
+        $this->db->join('members m', 'ma.RFID = m.PID AND m.PIN = st.PIN AND ma.tablename = "members"', 'left');
         $this->db->where('st.PIN', $pin);
         $this->db->where('st.trans_date >=', $from . ' 00:00:00');
         $this->db->where('st.trans_date <=', $upto . ' 23:59:59');
 
+        $trans_type = strtoupper(trim((string) $trans_type));
+        if ($trans_type === 'DEPOSIT') {
+            $this->db->where("UPPER(TRIM(st.trans_type)) = 'CR'", NULL, FALSE);
+            $this->db->where("NOT " . $interest_condition, NULL, FALSE);
+        } elseif ($trans_type === 'WITHDRAWAL') {
+            $this->db->where("UPPER(TRIM(st.trans_type)) = 'DR'", NULL, FALSE);
+        } elseif ($trans_type === 'INTEREST') {
+            $this->db->where($interest_condition, NULL, FALSE);
+        }
+
+        // Filter by account type (Special or MSO)
+        if (!is_null($account_type_filter) && $account_type_filter != '' && $account_type_filter != 'all') {
+            $this->db->join('saving_account_type sat', 'ma.account_cat = sat.account AND sat.PIN = ' . $this->db->escape($pin), 'left');
+            if ($account_type_filter == 'special') {
+                // Special accounts: check account_setup prefix, account_type, or name/description contains "special"
+                $this->db->join('account_chart ac', 'sat.account_setup = ac.account AND ac.PIN = ' . $this->db->escape($pin), 'left');
+                $this->db->where("((sat.account_setup IS NOT NULL AND sat.account_setup != '' AND (LEFT(sat.account_setup, 2) = '10' OR ac.account_type = 10 OR ac.account_type = '10')) OR LOWER(sat.name) LIKE '%special%' OR LOWER(sat.description) LIKE '%special%')", NULL, FALSE);
+            } else if ($account_type_filter == 'mso') {
+                // MSO accounts: check account_setup prefix, account_type, or name/description contains "mso"
+                $this->db->join('account_chart ac', 'sat.account_setup = ac.account AND ac.PIN = ' . $this->db->escape($pin), 'left');
+                $this->db->where("((sat.account_setup IS NOT NULL AND sat.account_setup != '' AND (LEFT(sat.account_setup, 2) = '40' OR ac.account_type = 40 OR ac.account_type = '40')) OR LOWER(sat.name) LIKE '%mso%' OR LOWER(sat.description) LIKE '%mso%')", NULL, FALSE);
+            }
+        }
+
+        // Search by receipt number, account number, old account number, or member name
         if (!is_null($key) && $key !== '') {
             $this->db->group_start();
-            $this->db->where('st.account', $key);
-            $this->db->or_where('ma.old_members_acct', $key);
+            $this->db->like('st.receipt', $key);
+            $this->db->or_like('st.account', $key);
+            $this->db->or_like('ma.old_members_acct', $key);
+            $this->db->or_like('m.firstname', $key);
+            $this->db->or_like('m.middlename', $key);
+            $this->db->or_like('m.lastname', $key);
             $this->db->group_end();
         }
 
@@ -1711,6 +1806,11 @@ $pin=current_user()->PIN;
         $this->db->limit((int) $limit, (int) $start);
 
         return $this->db->get()->result();
+    }
+
+    function search_deposit_withdrawal_transaction($key, $from, $upto, $limit, $start) {
+        // REMOVED - Void transaction module deleted
+        return array();
     }
 
     function credit($account = null, $amount = 0, $paymethod = null, $comment = '', $cheque_num = '', $customer_name = '', $pid = null, $systemcomment = '', $start_up = 0, $posted_date='', $refno = '') {
@@ -1773,7 +1873,7 @@ $pin=current_user()->PIN;
                 $member_id = isset($account_info->member_id) ? $account_info->member_id : '';
                 
                 // Post to General Ledger
-                $gl_post_result = $this->post_savings_to_gl($account, $amount, $paymethod, $account_info->account_cat, $receipt, $posted_date ? $posted_date : date('Y-m-d'), $pid, $member_id, $customer_name, $systemcomment);
+                $gl_post_result = $this->post_savings_to_gl($account, $amount, $paymethod, $account_info->account_cat, $receipt, $posted_date ? $posted_date : date('Y-m-d'), $pid, $member_id, $customer_name, $systemcomment, 'CR');
                 
                 if (!$gl_post_result) {
                     log_message('error', 'Savings account GL posting failed for account: ' . $account . ', receipt: ' . $receipt . ', type: ' . $systemcomment);
@@ -1829,7 +1929,7 @@ $pin=current_user()->PIN;
             if (strpos($systemcomment, 'NORMAL WITHDRAWAL') !== FALSE) {
                 $member_id = isset($account_info->member_id) ? $account_info->member_id : '';
                 $pid_val = !empty($pid) ? $pid : $account_info->RFID;
-                $gl_post_result = $this->post_savings_to_gl($account, $amount, $paymethod, $account_info->account_cat, $receipt, $posted_date ? $posted_date : date('Y-m-d'), $pid_val, $member_id, $customer_name, $systemcomment);
+                $gl_post_result = $this->post_savings_to_gl($account, $amount, $paymethod, $account_info->account_cat, $receipt, $posted_date ? $posted_date : date('Y-m-d'), $pid_val, $member_id, $customer_name, $systemcomment, 'DR');
                 if (!$gl_post_result) {
                     log_message('error', 'Savings withdrawal GL posting failed: account ' . $account . ', receipt ' . $receipt);
                 }
@@ -1848,6 +1948,169 @@ $pin=current_user()->PIN;
         }
 
         return FALSE;
+    }
+
+    function get_savings_transaction_by_receipt($receipt) {
+        // REMOVED - Void transaction module deleted
+        return null;
+    }
+
+    function is_savings_transaction_voided($receipt) {
+        // Check if a reversing transaction exists for this receipt
+        $this->db->where('PIN', current_user()->PIN);
+        $this->db->where('comment LIKE', '%VOID-' . $receipt . '%');
+        $query = $this->db->get('savings_transaction');
+        return $query->num_rows() > 0;
+    }
+
+    function is_void_entry($transaction) {
+        // Check if this transaction is a reversing entry (void transaction)
+        return (strpos($transaction->comment, 'VOID-') === 0);
+    }
+
+    function get_voided_receipt($transaction) {
+        // Extract the original receipt number from a void entry comment
+        // Comment format: VOID-[original_receipt] - [reason]
+        if ($this->is_void_entry($transaction)) {
+            if (preg_match('/VOID-([^ ]+)/', $transaction->comment, $matches)) {
+                return $matches[1];
+            }
+        }
+        return null;
+    }
+
+    function void_savings_deposit_withdrawal_transaction($receipt, $reason = '') {
+        $pin = current_user()->PIN;
+        
+        // Get original transaction
+        $this->db->where('receipt', $receipt);
+        $this->db->where('PIN', $pin);
+        $trans = $this->db->get('savings_transaction')->row();
+        
+        if (!$trans) {
+            return array('success' => false, 'message' => 'Transaction not found');
+        }
+        
+        // Check if already voided
+        if ($this->is_savings_transaction_voided($receipt)) {
+            return array('success' => false, 'message' => 'Transaction already voided');
+        }
+        
+        // Only allow voiding of CR (deposit), DR (withdrawal), or INT (interest) transactions
+        if (!in_array($trans->trans_type, array('CR', 'DR', 'INT'))) {
+            return array('success' => false, 'message' => 'Only deposit/withdrawal/interest transactions can be voided');
+        }
+        
+        // Begin transaction
+        $this->db->trans_start();
+        
+        // Create a reversing entry
+        // CR (deposit) and INT (interest) reverse to DR (withdrawal), DR reverses to CR
+        $void_trans_type = ($trans->trans_type == 'CR' || $trans->trans_type == 'INT') ? 'DR' : 'CR';
+        $void_comment = 'VOID-' . $receipt . ' - ' . $reason;
+        $original_method = !empty($trans->paymethod) ? $trans->paymethod : 'N/A';
+        $void_system_comment = 'VOID TRANSACTION | ORIG_TYPE:' . $trans->trans_type . ' | ORIG_METHOD:' . $original_method;
+        
+        // Get next receipt number
+        $next_id = $this->get_next_savings_transaction_id();
+        $void_receipt = 'SV' . str_pad($next_id, 8, '0', STR_PAD_LEFT);
+        
+        // Get account info for additional fields
+        $account_info = $this->get_saving_account_info($trans->account);
+        
+        // Insert reversing transaction using db->set() method like other transactions
+        $this->db->set('receipt', $void_receipt);
+        $this->db->set('account', $trans->account);
+        $this->db->set('trans_type', $void_trans_type);
+        $this->db->set('amount', $trans->amount);
+        $this->db->set('paymethod', $trans->paymethod);
+        $this->db->set('cheque_num', $trans->cheque_num ? $trans->cheque_num : '');
+        $this->db->set('trans_date', date('Y-m-d'));
+        $this->db->set('comment', $void_comment);
+        $this->db->set('system_comment', $void_system_comment);
+        $this->db->set('PIN', $pin);
+        $this->db->set('createdby', current_user()->id);
+        
+        // Add optional fields if they exist in original transaction
+        if (isset($trans->PID)) {
+            $this->db->set('PID', $trans->PID);
+        } elseif ($account_info && isset($account_info->RFID)) {
+            $this->db->set('PID', $account_info->RFID);
+        }
+        
+        if (isset($trans->account_cat)) {
+            $this->db->set('account_cat', $trans->account_cat);
+        } elseif ($account_info && isset($account_info->account_cat)) {
+            $this->db->set('account_cat', $account_info->account_cat);
+        }
+        
+        if (isset($trans->customer_name)) {
+            $this->db->set('customer_name', $trans->customer_name);
+        }
+        
+        if (isset($trans->refno)) {
+            $this->db->set('refno', $trans->refno);
+        }
+        
+        // Set previous_balance (current balance before this void transaction)
+        if ($account_info && isset($account_info->balance)) {
+            $this->db->set('previous_balance', $account_info->balance);
+        }
+        
+        $this->db->insert('savings_transaction');
+        
+        // Complete transaction
+        $this->db->trans_complete();
+        
+        if ($this->db->trans_status() === FALSE) {
+            return array('success' => false, 'message' => 'Database error occurred');
+        }
+
+        // Auto-post the void reversing entry to GL so accounting remains adjusted
+        $member_id = ($account_info && isset($account_info->member_id)) ? $account_info->member_id : '';
+        $pid = isset($trans->PID) ? $trans->PID : (($account_info && isset($account_info->RFID)) ? $account_info->RFID : '');
+        $customer_name = isset($trans->customer_name) ? $trans->customer_name : '';
+        $account_cat = isset($trans->account_cat) ? $trans->account_cat : (($account_info && isset($account_info->account_cat)) ? $account_info->account_cat : '');
+        $void_trans_date = date('Y-m-d');
+
+        $gl_posted = $this->post_savings_to_gl(
+            $trans->account,
+            floatval($trans->amount),
+            $trans->paymethod,
+            $account_cat,
+            $void_receipt,
+            $void_trans_date,
+            $pid,
+            $member_id,
+            $customer_name,
+            $void_system_comment,
+            $void_trans_type
+        );
+
+        // Verify if reversing receipt is posted; if not, fallback to posting all unposted savings transactions for this account
+        $is_void_receipt_posted = $this->is_savings_receipt_posted_to_gl($void_receipt);
+        if (!$gl_posted || !$is_void_receipt_posted) {
+            $fallback_result = $this->post_savings_account_to_gl($trans->account);
+            $is_void_receipt_posted = $this->is_savings_receipt_posted_to_gl($void_receipt);
+
+            if (!$is_void_receipt_posted) {
+                return array(
+                    'success' => true,
+                    'message' => 'Transaction voided but GL posting is still pending. Please use Post to GL.',
+                    'void_receipt' => $void_receipt,
+                    'gl_posted' => false,
+                    'fallback_posted' => isset($fallback_result['posted']) ? $fallback_result['posted'] : 0,
+                    'fallback_failed' => isset($fallback_result['failed']) ? $fallback_result['failed'] : 0
+                );
+            }
+        }
+
+        return array('success' => true, 'message' => 'Transaction voided and posted to GL successfully', 'void_receipt' => $void_receipt, 'gl_posted' => true);
+    }
+    
+    function get_next_savings_transaction_id() {
+        $query = $this->db->query("SELECT MAX(id) as id FROM savings_transaction")->row();
+        return $query && $query->id ? ($query->id + 1) : 1;
     }
 
     /**
@@ -1896,7 +2159,8 @@ $pin=current_user()->PIN;
                 $pid,
                 $member_id,
                 isset($st->customer_name) ? $st->customer_name : '',
-                isset($st->system_comment) ? $st->system_comment : ''
+                isset($st->system_comment) ? $st->system_comment : '',
+                isset($st->trans_type) ? $st->trans_type : ''
             );
             if ($ok) {
                 $posted++;
@@ -1906,6 +2170,66 @@ $pin=current_user()->PIN;
             }
         }
         return array('posted' => $posted, 'failed' => $failed, 'errors' => $errors);
+    }
+
+    /**
+     * Post a single savings transaction receipt to GL.
+     *
+     * @param string $receipt Savings transaction receipt
+     * @return array ['success' => bool, 'message' => string]
+     */
+    function post_savings_receipt_to_gl($receipt) {
+        $pin = current_user()->PIN;
+
+        if (empty($receipt)) {
+            return array('success' => false, 'message' => 'Invalid receipt');
+        }
+
+        $this->db->where('receipt', $receipt);
+        $this->db->where('PIN', $pin);
+        $st = $this->db->get('savings_transaction')->row();
+
+        if (!$st) {
+            return array('success' => false, 'message' => 'Transaction not found');
+        }
+
+        if ($this->is_savings_receipt_posted_to_gl($receipt)) {
+            return array('success' => true, 'message' => 'Transaction already posted to GL');
+        }
+
+        $account_info = $this->saving_account_balance($st->account);
+        if (!$account_info) {
+            return array('success' => false, 'message' => 'Account not found for GL posting');
+        }
+
+        $member_id = isset($account_info->member_id) ? $account_info->member_id : '';
+        $pid = isset($st->PID) ? $st->PID : (isset($account_info->RFID) ? $account_info->RFID : '');
+        $account_cat = isset($st->account_cat) ? $st->account_cat : (isset($account_info->account_cat) ? $account_info->account_cat : '');
+        $trans_date = isset($st->trans_date) ? date('Y-m-d', strtotime($st->trans_date)) : date('Y-m-d');
+
+        $ok = $this->post_savings_to_gl(
+            $st->account,
+            floatval($st->amount),
+            isset($st->paymethod) ? $st->paymethod : 'Cash',
+            $account_cat,
+            $st->receipt,
+            $trans_date,
+            $pid,
+            $member_id,
+            isset($st->customer_name) ? $st->customer_name : '',
+            isset($st->system_comment) ? $st->system_comment : '',
+            isset($st->trans_type) ? $st->trans_type : ''
+        );
+
+        if (!$ok) {
+            return array('success' => false, 'message' => 'Failed to post transaction to GL');
+        }
+
+        if (!$this->is_savings_receipt_posted_to_gl($receipt)) {
+            return array('success' => false, 'message' => 'GL posting pending. Please try again');
+        }
+
+        return array('success' => true, 'message' => 'Transaction posted to GL successfully');
     }
 
     /**

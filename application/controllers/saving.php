@@ -823,36 +823,89 @@ class Saving extends CI_Controller {
         $key = null;
         $from = null;
         $to = null;
+        $trans_type = 'ALL';
+        $account_type_filter = null;
+        
         if (isset($_POST['key']) && $_POST['key'] != '') {
             $key = $_POST['key'];
             if (strpos($key, ' - ') !== FALSE) {
                 $expl = explode(' - ', $key, 2);
                 $key = $expl[0];
             }
-        } else if (isset($_GET['key'])) {
+            $this->session->set_userdata('TRANS_SEARCH_KEY', $key);
+        } else if (isset($_GET['key']) && $_GET['key'] != '') {
             $key = $_GET['key'];
+            $this->session->set_userdata('TRANS_SEARCH_KEY', $key);
+        } else if ($this->session->userdata('TRANS_SEARCH_KEY')) {
+            $key = $this->session->userdata('TRANS_SEARCH_KEY');
+        } else {
+            $key = null;
+            $this->session->unset_userdata('TRANS_SEARCH_KEY');
         }
 
         if (isset($_POST['from']) && $_POST['from'] != '') {
             $from = format_date($_POST['from']);
+            $this->session->set_userdata('TRANS_SEARCH_FROM', $from);
         } else if (isset($_GET['from'])) {
             $from = format_date($_GET['from']);
+            $this->session->set_userdata('TRANS_SEARCH_FROM', $from);
+        } else if ($this->session->userdata('TRANS_SEARCH_FROM')) {
+            $from = $this->session->userdata('TRANS_SEARCH_FROM');
         } else {
             $from = date('Y-m-d');
+            $this->session->set_userdata('TRANS_SEARCH_FROM', $from);
         }
 
         if (isset($_POST['upto']) && $_POST['upto'] != '') {
             $upto = format_date($_POST['upto']);
+            $this->session->set_userdata('TRANS_SEARCH_UPTO', $upto);
         } else if (isset($_GET['upto'])) {
             $upto = format_date($_GET['upto']);
+            $this->session->set_userdata('TRANS_SEARCH_UPTO', $upto);
+        } else if ($this->session->userdata('TRANS_SEARCH_UPTO')) {
+            $upto = $this->session->userdata('TRANS_SEARCH_UPTO');
         } else {
             $upto = date('Y-m-d');
+            $this->session->set_userdata('TRANS_SEARCH_UPTO', $upto);
+        }
+
+        if (isset($_POST['trans_type']) && $_POST['trans_type'] != '') {
+            $trans_type = strtoupper(trim($_POST['trans_type']));
+            $this->session->set_userdata('TRANS_SEARCH_TRANS_TYPE', $trans_type);
+        } else if (isset($_GET['trans_type']) && $_GET['trans_type'] != '') {
+            $trans_type = strtoupper(trim($_GET['trans_type']));
+            $this->session->set_userdata('TRANS_SEARCH_TRANS_TYPE', $trans_type);
+        } else if ($this->session->userdata('TRANS_SEARCH_TRANS_TYPE')) {
+            $trans_type = strtoupper(trim($this->session->userdata('TRANS_SEARCH_TRANS_TYPE')));
+        }
+
+        $allowed_trans_types = array('ALL', 'DEPOSIT', 'WITHDRAWAL', 'INTEREST');
+        if (!in_array($trans_type, $allowed_trans_types)) {
+            $trans_type = 'ALL';
+        }
+
+        // Account Type Filter
+        if (isset($_POST['account_type_filter']) && $_POST['account_type_filter'] != '') {
+            $account_type_filter = $_POST['account_type_filter'];
+            $this->session->set_userdata('TRANS_SEARCH_ACCOUNT_TYPE_FILTER', $account_type_filter);
+        } else if (isset($_GET['account_type_filter']) && $_GET['account_type_filter'] != '') {
+            $account_type_filter = $_GET['account_type_filter'];
+            $this->session->set_userdata('TRANS_SEARCH_ACCOUNT_TYPE_FILTER', $account_type_filter);
+        } else if ($this->session->userdata('TRANS_SEARCH_ACCOUNT_TYPE_FILTER')) {
+            $account_type_filter = $this->session->userdata('TRANS_SEARCH_ACCOUNT_TYPE_FILTER');
+        }
+
+        if ($trans_type === 'INTEREST' && $from === date('Y-m-d') && $upto === date('Y-m-d')) {
+            $from = '2000-01-01';
+            $upto = date('Y-m-d');
+            $this->session->set_userdata('TRANS_SEARCH_FROM', $from);
+            $this->session->set_userdata('TRANS_SEARCH_UPTO', $upto);
         }
 
 
         $suffix_array = array();
 
-        if (!is_null($key)) {
+        if (!is_null($key) && $key !== '') {
             $suffix_array['key'] = $key;
         }
 
@@ -863,7 +916,16 @@ class Saving extends CI_Controller {
         if (!is_null($upto)) {
             $suffix_array['upto'] = $upto;
         }
+        if (!is_null($trans_type) && $trans_type !== '') {
+            $suffix_array['trans_type'] = $trans_type;
+        }
+        if (!is_null($account_type_filter) && $account_type_filter != '' && $account_type_filter != 'all') {
+            $suffix_array['account_type_filter'] = $account_type_filter;
+        }
+        
         $this->data['jxy'] = $suffix_array;
+        $this->data['selected_trans_type'] = $trans_type;
+        $this->data['account_type_filter'] = $account_type_filter;
 
         if (count($suffix_array) > 0) {
             $query_string = http_build_query($suffix_array, '', '&');
@@ -871,7 +933,7 @@ class Saving extends CI_Controller {
         }
 
         $config["base_url"] = site_url(current_lang() . '/saving/transaction_search/');
-        $config["total_rows"] = $this->finance_model->count_transaction($key, $from, $upto);
+        $config["total_rows"] = $this->finance_model->count_transaction($key, $from, $upto, $trans_type, $account_type_filter);
         $config["uri_segment"] = 4;
 
         $config['full_tag_open'] = '<div class="pagination" style="background-color:#fff; margin-left:0px;">';
@@ -899,14 +961,111 @@ class Saving extends CI_Controller {
         $page = ($this->uri->segment(4) ? $this->uri->segment(4) : 0);
         $this->data['links'] = $this->pagination->create_links();
 
-        $this->data['transactionlist'] = $this->finance_model->search_transaction($key, $from, $upto, $config["per_page"], $page);
+        $transactions = $this->finance_model->search_transaction($key, $from, $upto, $config["per_page"], $page, $trans_type, $account_type_filter);
+
+        
+        // Add voided status and void entry information to each transaction
+        foreach ($transactions as $trans) {
+            $trans->is_voided = $this->finance_model->is_savings_transaction_voided($trans->receipt);
+            $trans->is_void_entry = $this->finance_model->is_void_entry($trans);
+            $trans->voided_receipt = $this->finance_model->get_voided_receipt($trans);
+            $trans->is_gl_posted = $this->finance_model->is_savings_receipt_posted_to_gl($trans->receipt);
+            $trans->void_original_method = '';
+            if ($trans->is_void_entry && !empty($trans->system_comment)) {
+                if (preg_match('/ORIG_METHOD:([^|]+)/', $trans->system_comment, $matches)) {
+                    $trans->void_original_method = trim($matches[1]);
+                }
+            }
+        }
+
+        $this->data['transactionlist'] = $transactions;
 
 
         $this->data['content'] = 'saving/transaction_history';
         $this->load->view('template', $this->data);
     }
 
-    
+    /**
+     * Void a savings transaction
+     * This creates a reversing entry for the transaction
+     */
+    function void_transaction($receipt = null) {
+        if (!$this->ion_auth->logged_in()) {
+            redirect('auth/login', 'refresh');
+        }
+
+        // Check permission
+        if (!has_role(3, 'void_transaction')) {
+            $this->session->set_flashdata('warning', lang('access_denied'));
+            redirect(current_lang() . '/saving/transaction_search', 'refresh');
+            return;
+        }
+
+        if (!$receipt) {
+            $this->session->set_flashdata('warning', lang('invalid_receipt'));
+            redirect(current_lang() . '/saving/transaction_search', 'refresh');
+            return;
+        }
+
+        // Check if transaction exists
+        $trans = $this->finance_model->get_transaction($receipt);
+        if (!$trans) {
+            $this->session->set_flashdata('warning', lang('transaction_not_found'));
+            redirect(current_lang() . '/saving/transaction_search', 'refresh');
+            return;
+        }
+
+        // Check if already voided
+        if ($this->finance_model->is_savings_transaction_voided($receipt)) {
+            $this->session->set_flashdata('warning', lang('saving_void_already_done'));
+            redirect(current_lang() . '/saving/transaction_search', 'refresh');
+            return;
+        }
+
+        // Process void
+        $reason = $this->input->post('void_reason') ? $this->input->post('void_reason') : 'Transaction voided by user';
+        $result = $this->finance_model->void_savings_deposit_withdrawal_transaction($receipt, $reason);
+
+        if ($result['success']) {
+            $this->session->set_flashdata('message', isset($result['message']) ? $result['message'] : lang('saving_void_success'));
+        } else {
+            $this->session->set_flashdata('warning', isset($result['message']) ? $result['message'] : lang('transaction_fail'));
+        }
+
+        redirect(current_lang() . '/saving/transaction_search', 'refresh');
+    }
+
+    /**
+     * Manually post a single savings transaction receipt to GL.
+     */
+    function post_receipt_to_gl($receipt = null) {
+        if (!$this->ion_auth->logged_in()) {
+            redirect('auth/login', 'refresh');
+        }
+
+        if (!has_role(3, 'saving_account_list')) {
+            $this->session->set_flashdata('warning', lang('access_denied'));
+            redirect(current_lang() . '/saving/transaction_search', 'refresh');
+            return;
+        }
+
+        if (!$receipt) {
+            $this->session->set_flashdata('warning', lang('invalid_receipt'));
+            redirect(current_lang() . '/saving/transaction_search', 'refresh');
+            return;
+        }
+
+        $result = $this->finance_model->post_savings_receipt_to_gl($receipt);
+
+        if (isset($result['success']) && $result['success']) {
+            $this->session->set_flashdata('message', isset($result['message']) ? $result['message'] : 'Transaction posted to GL successfully');
+        } else {
+            $this->session->set_flashdata('warning', isset($result['message']) ? $result['message'] : 'Failed to post transaction to GL');
+        }
+
+        redirect(current_lang() . '/saving/transaction_search', 'refresh');
+    }
+
     
     function autosuggest($id) {
         $pin = current_user()->PIN;
@@ -1809,6 +1968,8 @@ class Saving extends CI_Controller {
     }
 
 }
+
+?>}
 
 
 ?>

@@ -540,10 +540,10 @@ FROM member_registrationfee INNER JOIN members ON member_registrationfee.member_
         $sql = "SELECT  id, amount, account, trans_date,comment,system_comment,trans_type,paymethod,receipt,
 case when trans_type = 'CR' then amount else 0 end as credit,
 case when trans_type = 'DR' then amount else 0 end as debit,
-previous_balance, (SELECT SUM(CASE when trans_type = 'CR' then amount else 0 end) FROM savings_transaction WHERE account='$account' AND trans_date < '$fromdate 00:00:00' ) as credit_total,
-    (SELECT SUM(CASE when trans_type = 'DR' then amount else 0 end) FROM savings_transaction WHERE account='$account' AND trans_date < '$fromdate 00:00:00' ) as debit_total
+previous_balance, (SELECT SUM(CASE when trans_type = 'CR' then amount else 0 end) FROM savings_transaction WHERE account='$account' AND PIN='$pin' AND trans_date < '$fromdate 00:00:00' AND comment NOT LIKE 'VOID-%' AND receipt NOT IN (SELECT SUBSTRING_INDEX(SUBSTRING_INDEX(vt.comment, ' ', 1), 'VOID-', -1) FROM savings_transaction vt WHERE vt.account='$account' AND vt.PIN='$pin' AND vt.comment LIKE 'VOID-%') ) as credit_total,
+        (SELECT SUM(CASE when trans_type = 'DR' then amount else 0 end) FROM savings_transaction WHERE account='$account' AND PIN='$pin' AND trans_date < '$fromdate 00:00:00' AND comment NOT LIKE 'VOID-%' AND receipt NOT IN (SELECT SUBSTRING_INDEX(SUBSTRING_INDEX(vt.comment, ' ', 1), 'VOID-', -1) FROM savings_transaction vt WHERE vt.account='$account' AND vt.PIN='$pin' AND vt.comment LIKE 'VOID-%') ) as debit_total
 FROM  
-  savings_transaction WHERE account='$account' AND trans_date>='$fromdate 00:00:00' AND trans_date <= '$until 23:59:59'  ORDER BY trans_date ASC";
+    savings_transaction WHERE account='$account' AND PIN='$pin' AND trans_date>='$fromdate 00:00:00' AND trans_date <= '$until 23:59:59' AND comment NOT LIKE 'VOID-%' AND receipt NOT IN (SELECT SUBSTRING_INDEX(SUBSTRING_INDEX(vt.comment, ' ', 1), 'VOID-', -1) FROM savings_transaction vt WHERE vt.account='$account' AND vt.PIN='$pin' AND vt.comment LIKE 'VOID-%')  ORDER BY trans_date ASC";
 
         return $this->db->query($sql)->result();
     }

@@ -19,6 +19,14 @@ class Saving extends CI_Controller {
     function __construct() {
         parent::__construct();
 
+        // Defensive cleanup for unexpected pre-output from included files
+        // that can break redirects/rendering on this module.
+        if (function_exists('ob_get_length') && function_exists('ob_clean')) {
+            $ob_len = @ob_get_length();
+            if ($ob_len !== false && $ob_len > 0) {
+                @ob_clean();
+            }
+        }
 
         if (!$this->ion_auth->logged_in()) {
             //redirect them to the login page
@@ -808,6 +816,15 @@ class Saving extends CI_Controller {
         $this->load->view('template', $this->data);
     }
 
+    function transaction_reset() {
+        $this->session->unset_userdata('TRANS_SEARCH_KEY');
+        $this->session->unset_userdata('TRANS_SEARCH_FROM');
+        $this->session->unset_userdata('TRANS_SEARCH_UPTO');
+        $this->session->unset_userdata('TRANS_SEARCH_TRANS_TYPE');
+        $this->session->unset_userdata('TRANS_SEARCH_ACCOUNT_TYPE_FILTER');
+        redirect(current_lang() . '/saving/transaction_search');
+    }
+
     function transaction_search() {
         $this->load->library('pagination');
         $this->data['title'] = lang('saving_transaction_search');
@@ -961,28 +978,41 @@ class Saving extends CI_Controller {
         $page = ($this->uri->segment(4) ? $this->uri->segment(4) : 0);
         $this->data['links'] = $this->pagination->create_links();
 
-        $transactions = $this->finance_model->search_transaction($key, $from, $upto, $config["per_page"], $page, $trans_type, $account_type_filter);
+        $transactions = array();
+        try {
+            $result = $this->finance_model->search_transaction($key, $from, $upto, $config["per_page"], $page, $trans_type, $account_type_filter);
+            $transactions = is_array($result) ? $result : array();
 
-        
-        // Add voided status and void entry information to each transaction
-        foreach ($transactions as $trans) {
-            $trans->is_voided = $this->finance_model->is_savings_transaction_voided($trans->receipt);
-            $trans->is_void_entry = $this->finance_model->is_void_entry($trans);
-            $trans->voided_receipt = $this->finance_model->get_voided_receipt($trans);
-            $trans->is_gl_posted = $this->finance_model->is_savings_receipt_posted_to_gl($trans->receipt);
-            $trans->void_original_method = '';
-            if ($trans->is_void_entry && !empty($trans->system_comment)) {
-                if (preg_match('/ORIG_METHOD:([^|]+)/', $trans->system_comment, $matches)) {
-                    $trans->void_original_method = trim($matches[1]);
+            // Add voided status and void entry information to each transaction
+            foreach ($transactions as $trans) {
+                $receipt = isset($trans->receipt) ? $trans->receipt : null;
+                $trans->is_voided = (!empty($receipt)) ? $this->finance_model->is_savings_transaction_voided($receipt) : false;
+                $trans->is_void_entry = $this->finance_model->is_void_entry($trans);
+                $trans->voided_receipt = $this->finance_model->get_voided_receipt($trans);
+                $trans->is_gl_posted = (!empty($receipt)) ? $this->finance_model->is_savings_receipt_posted_to_gl($receipt) : false;
+                $trans->void_original_method = '';
+                $system_comment = isset($trans->system_comment) ? (string) $trans->system_comment : '';
+                if ($trans->is_void_entry && $system_comment !== '') {
+                    if (preg_match('/ORIG_METHOD:([^|]+)/', $system_comment, $matches)) {
+                        $trans->void_original_method = trim($matches[1]);
+                    }
                 }
             }
+        } catch (Throwable $e) {
+            log_message('error', 'Savings transaction_search failed: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine());
+            $this->session->set_flashdata('warning', 'Transaction search encountered an error. Please try again or contact administrator.');
+            $transactions = array();
         }
 
         $this->data['transactionlist'] = $transactions;
 
-
         $this->data['content'] = 'saving/transaction_history';
-        $this->load->view('template', $this->data);
+        try {
+            $this->load->view('template', $this->data);
+        } catch (Throwable $e) {
+            log_message('error', 'Savings transaction_search view render failed: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine());
+            show_error('Unable to load savings transaction page at the moment.', 500);
+        }
     }
 
     /**

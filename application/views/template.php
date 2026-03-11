@@ -41,12 +41,12 @@
     <body>
         <div id="wrapper">
             <nav class="navbar-default navbar-static-side" role="navigation">
-                <?php $this->load->view('menu'); ?>
+                <?php $this->load->view('newmenu'); ?>
             </nav>
 
 
             <div id="page-wrapper" class="gray-bg dashbard-1">
-                <?php $this->load->view('header'); ?>
+                <?php $this->load->view('newheader'); ?>
 
                 <div class="row wrapper border-bottom white-bg page-heading">
                     <div class="col-lg-10">

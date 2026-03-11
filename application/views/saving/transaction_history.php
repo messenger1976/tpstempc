@@ -12,10 +12,10 @@ if (isset($message) && !empty($message)) {
     echo '<div class="label label-danger displaymessage">' . $this->session->flashdata('warning') . '</div>';
 }
 
-$sp = $jxy;
-$_GET['from'] = format_date($jxy['from'],FALSE);
-$_GET['upto'] = format_date($jxy['upto'],FALSE);
-$_GET['key'] = (isset($jxy['key']) && !empty($jxy['key'])) ? $jxy['key'] : '';
+$sp = isset($jxy) && is_array($jxy) ? $jxy : array();
+$_GET['from'] = (isset($sp['from']) && $sp['from'] !== '') ? format_date($sp['from'], FALSE) : '';
+$_GET['upto'] = (isset($sp['upto']) && $sp['upto'] !== '') ? format_date($sp['upto'], FALSE) : '';
+$_GET['key'] = (isset($sp['key']) && !empty($sp['key'])) ? $sp['key'] : '';
 $_GET['trans_type'] = isset($selected_trans_type) ? strtoupper($selected_trans_type) : 'ALL';
 $_GET['account_type_filter'] = isset($account_type_filter) ? $account_type_filter : (isset($_GET['account_type_filter']) ? $_GET['account_type_filter'] : 'all');
 $account_type_filter = isset($account_type_filter) ? $account_type_filter : (isset($_GET['account_type_filter']) ? $_GET['account_type_filter'] : 'all');
@@ -52,6 +52,8 @@ $account_type_filter = isset($account_type_filter) ? $account_type_filter : (iss
     </div>
     <div class="col-lg-2">
         <input type="submit" value="<?php echo lang('button_search'); ?>" class="btn btn-primary"/>
+        &nbsp;
+        <a href="<?php echo site_url(current_lang() . '/saving/transaction_reset'); ?>" class="btn btn-default">Reset</a>
     </div>
 
 </div>
@@ -70,7 +72,6 @@ $account_type_filter = isset($account_type_filter) ? $account_type_filter : (iss
                 <th><?php echo lang('index_name'); ?></th>
                 <th><?php echo lang('index_transtype'); ?></th>
                 <th><?php echo lang('index_transmethod'); ?></th>
-                <th><?php echo lang('index_chequeno'); ?></th>
                 <th><?php echo lang('index_amount'); ?></th>
                 <th><?php echo lang('index_trans_date'); ?></th>
                 <th><?php echo lang('index_action_th'); ?></th>
@@ -98,7 +99,7 @@ $account_type_filter = isset($account_type_filter) ? $account_type_filter : (iss
                         <?php endif; ?>
                     </td>
                     <td><?php echo !empty($value->account_no_display) ? $value->account_no_display : $value->account; ?></td>
-                    <td><?php echo $this->finance_model->saving_account_name($value->account); ?></td>
+                    <td><?php echo $this->finance_model->saving_account_name(isset($value->account) ? $value->account : ''); ?></td>
                     <td>
                         <?php
                         $trans_type_label = isset($value->trans_type_display) ? strtoupper(trim($value->trans_type_display)) : strtoupper(trim($value->trans_type));
@@ -107,7 +108,7 @@ $account_type_filter = isset($account_type_filter) ? $account_type_filter : (iss
                         ?>
                     </td>
                     <td>
-                        <?php echo $value->paymethod; ?>
+                        <?php echo isset($value->paymethod) ? $value->paymethod : ''; ?>
                         <?php if (isset($value->is_void_entry) && $value->is_void_entry && !empty($value->void_original_method)): ?>
                             <br/>
                             <span class="label label-info" title="Original method before void">
@@ -115,9 +116,8 @@ $account_type_filter = isset($account_type_filter) ? $account_type_filter : (iss
                             </span>
                         <?php endif; ?>
                     </td>
-                    <td><?php echo $value->cheque_num; ?></td>
-                    <td><?php echo number_format($value->amount,2); ?></td>
-                    <td><?php echo $value->trans_date; ?></td>
+                    <td style="text-align:right;"><?php echo number_format(isset($value->amount) ? $value->amount : 0,2); ?></td>
+                    <td><?php echo (!empty($value->trans_date) ? date('m/d/Y', strtotime($value->trans_date)) : ''); ?></td>
                     
 
                     <td>

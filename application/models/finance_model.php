@@ -1965,14 +1965,16 @@ $pin=current_user()->PIN;
 
     function is_void_entry($transaction) {
         // Check if this transaction is a reversing entry (void transaction)
-        return (strpos($transaction->comment, 'VOID-') === 0);
+        $comment = isset($transaction->comment) ? (string)$transaction->comment : '';
+        return (strpos($comment, 'VOID-') === 0);
     }
 
     function get_voided_receipt($transaction) {
         // Extract the original receipt number from a void entry comment
         // Comment format: VOID-[original_receipt] - [reason]
         if ($this->is_void_entry($transaction)) {
-            if (preg_match('/VOID-([^ ]+)/', $transaction->comment, $matches)) {
+            $comment = isset($transaction->comment) ? (string)$transaction->comment : '';
+            if (preg_match('/VOID-([^ ]+)/', $comment, $matches)) {
                 return $matches[1];
             }
         }
@@ -2301,15 +2303,19 @@ $pin=current_user()->PIN;
 
     function saving_account_name($account) {
         $account_info = $this->saving_account_balance($account);
+        if (empty($account_info)) {
+            return '';
+        }
         if ($account_info->tablename == 'members_grouplist') {
             $this->db->where('GID', $account_info->RFID);
             $rowdata = $this->db->get('members_grouplist')->row();
-            return $rowdata->name;
+            return $rowdata ? $rowdata->name : '';
         } else if ($account_info->tablename == 'members') {
             $this->db->where('PID', $account_info->RFID);
             $rowdata = $this->db->get('members')->row();
-            return $rowdata->firstname . ' ' . $rowdata->middlename . ' ' . $rowdata->lastname;
+            return $rowdata ? ($rowdata->firstname . ' ' . $rowdata->middlename . ' ' . $rowdata->lastname) : '';
         }
+        return '';
     }
 
     function sales_quote_list() {

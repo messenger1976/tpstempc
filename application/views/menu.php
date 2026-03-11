@@ -1,12 +1,16 @@
 <?php
 $active = ($this->uri->segment(2)) ? $this->uri->segment(2) : 'X';
 $activefunction = ($this->uri->segment(3)) ? $this->uri->segment(3) : 'X';
+$company_info = function_exists('company_info') ? company_info() : null;
+$company_logo = ($company_info && isset($company_info->logo) && $company_info->logo !== '') ? $company_info->logo : 'logo.png';
+$current_user_data = function_exists('current_user') ? current_user() : null;
+$current_member_id = ($current_user_data && isset($current_user_data->member_id)) ? $current_user_data->member_id : '';
 ?>
 <div class="sidebar-collapse">
     <ul class="nav" id="side-menu">
         <li class="nav-header">
             <div class="dropdown profile-element" style="margin-top: -30px; text-align: center;"> <span>
-                    <img alt="image" style="width: 130px;" src="<?php echo base_url() ?>logo/<?php echo company_info()->logo; ?>" />
+                    <img alt="image" style="width: 130px;" src="<?php echo base_url() ?>logo/<?php echo $company_logo; ?>" />
                 </span>
 
             </div>
@@ -362,7 +366,7 @@ $activefunction = ($this->uri->segment(3)) ? $this->uri->segment(3) : 'X';
                 </ul>
             </li>
             <li class="<?php echo ($active == 'report_member' ? 'active' : ''); ?>">
-                <a href="<?php echo site_url($this->lang->lang() . '/report_member/member_profile/?member=' . current_user()->member_id); ?>"><i class="fa fa-user-md"></i> <span class="nav-label">Profile</span></a>
+                <a href="<?php echo site_url($this->lang->lang() . '/report_member/member_profile/?member=' . $current_member_id); ?>"><i class="fa fa-user-md"></i> <span class="nav-label">Profile</span></a>
 
             </li>
             <li class="<?php echo ($active == 'report_contribution' ? 'active' : ''); ?>">
@@ -398,7 +402,7 @@ $activefunction = ($this->uri->segment(3)) ? $this->uri->segment(3) : 'X';
                 <a href="#"><i class="fa fa-cogs"></i> <span class="nav-label"><?php echo lang('client_account'); ?></span><span class="fa arrow"></span></a>
                 <ul class="nav nav-second-level">
                     <?php if (is_super_user()) { ?>
-                        <li class="<?php echo (($activefunction == 'reseller_account' || $activefunction = 'create_resseller_account' ) ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/account/reseller_account'); ?>"><?php echo lang('reseller_account_list'); ?></a></li>
+                        <li class="<?php echo (($activefunction == 'reseller_account' || $activefunction == 'create_resseller_account' ) ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/account/reseller_account'); ?>"><?php echo lang('reseller_account_list'); ?></a></li>
                     <?php } ?>
                         
                         <li class="<?php echo ($activefunction == 'client_account_create'   ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/account/client_account_create'); ?>"><?php echo lang('myclient_religion_structure'); ?></a></li>

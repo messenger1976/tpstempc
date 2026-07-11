@@ -220,15 +220,29 @@ class Setting extends CI_Controller {
         if ($this->input->post('min_deposit') !== FALSE) {
             $_POST['min_deposit'] = str_replace(',', '', $this->input->post('min_deposit'));
         }
+        if ($this->input->post('interest_min_balance') !== FALSE) {
+            $_POST['interest_min_balance'] = str_replace(',', '', $this->input->post('interest_min_balance'));
+        }
         $this->form_validation->set_rules('account_name', lang('account_name'), 'xss_clean|required');
         $this->form_validation->set_rules('account_description', lang('account_description'), 'xss_clean|required');
         $this->form_validation->set_rules('minimum_amount', lang('account_min_amount'), 'xss_clean|required|numeric');
         $this->form_validation->set_rules('max_withdrawal', lang('account_max_withdrawal'), 'xss_clean|required|numeric');
         $this->form_validation->set_rules('interest_rate', lang('account_interest_rate'), 'xss_clean|required|numeric');
         $this->form_validation->set_rules('min_deposit', lang('account_min_deposit'), 'xss_clean|numeric');
+        $this->form_validation->set_rules('interest_frequency', lang('interest_frequency'), 'xss_clean|required');
+        $this->form_validation->set_rules('interest_basis', lang('interest_basis'), 'xss_clean|required');
+        $this->form_validation->set_rules('interest_min_balance', lang('interest_min_balance'), 'xss_clean|numeric');
         $this->form_validation->set_rules('account_setup', 'Account Setup', 'xss_clean|required');
         $this->form_validation->set_rules('account_setup_interest_rate', 'Account Setup for Interest Rate', 'xss_clean|required');
         if ($this->form_validation->run() == TRUE) {
+            $interest_frequency = strtoupper(trim($this->input->post('interest_frequency')));
+            if (!in_array($interest_frequency, array('NONE', 'MONTHLY', 'QUARTERLY'))) {
+                $interest_frequency = 'NONE';
+            }
+            $interest_basis = strtoupper(trim($this->input->post('interest_basis')));
+            if (!in_array($interest_basis, array('ADB', 'LOWEST', 'EOP'))) {
+                $interest_basis = 'ADB';
+            }
             $account_info = array(
                 'name' => trim($this->input->post('account_name')),
                 'description' => trim($this->input->post('account_description')),
@@ -236,6 +250,9 @@ class Setting extends CI_Controller {
                 'max_withdrawal' => trim($this->input->post('max_withdrawal')),
                 'interest_rate' => trim($this->input->post('interest_rate')),
                 'min_deposit' => trim($this->input->post('min_deposit')),
+                'interest_frequency' => $interest_frequency,
+                'interest_basis' => $interest_basis,
+                'interest_min_balance' => trim($this->input->post('interest_min_balance')) ? trim($this->input->post('interest_min_balance')) : 0,
                 'account_setup' => trim($this->input->post('account_setup')),
                 'account_setup_interest_rate' => trim($this->input->post('account_setup_interest_rate')),
                 'PIN' =>  current_user()->PIN

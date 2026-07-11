@@ -448,6 +448,150 @@ class Finance extends CI_Controller {
         $this->load->view('template', $this->data);
     }
 
+    /**
+     * Display list of manual journal entries (general_journal_entry).
+     * Defaults date_from/date_to to current date. Persists selected dates in session when navigating away and back.
+     */
+    function journal_entry_list() {
+        $this->data['title'] = lang('journal_entry_list');
+
+        $today = date('Y-m-d');
+        $date_from = $this->input->get('date_from');
+        $date_to = $this->input->get('date_to');
+        $clear = $this->input->get('clear') === '1' || $this->input->get('clear') === 1;
+
+        if ($clear) {
+            $this->session->unset_userdata(array('journal_entry_list_date_from', 'journal_entry_list_date_to'));
+            redirect(current_lang() . '/finance/journal_entry_list?date_from=' . $today . '&date_to=' . $today, 'refresh');
+            return;
+        } elseif (!empty($date_from) || !empty($date_to)) {
+            $date_from = !empty($date_from) ? $date_from : $today;
+            $date_to = !empty($date_to) ? $date_to : $today;
+            $this->session->set_userdata('journal_entry_list_date_from', $date_from);
+            $this->session->set_userdata('journal_entry_list_date_to', $date_to);
+        } else {
+            $stored_from = $this->session->userdata('journal_entry_list_date_from');
+            $stored_to = $this->session->userdata('journal_entry_list_date_to');
+            if (!empty($stored_from) || !empty($stored_to)) {
+                $date_from = !empty($stored_from) ? $stored_from : $today;
+                $date_to = !empty($stored_to) ? $stored_to : $today;
+            } else {
+                $date_from = $today;
+                $date_to = $today;
+            }
+        }
+
+        $this->data['date_from'] = $date_from;
+        $this->data['date_to'] = $date_to;
+        $this->data['journal_entries'] = $this->finance_model->get_journal_entries($date_from, $date_to);
+
+        $this->data['content'] = 'finance/journal_entry_list';
+        $this->load->view('template', $this->data);
+    }
+
+    /**
+     * Delete an unposted manual journal entry.
+     */
+    function journal_entry_delete($id) {
+        $id = decode_id($id);
+
+        if ($this->finance_model->is_journal_posted($id)) {
+            $this->session->set_flashdata('warning', lang('journal_entry_cannot_delete_posted'));
+            redirect(current_lang() . '/finance/journal_entry_list', 'refresh');
+            return;
+        }
+
+        $result = $this->finance_model->delete_journal_entry($id);
+
+        if ($result) {
+            $this->session->set_flashdata('message', lang('journal_entry_delete_success'));
+        } else {
+            $this->session->set_flashdata('warning', lang('journal_entry_delete_fail'));
+        }
+
+        redirect(current_lang() . '/finance/journal_entry_list', 'refresh');
+    }
+
+    /**
+     * Export journal entries to Excel.
+     */
+    function journal_entry_export() {
+        if (ob_get_level()) {
+            ob_end_clean();
+        }
+        while (@ob_end_clean());
+
+        $this->load->library('excel');
+
+        $date_from = $this->input->get('date_from');
+        $date_to = $this->input->get('date_to');
+        $entries = $this->finance_model->get_journal_entries($date_from, $date_to);
+
+        if (empty($entries)) {
+            if (ob_get_level()) {
+                ob_end_clean();
+            }
+            $this->session->set_flashdata('warning', lang('no_records_found'));
+            redirect(current_lang() . '/finance/journal_entry_list', 'refresh');
+            exit();
+        }
+
+        $objPHPExcel = new PHPExcel();
+        $objPHPExcel->getProperties()->setCreator(company_info()->name)
+                                     ->setTitle('Journal Entries')
+                                     ->setSubject('Journal Entries Export')
+                                     ->setDescription('Journal Entries exported from ' . company_info()->name);
+
+        $objPHPExcel->setActiveSheetIndex(0);
+        $sheet = $objPHPExcel->getActiveSheet();
+        $sheet->setTitle('Journal Entries');
+
+        $sheet->setCellValue('A1', lang('journal_entry_no'));
+        $sheet->setCellValue('B1', lang('journalentry_date'));
+        $sheet->setCellValue('C1', lang('journalentry_description'));
+        $sheet->setCellValue('D1', lang('journalentry_debit'));
+        $sheet->setCellValue('E1', lang('journalentry_credit'));
+        $sheet->setCellValue('F1', lang('status'));
+
+        $row = 2;
+        foreach ($entries as $entry) {
+            $status = !empty($entry->is_posted) ? lang('journal_entry_status_posted') : lang('journal_entry_status_draft');
+            $sheet->setCellValue('A' . $row, $entry->entryid);
+            $sheet->setCellValue('B' . $row, $entry->entrydate);
+            $sheet->setCellValue('C' . $row, $entry->description);
+            $sheet->setCellValue('D' . $row, number_format($entry->total_debit, 2, '.', ''));
+            $sheet->setCellValue('E' . $row, number_format($entry->total_credit, 2, '.', ''));
+            $sheet->setCellValue('F' . $row, $status);
+            $row++;
+        }
+
+        header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        header('Content-Disposition: attachment;filename="Journal_Entries_' . date('Y-m-d') . '.xlsx"');
+        header('Cache-Control: max-age=0');
+
+        $objWriter = PHPExcel_IOFactory::createWriter($objPHPExcel, 'Excel2007');
+        $objWriter->save('php://output');
+        exit();
+    }
+
+    /**
+     * Print a manual journal entry.
+     */
+    function journal_entry_print($id) {
+        $id = decode_id($id);
+        $entry = $this->finance_model->get_journal_entry_details($id);
+
+        if (!$entry) {
+            $this->session->set_flashdata('warning', lang('journal_entry_not_found'));
+            redirect(current_lang() . '/finance/journal_entry_list', 'refresh');
+            return;
+        }
+
+        $this->data['entry'] = $entry;
+        $this->data['id'] = encode_id($id);
+        $this->load->view('finance/print/journal_entry_print', $this->data);
+    }
+
     // Journal Entry Review and Approval
     function journal_entry_review() {
         $this->data['title'] = 'Journal Entry Review & Approval';
@@ -502,23 +646,29 @@ class Finance extends CI_Controller {
         log_message('debug', 'journal_entry_view: Encoded ID=' . $encoded_id . ', Decoded ID=' . $id);
         $this->data['title'] = 'Journal Entry Details';
         
-        if (!has_role(6, 'Journal_entry')) {
+        if (!has_role(6, 'Journal_entry') && !has_role(6, 'View_journal_entry')) {
             $this->session->set_flashdata('warning', 'You do not have permission to access this page.');
             redirect(current_lang() . '/dashboard', 'refresh');
             return;
         }
-        
-        // Get journal entry details
+
         $entry = $this->finance_model->get_journal_entry_details($id);
-        
+
         if (!$entry) {
-            $this->session->set_flashdata('warning', 'Journal entry not found.');
-            redirect(current_lang() . '/finance/journal_entry_review', 'refresh');
+            $this->session->set_flashdata('warning', lang('journal_entry_not_found'));
+            redirect(current_lang() . '/finance/journal_entry_list', 'refresh');
             return;
         }
-        
+
         $this->data['entry'] = $entry;
         $this->data['id'] = encode_id($id);
+
+        if ($this->input->get('popup')) {
+            $this->data['is_popup'] = true;
+            $this->load->view('finance/journal_entry_view_popup', $this->data);
+            return;
+        }
+
         $this->data['content'] = 'finance/journal_entry_view';
         $this->load->view('template', $this->data);
     }

@@ -202,6 +202,9 @@ $current_member_id = ($current_user_data && isset($current_user_data->member_id)
                         <?php if (has_role(6, 'View_cash_disbursement')) { ?>
                             <li class="<?php echo ($activefunction == 'cash_disbursement_list' || $active == 'cash_disbursement' ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/cash_disbursement/cash_disbursement_list'); ?>"><?php echo lang('cash_disbursement_list'); ?></a></li>
                         <?php } ?>
+                        <?php if (has_role(6, 'View_journal_entry')) { ?>
+                            <li class="<?php echo ($activefunction == 'journal_entry_list' ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/finance/journal_entry_list'); ?>"><?php echo lang('journal_entry_list'); ?></a></li>
+                        <?php } ?>
                         <?php if (has_role(6, 'Manage_customer')) { ?>
                             <li class="<?php echo ($activefunction == 'customerlist' ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/customer/customerlist'); ?>"><?php echo lang('customer'); ?></a></li>
                         <?php } ?>

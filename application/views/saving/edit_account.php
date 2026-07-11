@@ -65,6 +65,30 @@ $account_info = isset($account_info) ? $account_info : null;
         </div>
 
         <div class="form-group">
+            <label class="col-lg-4 control-label"><?php echo lang('interest_frequency'); ?>:</label>
+            <div class="col-lg-7">
+                <?php
+                $selected_freq = set_value('interest_frequency');
+                if ($selected_freq === FALSE || $selected_freq === null || $selected_freq === '') {
+                    if ($account_info && isset($account_info->interest_frequency) && $account_info->interest_frequency !== null && $account_info->interest_frequency !== '') {
+                        $selected_freq = strtoupper($account_info->interest_frequency);
+                    } else {
+                        $selected_freq = 'INHERIT';
+                    }
+                }
+                ?>
+                <select name="interest_frequency" class="form-control">
+                    <option value="INHERIT" <?php echo ($selected_freq == 'INHERIT' ? 'selected="selected"' : ''); ?>><?php echo lang('interest_frequency_inherit'); ?></option>
+                    <option value="NONE" <?php echo ($selected_freq == 'NONE' ? 'selected="selected"' : ''); ?>><?php echo lang('interest_frequency_none'); ?></option>
+                    <option value="MONTHLY" <?php echo ($selected_freq == 'MONTHLY' ? 'selected="selected"' : ''); ?>><?php echo lang('interest_frequency_monthly'); ?></option>
+                    <option value="QUARTERLY" <?php echo ($selected_freq == 'QUARTERLY' ? 'selected="selected"' : ''); ?>><?php echo lang('interest_frequency_quarterly'); ?></option>
+                </select>
+                <?php echo form_error('interest_frequency'); ?>
+                <span class="help-block" style="font-size: 12px; color: #888;"><?php echo lang('interest_frequency_account_help'); ?></span>
+            </div>
+        </div>
+
+        <div class="form-group">
             <label class="col-lg-4 control-label"><?php echo lang('account_status'); ?>: <span class="required">*</span></label>
             <div class="col-lg-7">
                 <select name="status" class="form-control" required>
@@ -107,6 +131,17 @@ $account_info = isset($account_info) ? $account_info : null;
                 <div style="border-bottom:1px dashed #ccc; padding:5px 0;">
                     <strong><?php echo lang('member_virtual_balance'); ?>:</strong> 
                     <?php echo number_format($account_info->virtual_balance, 2, '.', ','); ?>
+                </div>
+                <div style="border-bottom:1px dashed #ccc; padding:5px 0;">
+                    <strong><?php echo lang('interest_frequency'); ?>:</strong>
+                    <?php
+                    $acc_freq = (isset($account_info->interest_frequency) && $account_info->interest_frequency !== null && $account_info->interest_frequency !== '')
+                        ? strtoupper($account_info->interest_frequency) : 'INHERIT';
+                    if ($acc_freq == 'MONTHLY') { echo lang('interest_frequency_monthly') . ' (' . lang('interest_frequency_override_label') . ')'; }
+                    else if ($acc_freq == 'QUARTERLY') { echo lang('interest_frequency_quarterly') . ' (' . lang('interest_frequency_override_label') . ')'; }
+                    else if ($acc_freq == 'NONE') { echo lang('interest_frequency_none') . ' (' . lang('interest_frequency_override_label') . ')'; }
+                    else { echo lang('interest_frequency_inherit'); }
+                    ?>
                 </div>
                 <div style="border-bottom:1px dashed #ccc; padding:5px 0;">
                     <strong><?php echo lang('account_status'); ?>:</strong> 

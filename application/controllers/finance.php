@@ -391,6 +391,7 @@ class Finance extends CI_Controller {
             $act = count($account);
             $date = format_date(trim($this->input->post('issue_date')));
             $out_description = trim($this->input->post('description11'));
+            $out_reference_no = trim($this->input->post('reference_no'));
             $summ_credit = $this->input->post('summation_credit');
             $summ_debit = $this->input->post('summation_debit');
 
@@ -418,7 +419,8 @@ class Finance extends CI_Controller {
                 
                 $main_array = array(
                     'entrydate' => $date,
-                    'description' => $out_description
+                    'description' => $out_description,
+                    'reference_no' => $out_reference_no
                 );
                 
                 // Create journal entry (NOT auto-posted - requires approval)
@@ -453,6 +455,7 @@ class Finance extends CI_Controller {
      * Defaults date_from/date_to to current date. Persists selected dates in session when navigating away and back.
      */
     function journal_entry_list() {
+        $this->load->helper('text');
         $this->data['title'] = lang('journal_entry_list');
 
         $today = date('Y-m-d');
@@ -548,20 +551,22 @@ class Finance extends CI_Controller {
 
         $sheet->setCellValue('A1', lang('journal_entry_no'));
         $sheet->setCellValue('B1', lang('journalentry_date'));
-        $sheet->setCellValue('C1', lang('journalentry_description'));
-        $sheet->setCellValue('D1', lang('journalentry_debit'));
-        $sheet->setCellValue('E1', lang('journalentry_credit'));
-        $sheet->setCellValue('F1', lang('status'));
+        $sheet->setCellValue('C1', lang('journalentry_reference_no'));
+        $sheet->setCellValue('D1', lang('journalentry_description'));
+        $sheet->setCellValue('E1', lang('journalentry_debit'));
+        $sheet->setCellValue('F1', lang('journalentry_credit'));
+        $sheet->setCellValue('G1', lang('status'));
 
         $row = 2;
         foreach ($entries as $entry) {
             $status = !empty($entry->is_posted) ? lang('journal_entry_status_posted') : lang('journal_entry_status_draft');
             $sheet->setCellValue('A' . $row, $entry->entryid);
             $sheet->setCellValue('B' . $row, $entry->entrydate);
-            $sheet->setCellValue('C' . $row, $entry->description);
-            $sheet->setCellValue('D' . $row, number_format($entry->total_debit, 2, '.', ''));
-            $sheet->setCellValue('E' . $row, number_format($entry->total_credit, 2, '.', ''));
-            $sheet->setCellValue('F' . $row, $status);
+            $sheet->setCellValue('C' . $row, isset($entry->reference_no) ? $entry->reference_no : '');
+            $sheet->setCellValue('D' . $row, $entry->description);
+            $sheet->setCellValue('E' . $row, number_format($entry->total_debit, 2, '.', ''));
+            $sheet->setCellValue('F' . $row, number_format($entry->total_credit, 2, '.', ''));
+            $sheet->setCellValue('G' . $row, $status);
             $row++;
         }
 

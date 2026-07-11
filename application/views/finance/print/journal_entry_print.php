@@ -46,8 +46,10 @@
             <td><?php echo $entry->is_posted ? lang('journal_entry_status_posted') : lang('journal_entry_status_draft'); ?></td>
         </tr>
         <tr>
+            <th><?php echo lang('journalentry_reference_no'); ?></th>
+            <td><?php echo !empty($entry->reference_no) ? htmlspecialchars($entry->reference_no) : '—'; ?></td>
             <th><?php echo lang('journalentry_description'); ?></th>
-            <td colspan="3"><?php echo htmlspecialchars($entry->description); ?></td>
+            <td><?php echo htmlspecialchars($entry->description); ?></td>
         </tr>
     </table>
 

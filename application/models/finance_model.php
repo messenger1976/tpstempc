@@ -2439,11 +2439,24 @@ $pin=current_user()->PIN;
         $entrydate = $this->db->escape($main_array['entrydate']);
         $description = $this->db->escape($main_array['description']);
         $pin_value = isset($main_array['PIN']) ? $this->db->escape($main_array['PIN']) : 'NULL';
+        $reference_no = isset($main_array['reference_no']) ? trim($main_array['reference_no']) : '';
+        
+        // Ensure reference_no column exists (user Reference #)
+        $has_ref_no = $this->db->query("SHOW COLUMNS FROM general_journal_entry LIKE 'reference_no'")->row();
+        if (!$has_ref_no) {
+            $this->db->query("ALTER TABLE general_journal_entry ADD COLUMN reference_no VARCHAR(100) NULL DEFAULT NULL AFTER description");
+            $has_ref_no = $this->db->query("SHOW COLUMNS FROM general_journal_entry LIKE 'reference_no'")->row();
+        }
+        $reference_no_sql = ($has_ref_no && $reference_no !== '') ? $this->db->escape($reference_no) : 'NULL';
         
         // Check if reference_type column exists (Journal Voucher)
         $has_ref_type = $this->db->query("SHOW COLUMNS FROM general_journal_entry LIKE 'reference_type'")->row();
-        if ($has_ref_type) {
+        if ($has_ref_type && $has_ref_no) {
+            $insert_sql = "INSERT INTO general_journal_entry (entrydate, description, reference_no, PIN, reference_type) VALUES ($entrydate, $description, $reference_no_sql, $pin_value, 'journal_voucher')";
+        } elseif ($has_ref_type) {
             $insert_sql = "INSERT INTO general_journal_entry (entrydate, description, PIN, reference_type) VALUES ($entrydate, $description, $pin_value, 'journal_voucher')";
+        } elseif ($has_ref_no) {
+            $insert_sql = "INSERT INTO general_journal_entry (entrydate, description, reference_no, PIN) VALUES ($entrydate, $description, $reference_no_sql, $pin_value)";
         } else {
             $insert_sql = "INSERT INTO general_journal_entry (entrydate, description, PIN) VALUES ($entrydate, $description, $pin_value)";
         }

@@ -38,6 +38,10 @@ if (isset($message) && !empty($message)) {
                                     <td><?php echo date('M d, Y', strtotime($entry->entrydate)); ?></td>
                                 </tr>
                                 <tr>
+                                    <th><?php echo lang('journalentry_reference_no'); ?>:</th>
+                                    <td><?php echo !empty($entry->reference_no) ? htmlspecialchars($entry->reference_no) : '—'; ?></td>
+                                </tr>
+                                <tr>
                                     <th>Description:</th>
                                     <td><?php echo htmlspecialchars($entry->description); ?></td>
                                 </tr>

@@ -35,10 +35,16 @@ if (isset($message) && !empty($message)) {
     </div>
 </div>
 
+<div class="form-group"><label class="col-lg-3 control-label"><?php echo lang('journalentry_reference_no'); ?> :</label>
+    <div class="col-lg-6">
+        <input type="text" name="reference_no" class="form-control" maxlength="100" placeholder="<?php echo lang('journalentry_reference_no_hint'); ?>" value="<?php echo set_value('reference_no'); ?>"/>
+        <?php echo form_error('reference_no'); ?>
+    </div>
+</div>
 
 <div class="form-group"><label class="col-lg-3 control-label"><?php echo lang('journalentry_description'); ?> : <span class="required">*</span> </label>
     <div class="col-lg-6">
-        <textarea  name="description11"  class="form-control" ><?php echo set_value('journalentry_account_description') ?></textarea>
+        <textarea  name="description11"  class="form-control" ><?php echo set_value('description11'); ?></textarea>
 
         <?php echo form_error('description11'); ?>
     </div>

@@ -285,6 +285,7 @@ Before making changes:
 
 ## Related Documentation
 
+- [SAVINGS_INTEREST_POSTING.md](SAVINGS_INTEREST_POSTING.md): Automated monthly/quarterly interest computation and batch posting
 - `HOW_TO_POST_JOURNAL_TO_GENERAL_LEDGER.md`: General GL posting guide
 - `CASH_RECEIPT_MODULE_README.md`: Similar implementation for cash receipts
 - `FINANCE_MODULES_COMPLETE_SUMMARY.md`: Overview of all finance modules

@@ -53,6 +53,41 @@ if (isset($message) && !empty($message)) {
     </div>
 </div>
 
+<div style="margin: 20px 0px 10px 50px; width: 80%; font-size: 16px; color: brown; font-weight: bold; border-bottom:  1px solid #ccc;"><?php echo lang('interest_setup'); ?></div>
+<?php
+$selected_frequency = set_value('interest_frequency') ? set_value('interest_frequency') : (isset($account->interest_frequency) ? $account->interest_frequency : 'NONE');
+$selected_basis = set_value('interest_basis') ? set_value('interest_basis') : (isset($account->interest_basis) ? $account->interest_basis : 'ADB');
+?>
+<div class="form-group"><label class="col-lg-3 control-label"><?php echo lang('interest_frequency'); ?>  : <span class="required">*</span></label>
+    <div class="col-lg-6">
+        <select name="interest_frequency" class="form-control">
+            <option value="NONE" <?php echo ($selected_frequency == 'NONE' ? 'selected="selected"' : ''); ?>><?php echo lang('interest_frequency_none'); ?></option>
+            <option value="MONTHLY" <?php echo ($selected_frequency == 'MONTHLY' ? 'selected="selected"' : ''); ?>><?php echo lang('interest_frequency_monthly'); ?></option>
+            <option value="QUARTERLY" <?php echo ($selected_frequency == 'QUARTERLY' ? 'selected="selected"' : ''); ?>><?php echo lang('interest_frequency_quarterly'); ?></option>
+        </select>
+        <?php echo form_error('interest_frequency'); ?>
+        <span class="help-block" style="font-size: 12px; color: #888;"><?php echo lang('interest_frequency_help'); ?></span>
+    </div>
+</div>
+<div class="form-group"><label class="col-lg-3 control-label"><?php echo lang('interest_basis'); ?>  : <span class="required">*</span></label>
+    <div class="col-lg-6">
+        <select name="interest_basis" class="form-control">
+            <option value="ADB" <?php echo ($selected_basis == 'ADB' ? 'selected="selected"' : ''); ?>><?php echo lang('interest_basis_adb'); ?></option>
+            <option value="LOWEST" <?php echo ($selected_basis == 'LOWEST' ? 'selected="selected"' : ''); ?>><?php echo lang('interest_basis_lowest'); ?></option>
+            <option value="EOP" <?php echo ($selected_basis == 'EOP' ? 'selected="selected"' : ''); ?>><?php echo lang('interest_basis_eop'); ?></option>
+        </select>
+        <?php echo form_error('interest_basis'); ?>
+        <span class="help-block" style="font-size: 12px; color: #888;"><?php echo lang('interest_basis_help'); ?></span>
+    </div>
+</div>
+<div class="form-group"><label class="col-lg-3 control-label"><?php echo lang('interest_min_balance'); ?> :</label>
+    <div class="col-lg-6">
+        <input type="text" name="interest_min_balance" value="<?php echo set_value('interest_min_balance') ? set_value('interest_min_balance') : (isset($account->interest_min_balance) ? $account->interest_min_balance : '0'); ?>"  class="form-control amountformat"/>
+        <?php echo form_error('interest_min_balance'); ?>
+        <span class="help-block" style="font-size: 12px; color: #888;"><?php echo lang('interest_min_balance_help'); ?></span>
+    </div>
+</div>
+
 <div style="margin: 20px 0px 10px 50px; width: 80%; font-size: 16px; color: brown; font-weight: bold; border-bottom:  1px solid #ccc;">Account Setup</div>
 <div class="form-group"><label class="col-lg-3 control-label">Account Setup  : <span class="required">*</span></label>
     <div class="col-lg-6">

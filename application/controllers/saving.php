@@ -609,6 +609,7 @@ class Saving extends CI_Controller {
         $this->form_validation->set_rules('balance', lang('balance'), 'required|numeric');
         $this->form_validation->set_rules('virtual_balance', lang('virtual_balance'), 'numeric');
         $this->form_validation->set_rules('status', lang('account_status'), 'required|in_list[0,1]');
+        $this->form_validation->set_rules('interest_frequency', lang('interest_frequency'), 'xss_clean');
         
         if ($this->form_validation->run() == TRUE) {
             $update_data = array(
@@ -620,6 +621,10 @@ class Saving extends CI_Controller {
                 'virtual_balance' => trim($this->input->post('virtual_balance')) ? trim($this->input->post('virtual_balance')) : 0,
                 'status' => trim($this->input->post('status')),
             );
+
+            if ($this->db->field_exists('interest_frequency', 'members_account')) {
+                $update_data['interest_frequency'] = $this->finance_model->normalize_interest_frequency_override($this->input->post('interest_frequency'));
+            }
             
             $result = $this->finance_model->update_saving_account($update_data, $id);
             if ($result) {
@@ -650,6 +655,7 @@ class Saving extends CI_Controller {
         $this->form_validation->set_rules('paymenthod', lang('paymentmethod'), 'required');
         $this->form_validation->set_rules('comment', lang('comment'), '');
         $this->form_validation->set_rules('posting_date', lang('mortuary_transaction_date'), 'required|valid_date');
+        $this->form_validation->set_rules('interest_frequency', lang('interest_frequency'), 'xss_clean');
         $check_number_received = '';
         if ($this->input->post('paymenthod')) {
             $is_cheque = $this->input->post('paymenthod');
@@ -673,6 +679,7 @@ class Saving extends CI_Controller {
             $account_selected->min_amount;
             $comment = trim($this->input->post('comment'));
             $paymethod = trim($this->input->post('paymenthod'));
+            $interest_frequency = $this->finance_model->normalize_interest_frequency_override($this->input->post('interest_frequency'));
 
 
             if ($account_selected->min_amount <= $opening_balance) {
@@ -680,7 +687,7 @@ class Saving extends CI_Controller {
                 $balance = $opening_balance - $account_selected->min_amount;
                 $virtual_balance = $account_selected->min_amount;
 
-                $accountdata = $this->finance_model->create_account($PID, $member_id, $account_type, $balance, $virtual_balance, $paymethod, $comment, $check_number_received, $posting_date, $old_member_id);
+                $accountdata = $this->finance_model->create_account($PID, $member_id, $account_type, $balance, $virtual_balance, $paymethod, $comment, $check_number_received, $posting_date, $old_member_id, $interest_frequency);
                 if ($accountdata) {
                     $this->session->set_flashdata('next_customer', site_url(current_lang() . '/saving/create_saving_account'));
                     $this->session->set_flashdata('next_customer_label', lang('next_deposit_withdrawal'));
@@ -1995,6 +2002,262 @@ class Saving extends CI_Controller {
         
         $this->session->set_flashdata('message', $message);
         redirect('saving/savings_beginning_balance_list', 'refresh');
+    }
+
+    /**
+     * Batch interest posting (monthly/quarterly).
+     * Computes interest per the account type's setup (rate, basis, minimum
+     * balance), shows a preview, and posts the selected accounts as INT
+     * transactions through the existing transaction/GL pipeline.
+     */
+    function interest_posting() {
+        if (!has_role(3, 'Interest_posting')) {
+            $this->session->set_flashdata('warning', lang('access_denied'));
+            redirect('dashboard', 'refresh');
+            return;
+        }
+
+        $this->data['title'] = lang('interest_posting');
+
+        $types = $this->finance_model->interest_enabled_account_types();
+        $this->data['interest_types'] = $types;
+
+        $action = $this->input->post('action');
+        $account_type = trim((string) $this->input->post('account_type'));
+        $posting_frequency = strtoupper(trim((string) $this->input->post('posting_frequency')));
+        if (!in_array($posting_frequency, array('MONTHLY', 'QUARTERLY'))) {
+            $posting_frequency = '';
+        }
+        $this->data['posting_frequency'] = $posting_frequency;
+
+        if (($action == 'preview' || $action == 'post') && $account_type != '') {
+            $type = null;
+            foreach ($types as $t) {
+                if ((string) $t->account === $account_type) {
+                    $type = $t;
+                    break;
+                }
+            }
+
+            // Allow posting against a type that only has per-account overrides
+            // even if it was not in the "enabled" list for some edge case.
+            if (!$type) {
+                $type = $this->finance_model->saving_account_list(null, $account_type)->row();
+                if ($type && (float) $type->interest_rate <= 0) {
+                    $type = null;
+                }
+            }
+
+            if (!$type) {
+                $this->data['warning'] = lang('interest_invalid_account_type');
+            } else {
+                // Posting frequency is chosen explicitly; fall back to product default for old forms
+                if ($posting_frequency === '') {
+                    $posting_frequency = strtoupper(trim((string) $type->interest_frequency));
+                }
+                if (!in_array($posting_frequency, array('MONTHLY', 'QUARTERLY'))) {
+                    $this->data['warning'] = lang('interest_invalid_posting_frequency');
+                } else {
+                    $this->data['posting_frequency'] = $posting_frequency;
+                    $period = $this->resolve_interest_period($posting_frequency);
+                    if (!$period) {
+                        $this->data['warning'] = lang('interest_invalid_period');
+                    } else {
+                        $computations = $this->finance_model->compute_interest_for_period($type, $period['start'], $period['end'], $posting_frequency);
+                        $this->data['selected_type'] = $type;
+                        $this->data['period'] = $period;
+
+                        if ($action == 'preview') {
+                            $this->data['preview'] = $computations;
+                        } else {
+                            $selected = $this->input->post('accounts');
+                            if (empty($selected) || !is_array($selected)) {
+                                $this->data['warning'] = lang('interest_no_accounts_selected');
+                                $this->data['preview'] = $computations;
+                            } else {
+                                $this->data['post_results'] = $this->post_interest_for_accounts($type, $period, $computations, $selected);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        $this->data['content'] = 'saving/interest_posting';
+        $this->load->view('template', $this->data);
+    }
+
+    /**
+     * Resolve the posting period from POST input based on the account type's
+     * interest frequency. Only fully completed periods are accepted.
+     *
+     * @return array|false ('start','end','label','type') or FALSE if invalid
+     */
+    private function resolve_interest_period($frequency) {
+        $frequency = strtoupper(trim($frequency));
+
+        if ($frequency == 'MONTHLY') {
+            $month = trim((string) $this->input->post('period_month'));
+            if (!preg_match('/^\d{4}-(0[1-9]|1[0-2])$/', $month)) {
+                return FALSE;
+            }
+            $start = $month . '-01';
+            $end = date('Y-m-t', strtotime($start));
+            $label = strtoupper(date('M Y', strtotime($start)));
+            $period_type = 'MONTHLY';
+        } else if ($frequency == 'QUARTERLY') {
+            $year = (int) $this->input->post('period_year');
+            $quarter = (int) $this->input->post('period_quarter');
+            if ($year < 2000 || $year > 2100 || $quarter < 1 || $quarter > 4) {
+                return FALSE;
+            }
+            $start_month = (($quarter - 1) * 3) + 1;
+            $start = sprintf('%04d-%02d-01', $year, $start_month);
+            $end = date('Y-m-t', strtotime(sprintf('%04d-%02d-01', $year, $start_month + 2)));
+            $label = 'Q' . $quarter . ' ' . $year;
+            $period_type = 'QUARTERLY';
+        } else {
+            return FALSE;
+        }
+
+        // The period must be fully completed (its last day already passed)
+        if (strtotime($end) >= strtotime(date('Y-m-d'))) {
+            return FALSE;
+        }
+
+        return array('start' => $start, 'end' => $end, 'label' => $label, 'type' => $period_type);
+    }
+
+    /**
+     * Post computed interest for the selected accounts and log each posting.
+     *
+     * @return array summary ('posted','skipped','failed','total_amount','messages')
+     */
+    private function post_interest_for_accounts($type, $period, $computations, $selected_accounts) {
+        $results = array(
+            'posted' => 0,
+            'skipped' => 0,
+            'failed' => 0,
+            'total_amount' => 0,
+            'messages' => array(),
+        );
+
+        foreach ($computations as $row) {
+            if (!in_array((string) $row['account'], array_map('strval', $selected_accounts))) {
+                continue;
+            }
+
+            if (!$row['eligible']) {
+                $results['skipped']++;
+                continue;
+            }
+
+            $rate_display = rtrim(rtrim(number_format($row['annual_rate'], 4, '.', ''), '0'), '.');
+            $comment = 'INTEREST FOR ' . $period['label']
+                . ' (' . $row['basis'] . ' ' . number_format($row['base_balance'], 2)
+                . ' @ ' . $rate_display . '% p.a.)';
+
+            $this->db->trans_start();
+
+            $receipt = $this->finance_model->add_saving_transaction(
+                'INT',
+                $row['account'],
+                $row['interest'],
+                'SYSTEM',
+                $comment,
+                '',
+                $row['holder_name'],
+                null,
+                $period['end'],
+                ''
+            );
+
+            if ($receipt) {
+                $this->finance_model->log_interest_posting(array(
+                    'account' => $row['account'],
+                    'account_cat' => $row['account_cat'],
+                    'period_type' => $period['type'],
+                    'period_start' => $period['start'],
+                    'period_end' => $period['end'],
+                    'basis' => $row['basis'],
+                    'annual_rate' => $row['annual_rate'],
+                    'base_balance' => $row['base_balance'],
+                    'days' => $row['days'],
+                    'interest_amount' => $row['interest'],
+                    'receipt' => $receipt,
+                ));
+            }
+
+            $this->db->trans_complete();
+
+            if ($receipt && $this->db->trans_status() !== FALSE) {
+                $results['posted']++;
+                $results['total_amount'] += $row['interest'];
+            } else {
+                $results['failed']++;
+                $results['messages'][] = 'Account ' . $row['account'] . ': posting failed';
+                log_message('error', 'Interest posting failed for savings account ' . $row['account'] . ', period ' . $period['start'] . ' to ' . $period['end']);
+            }
+        }
+
+        return $results;
+    }
+
+    /**
+     * Interest posting history (audit log of automated interest postings).
+     */
+    function interest_posting_history() {
+        if (!has_role(3, 'Interest_posting')) {
+            $this->session->set_flashdata('warning', lang('access_denied'));
+            redirect('dashboard', 'refresh');
+            return;
+        }
+
+        $this->load->library('pagination');
+        $this->data['title'] = lang('interest_posting_history');
+
+        $account_type_filter = null;
+        if (isset($_GET['account_type_filter']) && $_GET['account_type_filter'] != '') {
+            $account_type_filter = trim($_GET['account_type_filter']);
+        }
+
+        $suffix_array = array();
+        if (!is_null($account_type_filter)) {
+            $suffix_array['account_type_filter'] = $account_type_filter;
+        }
+        if (count($suffix_array) > 0) {
+            $config['suffix'] = '?' . http_build_query($suffix_array, '', '&');
+        }
+
+        $config["base_url"] = site_url(current_lang() . '/saving/interest_posting_history/');
+        $config["total_rows"] = $this->finance_model->count_interest_posting_history($account_type_filter);
+        $config["per_page"] = 40;
+        $config["uri_segment"] = 4;
+
+        $config['full_tag_open'] = '<div class="pagination" style="background-color:#fff; margin-left:0px;">';
+        $config['full_tag_close'] = '</div>';
+        $config['num_tag_open'] = '<div class="link-pagination">';
+        $config['num_tag_close'] = '</div>';
+        $config['prev_tag_open'] = '<div class="link-pagination">';
+        $config['prev_tag_close'] = '</div>';
+        $config['next_tag_open'] = '<div class="link-pagination">';
+        $config['next_tag_close'] = '</div>';
+        $config['next_link'] = 'Next';
+        $config['prev_link'] = 'Previous';
+        $config['cur_tag_open'] = '<div class="link-pagination current">';
+        $config['cur_tag_close'] = '</div>';
+        $config["num_links"] = 10;
+
+        $this->pagination->initialize($config);
+        $page = ($this->uri->segment(4) ? $this->uri->segment(4) : 0);
+        $this->data['links'] = $this->pagination->create_links();
+
+        $this->data['account_type_filter'] = $account_type_filter;
+        $this->data['interest_types'] = $this->finance_model->interest_enabled_account_types();
+        $this->data['history'] = $this->finance_model->interest_posting_history($account_type_filter, null, $config["per_page"], $page);
+
+        $this->data['content'] = 'saving/interest_posting_history';
+        $this->load->view('template', $this->data);
     }
 
 }

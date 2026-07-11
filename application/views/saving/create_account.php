@@ -83,6 +83,20 @@ if (isset($message) && !empty($message)) {
             </div>
         </div>
 
+        <div class="form-group"><label class="col-lg-4 control-label"><?php echo lang('interest_frequency'); ?>:</label>
+            <div class="col-lg-7">
+                <?php $selected_freq = set_value('interest_frequency') ? set_value('interest_frequency') : 'INHERIT'; ?>
+                <select name="interest_frequency" class="form-control">
+                    <option value="INHERIT" <?php echo ($selected_freq == 'INHERIT' ? 'selected="selected"' : ''); ?>><?php echo lang('interest_frequency_inherit'); ?></option>
+                    <option value="NONE" <?php echo ($selected_freq == 'NONE' ? 'selected="selected"' : ''); ?>><?php echo lang('interest_frequency_none'); ?></option>
+                    <option value="MONTHLY" <?php echo ($selected_freq == 'MONTHLY' ? 'selected="selected"' : ''); ?>><?php echo lang('interest_frequency_monthly'); ?></option>
+                    <option value="QUARTERLY" <?php echo ($selected_freq == 'QUARTERLY' ? 'selected="selected"' : ''); ?>><?php echo lang('interest_frequency_quarterly'); ?></option>
+                </select>
+                <?php echo form_error('interest_frequency'); ?>
+                <span class="help-block" style="font-size: 12px; color: #888;"><?php echo lang('interest_frequency_account_help'); ?></span>
+            </div>
+        </div>
+
         <div class="form-group"><label class="col-lg-4 control-label"><?php echo lang('account_balance_open'); ?>  : <span class="required">*</span></label>
             <div class="col-lg-7">
                 <input type="text"  name="open_balance" value="<?php echo set_value('open_balance'); ?>"  class="form-control amountformat"/> 

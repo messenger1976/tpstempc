@@ -501,6 +501,85 @@ class Finance_Model extends CI_Model {
     }
 
     /**
+     * Get manual journal entries (general_journal_entry) with optional date range filter.
+     */
+    function get_journal_entries($date_from = null, $date_to = null) {
+        $pin = current_user()->PIN;
+        $has_pin_col = $this->db->query("SHOW COLUMNS FROM general_journal LIKE 'PIN'")->row();
+
+        $this->db->where('PIN', $pin);
+        if (!empty($date_from)) {
+            $this->db->where('entrydate >=', $date_from);
+        }
+        if (!empty($date_to)) {
+            $this->db->where('entrydate <=', $date_to);
+        }
+        $this->db->order_by('entrydate', 'DESC');
+        $this->db->order_by('id', 'DESC');
+        $results = $this->db->get('general_journal_entry')->result();
+
+        foreach ($results as $entry) {
+            if ($has_pin_col) {
+                $totals = $this->db->query(
+                    "SELECT COUNT(*) as line_count, COALESCE(SUM(COALESCE(gj.debit, 0)), 0) as total_debit, COALESCE(SUM(COALESCE(gj.credit, 0)), 0) as total_credit, MAX(gj.createdby) as createdby FROM general_journal gj WHERE gj.entryid = ? AND gj.PIN = ?",
+                    array($entry->id, $pin)
+                )->row();
+            } else {
+                $totals = $this->db->query(
+                    "SELECT COUNT(*) as line_count, COALESCE(SUM(COALESCE(gj.debit, 0)), 0) as total_debit, COALESCE(SUM(COALESCE(gj.credit, 0)), 0) as total_credit, MAX(gj.createdby) as createdby FROM general_journal gj WHERE gj.entryid = ?",
+                    array($entry->id)
+                )->row();
+            }
+
+            $entry->entryid = $entry->id;
+            $entry->line_count = isset($totals->line_count) ? intval($totals->line_count) : 0;
+            $entry->total_debit = isset($totals->total_debit) ? floatval($totals->total_debit) : 0.00;
+            $entry->total_credit = isset($totals->total_credit) ? floatval($totals->total_credit) : 0.00;
+            $entry->total_amount = max($entry->total_debit, $entry->total_credit);
+            $entry->createdby = isset($totals->createdby) ? $totals->createdby : null;
+            $entry->is_posted = $this->is_journal_posted($entry->id);
+
+            if (!empty($entry->createdby)) {
+                $user = $this->db->where('id', $entry->createdby)->get('users')->row();
+                $entry->created_by_name = $user ? $user->username : 'Unknown';
+            } else {
+                $entry->created_by_name = 'Unknown';
+            }
+        }
+
+        return $results;
+    }
+
+    /**
+     * Delete an unposted manual journal entry and its line items.
+     */
+    function delete_journal_entry($entry_id) {
+        if ($this->is_journal_posted($entry_id)) {
+            return false;
+        }
+
+        $pin = current_user()->PIN;
+        $entry = $this->db->where('id', $entry_id)->where('PIN', $pin)->get('general_journal_entry')->row();
+        if (!$entry) {
+            return false;
+        }
+
+        $has_pin_col = $this->db->query("SHOW COLUMNS FROM general_journal LIKE 'PIN'")->row();
+
+        $this->db->trans_start();
+        $this->db->where('entryid', $entry_id);
+        if ($has_pin_col) {
+            $this->db->where('PIN', $pin);
+        }
+        $this->db->delete('general_journal');
+        $this->db->where('id', $entry_id)->where('PIN', $pin);
+        $this->db->delete('general_journal_entry');
+        $this->db->trans_complete();
+
+        return $this->db->trans_status();
+    }
+
+    /**
      * Get list of unposted journal entries from general_journal_entry
      * @return array List of unposted journal entries with details
      */
@@ -1142,7 +1221,7 @@ $pin=current_user()->PIN;
         return alphaID(($query->id * time()), FALSE, 12);
     }
 
-    function create_account($PID, $member_id, $account_type, $balance, $virtual_balance, $paymethod, $comment = '', $cheque_num = '', $posted_date='',$old_savings_account_no='') {
+    function create_account($PID, $member_id, $account_type, $balance, $virtual_balance, $paymethod, $comment = '', $cheque_num = '', $posted_date='',$old_savings_account_no='', $interest_frequency = null) {
 
         $account = $this->db->get('auto_inc')->row()->saving;
 
@@ -1163,6 +1242,10 @@ $pin=current_user()->PIN;
             'tablename' => 'members',
             'PIN' => current_user()->PIN,
         );
+
+        if ($this->db->field_exists('interest_frequency', 'members_account')) {
+            $new_account['interest_frequency'] = $this->normalize_interest_frequency_override($interest_frequency);
+        }
 
         if($posted_date!=''){
             $new_account_date = array(
@@ -2068,6 +2151,10 @@ $pin=current_user()->PIN;
             return array('success' => false, 'message' => 'Database error occurred');
         }
 
+        // If this was an automated interest posting, mark its log row as VOIDED
+        // so the period can be re-posted for this account (no-op otherwise).
+        $this->void_interest_posting_by_receipt($receipt);
+
         // Auto-post the void reversing entry to GL so accounting remains adjusted
         $member_id = ($account_info && isset($account_info->member_id)) ? $account_info->member_id : '';
         $pid = isset($trans->PID) ? $trans->PID : (($account_info && isset($account_info->RFID)) ? $account_info->RFID : '');
@@ -2829,7 +2916,17 @@ $pin=current_user()->PIN;
         $pin = current_user()->PIN;
         $this->db->where('id', $id);
         $this->db->where('PIN', $pin);
-        return $this->db->update('members_account', $data);
+
+        // Explicit NULL for inherit (CI2 may otherwise omit or stringify null)
+        if (array_key_exists('interest_frequency', $data) && $data['interest_frequency'] === null) {
+            $this->db->set('interest_frequency', 'NULL', FALSE);
+            unset($data['interest_frequency']);
+        }
+
+        if (!empty($data)) {
+            return $this->db->update('members_account', $data);
+        }
+        return $this->db->update('members_account');
     }
 
     // Chart Type CRUD operations
@@ -3072,6 +3169,364 @@ $pin=current_user()->PIN;
         $this->db->where('account', $account);
         $result = $this->db->get('beginning_balances');
         return $result->num_rows() > 0;
+    }
+
+    /* =====================================================================
+     * AUTOMATED SAVINGS INTEREST POSTING (MONTHLY / QUARTERLY)
+     * ===================================================================== */
+
+    /**
+     * Resolve effective interest frequency for a member account.
+     * Account override wins when set; otherwise product default is used.
+     *
+     * @param string|null $account_override members_account.interest_frequency (NULL/empty = inherit)
+     * @param string|null $type_frequency saving_account_type.interest_frequency
+     * @return array ('frequency' => NONE|MONTHLY|QUARTERLY, 'source' => INHERIT|OVERRIDE)
+     */
+    function effective_interest_frequency($account_override, $type_frequency) {
+        $override = strtoupper(trim((string) $account_override));
+        if ($override !== '' && in_array($override, array('NONE', 'MONTHLY', 'QUARTERLY'))) {
+            return array('frequency' => $override, 'source' => 'OVERRIDE');
+        }
+        $type_freq = strtoupper(trim((string) $type_frequency));
+        if (!in_array($type_freq, array('NONE', 'MONTHLY', 'QUARTERLY'))) {
+            $type_freq = 'NONE';
+        }
+        return array('frequency' => $type_freq, 'source' => 'INHERIT');
+    }
+
+    /**
+     * Normalize interest frequency override from a form value.
+     * Empty / INHERIT => NULL (store as inherit product default).
+     */
+    function normalize_interest_frequency_override($value) {
+        $value = strtoupper(trim((string) $value));
+        if ($value === '' || $value === 'INHERIT') {
+            return null;
+        }
+        if (in_array($value, array('NONE', 'MONTHLY', 'QUARTERLY'))) {
+            return $value;
+        }
+        return null;
+    }
+
+    /**
+     * Savings account types eligible for interest posting.
+     * Includes types with rate > 0 where the product frequency is not NONE,
+     * OR at least one active account has a MONTHLY/QUARTERLY override.
+     *
+     * @param string|null $frequency Optional filter: 'MONTHLY' or 'QUARTERLY' (product default only; posting uses effective freq)
+     * @return array saving_account_type rows
+     */
+    function interest_enabled_account_types($frequency = null) {
+        $pin = current_user()->PIN;
+        $pin_esc = $this->db->escape($pin);
+        $has_override_col = $this->db->field_exists('interest_frequency', 'members_account');
+
+        $this->db->where('PIN', $pin);
+        $this->db->where('interest_rate >', 0);
+        if (!is_null($frequency)) {
+            $this->db->where('interest_frequency', $frequency);
+        } else if ($has_override_col) {
+            // Product default enabled, OR any active account override enables interest
+            $this->db->where("(interest_frequency != 'NONE' OR account IN (
+                SELECT DISTINCT ma.account_cat FROM members_account ma
+                WHERE ma.PIN = {$pin_esc}
+                AND (ma.status = '1' OR ma.status IS NULL)
+                AND UPPER(TRIM(ma.interest_frequency)) IN ('MONTHLY','QUARTERLY')
+            ))", NULL, FALSE);
+        } else {
+            $this->db->where('interest_frequency !=', 'NONE');
+        }
+        $this->db->order_by('account', 'ASC');
+        return $this->db->get('saving_account_type')->result();
+    }
+
+    /**
+     * Compute interest for every active savings account of a given type for a period.
+     *
+     * Interest = base_balance x (annual_rate / 100) x days_in_period / 365
+     * where base_balance depends on the type's interest_basis:
+     *  - ADB: average of the daily end-of-day balances over the period
+     *  - LOWEST: lowest end-of-day balance within the period
+     *  - EOP: balance at the end of the period
+     *
+     * Balances include the maintaining balance (virtual_balance) since it is
+     * still the member's deposit.
+     *
+     * Effective frequency = account override if set, else product default.
+     * When $run_frequency is MONTHLY or QUARTERLY, only accounts whose
+     * effective frequency matches are included (others omitted from the list).
+     *
+     * @param object $type saving_account_type row (with interest config)
+     * @param string $period_start Y-m-d (first day of period)
+     * @param string $period_end Y-m-d (last day of period)
+     * @param string|null $run_frequency MONTHLY|QUARTERLY — filter by effective frequency
+     * @return array list of computation rows (one per account)
+     */
+    function compute_interest_for_period($type, $period_start, $period_end, $run_frequency = null) {
+        $pin = current_user()->PIN;
+        $results = array();
+
+        $annual_rate = (float) $type->interest_rate;
+        if ($annual_rate <= 0) {
+            return $results;
+        }
+
+        $start_ts = strtotime($period_start);
+        $end_ts = strtotime($period_end);
+        $days_in_period = (int) round(($end_ts - $start_ts) / 86400) + 1;
+        if ($days_in_period <= 0) {
+            return $results;
+        }
+
+        $basis = strtoupper(trim($type->interest_basis));
+        if (!in_array($basis, array('ADB', 'LOWEST', 'EOP'))) {
+            $basis = 'ADB';
+        }
+        $min_balance = isset($type->interest_min_balance) ? (float) $type->interest_min_balance : 0;
+        $run_frequency = strtoupper(trim((string) $run_frequency));
+        if (!in_array($run_frequency, array('MONTHLY', 'QUARTERLY'))) {
+            // Backward compatible: use product frequency when caller does not pass a run frequency
+            $run_frequency = strtoupper(trim((string) $type->interest_frequency));
+        }
+
+        $has_override_col = $this->db->field_exists('interest_frequency', 'members_account');
+        $freq_select = $has_override_col ? 'ma.interest_frequency AS account_interest_frequency' : "NULL AS account_interest_frequency";
+
+        // Active accounts of this type with member/group names
+        $this->db->select("ma.account, ma.RFID, ma.member_id, ma.balance, ma.virtual_balance, ma.account_cat, {$freq_select}, COALESCE(NULLIF(TRIM(CONCAT(COALESCE(m.firstname,''),' ',COALESCE(m.lastname,''))), ''), mg.name, '') AS holder_name", FALSE);
+        $this->db->from('members_account ma');
+        $this->db->join('members m', "ma.RFID = m.PID AND m.PIN = ma.PIN AND ma.tablename = 'members'", 'left');
+        $this->db->join('members_grouplist mg', "ma.RFID = mg.GID AND mg.PIN = ma.PIN AND ma.tablename = 'members_grouplist'", 'left');
+        $this->db->where('ma.PIN', $pin);
+        $this->db->where('ma.account_cat', $type->account);
+        $this->db->where("(ma.status = '1' OR ma.status IS NULL)", NULL, FALSE);
+        $this->db->order_by('ma.account', 'ASC');
+        $accounts = $this->db->get()->result();
+
+        foreach ($accounts as $acc) {
+            $effective = $this->effective_interest_frequency(
+                isset($acc->account_interest_frequency) ? $acc->account_interest_frequency : null,
+                $type->interest_frequency
+            );
+
+            // Only include accounts matching the posting run frequency
+            if (!in_array($run_frequency, array('MONTHLY', 'QUARTERLY')) || $effective['frequency'] !== $run_frequency) {
+                continue;
+            }
+
+            $current_total = (float) $acc->balance + (float) $acc->virtual_balance;
+
+            $bases = $this->savings_balance_bases($acc->account, $current_total, $period_start, $period_end);
+
+            if ($basis == 'LOWEST') {
+                $base_balance = $bases['lowest'];
+            } else if ($basis == 'EOP') {
+                $base_balance = $bases['eop'];
+            } else {
+                $base_balance = $bases['adb'];
+            }
+            // Guard against negative balances from historical data inconsistencies
+            $base_balance = max(0, round($base_balance, 2));
+
+            $existing = $this->get_interest_posting($acc->account, $period_start, $period_end);
+            $already_posted = ($existing && strtoupper($existing->status) == 'POSTED');
+
+            $interest = 0;
+            $eligible = true;
+            $skip_reason = '';
+            if ($base_balance < $min_balance || $base_balance <= 0) {
+                $eligible = false;
+                $skip_reason = 'BELOW_MIN_BALANCE';
+            } else {
+                $interest = round($base_balance * ($annual_rate / 100) * $days_in_period / 365, 2);
+                if ($interest <= 0) {
+                    $eligible = false;
+                    $skip_reason = 'ZERO_INTEREST';
+                }
+            }
+            if ($already_posted) {
+                $eligible = false;
+                $skip_reason = 'ALREADY_POSTED';
+            }
+
+            $results[] = array(
+                'account' => $acc->account,
+                'account_cat' => $acc->account_cat,
+                'member_id' => $acc->member_id,
+                'holder_name' => trim($acc->holder_name),
+                'RFID' => $acc->RFID,
+                'current_balance' => $current_total,
+                'basis' => $basis,
+                'base_balance' => $base_balance,
+                'annual_rate' => $annual_rate,
+                'days' => $days_in_period,
+                'interest' => $interest,
+                'eligible' => $eligible,
+                'skip_reason' => $skip_reason,
+                'effective_frequency' => $effective['frequency'],
+                'frequency_source' => $effective['source'],
+            );
+        }
+
+        return $results;
+    }
+
+    /**
+     * Reconstruct daily end-of-day balances of a savings account over a period.
+     *
+     * The current total balance (balance + virtual_balance) is used as the
+     * anchor, and signed transaction amounts (CR +, DR -) are walked backward
+     * to the end of the period and through it day by day. Recorded transaction
+     * amounts always include the maintaining-balance portion, so the math is
+     * consistent with the total balance.
+     *
+     * @return array ('adb' => float, 'lowest' => float, 'eop' => float)
+     */
+    private function savings_balance_bases($account, $current_total, $period_start, $period_end) {
+        $pin = current_user()->PIN;
+
+        // Void reversal rows are excluded: they are recorded in the ledger but
+        // do not move members_account.balance, which is our anchor.
+        $not_void = "COALESCE(system_comment, '') NOT LIKE 'VOID TRANSACTION%'";
+
+        // Net movement after the period end -> balance at period end
+        $this->db->select("COALESCE(SUM(CASE WHEN trans_type = 'CR' THEN amount ELSE -amount END), 0) AS net", FALSE);
+        $this->db->from('savings_transaction');
+        $this->db->where('PIN', $pin);
+        $this->db->where('account', $account);
+        $this->db->where($not_void, NULL, FALSE);
+        $this->db->where('DATE(trans_date) >', $period_end);
+        $net_after = (float) $this->db->get()->row()->net;
+        $eop_balance = $current_total - $net_after;
+
+        // Net movement per day inside the period
+        $this->db->select("DATE(trans_date) AS tdate, COALESCE(SUM(CASE WHEN trans_type = 'CR' THEN amount ELSE -amount END), 0) AS net", FALSE);
+        $this->db->from('savings_transaction');
+        $this->db->where('PIN', $pin);
+        $this->db->where('account', $account);
+        $this->db->where($not_void, NULL, FALSE);
+        $this->db->where('DATE(trans_date) >=', $period_start);
+        $this->db->where('DATE(trans_date) <=', $period_end);
+        $this->db->group_by('DATE(trans_date)');
+        $daily_rows = $this->db->get()->result();
+
+        $daily_net = array();
+        foreach ($daily_rows as $row) {
+            $daily_net[$row->tdate] = (float) $row->net;
+        }
+
+        // Walk backward from period end, computing each day's end-of-day balance
+        $eod_balances = array();
+        $running = $eop_balance;
+        $ts = strtotime($period_end);
+        $start_ts = strtotime($period_start);
+        while ($ts >= $start_ts) {
+            $date = date('Y-m-d', $ts);
+            $eod_balances[$date] = $running;
+            if (isset($daily_net[$date])) {
+                $running -= $daily_net[$date];
+            }
+            $ts = strtotime('-1 day', $ts);
+        }
+
+        $count = count($eod_balances);
+        $sum = 0;
+        $lowest = null;
+        foreach ($eod_balances as $bal) {
+            $sum += $bal;
+            if (is_null($lowest) || $bal < $lowest) {
+                $lowest = $bal;
+            }
+        }
+
+        return array(
+            'adb' => ($count > 0) ? ($sum / $count) : 0,
+            'lowest' => is_null($lowest) ? 0 : $lowest,
+            'eop' => $eop_balance,
+        );
+    }
+
+    /**
+     * Get an interest posting log row for an account and period (if any).
+     */
+    function get_interest_posting($account, $period_start, $period_end) {
+        $this->db->where('PIN', current_user()->PIN);
+        $this->db->where('account', $account);
+        $this->db->where('period_start', $period_start);
+        $this->db->where('period_end', $period_end);
+        return $this->db->get('savings_interest_posting')->row();
+    }
+
+    /**
+     * Record an interest posting in the log (insert, or revive a VOIDED row).
+     */
+    function log_interest_posting($data) {
+        $pin = current_user()->PIN;
+        $data['PIN'] = $pin;
+        $data['createdby'] = current_user()->id;
+        $data['status'] = 'POSTED';
+
+        $existing = $this->get_interest_posting($data['account'], $data['period_start'], $data['period_end']);
+        if ($existing) {
+            return $this->db->update('savings_interest_posting', $data, array('id' => $existing->id));
+        }
+        return $this->db->insert('savings_interest_posting', $data);
+    }
+
+    /**
+     * Mark an interest posting log row as VOIDED (called when the interest
+     * transaction is voided), allowing the period to be re-posted.
+     */
+    function void_interest_posting_by_receipt($receipt) {
+        // Safe no-op if the interest posting feature has not been installed yet
+        if (!$this->db->table_exists('savings_interest_posting')) {
+            return FALSE;
+        }
+        $this->db->where('PIN', current_user()->PIN);
+        $this->db->where('receipt', $receipt);
+        $this->db->where('status', 'POSTED');
+        return $this->db->update('savings_interest_posting', array('status' => 'VOIDED'));
+    }
+
+    /**
+     * Count interest posting log rows (for pagination).
+     */
+    function count_interest_posting_history($account_cat = null, $period_start = null) {
+        $this->db->from('savings_interest_posting sip');
+        $this->db->where('sip.PIN', current_user()->PIN);
+        if (!is_null($account_cat) && $account_cat !== '') {
+            $this->db->where('sip.account_cat', $account_cat);
+        }
+        if (!is_null($period_start) && $period_start !== '') {
+            $this->db->where('sip.period_start', $period_start);
+        }
+        return $this->db->count_all_results();
+    }
+
+    /**
+     * Interest posting log rows with member names (newest first).
+     */
+    function interest_posting_history($account_cat = null, $period_start = null, $limit = 40, $start = 0) {
+        $pin = current_user()->PIN;
+        $this->db->select("sip.*, sat.name AS type_name, COALESCE(NULLIF(TRIM(CONCAT(COALESCE(m.firstname,''),' ',COALESCE(m.lastname,''))), ''), mg.name, '') AS holder_name, ma.member_id AS member_id", FALSE);
+        $this->db->from('savings_interest_posting sip');
+        $this->db->join('saving_account_type sat', 'sip.account_cat = sat.account AND sat.PIN = ' . $this->db->escape($pin), 'left');
+        $this->db->join('members_account ma', 'sip.account = ma.account AND ma.PIN = sip.PIN', 'left');
+        $this->db->join('members m', "ma.RFID = m.PID AND m.PIN = ma.PIN AND ma.tablename = 'members'", 'left');
+        $this->db->join('members_grouplist mg', "ma.RFID = mg.GID AND mg.PIN = ma.PIN AND ma.tablename = 'members_grouplist'", 'left');
+        $this->db->where('sip.PIN', $pin);
+        if (!is_null($account_cat) && $account_cat !== '') {
+            $this->db->where('sip.account_cat', $account_cat);
+        }
+        if (!is_null($period_start) && $period_start !== '') {
+            $this->db->where('sip.period_start', $period_start);
+        }
+        $this->db->order_by('sip.createdon', 'DESC');
+        $this->db->order_by('sip.id', 'DESC');
+        $this->db->limit((int) $limit, (int) $start);
+        return $this->db->get()->result();
     }
 
 }

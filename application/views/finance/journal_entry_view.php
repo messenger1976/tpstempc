@@ -17,8 +17,8 @@ if (isset($message) && !empty($message)) {
                 <div class="ibox-title">
                     <h5>Journal Entry Details - #<?php echo $entry->entryid; ?></h5>
                     <div class="ibox-tools">
-                        <a href="<?php echo site_url(current_lang() . '/finance/journal_entry_review'); ?>" class="btn btn-default btn-xs">
-                            <i class="fa fa-arrow-left"></i> Back to Review
+                        <a href="<?php echo site_url(current_lang() . '/finance/journal_entry_list'); ?>" class="btn btn-default btn-xs">
+                            <i class="fa fa-arrow-left"></i> <?php echo lang('back'); ?>
                         </a>
                         <?php if (isset($entry->id) && $entry->id == 32800): ?>
                             <span class="label label-info" style="margin-left: 10px;">This is the test entry with items</span>
@@ -178,8 +178,8 @@ if (isset($message) && !empty($message)) {
                                 </a>
                             <?php endif; ?>
                             
-                            <a href="<?php echo site_url(current_lang() . '/finance/journal_entry_review'); ?>" class="btn btn-default">
-                                <i class="fa fa-arrow-left"></i> Back to Review
+                            <a href="<?php echo site_url(current_lang() . '/finance/journal_entry_list'); ?>" class="btn btn-default">
+                                <i class="fa fa-arrow-left"></i> <?php echo lang('back'); ?>
                             </a>
                         </div>
                     </div>

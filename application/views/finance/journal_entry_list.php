@@ -38,7 +38,7 @@ if (isset($message) && !empty($message)) {
                         <a href="<?php echo $export_url; ?>" class="btn btn-success btn-xs">
                             <i class="fa fa-file-excel-o"></i> <?php echo lang('export_excel'); ?>
                         </a>
-                        <?php if (has_role(6, 'Journal_entry')) { ?>
+                        <?php if (has_role(6, 'Review_journal_entry')) { ?>
                             <a href="<?php echo site_url(current_lang() . '/finance/journal_entry_review'); ?>" class="btn btn-info btn-xs">
                                 <i class="fa fa-check-circle"></i> <?php echo lang('journal_entry_review'); ?>
                             </a>

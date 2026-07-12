@@ -210,7 +210,7 @@ Added menu item: **"Journal Entry Review & Approval"** under Finance menu
 
 ## Permissions
 
-**Required Permission:** `Journal_entry` (Module 6: Finance)
+**Required Permission:** `Review_journal_entry` (Module 6: Finance) for Review & Approval; `Journal_entry` for creating entries.
 
 All functions check for this permission before allowing access.
 

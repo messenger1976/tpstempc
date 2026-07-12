@@ -225,6 +225,9 @@ $current_member_id = ($current_user_data && isset($current_user_data->member_id)
                         <?php if (has_role(6, 'Journal_entry')) { ?>
                             <li class="<?php echo ($activefunction == 'journalentry' ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/finance/journalentry'); ?>"><?php echo lang('journalentry'); ?></a></li>
                         <?php } ?>
+                        <?php if (has_role(6, 'Review_journal_entry')) { ?>
+                            <li class="<?php echo ($activefunction == 'journal_entry_review' ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/finance/journal_entry_review'); ?>"><i class="fa fa-check-circle"></i> <?php echo lang('journal_entry_review'); ?></a></li>
+                        <?php } ?>
                     </ul>
                 </li>
 

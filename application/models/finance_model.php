@@ -1186,6 +1186,330 @@ class Finance_Model extends CI_Model {
         return $entries;
     }
 
+    /**
+     * Server-side DataTables feed for unposted journal entries on the review page.
+     *
+     * @param int    $start
+     * @param int    $length
+     * @param string $search
+     * @param int    $order_column_index DataTables column index
+     * @param string $order_dir asc|desc
+     * @param string $source_filter all|general_journal|cash_receipt|cash_disbursement
+     * @return array draw, recordsTotal, recordsFiltered, data rows, grand totals
+     */
+    function get_unposted_journal_review_datatable($start, $length, $search, $order_column_index, $order_dir, $source_filter = 'all') {
+        $pin = current_user()->PIN;
+        $has_pin_col = $this->db->query("SHOW COLUMNS FROM general_journal LIKE 'PIN'")->row();
+        $gj_pin_cond = $has_pin_col ? ' AND gj.PIN = gje.PIN' : '';
+
+        $allowed_sources = array('general_journal', 'cash_receipt', 'cash_disbursement');
+        $source_filter = strtolower(trim((string) $source_filter));
+        if ($source_filter === '' || $source_filter === 'all' || !in_array($source_filter, $allowed_sources, true)) {
+            $source_filter = 'all';
+        }
+
+        $union_parts = array();
+        $bind = array();
+
+        if ($source_filter === 'all' || $source_filter === 'general_journal') {
+            $union_parts[] = "SELECT
+                    gje.id AS entryid,
+                    gje.entrydate AS entrydate,
+                    gje.description AS description,
+                    'general_journal' AS entry_source,
+                    NULL AS reference_id,
+                    (SELECT MAX(gj.createdby) FROM general_journal gj WHERE gj.entryid = gje.id{$gj_pin_cond}) AS createdby,
+                    (SELECT COUNT(*) FROM general_journal gj WHERE gj.entryid = gje.id{$gj_pin_cond}) AS line_count,
+                    (SELECT COALESCE(SUM(COALESCE(gj.debit, 0)), 0) FROM general_journal gj WHERE gj.entryid = gje.id{$gj_pin_cond}) AS total_debit,
+                    (SELECT COALESCE(SUM(COALESCE(gj.credit, 0)), 0) FROM general_journal gj WHERE gj.entryid = gje.id{$gj_pin_cond}) AS total_credit,
+                    0 AS is_posted
+                FROM general_journal_entry gje
+                LEFT JOIN general_ledger gl ON gl.refferenceID = gje.id AND gl.fromtable = 'general_journal' AND gl.PIN = gje.PIN
+                WHERE gl.id IS NULL AND gje.PIN = ?";
+            $bind[] = $pin;
+        }
+
+        if (($source_filter === 'all' || $source_filter === 'cash_receipt' || $source_filter === 'cash_disbursement')
+            && $this->db->table_exists('journal_entry')
+            && $this->db->query("SHOW COLUMNS FROM journal_entry LIKE 'reference_type'")->row()) {
+            $receipt_line_sql = "0";
+            $receipt_debit_sql = "0";
+            $receipt_credit_sql = "0";
+            $disburse_line_sql = "0";
+            $disburse_debit_sql = "0";
+            $disburse_credit_sql = "0";
+
+            if ($this->db->table_exists('cash_receipt_items')) {
+                $has_receipt_debit = $this->db->query("SHOW COLUMNS FROM cash_receipt_items LIKE 'debit'")->row();
+                $has_receipt_credit = $this->db->query("SHOW COLUMNS FROM cash_receipt_items LIKE 'credit'")->row();
+                $receipt_line_sql = "(SELECT COUNT(*) FROM cash_receipt_items cri WHERE cri.receipt_id = je.reference_id AND cri.PIN = je.PIN)";
+                if ($has_receipt_debit && $has_receipt_credit) {
+                    $receipt_debit_sql = "(SELECT COALESCE(SUM(COALESCE(cri.debit, 0)), 0) FROM cash_receipt_items cri WHERE cri.receipt_id = je.reference_id AND cri.PIN = je.PIN)";
+                    $receipt_credit_sql = "(SELECT COALESCE(SUM(COALESCE(cri.credit, 0)), 0) FROM cash_receipt_items cri WHERE cri.receipt_id = je.reference_id AND cri.PIN = je.PIN)";
+                } else {
+                    $receipt_credit_sql = "(SELECT COALESCE(SUM(COALESCE(cri.amount, 0)), 0) FROM cash_receipt_items cri WHERE cri.receipt_id = je.reference_id AND cri.PIN = je.PIN)";
+                }
+            }
+
+            if ($this->db->table_exists('cash_disbursement_items')) {
+                $has_disburse_debit = $this->db->query("SHOW COLUMNS FROM cash_disbursement_items LIKE 'debit'")->row();
+                $has_disburse_credit = $this->db->query("SHOW COLUMNS FROM cash_disbursement_items LIKE 'credit'")->row();
+                $disburse_line_sql = "(SELECT COUNT(*) FROM cash_disbursement_items cdi WHERE cdi.disbursement_id = je.reference_id AND cdi.PIN = je.PIN)";
+                if ($has_disburse_debit && $has_disburse_credit) {
+                    $disburse_debit_sql = "(SELECT COALESCE(SUM(COALESCE(cdi.debit, 0)), 0) FROM cash_disbursement_items cdi WHERE cdi.disbursement_id = je.reference_id AND cdi.PIN = je.PIN)";
+                    $disburse_credit_sql = "(SELECT COALESCE(SUM(COALESCE(cdi.credit, 0)), 0) FROM cash_disbursement_items cdi WHERE cdi.disbursement_id = je.reference_id AND cdi.PIN = je.PIN)";
+                } else {
+                    $disburse_debit_sql = "(SELECT COALESCE(SUM(COALESCE(cdi.amount, 0)), 0) FROM cash_disbursement_items cdi WHERE cdi.disbursement_id = je.reference_id AND cdi.PIN = je.PIN)";
+                }
+            }
+
+            $ref_types = ($source_filter === 'all')
+                ? array('cash_receipt', 'cash_disbursement')
+                : array($source_filter);
+            $ref_placeholders = implode(',', array_fill(0, count($ref_types), '?'));
+
+            $union_parts[] = "SELECT
+                    je.id AS entryid,
+                    je.entry_date AS entrydate,
+                    je.description AS description,
+                    je.reference_type AS entry_source,
+                    je.reference_id AS reference_id,
+                    je.createdby AS createdby,
+                    CASE je.reference_type
+                        WHEN 'cash_receipt' THEN {$receipt_line_sql}
+                        WHEN 'cash_disbursement' THEN {$disburse_line_sql}
+                        ELSE 0
+                    END AS line_count,
+                    CASE je.reference_type
+                        WHEN 'cash_receipt' THEN {$receipt_debit_sql}
+                        WHEN 'cash_disbursement' THEN {$disburse_debit_sql}
+                        ELSE 0
+                    END AS total_debit,
+                    CASE je.reference_type
+                        WHEN 'cash_receipt' THEN {$receipt_credit_sql}
+                        WHEN 'cash_disbursement' THEN {$disburse_credit_sql}
+                        ELSE 0
+                    END AS total_credit,
+                    0 AS is_posted
+                FROM journal_entry je
+                LEFT JOIN general_ledger gl ON gl.refferenceID = je.id AND gl.fromtable = 'journal_entry' AND gl.PIN = je.PIN
+                WHERE je.PIN = ?
+                    AND je.reference_type IN ({$ref_placeholders})
+                    AND gl.id IS NULL";
+            $bind[] = $pin;
+            foreach ($ref_types as $ref_type) {
+                $bind[] = $ref_type;
+            }
+        }
+
+        if (empty($union_parts)) {
+            return array(
+                'recordsTotal' => 0,
+                'recordsFiltered' => 0,
+                'entries' => array(),
+                'grand_total_debit' => 0.0,
+                'grand_total_credit' => 0.0,
+            );
+        }
+
+        $union_sql = '(' . implode(') UNION ALL (', $union_parts) . ')';
+
+        $search_sql = '';
+        $search_bind = array();
+        if ($search !== '') {
+            $like = '%' . $this->db->escape_like_str($search) . '%';
+            $search_sql = " AND (
+                CAST(entryid AS CHAR) LIKE ?
+                OR description LIKE ?
+                OR entry_source LIKE ?
+                OR DATE_FORMAT(entrydate, '%b %d, %Y') LIKE ?
+                OR DATE_FORMAT(entrydate, '%Y-%m-%d') LIKE ?
+                OR createdby IN (SELECT id FROM users WHERE username LIKE ?)
+            )";
+            $search_bind = array($like, $like, $like, $like, $like, $like);
+        }
+
+        $order_map = array(
+            1 => 'entryid',
+            2 => 'entry_source',
+            3 => 'entrydate',
+            4 => 'description',
+            5 => 'createdby',
+            6 => 'line_count',
+            7 => 'total_debit',
+            8 => 'total_credit',
+            9 => 'total_debit',
+        );
+        $order_col = isset($order_map[$order_column_index]) ? $order_map[$order_column_index] : 'entrydate';
+        $allowed_order_cols = array('entryid', 'entry_source', 'entrydate', 'description', 'createdby', 'line_count', 'total_debit', 'total_credit');
+        if (!in_array($order_col, $allowed_order_cols, true)) {
+            $order_col = 'entrydate';
+        }
+        $order_dir = strtoupper($order_dir) === 'ASC' ? 'ASC' : 'DESC';
+
+        $count_total_q = $this->db->query("SELECT COUNT(*) AS cnt FROM ({$union_sql}) AS u", $bind);
+        if ($count_total_q === false) {
+            $err = method_exists($this->db, 'error') ? $this->db->error() : array();
+            log_message('error', 'get_unposted_journal_review_datatable count_total failed: ' . $this->db->last_query() . ' | ' . json_encode($err));
+            throw new Exception('Failed to count unposted journal entries');
+        }
+        $count_total_row = $count_total_q->row();
+        $records_total = $count_total_row ? (int) $count_total_row->cnt : 0;
+
+        $count_filtered_q = $this->db->query(
+            "SELECT COUNT(*) AS cnt FROM ({$union_sql}) AS u WHERE 1 = 1{$search_sql}",
+            array_merge($bind, $search_bind)
+        );
+        if ($count_filtered_q === false) {
+            $err = method_exists($this->db, 'error') ? $this->db->error() : array();
+            log_message('error', 'get_unposted_journal_review_datatable count_filtered failed: ' . $this->db->last_query() . ' | ' . json_encode($err));
+            throw new Exception('Failed to count filtered unposted journal entries');
+        }
+        $count_filtered_row = $count_filtered_q->row();
+        $records_filtered = $count_filtered_row ? (int) $count_filtered_row->cnt : 0;
+
+        $totals_q = $this->db->query(
+            "SELECT COALESCE(SUM(total_debit), 0) AS grand_total_debit, COALESCE(SUM(total_credit), 0) AS grand_total_credit
+             FROM ({$union_sql}) AS u WHERE 1 = 1{$search_sql}",
+            array_merge($bind, $search_bind)
+        );
+        $totals_row = ($totals_q !== false) ? $totals_q->row() : null;
+        $grand_total_debit = $totals_row ? floatval($totals_row->grand_total_debit) : 0.0;
+        $grand_total_credit = $totals_row ? floatval($totals_row->grand_total_credit) : 0.0;
+
+        $start = max(0, (int) $start);
+        $length = (int) $length;
+        if ($length < 0) {
+            $length = 25;
+        }
+        if ($length === 0) {
+            $length = 25;
+        }
+
+        $data_sql = "SELECT * FROM ({$union_sql}) AS u WHERE 1 = 1{$search_sql}
+            ORDER BY {$order_col} {$order_dir}, entryid DESC
+            LIMIT {$length} OFFSET {$start}";
+        $data_q = $this->db->query($data_sql, array_merge($bind, $search_bind));
+        if ($data_q === false) {
+            $err = method_exists($this->db, 'error') ? $this->db->error() : array();
+            log_message('error', 'get_unposted_journal_review_datatable data query failed: ' . $this->db->last_query() . ' | ' . json_encode($err));
+            throw new Exception('Failed to load unposted journal entries');
+        }
+        $rows = $data_q->result();
+
+        $entries = array();
+        foreach ($rows as $row) {
+            if (in_array($row->entry_source, array('cash_receipt', 'cash_disbursement'), true)) {
+                $this->_apply_receipt_disbursement_totals_to_row($row, $pin);
+            }
+            $row->total_debit = floatval($row->total_debit);
+            $row->total_credit = floatval($row->total_credit);
+            $row->line_count = intval($row->line_count);
+            if (!empty($row->createdby)) {
+                $user = $this->db->where('id', $row->createdby)->get('users')->row();
+                $row->created_by_name = $user ? $user->username : 'Unknown';
+            } else {
+                $row->created_by_name = 'Unknown';
+            }
+            $entries[] = $row;
+        }
+
+        return array(
+            'recordsTotal' => $records_total,
+            'recordsFiltered' => $records_filtered,
+            'entries' => $entries,
+            'grand_total_debit' => $grand_total_debit,
+            'grand_total_credit' => $grand_total_credit,
+        );
+    }
+
+    /**
+     * Populate line_count, total_debit, total_credit on a cash receipt/disbursement journal row.
+     */
+    private function _apply_receipt_disbursement_totals_to_row($row, $pin) {
+        $total_debit = 0.00;
+        $total_credit = 0.00;
+        $line_count = 0;
+
+        if ($row->entry_source === 'cash_receipt' && !empty($row->reference_id)) {
+            $receipt_id = intval($row->reference_id);
+            $pin_esc = $this->db->escape($pin);
+            $has_debit = $this->db->query("SHOW COLUMNS FROM cash_receipt_items LIKE 'debit'")->row();
+            $has_credit = $this->db->query("SHOW COLUMNS FROM cash_receipt_items LIKE 'credit'")->row();
+            if ($has_debit && $has_credit) {
+                $items_totals = $this->db->query(
+                    "SELECT COUNT(*) AS line_count,
+                            IFNULL(SUM(IFNULL(debit, 0)), 0) AS total_debit,
+                            IFNULL(SUM(IFNULL(credit, 0)), 0) AS total_credit
+                     FROM cash_receipt_items
+                     WHERE receipt_id = {$receipt_id} AND PIN = {$pin_esc}"
+                )->row();
+            } else {
+                $items_totals = $this->db->query(
+                    "SELECT COUNT(*) AS line_count, 0 AS total_debit,
+                            IFNULL(SUM(IFNULL(amount, 0)), 0) AS total_credit
+                     FROM cash_receipt_items
+                     WHERE receipt_id = {$receipt_id} AND PIN = {$pin_esc}"
+                )->row();
+            }
+            if ($items_totals) {
+                $line_count = intval($items_totals->line_count);
+                $total_debit = floatval($items_totals->total_debit);
+                $total_credit = floatval($items_totals->total_credit);
+                if ($total_debit == 0 && $row->reference_id) {
+                    $receipt = $this->db->query(
+                        "SELECT total_amount FROM cash_receipts WHERE id = ? AND PIN = ? LIMIT 1",
+                        array($row->reference_id, $pin)
+                    )->row();
+                    if ($receipt && isset($receipt->total_amount)) {
+                        $total_debit = floatval($receipt->total_amount);
+                    }
+                }
+            }
+        } elseif ($row->entry_source === 'cash_disbursement' && !empty($row->reference_id)) {
+            $disbursement_id = intval($row->reference_id);
+            $pin_esc = $this->db->escape($pin);
+            $has_debit = $this->db->query("SHOW COLUMNS FROM cash_disbursement_items LIKE 'debit'")->row();
+            $has_credit = $this->db->query("SHOW COLUMNS FROM cash_disbursement_items LIKE 'credit'")->row();
+            if ($has_debit && $has_credit) {
+                $items_totals = $this->db->query(
+                    "SELECT COUNT(*) AS line_count,
+                            IFNULL(SUM(IFNULL(debit, 0)), 0) AS total_debit,
+                            IFNULL(SUM(IFNULL(credit, 0)), 0) AS total_credit
+                     FROM cash_disbursement_items
+                     WHERE disbursement_id = {$disbursement_id} AND PIN = {$pin_esc}"
+                )->row();
+            } else {
+                $items_totals = $this->db->query(
+                    "SELECT COUNT(*) AS line_count,
+                            IFNULL(SUM(IFNULL(amount, 0)), 0) AS total_debit,
+                            0 AS total_credit
+                     FROM cash_disbursement_items
+                     WHERE disbursement_id = {$disbursement_id} AND PIN = {$pin_esc}"
+                )->row();
+            }
+            if ($items_totals) {
+                $line_count = intval($items_totals->line_count);
+                $total_debit = floatval($items_totals->total_debit);
+                $total_credit = floatval($items_totals->total_credit);
+                if ($total_credit == 0 && $row->reference_id) {
+                    $disbursement = $this->db->query(
+                        "SELECT total_amount FROM cash_disbursements WHERE id = ? AND PIN = ? LIMIT 1",
+                        array($row->reference_id, $pin)
+                    )->row();
+                    if ($disbursement && isset($disbursement->total_amount)) {
+                        $total_credit = floatval($disbursement->total_amount);
+                    }
+                }
+            }
+        }
+
+        $row->line_count = $line_count;
+        $row->total_debit = $total_debit;
+        $row->total_credit = $total_credit;
+        $row->is_posted = $this->is_journal_entry_posted_to_gl($row->entryid);
+    }
+
     function account_type($id = null, $account = null) {
         if (!is_null($id)) {
             $this->db->where('id', $id);

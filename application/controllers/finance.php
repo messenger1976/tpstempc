@@ -629,25 +629,6 @@ class Finance extends CI_Controller {
             redirect(current_lang() . '/dashboard', 'refresh');
             return;
         }
-        
-        // Get unposted journal entries (manual JV from general_journal_entry)
-        $unposted = $this->finance_model->get_unposted_journal_entries();
-        foreach ($unposted as $e) {
-            $e->entry_source = 'general_journal';
-            $e->reference_id = null;
-        }
-        // Get journal entries from cash receipt & cash disbursement (journal_entry table)
-        $receipt_disburse = array();
-        if ($this->db->table_exists('journal_entry')) {
-            $receipt_disburse = $this->finance_model->get_receipt_disbursement_journal_entries();
-        }
-        $this->data['unposted_entries'] = array_merge($unposted, $receipt_disburse);
-        usort($this->data['unposted_entries'], function ($a, $b) {
-            $da = strtotime($a->entrydate);
-            $db = strtotime($b->entrydate);
-            if ($da !== $db) return $db - $da;
-            return $b->entryid - $a->entryid;
-        });
 
         // Posted to GL entries (so user can void and repost)
         $posted_general = $this->finance_model->get_posted_general_journal_entries();
@@ -666,6 +647,148 @@ class Finance extends CI_Controller {
         
         $this->data['content'] = 'finance/journal_entry_review';
         $this->load->view('template', $this->data);
+    }
+
+    /**
+     * DataTables server-side JSON feed for unposted journal entries on the review page.
+     */
+    function journal_entry_review_unposted_data() {
+        if (!has_role(6, 'Review_journal_entry')) {
+            $this->output
+                ->set_status_header(403)
+                ->set_content_type('application/json')
+                ->set_output(json_encode(array(
+                    'draw' => (int) $this->input->post('draw'),
+                    'recordsTotal' => 0,
+                    'recordsFiltered' => 0,
+                    'data' => array(),
+                    'error' => 'Access denied',
+                )));
+            return;
+        }
+
+        $draw = (int) $this->input->post('draw');
+        $start = (int) $this->input->post('start');
+        $length = (int) $this->input->post('length');
+        if ($length <= 0) {
+            $length = 25;
+        }
+        $search_post = $this->input->post('search');
+        $search = (is_array($search_post) && isset($search_post['value'])) ? trim((string) $search_post['value']) : '';
+        $source_filter = trim((string) $this->input->post('source_filter'));
+        if ($source_filter === '') {
+            $source_filter = 'all';
+        }
+        $order_column_index = 3;
+        $order_dir = 'desc';
+        $order = $this->input->post('order');
+        if (is_array($order) && isset($order[0]['column'])) {
+            $order_column_index = (int) $order[0]['column'];
+            $order_dir = isset($order[0]['dir']) ? $order[0]['dir'] : 'desc';
+        }
+
+        try {
+            $result = $this->finance_model->get_unposted_journal_review_datatable(
+                $start,
+                $length,
+                $search,
+                $order_column_index,
+                $order_dir,
+                $source_filter
+            );
+
+            $data = array();
+            foreach ($result['entries'] as $entry) {
+                $data[] = $this->_journal_review_unposted_row($entry);
+            }
+
+            $this->output
+                ->set_content_type('application/json')
+                ->set_output(json_encode(array(
+                    'draw' => $draw,
+                    'recordsTotal' => (int) $result['recordsTotal'],
+                    'recordsFiltered' => (int) $result['recordsFiltered'],
+                    'data' => $data,
+                    'grand_total_debit' => number_format($result['grand_total_debit'], 2, '.', ''),
+                    'grand_total_credit' => number_format($result['grand_total_credit'], 2, '.', ''),
+                )));
+        } catch (Exception $e) {
+            log_message('error', 'journal_entry_review_unposted_data: ' . $e->getMessage());
+            $this->output
+                ->set_content_type('application/json')
+                ->set_output(json_encode(array(
+                    'draw' => $draw,
+                    'recordsTotal' => 0,
+                    'recordsFiltered' => 0,
+                    'data' => array(),
+                    'error' => 'Failed to load journal entries',
+                )));
+        }
+    }
+
+    /**
+     * Build one DataTables row (HTML cells) for an unposted journal review entry.
+     */
+    private function _journal_review_unposted_row($entry) {
+        $entry_source = isset($entry->entry_source) ? $entry->entry_source : 'general_journal';
+        $is_general = ($entry_source === 'general_journal');
+        $lang = current_lang();
+
+        $view_url = $lang . '/finance/journal_entry_view/' . encode_id($entry->entryid);
+        if ($entry_source === 'cash_disbursement' && isset($entry->reference_id)) {
+            $view_url = $lang . '/cash_disbursement/cash_disbursement_view/' . encode_id($entry->reference_id);
+        } elseif ($entry_source === 'cash_receipt' && isset($entry->reference_id)) {
+            $view_url = $lang . '/cash_receipt/cash_receipt_view/' . encode_id($entry->reference_id);
+        }
+
+        $source_label = function_exists('journal_source_label') ? journal_source_label($entry_source) : $entry_source;
+        $entry_debit = isset($entry->total_debit) ? floatval($entry->total_debit) : 0;
+        $entry_credit = isset($entry->total_credit) ? floatval($entry->total_credit) : 0;
+        $balanced = abs($entry_debit - $entry_credit) <= 0.01;
+
+        $checkbox = $is_general
+            ? '<input type="checkbox" name="entry_ids[]" value="' . htmlspecialchars(encode_id($entry->entryid), ENT_QUOTES, 'UTF-8') . '" class="entry-checkbox"/>'
+            : '&mdash;';
+
+        $status_html = $balanced
+            ? '<span class="label label-success">Balanced</span>'
+            : '<span class="label label-danger">Unbalanced</span>';
+
+        $actions = '<a href="' . site_url($view_url) . '" class="btn btn-info btn-xs" title="View Details">'
+            . '<i class="fa fa-eye"></i> View</a>';
+
+        if ($is_general && $balanced) {
+            $actions .= ' <a href="' . site_url($lang . '/finance/journal_entry_approve/' . encode_id($entry->entryid)) . '"'
+                . ' onclick="return confirm(\'Are you sure you want to approve and post this journal entry?\');"'
+                . ' class="btn btn-success btn-xs" title="Approve & Post">'
+                . '<i class="fa fa-check"></i> Approve</a>';
+        }
+
+        $is_receipt_disburse = in_array($entry_source, array('cash_receipt', 'cash_disbursement'), true);
+        $is_posted = !empty($entry->is_posted);
+        $can_post_to_gl = $is_receipt_disburse && !$is_posted && $balanced;
+        if ($can_post_to_gl) {
+            $actions .= ' <a href="' . site_url($lang . '/finance/journal_entry_post_to_gl/' . encode_id($entry->entryid)) . '"'
+                . ' onclick="return confirm(\'Post this entry to the General Ledger?\');"'
+                . ' class="btn btn-success btn-xs" title="Post to GL">'
+                . '<i class="fa fa-book"></i> Post to GL</a>';
+        } elseif ($is_receipt_disburse && $is_posted) {
+            $actions .= ' <span class="label label-default">Posted to GL</span>';
+        }
+
+        return array(
+            $checkbox,
+            (int) $entry->entryid,
+            '<span class="label label-default">' . htmlspecialchars($source_label, ENT_QUOTES, 'UTF-8') . '</span>',
+            date('M d, Y', strtotime($entry->entrydate)),
+            htmlspecialchars($entry->description, ENT_QUOTES, 'UTF-8'),
+            htmlspecialchars($entry->created_by_name, ENT_QUOTES, 'UTF-8'),
+            isset($entry->line_count) ? (int) $entry->line_count : 0,
+            number_format($entry_debit, 2),
+            number_format($entry_credit, 2),
+            $status_html,
+            $actions,
+        );
     }
 
     function journal_entry_view($id) {

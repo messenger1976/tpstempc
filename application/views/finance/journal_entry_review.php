@@ -36,126 +36,55 @@ if (isset($message) && !empty($message)) {
                     </div>
                 </div>
                 <div class="ibox-content">
-                    <?php if (!empty($unposted_entries)): ?>
-                        <form method="post" action="<?php echo site_url(current_lang() . '/finance/journal_entry_batch_approve'); ?>" id="approveForm" onsubmit="return confirm('Are you sure you want to approve and post the selected journal entries?');">
-                            <div class="table-responsive">
-                                <table class="table table-striped table-bordered table-hover dataTables-example">
-                                    <thead>
-                                        <tr>
-                                            <th style="width: 30px;">
-                                                <input type="checkbox" id="selectAll" title="Select All (JV only)"/>
-                                            </th>
-                                            <th>Entry ID</th>
-                                            <th>Source</th>
-                                            <th>Date</th>
-                                            <th>Description</th>
-                                            <th>Created By</th>
-                                            <th>Line Items</th>
-                                            <th style="text-align: right;">Total Debit</th>
-                                            <th style="text-align: right;">Total Credit</th>
-                                            <th>Status</th>
-                                            <th>Actions</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        <?php 
-                                        $grand_total_debit = 0;
-                                        $grand_total_credit = 0;
-                                        foreach ($unposted_entries as $entry): 
-                                            $entry_source = isset($entry->entry_source) ? $entry->entry_source : 'general_journal';
-                                            $is_general = ($entry_source === 'general_journal');
-                                            $view_url = current_lang() . '/finance/journal_entry_view/' . encode_id($entry->entryid);
-                                            if ($entry_source === 'cash_disbursement' && isset($entry->reference_id)) {
-                                                $view_url = current_lang() . '/cash_disbursement/cash_disbursement_view/' . encode_id($entry->reference_id);
-                                            } elseif ($entry_source === 'cash_receipt' && isset($entry->reference_id)) {
-                                                $view_url = current_lang() . '/cash_receipt/cash_receipt_view/' . encode_id($entry->reference_id);
-                                            }
-                                            $source_label = function_exists('journal_source_label') ? journal_source_label($entry_source) : $entry_source;
-                                            
-                                            // Calculate totals
-                                            $entry_debit = isset($entry->total_debit) ? floatval($entry->total_debit) : 0;
-                                            $entry_credit = isset($entry->total_credit) ? floatval($entry->total_credit) : 0;
-                                            $grand_total_debit += $entry_debit;
-                                            $grand_total_credit += $entry_credit;
-                                        ?>
-                                            <tr>
-                                                <td>
-                                                    <?php if ($is_general): ?>
-                                                        <input type="checkbox" name="entry_ids[]" value="<?php echo encode_id($entry->entryid); ?>" class="entry-checkbox"/>
-                                                    <?php else: ?>
-                                                        —
-                                                    <?php endif; ?>
-                                                </td>
-                                                <td><?php echo $entry->entryid; ?></td>
-                                                <td><span class="label label-default"><?php echo htmlspecialchars($source_label); ?></span></td>
-                                                <td><?php echo date('M d, Y', strtotime($entry->entrydate)); ?></td>
-                                                <td><?php echo htmlspecialchars($entry->description); ?></td>
-                                                <td><?php echo htmlspecialchars($entry->created_by_name); ?></td>
-                                                <td style="text-align: center;"><?php echo isset($entry->line_count) ? $entry->line_count : 0; ?></td>
-                                                <td style="text-align: right;"><?php echo number_format($entry_debit, 2); ?></td>
-                                                <td style="text-align: right;"><?php echo number_format($entry_credit, 2); ?></td>
-                                                <td>
-                                                    <?php if (abs($entry_debit - $entry_credit) <= 0.01): ?>
-                                                        <span class="label label-success">Balanced</span>
-                                                    <?php else: ?>
-                                                        <span class="label label-danger">Unbalanced</span>
-                                                    <?php endif; ?>
-                                                </td>
-                                                <td>
-                                                    <a href="<?php echo site_url($view_url); ?>" class="btn btn-info btn-xs" title="View Details">
-                                                        <i class="fa fa-eye"></i> View
-                                                    </a>
-                                                    <?php if ($is_general && abs($entry_debit - $entry_credit) <= 0.01): ?>
-                                                        <a href="<?php echo site_url(current_lang() . '/finance/journal_entry_approve/' . encode_id($entry->entryid)); ?>" 
-                                                           onclick="return confirm('Are you sure you want to approve and post this journal entry?');" 
-                                                           class="btn btn-success btn-xs" title="Approve & Post">
-                                                            <i class="fa fa-check"></i> Approve
-                                                        </a>
-                                                    <?php endif; ?>
-                                                    <?php
-                                                    $is_receipt_disburse = in_array($entry_source, array('cash_receipt', 'cash_disbursement'), true);
-                                                    $can_post_to_gl = $is_receipt_disburse && !$entry->is_posted && abs($entry_debit - $entry_credit) <= 0.01;
-                                                    if ($can_post_to_gl): ?>
-                                                        <a href="<?php echo site_url(current_lang() . '/finance/journal_entry_post_to_gl/' . encode_id($entry->entryid)); ?>" 
-                                                           onclick="return confirm('Post this entry to the General Ledger?');" 
-                                                           class="btn btn-success btn-xs" title="Post to GL">
-                                                            <i class="fa fa-book"></i> Post to GL
-                                                        </a>
-                                                    <?php elseif ($is_receipt_disburse && !empty($entry->is_posted)): ?>
-                                                        <span class="label label-default">Posted to GL</span>
-                                                    <?php endif; ?>
-                                                </td>
-                                            </tr>
-                                        <?php endforeach; ?>
-                                    </tbody>
-                                    <tfoot>
-                                        <tr style="background-color: #f5f5f5; font-weight: bold;">
-                                            <td colspan="7" style="text-align: right;"><strong>Grand Total:</strong></td>
-                                            <td style="text-align: right;"><strong><?php echo number_format($grand_total_debit, 2); ?></strong></td>
-                                            <td style="text-align: right;"><strong><?php echo number_format($grand_total_credit, 2); ?></strong></td>
-                                            <td colspan="2">
-                                                <?php if (abs($grand_total_debit - $grand_total_credit) <= 0.01): ?>
-                                                    <span class="label label-success">Balanced</span>
-                                                <?php else: ?>
-                                                    <span class="label label-danger">Unbalanced</span>
-                                                <?php endif; ?>
-                                            </td>
-                                        </tr>
-                                    </tfoot>
-                                </table>
-                            </div>
-                            <div style="margin-top: 20px;">
-                                <button type="submit" class="btn btn-success" id="batchApproveBtn" disabled>
-                                    <i class="fa fa-check"></i> Approve Selected Entries
-                                </button>
-                                <span id="selectedCount" style="margin-left: 10px;"></span>
-                            </div>
-                        </form>
-                    <?php else: ?>
-                        <div class="alert alert-info">
-                            <i class="fa fa-info-circle"></i> All journal entries have been posted. No entries pending approval.
+                    <div class="row" style="margin-bottom: 15px;">
+                        <div class="col-sm-4 col-md-3">
+                            <label for="sourceFilter">Source</label>
+                            <select id="sourceFilter" class="form-control">
+                                <option value="all" selected>All</option>
+                                <option value="general_journal"><?php echo htmlspecialchars(function_exists('journal_source_label') ? journal_source_label('general_journal') : 'Journal Entry'); ?></option>
+                                <option value="cash_receipt"><?php echo htmlspecialchars(function_exists('journal_source_label') ? journal_source_label('cash_receipt') : 'Cash Receipt'); ?></option>
+                                <option value="cash_disbursement"><?php echo htmlspecialchars(function_exists('journal_source_label') ? journal_source_label('cash_disbursement') : 'Cash Disbursement'); ?></option>
+                            </select>
                         </div>
-                    <?php endif; ?>
+                    </div>
+                    <form method="post" action="<?php echo site_url(current_lang() . '/finance/journal_entry_batch_approve'); ?>" id="approveForm" onsubmit="return confirm('Are you sure you want to approve and post the selected journal entries?');">
+                        <div class="table-responsive">
+                            <table class="table table-striped table-bordered table-hover dataTables-example" id="unpostedJournalReviewTable" style="width:100%;">
+                                <thead>
+                                    <tr>
+                                        <th style="width: 30px;">
+                                            <input type="checkbox" id="selectAll" title="Select All (JV only)"/>
+                                        </th>
+                                        <th>Entry ID</th>
+                                        <th>Source</th>
+                                        <th>Date</th>
+                                        <th>Description</th>
+                                        <th>Created By</th>
+                                        <th>Line Items</th>
+                                        <th style="text-align: right;">Total Debit</th>
+                                        <th style="text-align: right;">Total Credit</th>
+                                        <th>Status</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody></tbody>
+                                <tfoot>
+                                    <tr style="background-color: #f5f5f5; font-weight: bold;">
+                                        <td colspan="7" style="text-align: right;"><strong>Grand Total:</strong></td>
+                                        <td id="grandTotalDebit" style="text-align: right;"><strong>0.00</strong></td>
+                                        <td id="grandTotalCredit" style="text-align: right;"><strong>0.00</strong></td>
+                                        <td colspan="2" id="grandTotalStatus"></td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+                        <div style="margin-top: 20px;">
+                            <button type="submit" class="btn btn-success" id="batchApproveBtn" disabled>
+                                <i class="fa fa-check"></i> Approve Selected Entries
+                            </button>
+                            <span id="selectedCount" style="margin-left: 10px;"></span>
+                        </div>
+                    </form>
 
                     <?php if (!empty($posted_entries)): ?>
                         <hr style="margin: 30px 0;">
@@ -275,40 +204,38 @@ if (isset($message) && !empty($message)) {
         voidFormUpdateButton();
     }
 
-    if (typeof jQuery === 'undefined') return;
-    jQuery(document).ready(function() {
-        if (typeof jQuery.fn.DataTable !== 'undefined') {
-            jQuery('.dataTables-example').DataTable({
-                pageLength: 25,
-                responsive: true,
-                dom: '<"html5buttons"B>lTfgitp',
-                buttons: [],
-                footerCallback: function (row, data, start, end, display) {
-                    var api = this.api();
-                    var intVal = function (i) {
-                        return typeof i === 'string' ?
-                            parseFloat(i.replace(/[\$,]/g, '')) :
-                            typeof i === 'number' ? i : 0;
-                    };
-                    var totalDebit = api.column(7, { page: 'all' }).data().reduce(function (a, b) { return intVal(a) + intVal(b); }, 0);
-                    var totalCredit = api.column(8, { page: 'all' }).data().reduce(function (a, b) { return intVal(a) + intVal(b); }, 0);
-                    jQuery(api.column(7).footer()).html('<strong>' + totalDebit.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',') + '</strong>');
-                    jQuery(api.column(8).footer()).html('<strong>' + totalCredit.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',') + '</strong>');
-                }
-            });
+    function loadScript(src, cb) {
+        var s = document.createElement('script');
+        s.src = src;
+        s.onload = cb;
+        s.onerror = function() { if (typeof cb === 'function') cb(); };
+        document.head.appendChild(s);
+    }
+
+    function initUnpostedTable() {
+        var unpostedAjaxUrl = '<?php echo site_url(current_lang() . '/finance/journal_entry_review_unposted_data'); ?>';
+
+        function formatMoney(value) {
+            var num = parseFloat(value);
+            if (isNaN(num)) num = 0;
+            return num.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
         }
-        jQuery('#selectAll').on('change', function() {
-            jQuery('.entry-checkbox').prop('checked', jQuery(this).prop('checked'));
-            updateBatchButton();
-        });
-        jQuery('.entry-checkbox').on('change', function() {
-            updateBatchButton();
-            var checkedCount = jQuery('.entry-checkbox:checked').length;
-            var totalCount = jQuery('.entry-checkbox').length;
-            jQuery('#selectAll').prop('checked', totalCount > 0 && checkedCount === totalCount);
-        });
+
+        function updateGrandTotals(debit, credit) {
+            var d = parseFloat(debit) || 0;
+            var c = parseFloat(credit) || 0;
+            jQuery('#grandTotalDebit').html('<strong>' + formatMoney(d) + '</strong>');
+            jQuery('#grandTotalCredit').html('<strong>' + formatMoney(c) + '</strong>');
+            var balanced = Math.abs(d - c) <= 0.01;
+            jQuery('#grandTotalStatus').html(
+                balanced
+                    ? '<span class="label label-success">Balanced</span>'
+                    : '<span class="label label-danger">Unbalanced</span>'
+            );
+        }
+
         function updateBatchButton() {
-            var checkedCount = jQuery('.entry-checkbox:checked').length;
+            var checkedCount = jQuery('#approveForm .entry-checkbox:checked').length;
             if (checkedCount > 0) {
                 jQuery('#batchApproveBtn').prop('disabled', false);
                 jQuery('#selectedCount').text('(' + checkedCount + ' entry/entries selected)');
@@ -317,6 +244,78 @@ if (isset($message) && !empty($message)) {
                 jQuery('#selectedCount').text('');
             }
         }
-    });
+
+        var unpostedTable = jQuery('#unpostedJournalReviewTable').DataTable({
+            processing: true,
+            serverSide: true,
+            pageLength: 25,
+            responsive: true,
+            order: [[3, 'desc']],
+            ajax: {
+                url: unpostedAjaxUrl,
+                type: 'POST',
+                data: function(d) {
+                    d.source_filter = jQuery('#sourceFilter').val() || 'all';
+                },
+                dataSrc: function(json) {
+                    if (json && json.grand_total_debit !== undefined && json.grand_total_credit !== undefined) {
+                        updateGrandTotals(json.grand_total_debit, json.grand_total_credit);
+                    }
+                    return (json && json.data) ? json.data : [];
+                },
+                error: function(xhr, error, thrown) {
+                    console.error('Journal review DataTables error:', error, thrown, xhr && xhr.responseText);
+                }
+            },
+            columnDefs: [
+                { orderable: false, searchable: false, targets: [0, 10] },
+                { className: 'text-right', targets: [7, 8] },
+                { className: 'text-center', targets: [6] }
+            ],
+            dom: 'lfrtip',
+            drawCallback: function() {
+                jQuery('#selectAll').prop('checked', false);
+                updateBatchButton();
+            },
+            language: {
+                emptyTable: 'All journal entries have been posted. No entries pending approval.',
+                zeroRecords: 'No matching journal entries found.',
+                processing: 'Loading...'
+            }
+        });
+
+        jQuery('#sourceFilter').on('change', function() {
+            unpostedTable.ajax.reload();
+        });
+
+        jQuery('#selectAll').on('change', function() {
+            var checked = jQuery(this).prop('checked');
+            jQuery('#approveForm .entry-checkbox').prop('checked', checked);
+            updateBatchButton();
+        });
+
+        jQuery('#approveForm').on('change', '.entry-checkbox', function() {
+            var checkedCount = jQuery('#approveForm .entry-checkbox:checked').length;
+            var totalCount = jQuery('#approveForm .entry-checkbox').length;
+            jQuery('#selectAll').prop('checked', totalCount > 0 && checkedCount === totalCount);
+            updateBatchButton();
+        });
+    }
+
+    function tryInit() {
+        if (window.jQuery) {
+            if (!window.jQuery.fn || !window.jQuery.fn.DataTable) {
+                loadScript('<?php echo base_url(); ?>assets/js/plugins/dataTables/datatables.min.js', function() {
+                    initUnpostedTable();
+                });
+            } else {
+                initUnpostedTable();
+            }
+        } else {
+            setTimeout(tryInit, 50);
+        }
+    }
+
+    tryInit();
 })();
 </script>

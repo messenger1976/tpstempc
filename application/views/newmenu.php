@@ -27,6 +27,9 @@ $current_member_id = ($current_user_data && isset($current_user_data->member_id)
         <li class="<?php echo ($active == 'calculator' ? 'active' : ''); ?>">
                 <a href="<?php echo site_url($this->lang->lang() . '/calculator/index'); ?>"><i class="fa fa-delicious"></i> <span class="nav-label">Loan Calculator</span></a>
 
+        </li>
+        <li class="<?php echo ($active == 'collector_map' ? 'active' : ''); ?>">
+                <a href="<?php echo site_url(current_lang() . '/collector_map/index'); ?>"><i class="fa fa-map-marker"></i> <span class="nav-label">Collector Map</span></a>
         </li>        
         <?php
         if(!is_resseller()){ 

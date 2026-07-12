@@ -481,6 +481,122 @@ class Member_Model extends CI_Model {
 
         return $return;
     }
+
+    /**
+     * Active members with physical addresses, grouped for the dashboard OSM map.
+     * Requires member_address_geocode (see install_member_address_geocode.php).
+     *
+     * @return array List of location buckets with lat/lng, count, and sample members
+     */
+    function get_member_map_locations() {
+        $pin = current_user()->PIN;
+        $locations = array();
+
+        if (!$this->db->table_exists('member_address_geocode')) {
+            return $locations;
+        }
+
+        $sql = "SELECT
+                    UPPER(TRIM(c.physicaladdress)) AS address_key,
+                    TRIM(c.physicaladdress) AS address,
+                    g.lat,
+                    g.lng,
+                    g.geocode_status,
+                    COUNT(*) AS member_count
+                FROM members m
+                INNER JOIN members_contact c ON c.PID = m.PID
+                LEFT JOIN member_address_geocode g
+                    ON g.address_key = UPPER(TRIM(c.physicaladdress))
+                WHERE m.PIN = ?
+                  AND m.status = 1
+                  AND c.physicaladdress IS NOT NULL
+                  AND TRIM(c.physicaladdress) != ''
+                GROUP BY UPPER(TRIM(c.physicaladdress)), g.lat, g.lng, g.geocode_status
+                ORDER BY member_count DESC";
+
+        $rows = $this->db->query($sql, array($pin))->result();
+
+        foreach ($rows as $row) {
+            if ($row->geocode_status !== 'ok' || $row->lat === null || $row->lng === null) {
+                continue;
+            }
+
+            $sample = $this->db->query(
+                "SELECT m.member_id,
+                        TRIM(CONCAT(IFNULL(m.firstname,''), ' ', IFNULL(m.lastname,''))) AS name
+                 FROM members m
+                 INNER JOIN members_contact c ON c.PID = m.PID
+                 WHERE m.PIN = ?
+                   AND m.status = 1
+                   AND UPPER(TRIM(c.physicaladdress)) = ?
+                 ORDER BY m.lastname ASC, m.firstname ASC
+                 LIMIT 8",
+                array($pin, $row->address_key)
+            )->result_array();
+
+            $locations[] = array(
+                'address' => $row->address,
+                'lat' => floatval($row->lat),
+                'lng' => floatval($row->lng),
+                'member_count' => intval($row->member_count),
+                'members' => $sample,
+            );
+        }
+
+        return $locations;
+    }
+
+    /**
+     * Counts for map footer: total addressed members vs plotted locations.
+     */
+    function get_member_map_stats() {
+        $pin = current_user()->PIN;
+        $stats = array(
+            'with_address' => 0,
+            'plotted' => 0,
+            'locations' => 0,
+            'table_ready' => $this->db->table_exists('member_address_geocode'),
+        );
+
+        $row = $this->db->query(
+            "SELECT COUNT(*) AS cnt
+             FROM members m
+             INNER JOIN members_contact c ON c.PID = m.PID
+             WHERE m.PIN = ?
+               AND m.status = 1
+               AND c.physicaladdress IS NOT NULL
+               AND TRIM(c.physicaladdress) != ''",
+            array($pin)
+        )->row();
+        $stats['with_address'] = $row ? intval($row->cnt) : 0;
+
+        if (!$stats['table_ready']) {
+            return $stats;
+        }
+
+        $row = $this->db->query(
+            "SELECT COUNT(*) AS plotted, COUNT(DISTINCT UPPER(TRIM(c.physicaladdress))) AS locations
+             FROM members m
+             INNER JOIN members_contact c ON c.PID = m.PID
+             INNER JOIN member_address_geocode g
+                ON g.address_key = UPPER(TRIM(c.physicaladdress))
+               AND g.geocode_status = 'ok'
+               AND g.lat IS NOT NULL
+               AND g.lng IS NOT NULL
+             WHERE m.PIN = ?
+               AND m.status = 1
+               AND c.physicaladdress IS NOT NULL
+               AND TRIM(c.physicaladdress) != ''",
+            array($pin)
+        )->row();
+
+        if ($row) {
+            $stats['plotted'] = intval($row->plotted);
+            $stats['locations'] = intval($row->locations);
+        }
+
+        return $stats;
+    }
     
     
 }

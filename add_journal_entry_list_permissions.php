@@ -15,7 +15,7 @@ require_once BASEPATH . 'core/CodeIgniter.php';
 $CI =& get_instance();
 
 $module_id = 6;
-$permissions = array('View_journal_entry', 'Delete_journal_entry');
+$permissions = array('View_journal_entry', 'Edit_journal_entry', 'Delete_journal_entry');
 
 echo "<h1>Adding Journal Entry List Permissions</h1>";
 echo "<style>
@@ -78,6 +78,7 @@ foreach ($permissions as $permission_name) {
 echo "<div class='section'>";
 echo "<h3>Manual SQL (if needed)</h3>";
 echo "<pre>INSERT INTO access_level (group_id, Module, link, allow) VALUES (1, 6, 'View_journal_entry', 1);\n";
+echo "INSERT INTO access_level (group_id, Module, link, allow) VALUES (1, 6, 'Edit_journal_entry', 1);\n";
 echo "INSERT INTO access_level (group_id, Module, link, allow) VALUES (1, 6, 'Delete_journal_entry', 1);</pre>";
-echo "<p>Existing <strong>Journal_entry</strong> permission is still used for creating entries via Finance → Journal Entry.</p>";
+echo "<p>Existing <strong>Journal_entry</strong> permission is still used for creating entries via Finance → Journal Entry. Users with <strong>Journal_entry</strong> can also edit drafts until <strong>Edit_journal_entry</strong> is assigned.</p>";
 echo "</div>";

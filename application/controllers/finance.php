@@ -514,6 +514,114 @@ class Finance extends CI_Controller {
     }
 
     /**
+     * Edit an unposted (draft) manual journal entry.
+     */
+    function journal_entry_edit($id) {
+        $encoded_id = $id;
+        $id = decode_id($id);
+        $this->data['title'] = lang('journal_entry_edit');
+        $this->data['id'] = $encoded_id;
+
+        if (!has_role(6, 'Edit_journal_entry') && !has_role(6, 'Journal_entry')) {
+            $this->session->set_flashdata('warning', 'You do not have permission to edit journal entries.');
+            redirect(current_lang() . '/finance/journal_entry_list', 'refresh');
+            return;
+        }
+
+        $entry = $this->finance_model->get_journal_entry_details($id);
+        if (!$entry) {
+            $this->session->set_flashdata('warning', lang('journal_entry_not_found'));
+            redirect(current_lang() . '/finance/journal_entry_list', 'refresh');
+            return;
+        }
+        if (!empty($entry->is_posted)) {
+            $this->session->set_flashdata('warning', lang('journal_entry_cannot_edit_posted'));
+            redirect(current_lang() . '/finance/journal_entry_list', 'refresh');
+            return;
+        }
+
+        $this->load->model('customer_model');
+        $this->load->model('supplier_model');
+        $this->load->model('loan_model');
+        $this->form_validation->set_rules('issue_date', lang('journalentry_date'), 'required|valid_date');
+        $this->form_validation->set_rules('document_no', lang('journalentry_document_no'), 'required|trim|max_length[100]');
+        $this->form_validation->set_rules('description11', lang('description'), 'required');
+
+        if ($this->form_validation->run() == TRUE) {
+            $array_items = array();
+            $account = $this->input->post('account');
+            $description = $this->input->post('description');
+            $credit = $this->input->post('credit');
+            $debit = $this->input->post('debit');
+            $link_type = $this->input->post('link_type');
+            $link_entity = $this->input->post('link_entity');
+            $act = is_array($account) ? count($account) : 0;
+            $date = format_date(trim($this->input->post('issue_date')));
+            $out_description = trim($this->input->post('description11'));
+            $out_document_no = trim($this->input->post('document_no'));
+            $summ_credit = $this->input->post('summation_credit');
+            $summ_debit = $this->input->post('summation_debit');
+
+            if ($summ_credit == $summ_debit && $act > 0) {
+                for ($i = 0; $i < $act; $i++) {
+                    $account_code = $account[$i];
+                    $credit_amount = str_replace(',', '', $credit[$i]);
+                    $debit_amount = str_replace(',', '', $debit[$i]);
+                    $description_data = $description[$i];
+
+                    if (empty($account_code) || (empty($credit_amount) && empty($debit_amount))) {
+                        continue;
+                    }
+
+                    $tmp_array = array(
+                        'account' => $account_code,
+                        'description' => $description_data,
+                        'credit' => ($credit_amount > 0 ? $credit_amount : 0),
+                        'debit' => ($debit_amount > 0 ? $debit_amount : 0),
+                        'entrydate' => $date,
+                        'createdby' => current_user()->id,
+                    );
+
+                    $lt = (is_array($link_type) && isset($link_type[$i])) ? $link_type[$i] : '';
+                    $le = (is_array($link_entity) && isset($link_entity[$i])) ? $link_entity[$i] : '';
+                    $link_fields = $this->finance_model->resolve_journal_line_link($lt, $le);
+                    foreach ($link_fields as $lk => $lv) {
+                        $tmp_array[$lk] = $lv;
+                    }
+                    $array_items[] = $tmp_array;
+                }
+
+                if (!empty($array_items)) {
+                    $main_array = array(
+                        'entrydate' => $date,
+                        'description' => $out_description,
+                        'document_no' => $out_document_no,
+                    );
+                    $updated = $this->finance_model->update_journal_entry($id, $main_array, $array_items);
+                    if ($updated) {
+                        $this->session->set_flashdata('message', lang('journal_entry_update_success'));
+                        redirect(current_lang() . '/finance/journal_entry_list', 'refresh');
+                        return;
+                    }
+                    $this->data['warning'] = lang('journal_entry_update_fail');
+                } else {
+                    $this->data['warning'] = lang('journal_entry_no_items');
+                }
+            } else {
+                $this->data['warning'] = 'Make sure summmation of credit and debit are equal';
+            }
+        }
+
+        $this->data['entry'] = $entry;
+        $this->data['account_list'] = $this->finance_model->account_chart_by_accounttype();
+        $this->data['customerlist'] = $this->customer_model->customer_info()->result();
+        $this->data['supplierlist'] = $this->supplier_model->supplier_info()->result();
+        $this->data['loanlist'] = $this->loan_model->loan_repay_list();
+        $this->data['content'] = 'finance/journal_entry_edit';
+        $this->load->view('template', $this->data);
+    }
+
+    /**
      * Delete an unposted manual journal entry.
      */
     function journal_entry_delete($id) {

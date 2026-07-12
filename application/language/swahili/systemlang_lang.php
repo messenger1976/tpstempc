@@ -322,6 +322,8 @@ $lang['ledger_trial_balance'] = 'Trial Balance';
 $lang['journalentry'] = 'Journal Entry';
 $lang['journal_entry_list'] = 'Journal Entry List';
 $lang['journal_entry_view'] = 'View Journal Entry';
+$lang['journal_entry_edit'] = 'Edit Journal Entry';
+$lang['journal_entry_edit_note'] = 'Only draft (unposted) journal entries can be edited. Posted entries must be voided from GL first.';
 $lang['journal_entry_no'] = 'Entry No';
 $lang['journal_entry_line_items'] = 'Line Items';
 $lang['journal_entry_status_posted'] = 'Posted';
@@ -329,8 +331,13 @@ $lang['journal_entry_status_draft'] = 'Draft';
 $lang['journal_entry_review'] = 'Journal Entry Review & Approval';
 $lang['journal_entry_delete_success'] = 'Journal entry deleted successfully';
 $lang['journal_entry_delete_fail'] = 'Failed to delete journal entry';
+$lang['journal_entry_update_success'] = 'Journal entry updated successfully';
+$lang['journal_entry_update_fail'] = 'Failed to update journal entry';
+$lang['journal_entry_update_btn'] = 'Update Journal Entry';
+$lang['journal_entry_no_items'] = 'Please add at least one line item';
 $lang['journal_entry_not_found'] = 'Journal entry not found';
 $lang['journal_entry_cannot_delete_posted'] = 'This journal entry has been posted to the General Ledger and cannot be deleted.';
+$lang['journal_entry_cannot_edit_posted'] = 'This journal entry has been posted to the General Ledger and cannot be edited.';
 $lang['journal_entry_delete_confirm_text'] = 'This will permanently delete the journal entry and its line items.';
 
 // Application name

@@ -645,6 +645,117 @@ class Member_Model extends CI_Model {
 
         return $stats;
     }
+
+    /**
+     * Members for the collector field map (GPS directions to each address).
+     *
+     * @param bool $overdue_only When true, only members with overdue loan balance
+     * @return array
+     */
+    function get_collector_map_targets($overdue_only = true) {
+        $pin = current_user()->PIN;
+        $targets = array();
+
+        if (!$this->db->table_exists('member_address_geocode')) {
+            return $targets;
+        }
+
+        $this->load->model('report_model');
+        $aging = $this->report_model->loan_aging_report(date('Y-m-d'));
+        $loan_by_member = array();
+
+        foreach ($aging as $bucket_key => $bucket) {
+            if ($overdue_only && $bucket_key === 'current') {
+                continue;
+            }
+            if (empty($bucket['loans'])) {
+                continue;
+            }
+            foreach ($bucket['loans'] as $loan) {
+                $member_id = $loan['member_id'];
+                if (!isset($loan_by_member[$member_id])) {
+                    $loan_by_member[$member_id] = array(
+                        'outstanding_balance' => 0,
+                        'days_overdue' => 0,
+                        'loan_count' => 0,
+                        'is_overdue' => false,
+                    );
+                }
+                $loan_by_member[$member_id]['outstanding_balance'] += floatval($loan['outstanding_balance']);
+                $loan_by_member[$member_id]['days_overdue'] = max(
+                    $loan_by_member[$member_id]['days_overdue'],
+                    intval($loan['days_overdue'])
+                );
+                $loan_by_member[$member_id]['loan_count']++;
+                if (intval($loan['days_overdue']) > 0) {
+                    $loan_by_member[$member_id]['is_overdue'] = true;
+                }
+            }
+        }
+
+        $sql = "SELECT
+                    m.PID,
+                    m.member_id,
+                    TRIM(CONCAT(IFNULL(m.firstname,''), ' ', IFNULL(m.lastname,''))) AS name,
+                    TRIM(c.physicaladdress) AS address,
+                    c.phone1,
+                    g.lat,
+                    g.lng,
+                    g.geocode_status
+                FROM members m
+                INNER JOIN members_contact c ON c.PID = m.PID
+                LEFT JOIN member_address_geocode g
+                    ON g.address_key = UPPER(TRIM(c.physicaladdress))
+                WHERE m.PIN = ?
+                  AND m.status = 1
+                  AND c.physicaladdress IS NOT NULL
+                  AND TRIM(c.physicaladdress) != ''
+                ORDER BY m.lastname ASC, m.firstname ASC";
+
+        $rows = $this->db->query($sql, array($pin))->result();
+
+        foreach ($rows as $row) {
+            $loan_info = isset($loan_by_member[$row->member_id])
+                ? $loan_by_member[$row->member_id]
+                : array(
+                    'outstanding_balance' => 0,
+                    'days_overdue' => 0,
+                    'loan_count' => 0,
+                    'is_overdue' => false,
+                );
+
+            if ($overdue_only && $loan_info['outstanding_balance'] <= 0) {
+                continue;
+            }
+
+            if ($row->geocode_status !== 'ok' || $row->lat === null || $row->lng === null) {
+                continue;
+            }
+
+            $targets[] = array(
+                'pid' => $row->PID,
+                'member_id' => $row->member_id,
+                'name' => trim($row->name),
+                'address' => $row->address,
+                'phone' => $row->phone1,
+                'lat' => floatval($row->lat),
+                'lng' => floatval($row->lng),
+                'outstanding_balance' => floatval($loan_info['outstanding_balance']),
+                'days_overdue' => intval($loan_info['days_overdue']),
+                'loan_count' => intval($loan_info['loan_count']),
+                'is_overdue' => !empty($loan_info['is_overdue']),
+            );
+        }
+
+        usort($targets, function ($a, $b) {
+            if ($a['days_overdue'] !== $b['days_overdue']) {
+                return $b['days_overdue'] - $a['days_overdue'];
+            }
+            return $b['outstanding_balance'] <=> $a['outstanding_balance'];
+        });
+
+        return $targets;
+    }
     
     
 }

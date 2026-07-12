@@ -28,6 +28,28 @@
 
     <link href="<?php echo base_url(); ?>media/css/animate.css" rel="stylesheet">
     <link href="<?php echo base_url(); ?>media/css/style.css" rel="stylesheet">
+    <!-- Leaflet / OpenStreetMap -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
+    <style>
+        #members-osm-map { height: 480px; width: 100%; border-radius: 4px; z-index: 1; }
+        .member-map-legend { margin-top: 10px; color: #555; font-size: 12px; }
+        .leaflet-popup-content { font-size: 13px; line-height: 1.4; }
+        .leaflet-popup-content ul { margin: 6px 0 0 16px; padding: 0; }
+        .leaflet-routing-container { max-height: 220px; overflow-y: auto; width: 280px; font-size: 12px; }
+        .office-map-marker {
+            background: #ed5565;
+            color: #fff;
+            border: 2px solid #fff;
+            border-radius: 50%;
+            width: 28px;
+            height: 28px;
+            line-height: 24px;
+            text-align: center;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.4);
+            font-size: 14px;
+        }
+    </style>
 </head>
 
 <body>
@@ -318,6 +340,51 @@
                     </div>
                 </div>
                 
+                <!-- Members Address Map (OpenStreetMap) -->
+                <div class="row" style="margin-top: 20px;">
+                    <div class="col-lg-12">
+                        <div class="ibox float-e-margins">
+                            <div class="ibox-title" style="border-bottom: 2px solid #1c84c6;">
+                                <h5 style="color: #1c84c6; font-weight: bold;"><i class="fa fa-map-marker"></i> Members Address Map</h5>
+                            </div>
+                            <div class="ibox-content" style="background: white;">
+                                <?php
+                                $map_stats = isset($member_map_stats) ? $member_map_stats : array('with_address' => 0, 'plotted' => 0, 'locations' => 0, 'table_ready' => false);
+                                $map_locations = isset($member_map_locations) ? $member_map_locations : array();
+                                ?>
+                                <?php if (empty($map_stats['table_ready'])) { ?>
+                                    <div class="alert alert-warning" style="margin-bottom: 0;">
+                                        Map cache is not installed yet. Run
+                                        <code>php install_member_address_geocode.php</code>
+                                        (or open <code>install_member_address_geocode.php</code> in the browser) to geocode member addresses.
+                                    </div>
+                                <?php } elseif (empty($map_locations)) { ?>
+                                    <div class="alert alert-info" style="margin-bottom: 0;">
+                                        No geocoded member addresses to display yet.
+                                        <?php if (!empty($map_stats['with_address'])) { ?>
+                                            <?php echo intval($map_stats['with_address']); ?> member(s) have addresses — re-run <code>install_member_address_geocode.php</code> to plot them.
+                                        <?php } else { ?>
+                                            Add physical addresses in member contact info to see them here.
+                                        <?php } ?>
+                                    </div>
+                                <?php } else { ?>
+                                    <div id="members-osm-map"></div>
+                                    <div class="member-map-legend">
+                                        <i class="fa fa-map-marker" style="color:#ed5565;"></i> Office &nbsp;
+                                        <i class="fa fa-circle" style="color:#1c84c6;"></i> Members &nbsp;|&nbsp;
+                                        Click a member pin to show driving directions from the office.
+                                        Showing <strong><?php echo intval($map_stats['plotted']); ?></strong> of
+                                        <strong><?php echo intval($map_stats['with_address']); ?></strong> active members across
+                                        <strong><?php echo intval($map_stats['locations']); ?></strong> location(s).
+                                        Map data &copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>
+                                        · Routing via <a href="http://project-osrm.org/" target="_blank" rel="noopener">OSRM</a>.
+                                    </div>
+                                <?php } ?>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Loan Aging Summary -->
                 <?php if (isset($loan_aging_data) && !empty($loan_aging_data)) { ?>
                 <div class="row" style="margin-top: 20px;">
@@ -755,8 +822,142 @@
     <!-- ChartJS -->
     <script src="<?php echo base_url(); ?>media/js/plugins/chartJs/Chart.min.js"></script>
 
+    <!-- Leaflet / OpenStreetMap -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
+
     <script>
         $(document).ready(function() {
+            // Members Address Map + office-to-member directions
+            var memberMapLocations = <?php echo json_encode(isset($member_map_locations) ? $member_map_locations : array()); ?>;
+            var officeMapLocation = <?php echo json_encode(isset($office_map_location) ? $office_map_location : null); ?>;
+            if (typeof L !== 'undefined' && $('#members-osm-map').length && memberMapLocations && memberMapLocations.length) {
+                var map = L.map('members-osm-map', {
+                    scrollWheelZoom: false
+                });
+
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    maxZoom: 18,
+                    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+                }).addTo(map);
+
+                var officeLat = officeMapLocation ? parseFloat(officeMapLocation.lat) : 10.1365976;
+                var officeLng = officeMapLocation ? parseFloat(officeMapLocation.lng) : 124.3132049;
+                var officeLabel = (officeMapLocation && officeMapLocation.label) ? officeMapLocation.label : 'Office';
+                var officeAddress = (officeMapLocation && officeMapLocation.address) ? officeMapLocation.address : '';
+                var routingControl = null;
+
+                var officeIcon = L.divIcon({
+                    className: '',
+                    html: '<div class="office-map-marker" title="Office"><i class="fa fa-building"></i></div>',
+                    iconSize: [28, 28],
+                    iconAnchor: [14, 14]
+                });
+
+                L.marker([officeLat, officeLng], { icon: officeIcon, zIndexOffset: 1000 })
+                    .bindPopup('<strong>' + $('<div/>').text(officeLabel).html() + '</strong><br>' +
+                        $('<div/>').text(officeAddress || 'Office location').html() +
+                        '<br><small>Directions start from here</small>')
+                    .addTo(map);
+
+                function showRouteTo(lat, lng, addressLabel) {
+                    if (typeof L.Routing === 'undefined') {
+                        return;
+                    }
+                    if (routingControl) {
+                        map.removeControl(routingControl);
+                        routingControl = null;
+                    }
+                    routingControl = L.Routing.control({
+                        waypoints: [
+                            L.latLng(officeLat, officeLng),
+                            L.latLng(lat, lng)
+                        ],
+                        routeWhileDragging: false,
+                        addWaypoints: false,
+                        draggableWaypoints: false,
+                        fitSelectedRoutes: true,
+                        showAlternatives: false,
+                        createMarker: function() { return null; },
+                        lineOptions: {
+                            styles: [
+                                { color: '#1c84c6', opacity: 0.85, weight: 6 }
+                            ]
+                        },
+                        router: L.Routing.osrmv1({
+                            serviceUrl: 'https://router.project-osrm.org/route/v1',
+                            profile: 'driving'
+                        })
+                    }).addTo(map);
+
+                    routingControl.on('routesfound', function(e) {
+                        if (!e.routes || !e.routes.length) {
+                            return;
+                        }
+                        var summary = e.routes[0].summary;
+                        var km = (summary.totalDistance / 1000).toFixed(1);
+                        var mins = Math.round(summary.totalTime / 60);
+                        var panel = $('.leaflet-routing-container .leaflet-routing-alt h2').first();
+                        if (panel.length) {
+                            panel.text('Office → ' + (addressLabel || 'Member') + ' (' + km + ' km, ~' + mins + ' min)');
+                        }
+                    });
+                }
+
+                var bounds = [[officeLat, officeLng]];
+                $.each(memberMapLocations, function(i, loc) {
+                    var lat = parseFloat(loc.lat);
+                    var lng = parseFloat(loc.lng);
+                    if (isNaN(lat) || isNaN(lng)) {
+                        return;
+                    }
+
+                    var count = parseInt(loc.member_count, 10) || 1;
+                    var radius = Math.min(18, Math.max(8, 6 + Math.sqrt(count) * 2.5));
+                    var addressText = loc.address || 'Address';
+                    var namesHtml = '';
+                    if (loc.members && loc.members.length) {
+                        namesHtml = '<ul>';
+                        for (var n = 0; n < loc.members.length; n++) {
+                            var m = loc.members[n];
+                            namesHtml += '<li>' + $('<div/>').text((m.member_id ? m.member_id + ' — ' : '') + (m.name || '')).html() + '</li>';
+                        }
+                        if (count > loc.members.length) {
+                            namesHtml += '<li><em>+' + (count - loc.members.length) + ' more</em></li>';
+                        }
+                        namesHtml += '</ul>';
+                    }
+
+                    var popup = '<strong>' + $('<div/>').text(addressText).html() + '</strong><br>' +
+                        count + ' member' + (count === 1 ? '' : 's') + namesHtml +
+                        '<br><small style="color:#1c84c6;"><i class="fa fa-road"></i> Click pin for directions from office</small>';
+
+                    var marker = L.circleMarker([lat, lng], {
+                        radius: radius,
+                        color: '#1c84c6',
+                        weight: 2,
+                        fillColor: '#1c84c6',
+                        fillOpacity: 0.65
+                    }).bindPopup(popup).addTo(map);
+
+                    marker.on('click', function() {
+                        showRouteTo(lat, lng, addressText);
+                    });
+
+                    bounds.push([lat, lng]);
+                });
+
+                if (bounds.length === 1) {
+                    map.setView(bounds[0], 13);
+                } else if (bounds.length > 1) {
+                    map.fitBounds(bounds, { padding: [30, 30], maxZoom: 14 });
+                } else {
+                    map.setView([officeLat, officeLng], 12);
+                }
+
+                setTimeout(function() { map.invalidateSize(); }, 200);
+            }
+
             $('.chart').easyPieChart({
                 barColor: '#f8ac59',
 //                scaleColor: false,

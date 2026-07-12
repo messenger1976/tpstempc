@@ -41,18 +41,60 @@
         font-size: 14px;
         letter-spacing: 0.5px;
     }
+    .privilege-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 0;
+    }
     .privilege-item {
-        padding: 12px 20px;
+        padding: 12px 16px;
         border-bottom: 1px solid #f0f0f0;
+        border-right: 1px solid #f0f0f0;
         display: flex;
         align-items: center;
         transition: background-color 0.2s;
+        min-width: 0;
     }
-    .privilege-item:last-child {
-        border-bottom: none;
+    .privilege-item:nth-child(4n) {
+        border-right: none;
     }
     .privilege-item:hover {
         background-color: #f8f9fa;
+    }
+    @media (max-width: 1199px) {
+        .privilege-grid {
+            grid-template-columns: repeat(3, 1fr);
+        }
+        .privilege-item:nth-child(4n) {
+            border-right: 1px solid #f0f0f0;
+        }
+        .privilege-item:nth-child(3n) {
+            border-right: none;
+        }
+    }
+    @media (max-width: 991px) {
+        .privilege-grid {
+            grid-template-columns: repeat(2, 1fr);
+        }
+        .privilege-item:nth-child(3n) {
+            border-right: 1px solid #f0f0f0;
+        }
+        .privilege-item:nth-child(2n) {
+            border-right: none;
+        }
+    }
+    @media (max-width: 575px) {
+        .privilege-grid {
+            grid-template-columns: 1fr;
+        }
+        .privilege-item {
+            border-right: none;
+        }
+        .privilege-item:nth-child(2n),
+        .privilege-item:nth-child(3n),
+        .privilege-item:nth-child(4n) {
+            border-right: none;
+        }
     }
     .privilege-label {
         flex: 1;
@@ -61,6 +103,9 @@
         color: #495057;
         cursor: pointer;
         padding-left: 10px;
+        word-break: break-word;
+        line-height: 1.3;
+        font-size: 13px;
     }
     .custom-checkbox-wrapper {
         position: relative;
@@ -209,6 +254,7 @@ if (!empty($privilege_list[0])):
             <?php echo htmlspecialchars($key, ENT_QUOTES, 'UTF-8'); ?>
         </div>
         <div class="card-body" style="padding: 0;">
+            <div class="privilege-grid">
             <?php 
             foreach ($value as $k => $v): 
                 $module_id = $privilege_list[1][$key][$k];
@@ -228,6 +274,7 @@ if (!empty($privilege_list[0])):
                     </label>
                 </div>
             <?php endforeach; ?>
+            </div>
         </div>
     </div>
 <?php 

@@ -624,7 +624,7 @@ class Finance extends CI_Controller {
     function journal_entry_review() {
         $this->data['title'] = 'Journal Entry Review & Approval';
         
-        if (!has_role(6, 'Journal_entry')) {
+        if (!has_role(6, 'Review_journal_entry')) {
             $this->session->set_flashdata('warning', 'You do not have permission to access this page.');
             redirect(current_lang() . '/dashboard', 'refresh');
             return;
@@ -674,7 +674,7 @@ class Finance extends CI_Controller {
         log_message('debug', 'journal_entry_view: Encoded ID=' . $encoded_id . ', Decoded ID=' . $id);
         $this->data['title'] = 'Journal Entry Details';
         
-        if (!has_role(6, 'Journal_entry') && !has_role(6, 'View_journal_entry')) {
+        if (!has_role(6, 'Journal_entry') && !has_role(6, 'View_journal_entry') && !has_role(6, 'Review_journal_entry')) {
             $this->session->set_flashdata('warning', 'You do not have permission to access this page.');
             redirect(current_lang() . '/dashboard', 'refresh');
             return;
@@ -704,7 +704,7 @@ class Finance extends CI_Controller {
     function journal_entry_approve($id) {
         $id = decode_id($id);
         
-        if (!has_role(6, 'Journal_entry')) {
+        if (!has_role(6, 'Review_journal_entry')) {
             $this->session->set_flashdata('warning', 'You do not have permission to approve journal entries.');
             redirect(current_lang() . '/dashboard', 'refresh');
             return;
@@ -751,7 +751,7 @@ class Finance extends CI_Controller {
     function journal_entry_post_to_gl($id) {
         $id = decode_id($id);
 
-        if (!has_role(6, 'Journal_entry')) {
+        if (!has_role(6, 'Review_journal_entry')) {
             $this->session->set_flashdata('warning', 'You do not have permission to post journal entries to GL.');
             redirect(current_lang() . '/finance/journal_entry_review', 'refresh');
             return;
@@ -778,7 +778,7 @@ class Finance extends CI_Controller {
      */
     function void_gl_posting_general($id) {
         $id = decode_id($id);
-        if (!has_role(6, 'Journal_entry')) {
+        if (!has_role(6, 'Review_journal_entry')) {
             $this->session->set_flashdata('warning', 'You do not have permission to void GL postings.');
             redirect(current_lang() . '/finance/journal_entry_review', 'refresh');
             return;
@@ -798,7 +798,7 @@ class Finance extends CI_Controller {
      */
     function void_gl_posting_journal_entry($id) {
         $id = decode_id($id);
-        if (!has_role(6, 'Journal_entry')) {
+        if (!has_role(6, 'Review_journal_entry')) {
             $this->session->set_flashdata('warning', 'You do not have permission to void GL postings.');
             redirect(current_lang() . '/finance/journal_entry_review', 'refresh');
             return;
@@ -817,7 +817,7 @@ class Finance extends CI_Controller {
      * Void GL posting for multiple selected entries (batch). Expects void_ids[] = "source::encoded_id" (e.g. general_journal::xxx or journal_entry::xxx).
      */
     function void_gl_posting_batch() {
-        if (!has_role(6, 'Journal_entry')) {
+        if (!has_role(6, 'Review_journal_entry')) {
             $this->session->set_flashdata('warning', 'You do not have permission to void GL postings.');
             redirect(current_lang() . '/finance/journal_entry_review', 'refresh');
             return;
@@ -881,7 +881,7 @@ class Finance extends CI_Controller {
     }
 
     function journal_entry_batch_approve() {
-        if (!has_role(6, 'Journal_entry')) {
+        if (!has_role(6, 'Review_journal_entry')) {
             $this->session->set_flashdata('warning', 'You do not have permission to approve journal entries.');
             redirect(current_lang() . '/dashboard', 'refresh');
             return;

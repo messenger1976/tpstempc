@@ -165,27 +165,31 @@ if (isset($message) && !empty($message)) {
                     <div class="row">
                         <div class="col-md-12">
                             <?php if (!$entry->is_posted): ?>
-                                <?php if (abs($entry->total_debit - $entry->total_credit) <= 0.01): ?>
-                                    <a href="<?php echo site_url(current_lang() . '/finance/journal_entry_approve/' . $id); ?>" 
-                                       onclick="return confirm('Are you sure you want to approve and post this journal entry to General Ledger?');" 
-                                       class="btn btn-success">
-                                        <i class="fa fa-check"></i> Approve & Post to General Ledger
-                                    </a>
-                                <?php else: ?>
-                                    <div class="alert alert-danger">
-                                        <i class="fa fa-warning"></i> This journal entry is not balanced. Please correct it before posting.
-                                        <br>Difference: <?php echo number_format(abs($entry->total_debit - $entry->total_credit), 2); ?>
-                                    </div>
+                                <?php if (has_role(6, 'Review_journal_entry')): ?>
+                                    <?php if (abs($entry->total_debit - $entry->total_credit) <= 0.01): ?>
+                                        <a href="<?php echo site_url(current_lang() . '/finance/journal_entry_approve/' . $id); ?>" 
+                                           onclick="return confirm('Are you sure you want to approve and post this journal entry to General Ledger?');" 
+                                           class="btn btn-success">
+                                            <i class="fa fa-check"></i> Approve & Post to General Ledger
+                                        </a>
+                                    <?php else: ?>
+                                        <div class="alert alert-danger">
+                                            <i class="fa fa-warning"></i> This journal entry is not balanced. Please correct it before posting.
+                                            <br>Difference: <?php echo number_format(abs($entry->total_debit - $entry->total_credit), 2); ?>
+                                        </div>
+                                    <?php endif; ?>
                                 <?php endif; ?>
                             <?php else: ?>
                                 <div class="alert alert-success">
                                     <i class="fa fa-check-circle"></i> This journal entry has already been posted to General Ledger.
                                 </div>
-                                <a href="<?php echo site_url(current_lang() . '/finance/void_gl_posting_general/' . $id); ?>"
-                                   onclick="return confirm('Void the GL posting only? The journal entry will stay and you can repost it later.');"
-                                   class="btn btn-warning">
-                                    <i class="fa fa-undo"></i> Void GL Posting
-                                </a>
+                                <?php if (has_role(6, 'Review_journal_entry')): ?>
+                                    <a href="<?php echo site_url(current_lang() . '/finance/void_gl_posting_general/' . $id); ?>"
+                                       onclick="return confirm('Void the GL posting only? The journal entry will stay and you can repost it later.');"
+                                       class="btn btn-warning">
+                                        <i class="fa fa-undo"></i> Void GL Posting
+                                    </a>
+                                <?php endif; ?>
                             <?php endif; ?>
                             
                             <a href="<?php echo site_url(current_lang() . '/finance/journal_entry_list'); ?>" class="btn btn-default">

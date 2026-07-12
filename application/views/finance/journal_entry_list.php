@@ -73,6 +73,7 @@ if (isset($message) && !empty($message)) {
                                     <th><?php echo lang('journal_entry_no'); ?></th>
                                     <th><?php echo lang('journalentry_date'); ?></th>
                                     <th><?php echo lang('journalentry_reference_no'); ?></th>
+                                    <th><?php echo lang('journalentry_document_no'); ?></th>
                                     <th><?php echo lang('journalentry_description'); ?></th>
                                     <th><?php echo lang('journalentry_debit'); ?></th>
                                     <th><?php echo lang('journalentry_credit'); ?></th>
@@ -87,6 +88,7 @@ if (isset($message) && !empty($message)) {
                                             <td><?php echo $entry->entryid; ?></td>
                                             <td data-order="<?php echo $entry->entrydate; ?>"><?php echo date('d-m-Y', strtotime($entry->entrydate)); ?></td>
                                             <td><?php echo !empty($entry->reference_no) ? htmlspecialchars($entry->reference_no) : '—'; ?></td>
+                                            <td><?php echo !empty($entry->document_no) ? htmlspecialchars($entry->document_no) : '—'; ?></td>
                                             <td><?php echo character_limiter($entry->description, 50); ?></td>
                                             <td class="text-right"><?php echo number_format($entry->total_debit, 2); ?></td>
                                             <td class="text-right"><?php echo number_format($entry->total_credit, 2); ?></td>

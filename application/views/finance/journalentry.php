@@ -38,8 +38,20 @@ if (isset($message) && !empty($message)) {
 
 <div class="form-group"><label class="col-lg-3 control-label"><?php echo lang('journalentry_reference_no'); ?> :</label>
     <div class="col-lg-6">
-        <input type="text" name="reference_no" class="form-control" maxlength="100" placeholder="<?php echo lang('journalentry_reference_no_hint'); ?>" value="<?php echo set_value('reference_no'); ?>"/>
+        <input type="text" name="reference_no" id="reference_no" class="form-control" readonly="readonly"
+               value="<?php echo isset($next_reference_no) ? htmlspecialchars($next_reference_no) : ''; ?>"
+               title="<?php echo lang('journalentry_reference_no_hint'); ?>"/>
+        <span class="help-block" style="margin-bottom:0;"><?php echo lang('journalentry_reference_no_hint'); ?></span>
         <?php echo form_error('reference_no'); ?>
+    </div>
+</div>
+
+<div class="form-group"><label class="col-lg-3 control-label"><?php echo lang('journalentry_document_no'); ?> : <span class="required">*</span></label>
+    <div class="col-lg-6">
+        <input type="text" name="document_no" class="form-control" maxlength="100"
+               placeholder="<?php echo lang('journalentry_document_no_hint'); ?>"
+               value="<?php echo set_value('document_no'); ?>"/>
+        <?php echo form_error('document_no'); ?>
     </div>
 </div>
 

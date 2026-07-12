@@ -48,8 +48,12 @@
         <tr>
             <th><?php echo lang('journalentry_reference_no'); ?></th>
             <td><?php echo !empty($entry->reference_no) ? htmlspecialchars($entry->reference_no) : '—'; ?></td>
+            <th><?php echo lang('journalentry_document_no'); ?></th>
+            <td><?php echo !empty($entry->document_no) ? htmlspecialchars($entry->document_no) : '—'; ?></td>
+        </tr>
+        <tr>
             <th><?php echo lang('journalentry_description'); ?></th>
-            <td><?php echo htmlspecialchars($entry->description); ?></td>
+            <td colspan="3"><?php echo htmlspecialchars($entry->description); ?></td>
         </tr>
     </table>
 

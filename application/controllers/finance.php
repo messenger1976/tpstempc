@@ -383,6 +383,7 @@ class Finance extends CI_Controller {
         $this->load->model('supplier_model');
         $this->load->model('loan_model');
         $this->form_validation->set_rules('issue_date', lang('journalentry_date'), 'required|valid_date');
+        $this->form_validation->set_rules('document_no', lang('journalentry_document_no'), 'required|trim|max_length[100]');
         $this->form_validation->set_rules('description11', lang('description'), 'required');
 
         if ($this->form_validation->run() == TRUE) {
@@ -396,7 +397,10 @@ class Finance extends CI_Controller {
             $act = count($account);
             $date = format_date(trim($this->input->post('issue_date')));
             $out_description = trim($this->input->post('description11'));
-            $out_reference_no = trim($this->input->post('reference_no'));
+            $out_document_no = trim($this->input->post('document_no'));
+            // Auto Reference #: JV-{YYYY}{######} based on entry date year
+            $entry_year = date('Y', strtotime($date));
+            $out_reference_no = $this->finance_model->get_next_journal_voucher_no($entry_year);
             $summ_credit = $this->input->post('summation_credit');
             $summ_debit = $this->input->post('summation_debit');
 
@@ -432,7 +436,8 @@ class Finance extends CI_Controller {
                 $main_array = array(
                     'entrydate' => $date,
                     'description' => $out_description,
-                    'reference_no' => $out_reference_no
+                    'reference_no' => $out_reference_no,
+                    'document_no' => $out_document_no
                 );
                 
                 // Create journal entry (NOT auto-posted - requires approval)
@@ -457,6 +462,7 @@ class Finance extends CI_Controller {
         $this->data['customerlist'] = $this->customer_model->customer_info()->result();
         $this->data['supplierlist'] = $this->supplier_model->supplier_info()->result();
         $this->data['loanlist'] = $this->loan_model->loan_repay_list();
+        $this->data['next_reference_no'] = $this->finance_model->get_next_journal_voucher_no(date('Y'));
         
         // Get count of unposted entries for display
         $this->data['unposted_count'] = count($this->finance_model->get_unposted_journal_entries());
@@ -567,10 +573,11 @@ class Finance extends CI_Controller {
         $sheet->setCellValue('A1', lang('journal_entry_no'));
         $sheet->setCellValue('B1', lang('journalentry_date'));
         $sheet->setCellValue('C1', lang('journalentry_reference_no'));
-        $sheet->setCellValue('D1', lang('journalentry_description'));
-        $sheet->setCellValue('E1', lang('journalentry_debit'));
-        $sheet->setCellValue('F1', lang('journalentry_credit'));
-        $sheet->setCellValue('G1', lang('status'));
+        $sheet->setCellValue('D1', lang('journalentry_document_no'));
+        $sheet->setCellValue('E1', lang('journalentry_description'));
+        $sheet->setCellValue('F1', lang('journalentry_debit'));
+        $sheet->setCellValue('G1', lang('journalentry_credit'));
+        $sheet->setCellValue('H1', lang('status'));
 
         $row = 2;
         foreach ($entries as $entry) {
@@ -578,10 +585,11 @@ class Finance extends CI_Controller {
             $sheet->setCellValue('A' . $row, $entry->entryid);
             $sheet->setCellValue('B' . $row, $entry->entrydate);
             $sheet->setCellValue('C' . $row, isset($entry->reference_no) ? $entry->reference_no : '');
-            $sheet->setCellValue('D' . $row, $entry->description);
-            $sheet->setCellValue('E' . $row, number_format($entry->total_debit, 2, '.', ''));
-            $sheet->setCellValue('F' . $row, number_format($entry->total_credit, 2, '.', ''));
-            $sheet->setCellValue('G' . $row, $status);
+            $sheet->setCellValue('D' . $row, isset($entry->document_no) ? $entry->document_no : '');
+            $sheet->setCellValue('E' . $row, $entry->description);
+            $sheet->setCellValue('F' . $row, number_format($entry->total_debit, 2, '.', ''));
+            $sheet->setCellValue('G' . $row, number_format($entry->total_credit, 2, '.', ''));
+            $sheet->setCellValue('H' . $row, $status);
             $row++;
         }
 

@@ -42,6 +42,10 @@ if (isset($message) && !empty($message)) {
                                     <td><?php echo !empty($entry->reference_no) ? htmlspecialchars($entry->reference_no) : '—'; ?></td>
                                 </tr>
                                 <tr>
+                                    <th><?php echo lang('journalentry_document_no'); ?>:</th>
+                                    <td><?php echo !empty($entry->document_no) ? htmlspecialchars($entry->document_no) : '—'; ?></td>
+                                </tr>
+                                <tr>
                                     <th>Description:</th>
                                     <td><?php echo htmlspecialchars($entry->description); ?></td>
                                 </tr>

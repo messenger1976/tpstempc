@@ -636,6 +636,50 @@ class Finance_Model extends CI_Model {
     }
 
     /**
+     * Next Journal Voucher reference number: JV-{YYYY}{######}
+     * Counter is per organization (PIN) and resets each calendar year.
+     * Example: JV-2026000001
+     *
+     * @param int|string|null $year Year for the series (defaults to current year)
+     * @return string
+     */
+    function get_next_journal_voucher_no($year = null) {
+        $pin = current_user()->PIN;
+        $year = $year !== null && $year !== '' ? (int) $year : (int) date('Y');
+        if ($year < 2000 || $year > 2100) {
+            $year = (int) date('Y');
+        }
+
+        $has_ref_no = $this->db->query("SHOW COLUMNS FROM general_journal_entry LIKE 'reference_no'")->row();
+        if (!$has_ref_no) {
+            $this->db->query("ALTER TABLE general_journal_entry ADD COLUMN reference_no VARCHAR(100) NULL DEFAULT NULL AFTER description");
+        }
+
+        $prefix = 'JV-' . $year;
+        $like = $prefix . '%';
+        $row = $this->db->query(
+            "SELECT reference_no FROM general_journal_entry
+             WHERE PIN = ? AND reference_no LIKE ?
+             ORDER BY reference_no DESC
+             LIMIT 1",
+            array($pin, $like)
+        )->row();
+
+        $next = 1;
+        if ($row && !empty($row->reference_no)) {
+            // Match JV-2026000001 (year already in prefix; take trailing 6+ digits)
+            if (preg_match('/^JV-' . $year . '(\d+)$/', $row->reference_no, $m)) {
+                $next = intval($m[1]) + 1;
+            }
+        }
+        if ($next > 999999) {
+            $next = 999999;
+        }
+
+        return $prefix . str_pad((string) $next, 6, '0', STR_PAD_LEFT);
+    }
+
+    /**
      * Get manual journal entries (general_journal_entry) with optional date range filter.
      */
     function get_journal_entries($date_from = null, $date_to = null) {
@@ -2575,26 +2619,52 @@ $pin=current_user()->PIN;
         $description = $this->db->escape($main_array['description']);
         $pin_value = isset($main_array['PIN']) ? $this->db->escape($main_array['PIN']) : 'NULL';
         $reference_no = isset($main_array['reference_no']) ? trim($main_array['reference_no']) : '';
+        $document_no = isset($main_array['document_no']) ? trim($main_array['document_no']) : '';
         
-        // Ensure reference_no column exists (user Reference #)
+        // Ensure reference_no column exists (auto JV #)
         $has_ref_no = $this->db->query("SHOW COLUMNS FROM general_journal_entry LIKE 'reference_no'")->row();
         if (!$has_ref_no) {
             $this->db->query("ALTER TABLE general_journal_entry ADD COLUMN reference_no VARCHAR(100) NULL DEFAULT NULL AFTER description");
             $has_ref_no = $this->db->query("SHOW COLUMNS FROM general_journal_entry LIKE 'reference_no'")->row();
         }
+
+        // Ensure document_no column exists (manual required Document No.)
+        $has_doc_no = $this->db->query("SHOW COLUMNS FROM general_journal_entry LIKE 'document_no'")->row();
+        if (!$has_doc_no) {
+            $after_col = $has_ref_no ? 'reference_no' : 'description';
+            $this->db->query("ALTER TABLE general_journal_entry ADD COLUMN document_no VARCHAR(100) NULL DEFAULT NULL AFTER `$after_col`");
+            $has_doc_no = $this->db->query("SHOW COLUMNS FROM general_journal_entry LIKE 'document_no'")->row();
+        }
+
+        // Always allocate JV-{YYYY}{######} inside the transaction (entry date year)
+        if ($has_ref_no) {
+            $entry_year = !empty($main_array['entrydate']) ? date('Y', strtotime($main_array['entrydate'])) : date('Y');
+            $reference_no = $this->get_next_journal_voucher_no($entry_year);
+            $main_array['reference_no'] = $reference_no;
+        }
         $reference_no_sql = ($has_ref_no && $reference_no !== '') ? $this->db->escape($reference_no) : 'NULL';
+        $document_no_sql = ($has_doc_no && $document_no !== '') ? $this->db->escape($document_no) : 'NULL';
         
         // Check if reference_type column exists (Journal Voucher)
         $has_ref_type = $this->db->query("SHOW COLUMNS FROM general_journal_entry LIKE 'reference_type'")->row();
-        if ($has_ref_type && $has_ref_no) {
-            $insert_sql = "INSERT INTO general_journal_entry (entrydate, description, reference_no, PIN, reference_type) VALUES ($entrydate, $description, $reference_no_sql, $pin_value, 'journal_voucher')";
-        } elseif ($has_ref_type) {
-            $insert_sql = "INSERT INTO general_journal_entry (entrydate, description, PIN, reference_type) VALUES ($entrydate, $description, $pin_value, 'journal_voucher')";
-        } elseif ($has_ref_no) {
-            $insert_sql = "INSERT INTO general_journal_entry (entrydate, description, reference_no, PIN) VALUES ($entrydate, $description, $reference_no_sql, $pin_value)";
-        } else {
-            $insert_sql = "INSERT INTO general_journal_entry (entrydate, description, PIN) VALUES ($entrydate, $description, $pin_value)";
+
+        $cols = array('entrydate', 'description');
+        $vals = array($entrydate, $description);
+        if ($has_ref_no) {
+            $cols[] = 'reference_no';
+            $vals[] = $reference_no_sql;
         }
+        if ($has_doc_no) {
+            $cols[] = 'document_no';
+            $vals[] = $document_no_sql;
+        }
+        $cols[] = 'PIN';
+        $vals[] = $pin_value;
+        if ($has_ref_type) {
+            $cols[] = 'reference_type';
+            $vals[] = "'journal_voucher'";
+        }
+        $insert_sql = 'INSERT INTO general_journal_entry (' . implode(', ', $cols) . ') VALUES (' . implode(', ', $vals) . ')';
         
         $header_insert_result = $this->db->query($insert_sql);
         $header_affected = $this->db->affected_rows();

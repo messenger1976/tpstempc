@@ -759,6 +759,89 @@ class Finance_Model extends CI_Model {
     }
 
     /**
+     * Update an unposted manual journal entry (header + replace line items).
+     * Keeps existing reference_no; does not allow edit when already posted to GL.
+     */
+    function update_journal_entry($entry_id, $main_array, $array_items) {
+        $entry_id = intval($entry_id);
+        if ($entry_id < 1 || empty($array_items)) {
+            return false;
+        }
+        if ($this->is_journal_posted($entry_id)) {
+            return false;
+        }
+
+        $pin = current_user()->PIN;
+        $entry = $this->db->where('id', $entry_id)->where('PIN', $pin)->get('general_journal_entry')->row();
+        if (!$entry) {
+            return false;
+        }
+
+        $this->ensure_general_journal_link_columns();
+
+        $has_pin_col = $this->db->query("SHOW COLUMNS FROM general_journal LIKE 'PIN'")->row();
+        $has_gj_ref_type = $this->db->query("SHOW COLUMNS FROM general_journal LIKE 'reference_type'")->row();
+        $has_doc_no = $this->db->query("SHOW COLUMNS FROM general_journal_entry LIKE 'document_no'")->row();
+
+        $this->db->trans_start();
+
+        $header_update = array(
+            'entrydate' => $main_array['entrydate'],
+            'description' => $main_array['description'],
+        );
+        if ($has_doc_no && array_key_exists('document_no', $main_array)) {
+            $header_update['document_no'] = $main_array['document_no'];
+        }
+        $this->db->where('id', $entry_id)->where('PIN', $pin)->update('general_journal_entry', $header_update);
+
+        $this->db->where('entryid', $entry_id);
+        if ($has_pin_col) {
+            $this->db->where('PIN', $pin);
+        }
+        $this->db->delete('general_journal');
+
+        $items_inserted = 0;
+        foreach ($array_items as $value) {
+            $value['entryid'] = $entry_id;
+            if ($has_pin_col) {
+                $value['PIN'] = $pin;
+            } else {
+                unset($value['PIN']);
+            }
+            if ($has_gj_ref_type) {
+                $value['reference_type'] = 'journal_voucher';
+            }
+            if (!isset($value['entrydate'])) {
+                $value['entrydate'] = $main_array['entrydate'];
+            }
+            if (!isset($value['createdby'])) {
+                $value['createdby'] = current_user()->id;
+            }
+
+            $link_keys = array('link_type', 'customerid', 'supplierid', 'LID', 'PID', 'member_id', 'invoiceid');
+            foreach ($link_keys as $lk) {
+                if (!array_key_exists($lk, $value) || $value[$lk] === null || $value[$lk] === '') {
+                    unset($value[$lk]);
+                }
+            }
+
+            if ($this->db->insert('general_journal', $value) && $this->db->affected_rows() == 1) {
+                $items_inserted++;
+            } else {
+                $this->db->_trans_status = FALSE;
+                break;
+            }
+        }
+
+        if ($items_inserted != count($array_items)) {
+            $this->db->_trans_status = FALSE;
+        }
+
+        $this->db->trans_complete();
+        return $this->db->trans_status();
+    }
+
+    /**
      * Get list of unposted journal entries from general_journal_entry
      * @return array List of unposted journal entries with details
      */

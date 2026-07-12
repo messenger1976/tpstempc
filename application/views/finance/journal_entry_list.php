@@ -106,6 +106,12 @@ if (isset($message) && !empty($message)) {
                                                        data-url="<?php echo site_url(current_lang() . '/finance/journal_entry_view/' . encode_id($entry->entryid) . '?popup=1'); ?>">
                                                         <i class="fa fa-eye"></i>
                                                     </a>
+                                                    <?php if ((has_role(6, 'Edit_journal_entry') || has_role(6, 'Journal_entry')) && empty($entry->is_posted)) { ?>
+                                                        <a href="<?php echo site_url(current_lang() . '/finance/journal_entry_edit/' . encode_id($entry->entryid)); ?>"
+                                                           class="btn btn-warning btn-xs" title="<?php echo lang('edit'); ?>">
+                                                            <i class="fa fa-edit"></i>
+                                                        </a>
+                                                    <?php } ?>
                                                     <a href="<?php echo site_url(current_lang() . '/finance/journal_entry_print/' . encode_id($entry->entryid)); ?>"
                                                        class="btn btn-success btn-xs" target="_blank" title="<?php echo lang('print'); ?>">
                                                         <i class="fa fa-print"></i>

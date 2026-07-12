@@ -101,6 +101,7 @@ if (isset($message) && !empty($message)) {
                                     <th style="width: 80px;">S.No</th>
                                     <th>Account Code</th>
                                     <th>Account Name</th>
+                                    <th><?php echo lang('journalentry_link_entity'); ?></th>
                                     <th>Description</th>
                                     <th style="text-align: right; width: 120px;">Debit</th>
                                     <th style="text-align: right; width: 120px;">Credit</th>
@@ -113,19 +114,20 @@ if (isset($message) && !empty($message)) {
                                             <td><?php echo $i++; ?></td>
                                             <td><?php echo $item->account; ?></td>
                                             <td><?php echo htmlspecialchars($item->account_name); ?></td>
+                                            <td><?php echo !empty($item->link_label) ? htmlspecialchars($item->link_label) : '—'; ?></td>
                                             <td><?php echo htmlspecialchars($item->description); ?></td>
                                             <td style="text-align: right;"><?php echo number_format($item->debit, 2); ?></td>
                                             <td style="text-align: right;"><?php echo number_format($item->credit, 2); ?></td>
                                         </tr>
                                     <?php endforeach; ?>
                                     <tr style="font-weight: bold; background-color: #f5f5f5;">
-                                        <td colspan="4" style="text-align: right;">TOTAL:</td>
+                                        <td colspan="5" style="text-align: right;">TOTAL:</td>
                                         <td style="text-align: right;"><?php echo number_format($entry->total_debit, 2); ?></td>
                                         <td style="text-align: right;"><?php echo number_format($entry->total_credit, 2); ?></td>
                                     </tr>
                                 <?php else: ?>
                                     <tr>
-                                        <td colspan="6">
+                                        <td colspan="7">
                                             <div class="alert alert-warning">
                                                 <i class="fa fa-warning"></i> No line items found for this journal entry.
                                                 <br><small>

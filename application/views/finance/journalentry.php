@@ -19,6 +19,7 @@ if (isset($message) && !empty($message)) {
     <?php if (isset($unposted_count) && $unposted_count > 0): ?>
         <br><strong><?php echo $unposted_count; ?> entry/entries</strong> pending approval.
     <?php endif; ?>
+    <br><small><?php echo lang('journalentry_link_help'); ?></small>
 </div>
 
 <div class="form-group"><label class="col-lg-3 control-label"><?php echo lang('journalentry_date'); ?>  : <span class="required">*</span></label>
@@ -53,80 +54,67 @@ if (isset($message) && !empty($message)) {
     <table id="quotetable" class="table table-bordered ">
         <thead>
             <tr>
-                <th style="width: 140px;"><?php echo lang('journalentry_account'); ?></th>
-                <th style="width: 150px;"><?php echo lang('journalentry_account_description'); ?></th>
-                <th style="width: 10px;"><?php echo lang('journalentry_debit'); ?></th>
-                <th style="width: 70px;"><?php echo lang('journalentry_credit'); ?></th>
+                <th style="width: 160px;"><?php echo lang('journalentry_account'); ?></th>
+                <th style="width: 110px;"><?php echo lang('journalentry_link_type'); ?></th>
+                <th style="width: 180px;"><?php echo lang('journalentry_link_entity'); ?></th>
+                <th style="width: 140px;"><?php echo lang('journalentry_account_description'); ?></th>
+                <th style="width: 90px;"><?php echo lang('journalentry_debit'); ?></th>
+                <th style="width: 90px;"><?php echo lang('journalentry_credit'); ?></th>
             </tr>
-
         </thead>
         <tbody>
-
-
-
-
-
+            <?php
+            $customerlist = isset($customerlist) ? $customerlist : array();
+            $supplierlist = isset($supplierlist) ? $supplierlist : array();
+            $loanlist = isset($loanlist) ? $loanlist : array();
+            for ($row_n = 1; $row_n <= 2; $row_n++) {
+            ?>
             <tr>
-
                 <td>
-                    <select class="form-control"  name="account[]">
-                        <option miltone="" value=""><?php echo lang('select_default_text'); ?></option>
+                    <select class="form-control" name="account[]">
+                        <option value=""><?php echo lang('select_default_text'); ?></option>
                         <?php foreach ($account_list as $key1 => $value1) { ?>
-                            <optgroup label="<?php echo $value1['info']->name; ?>">
-                                <?php foreach ($value1['data'] as $key => $value) {
-                                    ?>
-                                    <option value="<?php echo $value->account; ?>"><?php echo $value->name; ?></option>
+                            <optgroup label="<?php echo htmlspecialchars($value1['info']->name); ?>">
+                                <?php foreach ($value1['data'] as $key => $value) { ?>
+                                    <option value="<?php echo $value->account; ?>"><?php echo htmlspecialchars($value->name); ?></option>
                                 <?php } ?>
                             </optgroup>
                         <?php } ?>
-                    </select></td>
-                <td><input type="text" name="description[]" class="form-control"/></td>
-                <td><input onchange="debit_sum(this, 1)" onkeyup="debit_sum(this, 1)" type="text" name="debit[]" class="form-control amountformat debit"/></td>
-                <td><input onchange="credit_sum(this, 1)" onkeyup="credit_sum(this, 1)" type="text" name="credit[]" class="form-control amountformat credit"/></td>
-
-            </tr> 
-
-            <tr>
-
+                    </select>
+                </td>
                 <td>
-                    <select class="form-control"  name="account[]">
-                        <option miltone="" value=""><?php echo lang('select_default_text'); ?></option>
-                        <?php foreach ($account_list as $key1 => $value1) { ?>
-                            <optgroup label="<?php echo $value1['info']->name; ?>">
-                                <?php foreach ($value1['data'] as $key => $value) {
-                                    ?>
-                                    <option value="<?php echo $value->account; ?>"><?php echo $value->name; ?></option>
-                                <?php } ?>
-                            </optgroup>
-                        <?php } ?>
-                    </select></td>
+                    <select class="form-control link-type" name="link_type[]">
+                        <option value=""><?php echo lang('journalentry_link_none'); ?></option>
+                        <option value="customer"><?php echo lang('journalentry_link_customer'); ?></option>
+                        <option value="supplier"><?php echo lang('journalentry_link_supplier'); ?></option>
+                        <option value="loan"><?php echo lang('journalentry_link_loan'); ?></option>
+                    </select>
+                </td>
+                <td>
+                    <select class="form-control link-entity" name="link_entity[]" disabled="disabled">
+                        <option value=""><?php echo lang('journalentry_link_select'); ?></option>
+                    </select>
+                </td>
                 <td><input type="text" name="description[]" class="form-control"/></td>
-                <td><input onchange="debit_sum(this, 2)" onkeyup="debit_sum(this, 2)" type="text" name="debit[]" class="form-control amountformat debit"/></td>
-                <td><input onchange="credit_sum(this, 2)" onkeyup="credit_sum(this, 2)" type="text" name="credit[]" class="form-control amountformat credit"/></td>
-
-               
-            </tr> 
-
-
+                <td><input onchange="debit_sum(this, <?php echo $row_n; ?>)" onkeyup="debit_sum(this, <?php echo $row_n; ?>)" type="text" name="debit[]" class="form-control amountformat debit"/></td>
+                <td><input onchange="credit_sum(this, <?php echo $row_n; ?>)" onkeyup="credit_sum(this, <?php echo $row_n; ?>)" type="text" name="credit[]" class="form-control amountformat credit"/></td>
+            </tr>
+            <?php } ?>
             <tr>
-                <td ><button onclick="return false;"  class="btn btn-warning" id="addrow"><?php echo lang('add_row') ?></button></td>
+                <td><button onclick="return false;" class="btn btn-warning" id="addrow"><?php echo lang('add_row') ?></button></td>
+                <td colspan="2"></td>
                 <td id="diff" style="color: red; text-align: right;"></td>
                 <td>
-                    <input type="text" disabled="disabled" id="open_debit"  class="form-control amountformat thisistotal_debit"/>
-                    <input type="hidden" id="hidden_debit" name="summation_debit" class="form-control  thisistotal_debit"/>
+                    <input type="text" disabled="disabled" id="open_debit" class="form-control amountformat thisistotal_debit"/>
+                    <input type="hidden" id="hidden_debit" name="summation_debit" class="form-control thisistotal_debit"/>
                 </td>
                 <td>
-                    <input type="text" disabled="disabled" id="open_credit"  class="form-control amountformat thisistotal_credit"/>
-                    <input type="hidden" id="hidden_credit" name="summation_credit" class="form-control  thisistotal_credit"/>
+                    <input type="text" disabled="disabled" id="open_credit" class="form-control amountformat thisistotal_credit"/>
+                    <input type="hidden" id="hidden_credit" name="summation_credit" class="form-control thisistotal_credit"/>
                 </td>
-                
             </tr>
-        
-
-
         </tbody>
     </table>
-    
 </div>
 
 
@@ -151,6 +139,37 @@ foreach ($account_list as $key1 => $value1) {
     }
     $account_options_html .= '</optgroup>';
 }
+
+$link_type_options_html = '<option value="">' . htmlspecialchars(lang('journalentry_link_none'), ENT_QUOTES) . '</option>'
+    . '<option value="customer">' . htmlspecialchars(lang('journalentry_link_customer'), ENT_QUOTES) . '</option>'
+    . '<option value="supplier">' . htmlspecialchars(lang('journalentry_link_supplier'), ENT_QUOTES) . '</option>'
+    . '<option value="loan">' . htmlspecialchars(lang('journalentry_link_loan'), ENT_QUOTES) . '</option>';
+
+$empty_entity_html = '<option value="">' . htmlspecialchars(lang('journalentry_link_select'), ENT_QUOTES) . '</option>';
+
+$customer_options_html = $empty_entity_html;
+if (!empty($customerlist)) {
+    foreach ($customerlist as $c) {
+        $customer_options_html .= '<option value="' . htmlspecialchars($c->customerid, ENT_QUOTES) . '">'
+            . htmlspecialchars($c->customerid . ' : ' . $c->name, ENT_QUOTES) . '</option>';
+    }
+}
+$supplier_options_html = $empty_entity_html;
+if (!empty($supplierlist)) {
+    foreach ($supplierlist as $s) {
+        $supplier_options_html .= '<option value="' . htmlspecialchars($s->supplierid, ENT_QUOTES) . '">'
+            . htmlspecialchars($s->supplierid . ' : ' . $s->name, ENT_QUOTES) . '</option>';
+    }
+}
+$loan_options_html = $empty_entity_html;
+if (!empty($loanlist)) {
+    foreach ($loanlist as $loan) {
+        $loan_label = $loan->LID . ' : ' . (isset($loan->member_id) ? $loan->member_id . ' - ' : '')
+            . trim((isset($loan->firstname) ? $loan->firstname : '') . ' ' . (isset($loan->lastname) ? $loan->lastname : ''));
+        $loan_options_html .= '<option value="' . htmlspecialchars($loan->LID, ENT_QUOTES) . '">'
+            . htmlspecialchars($loan_label, ENT_QUOTES) . '</option>';
+    }
+}
 ?>
 
 <script src="<?php echo base_url() ?>media/js/script/moment.js"></script>
@@ -162,7 +181,6 @@ foreach ($account_list as $key1 => $value1) {
                 return;
             }
             
-            // Load chosen.jquery.js after jQuery is available
             if (typeof $.fn.chosen === 'undefined') {
                 var chosenScript = document.createElement('script');
                 chosenScript.src = '<?php echo base_url() ?>media/js/chosen.jquery.js';
@@ -175,7 +193,6 @@ foreach ($account_list as $key1 => $value1) {
             }
             
             function loadDatePicker() {
-                // Load bootstrap-datepicker after jQuery and chosen are available
                 if (typeof $.fn.datetimepicker === 'undefined') {
                     var script = document.createElement('script');
                     script.src = '<?php echo base_url() ?>media/js/plugins/datapicker/bootstrap-datepicker.js';
@@ -190,145 +207,135 @@ foreach ($account_list as $key1 => $value1) {
             
             function initMainScript() {
                 var diff = 0;
-                    
-                    // Make functions globally accessible for inline event handlers
-                    window.credit_sum = function(val, index) {
-                        var sum = 0;
-                        //iterate through each textboxes and add the values
-                        $("input.credit").each(function() {
-                            //add only if the value is number
-                            var va = this.value.replace(/,/g, '');
-                            this.value = va;
-                            if (!isNaN(this.value) && this.value.length != 0) {
-                                var taxrate = parseFloat($("#quotetable  tr:eq(" + index + ") td:eq(4) select option:selected").attr('taxrate'));
-                                if (!isNaN(taxrate) && taxrate.length != 0) {
-                                    sum += ((taxrate / 100) * va);
-                                }
-                                sum += parseFloat(this.value);
-                            }
-                        });
+                var entityOptions = {
+                    '': <?php echo json_encode($empty_entity_html); ?>,
+                    customer: <?php echo json_encode($customer_options_html); ?>,
+                    supplier: <?php echo json_encode($supplier_options_html); ?>,
+                    loan: <?php echo json_encode($loan_options_html); ?>
+                };
 
+                window.refreshLinkEntity = function($row) {
+                    var type = $row.find('select.link-type').val() || '';
+                    var $entity = $row.find('select.link-entity');
+                    $entity.html(entityOptions[type] || entityOptions['']);
+                    if (type === '') {
+                        $entity.prop('disabled', true).val('');
+                    } else {
+                        $entity.prop('disabled', false);
+                    }
+                };
 
-                        //.toFixed() method will roundoff the final sum to 2 decimal places
-                        if (sum > 0) {
-                            $("input.thisistotal_credit").val(sum.toFixed(2));
-
-                        } else {
-                            $("input.thisistotal_credit").val('');
-
+                window.credit_sum = function(val, index) {
+                    var sum = 0;
+                    $("input.credit").each(function() {
+                        var va = this.value.replace(/,/g, '');
+                        this.value = va;
+                        if (!isNaN(this.value) && this.value.length != 0) {
+                            sum += parseFloat(this.value);
                         }
+                    });
+                    if (sum > 0) {
+                        $("input.thisistotal_credit").val(sum.toFixed(2));
+                    } else {
+                        $("input.thisistotal_credit").val('');
+                    }
+                    if (!isNaN($(val).val()) && $(val).val().length != 0) {
+                        $("#quotetable tbody tr:eq(" + (index - 1) + ") td:eq(4) input").hide();
+                    } else {
+                        $("#quotetable tbody tr:eq(" + (index - 1) + ") td:eq(4) input").show();
+                    }
+                    difference();
+                };
 
-                        if (!isNaN($(val).val()) && $(val).val().length != 0) {
-                            $("#quotetable  tr:eq(" + index + ") td:eq(2) input").hide();
-                        } else {
-                            $("#quotetable  tr:eq(" + index + ") td:eq(2) input").show();
+                window.debit_sum = function(val, index) {
+                    var sum = 0;
+                    $("input.debit").each(function() {
+                        var va = this.value.replace(/,/g, '');
+                        this.value = va;
+                        if (!isNaN(this.value) && this.value.length != 0) {
+                            sum += parseFloat(this.value);
                         }
-                        difference();
-                    };
+                    });
+                    if (sum > 0) {
+                        $("input.thisistotal_debit").val(sum.toFixed(2));
+                    } else {
+                        $("input.thisistotal_debit").val('');
+                    }
+                    if (!isNaN($(val).val()) && $(val).val().length != 0) {
+                        $("#quotetable tbody tr:eq(" + (index - 1) + ") td:eq(5) input").hide();
+                    } else {
+                        $("#quotetable tbody tr:eq(" + (index - 1) + ") td:eq(5) input").show();
+                    }
+                    difference();
+                };
 
-                    window.debit_sum = function(val, index) {
-                        var sum = 0;
+                function difference() {
+                    var debit1 = $("#open_debit").val();
+                    var credit1 = $("#open_credit").val();
+                    var debit = 0;
+                    var credit = 0;
+                    if (!isNaN(debit1) && debit1.length != 0) {
+                        debit = parseFloat(debit1);
+                    }
+                    if (!isNaN(credit1) && credit1.length != 0) {
+                        credit = parseFloat(credit1);
+                    }
+                    var dif = credit - debit;
+                    if (dif != 0) {
+                        diff = dif;
+                        $("#diff").html(diff);
+                    } else {
+                        diff = 0;
+                        $("#diff").html(0);
+                    }
+                }
 
-                        //iterate through each textboxes and add the values
-                        $("input.debit").each(function() {
-                            //add only if the value is number
-                            var va = this.value.replace(/,/g, '');
-                            this.value = va;
-                            if (!isNaN(this.value) && this.value.length != 0) {
-                                var taxrate = parseFloat($("#quotetable  tr:eq(" + index + ") td:eq(4) select option:selected").attr('taxrate'));
-                                if (!isNaN(taxrate) && taxrate.length != 0) {
-                                    sum += ((taxrate / 100) * va);
-                                }
-                                sum += parseFloat(this.value);
-                            }
-                        });
-                        //.toFixed() method will roundoff the final sum to 2 decimal places
-                        if (sum > 0) {
-                            $("input.thisistotal_debit").val(sum.toFixed(2));
-                        } else {
-                            $("input.thisistotal_debit").val('');
-                        }
+                $(function() {
+                    $('#datetimepicker').datetimepicker({
+                        pickTime: false
+                    });
 
-                        if (!isNaN($(val).val()) && $(val).val().length != 0) {
-                            $("#quotetable  tr:eq(" + index + ") td:eq(3) input").hide();
-                        } else {
-                            $("#quotetable  tr:eq(" + index + ") td:eq(3) input").show();
-                        }
-                        difference();
-                    };
+                    $(document).on('change', 'select.link-type', function() {
+                        window.refreshLinkEntity($(this).closest('tr'));
+                    });
 
-
-
-                    function difference() {
+                    $("#submitdata").click(function() {
                         var debit1 = $("#open_debit").val();
                         var credit1 = $("#open_credit").val();
-
-                        var debit = 0;
-                        var credit = 0;
-                        if (!isNaN(debit1) && debit1.length != 0) {
-                            debit = parseFloat(debit1);
-                        }
-                        if (!isNaN(credit1) && credit1.length != 0) {
-                            credit = parseFloat(credit1);
-                        }
-
-                        var dif = credit - debit;
-
-                        if (dif != 0) {
-                            diff = dif;
-                            $("#diff").html(diff);
-                        } else {
-                            diff = 0;
-                            $("#diff").html(0);
-                        }
-
-
-                    }
-
-
-                    $(function() {
-                        $('#datetimepicker').datetimepicker({
-                            pickTime: false
-                        });
-
-
-
-
-                        $("#submitdata").click(function() {
-                            var debit1 = $("#open_debit").val();
-                            var credit1 = $("#open_credit").val();
-                            if (!isNaN(credit1) && credit1.length !== 0 && !isNaN(debit1) && credit1.length !== 0) {
-                                if (diff == 0) {
-                                    return  true;
-                                }
-                                alert('Journal not balanced');
-                                return false;
-
+                        if (!isNaN(credit1) && credit1.length !== 0 && !isNaN(debit1) && debit1.length !== 0) {
+                            if (diff == 0) {
+                                // Re-enable disabled entity selects so empty values still post as arrays aligned by index
+                                $('#quotetable select.link-entity:disabled').prop('disabled', false);
+                                return true;
                             }
-                            alert('Please fill form first');
+                            alert('Journal not balanced');
                             return false;
-                        });
-                        $("#addrow").click(function() {
-                            var rowindex = ($('#quotetable  tbody tr').eq(-1).index() + 1);
-                            var accountOptionsHtml = <?php echo json_encode($account_options_html); ?>;
-                            var newRow = '<tr><td><select class="form-control" name="account[]">';
-                            newRow += accountOptionsHtml;
-                            newRow += '</select></td><td><input type="text" name="description[]" class="form-control" /></td>';
-                            newRow += '<td><input onchange="debit_sum(this,' + rowindex + ')" onkeyup="debit_sum(this, ' + rowindex + ')" type="text" name="debit[]" class="form-control amountformat debit" /></td>';
-                            newRow += '<td><input onchange="credit_sum(this,' + rowindex + ')" onkeyup="credit_sum(this, ' + rowindex + ')" type="text" name="credit[]" class="form-control amountformat credit" /></td>';
-                            newRow += '</tr>';
-
-                            $('#quotetable tr:last').before(newRow);
-                            return false;
-                        });
-
-
-
+                        }
+                        alert('Please fill form first');
+                        return false;
                     });
+
+                    $("#addrow").click(function() {
+                        var rowindex = ($('#quotetable tbody tr').eq(-1).index() + 1);
+                        var accountOptionsHtml = <?php echo json_encode($account_options_html); ?>;
+                        var linkTypeOptionsHtml = <?php echo json_encode($link_type_options_html); ?>;
+                        var emptyEntityHtml = <?php echo json_encode($empty_entity_html); ?>;
+                        var newRow = '<tr><td><select class="form-control" name="account[]">';
+                        newRow += accountOptionsHtml;
+                        newRow += '</select></td>';
+                        newRow += '<td><select class="form-control link-type" name="link_type[]">' + linkTypeOptionsHtml + '</select></td>';
+                        newRow += '<td><select class="form-control link-entity" name="link_entity[]" disabled="disabled">' + emptyEntityHtml + '</select></td>';
+                        newRow += '<td><input type="text" name="description[]" class="form-control" /></td>';
+                        newRow += '<td><input onchange="debit_sum(this,' + rowindex + ')" onkeyup="debit_sum(this, ' + rowindex + ')" type="text" name="debit[]" class="form-control amountformat debit" /></td>';
+                        newRow += '<td><input onchange="credit_sum(this,' + rowindex + ')" onkeyup="credit_sum(this, ' + rowindex + ')" type="text" name="credit[]" class="form-control amountformat credit" /></td>';
+                        newRow += '</tr>';
+
+                        $('#quotetable tr:last').before(newRow);
+                        return false;
+                    });
+                });
             }
         }
         initScripts();
     })();
-
-
 </script>

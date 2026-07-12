@@ -450,6 +450,15 @@ class Finance_Model extends CI_Model {
                 $ledger['description'] = isset($item->description) ? $item->description : '';
                 $ledger['account_type'] = $account_info->account_type;
                 $ledger['sub_account_type'] = isset($account_info->sub_account_type) ? $account_info->sub_account_type : null;
+
+                // Sub-ledger links from journal line (Customer AR / Supplier AP / Member Loan)
+                $ledger['customerid'] = !empty($item->customerid) ? $item->customerid : null;
+                $ledger['supplierid'] = !empty($item->supplierid) ? $item->supplierid : null;
+                $ledger['LID'] = !empty($item->LID) ? $item->LID : null;
+                $ledger['PID'] = !empty($item->PID) ? $item->PID : null;
+                $ledger['member_id'] = !empty($item->member_id) ? $item->member_id : null;
+                $ledger['invoiceid'] = !empty($item->invoiceid) ? intval($item->invoiceid) : null;
+
                 $this->db->insert('general_ledger', $ledger);
             }
         }
@@ -496,8 +505,134 @@ class Finance_Model extends CI_Model {
         foreach ($entry->line_items as $item) {
             $account_info = account_row_info($item->account);
             $item->account_name = $account_info ? $account_info->name : 'Account not found';
+            $item->link_label = $this->format_journal_line_link_label($item);
         }
         return $entry;
+    }
+
+    /**
+     * Ensure general_journal has sub-ledger link columns (Customer/Supplier/Loan).
+     */
+    function ensure_general_journal_link_columns() {
+        static $done = false;
+        if ($done) {
+            return true;
+        }
+        $columns = array(
+            'link_type' => "VARCHAR(20) NULL DEFAULT NULL",
+            'customerid' => "VARCHAR(50) NULL DEFAULT NULL",
+            'supplierid' => "VARCHAR(50) NULL DEFAULT NULL",
+            'LID' => "VARCHAR(50) NULL DEFAULT NULL",
+            'PID' => "BIGINT NULL DEFAULT NULL",
+            'member_id' => "VARCHAR(50) NULL DEFAULT NULL",
+            'invoiceid' => "INT NULL DEFAULT NULL",
+        );
+        foreach ($columns as $col => $definition) {
+            $exists = $this->db->query("SHOW COLUMNS FROM general_journal LIKE '" . $this->db->escape_str($col) . "'")->row();
+            if (!$exists) {
+                $this->db->query("ALTER TABLE general_journal ADD COLUMN `$col` $definition");
+            }
+        }
+        $done = true;
+        return true;
+    }
+
+    /**
+     * Resolve posted link_type + entity into general_journal link fields.
+     * Does not update invoice balances or loan schedules.
+     *
+     * @param string $link_type customer|supplier|loan|empty
+     * @param string $entity_id customerid, supplierid, or LID
+     * @return array Fields to merge into journal line
+     */
+    function resolve_journal_line_link($link_type, $entity_id) {
+        $pin = current_user()->PIN;
+        $out = array(
+            'link_type' => null,
+            'customerid' => null,
+            'supplierid' => null,
+            'LID' => null,
+            'PID' => null,
+            'member_id' => null,
+            'invoiceid' => null,
+        );
+        $link_type = strtolower(trim((string) $link_type));
+        $entity_id = trim((string) $entity_id);
+        if ($entity_id === '' || !in_array($link_type, array('customer', 'supplier', 'loan'), true)) {
+            return $out;
+        }
+
+        if ($link_type === 'customer') {
+            $row = $this->db->where('PIN', $pin)->where('customerid', $entity_id)->get('customer')->row();
+            if ($row) {
+                $out['link_type'] = 'customer';
+                $out['customerid'] = $row->customerid;
+            }
+            return $out;
+        }
+
+        if ($link_type === 'supplier') {
+            $row = $this->db->where('PIN', $pin)->where('supplierid', $entity_id)->get('supplier')->row();
+            if ($row) {
+                $out['link_type'] = 'supplier';
+                $out['supplierid'] = $row->supplierid;
+            }
+            return $out;
+        }
+
+        // loan
+        $loan = $this->db->where('PIN', $pin)->where('LID', $entity_id)->get('loan_contract')->row();
+        if ($loan) {
+            $out['link_type'] = 'loan';
+            $out['LID'] = $loan->LID;
+            $out['PID'] = isset($loan->PID) ? $loan->PID : null;
+            $out['member_id'] = isset($loan->member_id) ? $loan->member_id : null;
+        }
+        return $out;
+    }
+
+    /**
+     * Human-readable sub-ledger link for a journal line.
+     */
+    function format_journal_line_link_label($item) {
+        if (empty($item)) {
+            return '';
+        }
+        $pin = current_user()->PIN;
+        $type = isset($item->link_type) ? strtolower(trim($item->link_type)) : '';
+
+        if ($type === 'customer' || !empty($item->customerid)) {
+            $cid = !empty($item->customerid) ? $item->customerid : '';
+            if ($cid === '') {
+                return '';
+            }
+            $c = $this->db->where('PIN', $pin)->where('customerid', $cid)->get('customer')->row();
+            $name = $c ? $c->name : $cid;
+            return 'Customer: ' . $cid . ' — ' . $name;
+        }
+        if ($type === 'supplier' || !empty($item->supplierid)) {
+            $sid = !empty($item->supplierid) ? $item->supplierid : '';
+            if ($sid === '') {
+                return '';
+            }
+            $s = $this->db->where('PIN', $pin)->where('supplierid', $sid)->get('supplier')->row();
+            $name = $s ? $s->name : $sid;
+            return 'Supplier: ' . $sid . ' — ' . $name;
+        }
+        if ($type === 'loan' || !empty($item->LID)) {
+            $lid = !empty($item->LID) ? $item->LID : '';
+            if ($lid === '') {
+                return '';
+            }
+            $loan = $this->db->where('PIN', $pin)->where('LID', $lid)->get('loan_contract')->row();
+            $member = isset($item->member_id) ? $item->member_id : (isset($loan->member_id) ? $loan->member_id : '');
+            $label = 'Loan: ' . $lid;
+            if ($member !== '') {
+                $label .= ' (Member ' . $member . ')';
+            }
+            return $label;
+        }
+        return '';
     }
 
     /**
@@ -2540,6 +2675,9 @@ $pin=current_user()->PIN;
         
         log_message('debug', 'Using journal entry ID: ' . $jid . ' for line items');
 
+        // Ensure sub-ledger link columns exist on general_journal
+        $this->ensure_general_journal_link_columns();
+
         // Check if PIN column exists in general_journal table (once, before the loop)
         // Use raw query but cache result to avoid repeated queries in transaction
         $has_pin_column = false;
@@ -2587,6 +2725,14 @@ $pin=current_user()->PIN;
             // Ensure required fields are present
             if (!isset($value['entrydate']) && isset($main_array['entrydate'])) {
                 $value['entrydate'] = $main_array['entrydate'];
+            }
+
+            // Sanitize optional sub-ledger link fields (avoid empty string on numeric cols)
+            $link_keys = array('link_type', 'customerid', 'supplierid', 'LID', 'PID', 'member_id', 'invoiceid');
+            foreach ($link_keys as $lk) {
+                if (!array_key_exists($lk, $value) || $value[$lk] === null || $value[$lk] === '') {
+                    unset($value[$lk]);
+                }
             }
             
             $insert_result = $this->db->insert('general_journal', $value);

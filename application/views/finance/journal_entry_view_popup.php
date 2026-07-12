@@ -94,6 +94,7 @@
                                     <th style="width: 80px;">#</th>
                                     <th><?php echo lang('account_code'); ?></th>
                                     <th><?php echo lang('journalentry_account'); ?></th>
+                                    <th><?php echo lang('journalentry_link_entity'); ?></th>
                                     <th><?php echo lang('journalentry_account_description'); ?></th>
                                     <th style="text-align: right; width: 120px;"><?php echo lang('journalentry_debit'); ?></th>
                                     <th style="text-align: right; width: 120px;"><?php echo lang('journalentry_credit'); ?></th>
@@ -106,19 +107,20 @@
                                             <td><?php echo $i++; ?></td>
                                             <td><?php echo $item->account; ?></td>
                                             <td><?php echo htmlspecialchars($item->account_name); ?></td>
+                                            <td><?php echo !empty($item->link_label) ? htmlspecialchars($item->link_label) : '—'; ?></td>
                                             <td><?php echo htmlspecialchars($item->description); ?></td>
                                             <td style="text-align: right;"><?php echo number_format($item->debit, 2); ?></td>
                                             <td style="text-align: right;"><?php echo number_format($item->credit, 2); ?></td>
                                         </tr>
                                     <?php endforeach; ?>
                                     <tr style="font-weight: bold; background-color: #f5f5f5;">
-                                        <td colspan="4" style="text-align: right;"><?php echo lang('journalentry_total'); ?>:</td>
+                                        <td colspan="5" style="text-align: right;"><?php echo lang('journalentry_total'); ?>:</td>
                                         <td style="text-align: right;"><?php echo number_format($entry->total_debit, 2); ?></td>
                                         <td style="text-align: right;"><?php echo number_format($entry->total_credit, 2); ?></td>
                                     </tr>
                                 <?php else: ?>
                                     <tr>
-                                        <td colspan="6" class="text-muted"><?php echo lang('no_records_found'); ?></td>
+                                        <td colspan="7" class="text-muted"><?php echo lang('no_records_found'); ?></td>
                                     </tr>
                                 <?php endif; ?>
                             </tbody>

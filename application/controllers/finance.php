@@ -379,7 +379,10 @@ class Finance extends CI_Controller {
 
     function journalentry() {
         $this->data['title'] = lang('journalentry');
-        $this->form_validation->set_rules('issue_date', lang('journalentry_description'), 'required|valid_date');
+        $this->load->model('customer_model');
+        $this->load->model('supplier_model');
+        $this->load->model('loan_model');
+        $this->form_validation->set_rules('issue_date', lang('journalentry_date'), 'required|valid_date');
         $this->form_validation->set_rules('description11', lang('description'), 'required');
 
         if ($this->form_validation->run() == TRUE) {
@@ -388,6 +391,8 @@ class Finance extends CI_Controller {
             $description = $this->input->post('description');
             $credit = $this->input->post('credit');
             $debit = $this->input->post('debit');
+            $link_type = $this->input->post('link_type');
+            $link_entity = $this->input->post('link_entity');
             $act = count($account);
             $date = format_date(trim($this->input->post('issue_date')));
             $out_description = trim($this->input->post('description11'));
@@ -412,6 +417,13 @@ class Finance extends CI_Controller {
                         $tmp_array['debit'] = ($debit_amount > 0 ? $debit_amount : 0);
                         $tmp_array['entrydate'] = $date;
                         $tmp_array['createdby'] = current_user()->id;
+
+                        $lt = (is_array($link_type) && isset($link_type[$i])) ? $link_type[$i] : '';
+                        $le = (is_array($link_entity) && isset($link_entity[$i])) ? $link_entity[$i] : '';
+                        $link_fields = $this->finance_model->resolve_journal_line_link($lt, $le);
+                        foreach ($link_fields as $lk => $lv) {
+                            $tmp_array[$lk] = $lv;
+                        }
 
                         $array_items[] = $tmp_array;
                     }
@@ -442,6 +454,9 @@ class Finance extends CI_Controller {
 
         $this->data['taxcode_list'] = $this->setting_model->tax_info()->result();
         $this->data['account_list'] = $this->finance_model->account_chart_by_accounttype();
+        $this->data['customerlist'] = $this->customer_model->customer_info()->result();
+        $this->data['supplierlist'] = $this->supplier_model->supplier_info()->result();
+        $this->data['loanlist'] = $this->loan_model->loan_repay_list();
         
         // Get count of unposted entries for display
         $this->data['unposted_count'] = count($this->finance_model->get_unposted_journal_entries());

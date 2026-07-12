@@ -109,6 +109,7 @@ class Dashboard extends CI_Controller {
         // Member address locations for OpenStreetMap widget
         $this->data['member_map_locations'] = $this->member_model->get_member_map_locations();
         $this->data['member_map_stats'] = $this->member_model->get_member_map_stats();
+        $this->data['office_map_location'] = $this->member_model->get_office_map_location();
         
         $this->data['content'] = 'dashboard';
         $this->load->view('dashboard', $this->data);

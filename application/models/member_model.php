@@ -547,6 +547,54 @@ class Member_Model extends CI_Model {
     }
 
     /**
+     * Office / cooperative HQ location for dashboard map directions.
+     * Uses companyinfo.address matched against the geocode cache when possible.
+     */
+    function get_office_map_location() {
+        $company = company_info();
+        $address = ($company && !empty($company->address)) ? trim($company->address) : '';
+        $label = ($company && !empty($company->name)) ? $company->name : 'Office';
+
+        $office = array(
+            'label' => $label,
+            'address' => $address !== '' ? $address : 'Purok 1, San Jose, Talibon, Bohol',
+            'lat' => 10.1365976,
+            'lng' => 124.3132049,
+        );
+
+        if (!$this->db->table_exists('member_address_geocode') || $address === '') {
+            return $office;
+        }
+
+        $key = strtoupper(trim(preg_replace('/\s+/', ' ', $address)));
+        $row = $this->db->query(
+            "SELECT lat, lng, address_raw FROM member_address_geocode
+             WHERE geocode_status = 'ok' AND lat IS NOT NULL AND lng IS NOT NULL
+               AND (address_key = ? OR address_raw = ?)
+             LIMIT 1",
+            array($key, $address)
+        )->row();
+
+        if (!$row) {
+            // Prefer San Jose (office barangay) over town-center fallbacks
+            $row = $this->db->query(
+                "SELECT lat, lng, address_raw FROM member_address_geocode
+                 WHERE geocode_status = 'ok' AND lat IS NOT NULL AND lng IS NOT NULL
+                   AND address_key LIKE '%SAN JOSE%TALIBON%'
+                 ORDER BY CASE WHEN address_key = 'SAN JOSE, TALIBON, BOHOL' THEN 0 ELSE 1 END
+                 LIMIT 1"
+            )->row();
+        }
+
+        if ($row) {
+            $office['lat'] = floatval($row->lat);
+            $office['lng'] = floatval($row->lng);
+        }
+
+        return $office;
+    }
+
+    /**
      * Counts for map footer: total addressed members vs plotted locations.
      */
     function get_member_map_stats() {

@@ -2030,7 +2030,7 @@ class Saving extends CI_Controller {
         }
         $this->data['posting_frequency'] = $posting_frequency;
 
-        if (($action == 'preview' || $action == 'post') && $account_type != '') {
+        if (($action == 'preview' || $action == 'post' || $action == 'export') && $account_type != '') {
             $type = null;
             foreach ($types as $t) {
                 if ((string) $t->account === $account_type) {
@@ -2069,6 +2069,9 @@ class Saving extends CI_Controller {
 
                         if ($action == 'preview') {
                             $this->data['preview'] = $computations;
+                        } else if ($action == 'export') {
+                            $this->export_interest_preview_excel($type, $period, $posting_frequency, $computations);
+                            return;
                         } else {
                             $selected = $this->input->post('accounts');
                             if (empty($selected) || !is_array($selected)) {
@@ -2085,6 +2088,156 @@ class Saving extends CI_Controller {
 
         $this->data['content'] = 'saving/interest_posting';
         $this->load->view('template', $this->data);
+    }
+
+    /**
+     * Export interest computation preview to Excel (.xls).
+     */
+    private function export_interest_preview_excel($type, $period, $posting_frequency, $computations) {
+        if (empty($computations) || !is_array($computations)) {
+            $this->session->set_flashdata('warning', lang('interest_export_no_data'));
+            redirect(current_lang() . '/saving/interest_posting', 'refresh');
+            return;
+        }
+
+        $this->load->library('excel');
+
+        $objPHPExcel = new PHPExcel();
+        $objPHPExcel->getProperties()->setCreator(company_info()->name)
+            ->setTitle('Interest Posting Preview')
+            ->setSubject('Interest Posting Preview Export')
+            ->setDescription('Interest computation preview exported from ' . company_info()->name);
+
+        $objPHPExcel->setActiveSheetIndex(0);
+        $sheet = $objPHPExcel->getActiveSheet();
+        $sheet->setTitle('Interest Preview');
+
+        $freq_label = ($posting_frequency == 'QUARTERLY') ? lang('interest_frequency_quarterly') : lang('interest_frequency_monthly');
+        $basis = strtoupper($type->interest_basis);
+        if ($basis == 'LOWEST') {
+            $basis_label = lang('interest_basis_lowest');
+        } else if ($basis == 'EOP') {
+            $basis_label = lang('interest_basis_eop');
+        } else {
+            $basis_label = lang('interest_basis_adb');
+        }
+
+        $sheet->setCellValue('A1', lang('interest_preview_title'));
+        $sheet->mergeCells('A1:J1');
+        $sheet->getStyle('A1')->getFont()->setBold(true)->setSize(14);
+
+        $sheet->setCellValue('A2', lang('interest_account_type') . ': ' . $type->name);
+        $sheet->setCellValue('A3', lang('interest_period') . ': ' . $period['label'] . ' (' . $period['start'] . ' ' . lang('interest_to') . ' ' . $period['end'] . ')');
+        $sheet->setCellValue('A4', lang('interest_posting_frequency') . ': ' . $freq_label . ' | ' . lang('interest_basis') . ': ' . $basis_label . ' | ' . lang('account_interest_rate') . ': ' . number_format((float) $type->interest_rate, 2) . '% p.a.');
+
+        $headers = array(
+            'A6' => lang('sno'),
+            'B6' => lang('account_no'),
+            'C6' => lang('member_id'),
+            'D6' => lang('customer_name'),
+            'E6' => lang('interest_frequency'),
+            'F6' => lang('interest_base_balance'),
+            'G6' => lang('account_interest_rate') . ' (%)',
+            'H6' => lang('interest_days'),
+            'I6' => lang('interest_amount'),
+            'J6' => lang('interest_status'),
+        );
+        foreach ($headers as $cell => $label) {
+            $sheet->setCellValue($cell, $label);
+        }
+        $sheet->getStyle('A6:J6')->getFont()->setBold(true);
+        $sheet->getStyle('A6:J6')->getFill()->setFillType(PHPExcel_Style_Fill::FILL_SOLID);
+        $sheet->getStyle('A6:J6')->getFill()->getStartColor()->setARGB('FFCCCCCC');
+        $sheet->getStyle('A6:J6')->applyFromArray(array(
+            'borders' => array(
+                'allborders' => array(
+                    'style' => PHPExcel_Style_Border::BORDER_THIN
+                )
+            )
+        ));
+
+        $sheet->getColumnDimension('A')->setWidth(8);
+        $sheet->getColumnDimension('B')->setWidth(14);
+        $sheet->getColumnDimension('C')->setWidth(16);
+        $sheet->getColumnDimension('D')->setWidth(30);
+        $sheet->getColumnDimension('E')->setWidth(14);
+        $sheet->getColumnDimension('F')->setWidth(16);
+        $sheet->getColumnDimension('G')->setWidth(14);
+        $sheet->getColumnDimension('H')->setWidth(10);
+        $sheet->getColumnDimension('I')->setWidth(16);
+        $sheet->getColumnDimension('J')->setWidth(22);
+
+        $row = 7;
+        $i = 1;
+        $eligible_total = 0;
+        $eligible_count = 0;
+        foreach ($computations as $item) {
+            $ef = isset($item['effective_frequency']) ? $item['effective_frequency'] : $posting_frequency;
+            $freq_text = ($ef == 'QUARTERLY') ? lang('interest_frequency_quarterly') : lang('interest_frequency_monthly');
+            if (isset($item['frequency_source']) && $item['frequency_source'] == 'OVERRIDE') {
+                $freq_text .= ' (' . lang('interest_frequency_override_label') . ')';
+            }
+
+            if ($item['skip_reason'] == 'ALREADY_POSTED') {
+                $status = lang('interest_already_posted');
+            } else if ($item['skip_reason'] == 'BELOW_MIN_BALANCE') {
+                $status = lang('interest_below_min_balance');
+            } else if ($item['skip_reason'] == 'ZERO_INTEREST') {
+                $status = lang('interest_zero');
+            } else {
+                $status = lang('interest_eligible');
+            }
+
+            if (!empty($item['eligible'])) {
+                $eligible_count++;
+                $eligible_total += $item['interest'];
+            }
+
+            $sheet->setCellValue('A' . $row, $i++);
+            $sheet->setCellValue('B' . $row, $item['account']);
+            $sheet->setCellValue('C' . $row, $item['member_id']);
+            $sheet->setCellValue('D' . $row, $item['holder_name']);
+            $sheet->setCellValue('E' . $row, $freq_text);
+            $sheet->setCellValue('F' . $row, number_format((float) $item['base_balance'], 2, '.', ''));
+            $sheet->setCellValue('G' . $row, number_format((float) $item['annual_rate'], 2, '.', ''));
+            $sheet->setCellValue('H' . $row, (int) $item['days']);
+            $sheet->setCellValue('I' . $row, number_format((float) $item['interest'], 2, '.', ''));
+            $sheet->setCellValue('J' . $row, $status);
+
+            $sheet->getStyle('F' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_RIGHT);
+            $sheet->getStyle('G' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_RIGHT);
+            $sheet->getStyle('H' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_RIGHT);
+            $sheet->getStyle('I' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_RIGHT);
+            $sheet->getStyle('A' . $row . ':J' . $row)->applyFromArray(array(
+                'borders' => array(
+                    'allborders' => array(
+                        'style' => PHPExcel_Style_Border::BORDER_THIN
+                    )
+                )
+            ));
+            $row++;
+        }
+
+        $sheet->setCellValue('H' . $row, lang('interest_total_eligible') . ' (' . $eligible_count . ')');
+        $sheet->setCellValue('I' . $row, number_format($eligible_total, 2, '.', ''));
+        $sheet->getStyle('H' . $row . ':I' . $row)->getFont()->setBold(true);
+
+        $filename = 'Interest_Preview_' . preg_replace('/[^A-Za-z0-9_\-]/', '_', $period['label']) . '_' . date('Y-m-d_His') . '.xls';
+
+        if (ob_get_level()) {
+            ob_end_clean();
+        }
+        while (@ob_end_clean());
+
+        header('Content-Type: application/vnd.ms-excel');
+        header('Content-Disposition: attachment;filename="' . $filename . '"');
+        header('Cache-Control: must-revalidate, post-check=0, pre-check=0');
+        header('Pragma: public');
+        header('Expires: 0');
+
+        $objWriter = PHPExcel_IOFactory::createWriter($objPHPExcel, 'Excel5');
+        $objWriter->save('php://output');
+        exit();
     }
 
     /**
@@ -2221,16 +2374,27 @@ class Saving extends CI_Controller {
             $account_type_filter = trim($_GET['account_type_filter']);
         }
 
+        $period_filter = null;
+        if (isset($_GET['period_filter']) && $_GET['period_filter'] != '') {
+            $period_candidate = trim($_GET['period_filter']);
+            if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $period_candidate)) {
+                $period_filter = $period_candidate;
+            }
+        }
+
         $suffix_array = array();
         if (!is_null($account_type_filter)) {
             $suffix_array['account_type_filter'] = $account_type_filter;
+        }
+        if (!is_null($period_filter)) {
+            $suffix_array['period_filter'] = $period_filter;
         }
         if (count($suffix_array) > 0) {
             $config['suffix'] = '?' . http_build_query($suffix_array, '', '&');
         }
 
         $config["base_url"] = site_url(current_lang() . '/saving/interest_posting_history/');
-        $config["total_rows"] = $this->finance_model->count_interest_posting_history($account_type_filter);
+        $config["total_rows"] = $this->finance_model->count_interest_posting_history($account_type_filter, $period_filter);
         $config["per_page"] = 40;
         $config["uri_segment"] = 4;
 
@@ -2253,8 +2417,10 @@ class Saving extends CI_Controller {
         $this->data['links'] = $this->pagination->create_links();
 
         $this->data['account_type_filter'] = $account_type_filter;
+        $this->data['period_filter'] = $period_filter;
         $this->data['interest_types'] = $this->finance_model->interest_enabled_account_types();
-        $this->data['history'] = $this->finance_model->interest_posting_history($account_type_filter, null, $config["per_page"], $page);
+        $this->data['period_list'] = $this->finance_model->interest_posting_period_list($account_type_filter);
+        $this->data['history'] = $this->finance_model->interest_posting_history($account_type_filter, $period_filter, $config["per_page"], $page);
 
         $this->data['content'] = 'saving/interest_posting_history';
         $this->load->view('template', $this->data);

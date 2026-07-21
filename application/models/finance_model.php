@@ -4088,7 +4088,8 @@ $pin=current_user()->PIN;
      * Get an interest posting log row for an account and period (if any).
      */
     function get_interest_posting($account, $period_start, $period_end) {
-        $this->db->where('PIN', current_user()->PIN);
+        $pin = current_user()->PIN;
+        $this->db->where('PIN', $pin);
         $this->db->where('account', $account);
         $this->db->where('period_start', $period_start);
         $this->db->where('period_end', $period_end);
@@ -4099,9 +4100,9 @@ $pin=current_user()->PIN;
      * Record an interest posting in the log (insert, or revive a VOIDED row).
      */
     function log_interest_posting($data) {
-        $pin = current_user()->PIN;
-        $data['PIN'] = $pin;
-        $data['createdby'] = current_user()->id;
+        $user = current_user();
+        $data['PIN'] = $user->PIN;
+        $data['createdby'] = $user->id;
         $data['status'] = 'POSTED';
 
         $existing = $this->get_interest_posting($data['account'], $data['period_start'], $data['period_end']);
@@ -4120,7 +4121,8 @@ $pin=current_user()->PIN;
         if (!$this->db->table_exists('savings_interest_posting')) {
             return FALSE;
         }
-        $this->db->where('PIN', current_user()->PIN);
+        $pin = current_user()->PIN;
+        $this->db->where('PIN', $pin);
         $this->db->where('receipt', $receipt);
         $this->db->where('status', 'POSTED');
         return $this->db->update('savings_interest_posting', array('status' => 'VOIDED'));
@@ -4128,10 +4130,14 @@ $pin=current_user()->PIN;
 
     /**
      * Count interest posting log rows (for pagination).
+     * NOTE: Resolve PIN before touching Active Record — calling current_user()
+     * after from() pollutes the query builder (CI2 joins users and causes
+     * "Column id is ambiguous").
      */
     function count_interest_posting_history($account_cat = null, $period_start = null) {
+        $pin = current_user()->PIN;
         $this->db->from('savings_interest_posting sip');
-        $this->db->where('sip.PIN', current_user()->PIN);
+        $this->db->where('sip.PIN', $pin);
         if (!is_null($account_cat) && $account_cat !== '') {
             $this->db->where('sip.account_cat', $account_cat);
         }
@@ -4163,6 +4169,41 @@ $pin=current_user()->PIN;
         $this->db->order_by('sip.id', 'DESC');
         $this->db->limit((int) $limit, (int) $start);
         return $this->db->get()->result();
+    }
+
+    /**
+     * Distinct interest posting periods for history filter dropdown.
+     * Returns newest first: period_start, period_end, period_type, label.
+     */
+    function interest_posting_period_list($account_cat = null) {
+        $pin = current_user()->PIN;
+        $this->db->select('period_start, period_end, period_type', FALSE);
+        $this->db->from('savings_interest_posting');
+        $this->db->where('PIN', $pin);
+        if (!is_null($account_cat) && $account_cat !== '') {
+            $this->db->where('account_cat', $account_cat);
+        }
+        $this->db->group_by('period_start');
+        $this->db->group_by('period_end');
+        $this->db->group_by('period_type');
+        $this->db->order_by('period_start', 'DESC');
+        $rows = $this->db->get()->result();
+
+        $periods = array();
+        foreach ($rows as $row) {
+            if (strtoupper($row->period_type) == 'QUARTERLY') {
+                $label = 'Q' . ceil(date('n', strtotime($row->period_start)) / 3) . ' ' . date('Y', strtotime($row->period_start));
+            } else {
+                $label = strtoupper(date('M Y', strtotime($row->period_start)));
+            }
+            $periods[] = (object) array(
+                'period_start' => $row->period_start,
+                'period_end' => $row->period_end,
+                'period_type' => $row->period_type,
+                'label' => $label,
+            );
+        }
+        return $periods;
     }
 
 }

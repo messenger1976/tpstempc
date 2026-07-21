@@ -247,15 +247,38 @@ if (!in_array($sel_posting_freq, array('MONTHLY', 'QUARTERLY'))) {
                 </table>
             </div>
 
-            <?php if ($eligible_count > 0) { ?>
-                <div style="margin: 15px 0;">
-                    <input class="btn btn-primary" value="<?php echo lang('interest_post_btn'); ?>" type="submit"/>
-                </div>
-            <?php } ?>
-            <?php echo form_close(); ?>
+            <div style="margin: 15px 0;">
+                <?php if ($eligible_count > 0) { ?>
+                    <button type="submit" id="btn_post_interest" class="btn btn-primary" style="margin-right: 8px;"><?php echo lang('interest_post_btn'); ?></button>
+                <?php } ?>
+                <?php echo form_close(); ?>
+
+                <?php echo form_open(current_lang() . "/saving/interest_posting", 'id="interest_export_form" style="display:inline-block;"'); ?>
+                <input type="hidden" name="action" value="export"/>
+                <input type="hidden" name="account_type" value="<?php echo htmlspecialchars($selected_type->account); ?>"/>
+                <input type="hidden" name="posting_frequency" value="<?php echo htmlspecialchars($posting_frequency); ?>"/>
+                <input type="hidden" name="period_month" value="<?php echo htmlspecialchars((string) $this->input->post('period_month')); ?>"/>
+                <input type="hidden" name="period_year" value="<?php echo htmlspecialchars((string) $this->input->post('period_year')); ?>"/>
+                <input type="hidden" name="period_quarter" value="<?php echo htmlspecialchars((string) $this->input->post('period_quarter')); ?>"/>
+                <button type="submit" class="btn btn-success" id="btn_export_interest">
+                    <i class="fa fa-file-excel-o"></i> <?php echo lang('interest_export_excel'); ?>
+                </button>
+                <?php echo form_close(); ?>
+            </div>
         <?php } ?>
     </div>
 <?php } ?>
+
+<!-- Progress overlay while interest posting runs -->
+<div id="interest_posting_progress_overlay" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.55); z-index:99999;">
+    <div style="position:absolute; top:40%; left:50%; transform:translate(-50%, -50%); width:420px; max-width:90%; background:#fff; border-radius:6px; padding:24px; box-shadow:0 8px 24px rgba(0,0,0,0.25);">
+        <h4 style="margin:0 0 12px 0; text-align:center;"><?php echo lang('interest_posting_processing'); ?></h4>
+        <p id="interest_progress_text" style="text-align:center; color:#666; margin-bottom:14px;"><?php echo lang('interest_posting_please_wait'); ?></p>
+        <div class="progress" style="height:22px; margin-bottom:0;">
+            <div id="interest_progress_bar" class="progress-bar progress-bar-striped active" role="progressbar" style="width:5%; min-width:5%;">5%</div>
+        </div>
+    </div>
+</div>
 
 <script>
     $(document).ready(function () {
@@ -277,13 +300,92 @@ if (!in_array($sel_posting_freq, array('MONTHLY', 'QUARTERLY'))) {
             $('.account_check').prop('checked', $(this).prop('checked'));
         });
 
-        $('#interest_post_form').on('submit', function () {
+        var progressTimer = null;
+        function startInterestProgress() {
+            var $overlay = $('#interest_posting_progress_overlay');
+            var $bar = $('#interest_progress_bar');
+            var pct = 5;
+            $bar.css('width', pct + '%').text(pct + '%');
+            $overlay.show();
+            $('body').css('overflow', 'hidden');
+            $('#btn_post_interest').prop('disabled', true);
+
+            progressTimer = setInterval(function () {
+                if (pct < 90) {
+                    pct += Math.max(1, Math.floor((90 - pct) / 12));
+                    if (pct > 90) {
+                        pct = 90;
+                    }
+                    $bar.css('width', pct + '%').text(pct + '%');
+                }
+            }, 400);
+        }
+
+        $('#interest_post_form').on('submit', function (e) {
             var selected = $('.account_check:checked').length;
             if (selected === 0) {
-                alert('<?php echo lang('interest_no_accounts_selected'); ?>');
+                e.preventDefault();
+                if (typeof swal === 'function') {
+                    swal('<?php echo lang('interest_no_accounts_selected'); ?>', '', 'warning');
+                } else {
+                    alert('<?php echo lang('interest_no_accounts_selected'); ?>');
+                }
                 return false;
             }
-            return confirm('<?php echo lang('interest_post_confirm'); ?> (' + selected + ')');
+
+            // Avoid double submit / re-show confirm after progress started
+            if ($(this).data('submitting')) {
+                return true;
+            }
+
+            e.preventDefault();
+            var $form = $(this);
+
+            if (typeof swal === 'function') {
+                swal({
+                    title: '<?php echo lang('interest_post_btn'); ?>',
+                    text: '<?php echo lang('interest_post_confirm'); ?> (' + selected + ')',
+                    type: 'warning',
+                    showCancelButton: true,
+                    confirmButtonColor: '#1ab394',
+                    confirmButtonText: '<?php echo lang('interest_post_btn'); ?>',
+                    cancelButtonText: 'Cancel',
+                    closeOnConfirm: true
+                }, function (isConfirm) {
+                    if (isConfirm) {
+                        $form.data('submitting', true);
+                        startInterestProgress();
+                        $form[0].submit();
+                    }
+                });
+            } else {
+                if (!confirm('<?php echo lang('interest_post_confirm'); ?> (' + selected + ')')) {
+                    return false;
+                }
+                $form.data('submitting', true);
+                startInterestProgress();
+                $form[0].submit();
+            }
+            return false;
         });
+
+        <?php if (isset($post_results)) { ?>
+        (function () {
+            var posted = <?php echo (int) $post_results['posted']; ?>;
+            var failed = <?php echo (int) $post_results['failed']; ?>;
+            var total = <?php echo json_encode(number_format($post_results['total_amount'], 2)); ?>;
+            var msg = '<?php echo lang('interest_result_posted'); ?>: ' + posted
+                + '\n<?php echo lang('interest_result_total'); ?>: ' + total
+                + '\n<?php echo lang('interest_result_failed'); ?>: ' + failed;
+
+            if (typeof swal === 'function') {
+                swal({
+                    title: '<?php echo lang('interest_posting_complete'); ?>',
+                    text: msg,
+                    type: (failed > 0 ? 'warning' : 'success')
+                });
+            }
+        })();
+        <?php } ?>
     });
 </script>

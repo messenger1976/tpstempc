@@ -12,12 +12,22 @@ if (isset($message) && !empty($message)) {
 
 <div style="width: 95%; margin: 0 auto 10px auto;">
     <form method="get" action="<?php echo site_url(current_lang() . '/saving/interest_posting_history'); ?>" class="form-inline" style="display: inline-block;">
-        <select name="account_type_filter" class="form-control" onchange="this.form.submit();">
+        <select name="account_type_filter" class="form-control" onchange="this.form.submit();" style="margin-right: 8px;">
             <option value=""><?php echo lang('interest_all_account_types'); ?></option>
             <?php if (isset($interest_types) && !empty($interest_types)) { ?>
                 <?php foreach ($interest_types as $t) { ?>
                     <option value="<?php echo $t->account; ?>" <?php echo (isset($account_type_filter) && (string) $account_type_filter === (string) $t->account ? 'selected="selected"' : ''); ?>>
                         <?php echo htmlspecialchars($t->name); ?>
+                    </option>
+                <?php } ?>
+            <?php } ?>
+        </select>
+        <select name="period_filter" class="form-control" onchange="this.form.submit();">
+            <option value=""><?php echo lang('interest_all_periods'); ?></option>
+            <?php if (isset($period_list) && !empty($period_list)) { ?>
+                <?php foreach ($period_list as $p) { ?>
+                    <option value="<?php echo htmlspecialchars($p->period_start); ?>" <?php echo (isset($period_filter) && (string) $period_filter === (string) $p->period_start ? 'selected="selected"' : ''); ?>>
+                        <?php echo htmlspecialchars($p->label); ?>
                     </option>
                 <?php } ?>
             <?php } ?>

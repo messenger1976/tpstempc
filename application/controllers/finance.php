@@ -744,20 +744,81 @@ class Finance extends CI_Controller {
             return;
         }
 
+        $posted_date_from = trim((string) $this->input->get('posted_date_from'));
+        $posted_date_to = trim((string) $this->input->get('posted_date_to'));
+        if ($posted_date_from !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $posted_date_from)) {
+            $posted_date_from = '';
+        }
+        if ($posted_date_to !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $posted_date_to)) {
+            $posted_date_to = '';
+        }
+
+        $posted_tab = strtolower(trim((string) $this->input->get('posted_tab')));
+        if (!in_array($posted_tab, array('all', 'general_journal', 'cash_receipt', 'cash_disbursement'), true)) {
+            $posted_tab = 'all';
+        }
+
         // Posted to GL entries (so user can void and repost)
+        $posted_entries = array();
         $posted_general = $this->finance_model->get_posted_general_journal_entries();
         foreach ($posted_general as $e) {
             $e->entry_source = 'general_journal';
             $e->reference_id = null;
+            $posted_entries[] = $e;
         }
         $posted_receipt_disburse = $this->finance_model->get_posted_receipt_disbursement_journal_entries();
-        $this->data['posted_entries'] = array_merge($posted_general, $posted_receipt_disburse);
-        usort($this->data['posted_entries'], function ($a, $b) {
+        foreach ($posted_receipt_disburse as $e) {
+            $posted_entries[] = $e;
+        }
+
+        if ($posted_date_from !== '' || $posted_date_to !== '') {
+            $filtered = array();
+            foreach ($posted_entries as $e) {
+                $d = isset($e->entrydate) ? substr($e->entrydate, 0, 10) : '';
+                if ($d === '') {
+                    continue;
+                }
+                if ($posted_date_from !== '' && $d < $posted_date_from) {
+                    continue;
+                }
+                if ($posted_date_to !== '' && $d > $posted_date_to) {
+                    continue;
+                }
+                $filtered[] = $e;
+            }
+            $posted_entries = $filtered;
+        }
+
+        usort($posted_entries, function ($a, $b) {
             $da = strtotime($a->entrydate);
             $db = strtotime($b->entrydate);
             if ($da !== $db) return $db - $da;
             return $b->entryid - $a->entryid;
         });
+
+        $posted_by_source = array(
+            'all' => $posted_entries,
+            'general_journal' => array(),
+            'cash_receipt' => array(),
+            'cash_disbursement' => array(),
+        );
+        foreach ($posted_entries as $e) {
+            $src = isset($e->entry_source) ? $e->entry_source : 'general_journal';
+            if (isset($posted_by_source[$src])) {
+                $posted_by_source[$src][] = $e;
+            } else {
+                $posted_by_source['general_journal'][] = $e;
+            }
+        }
+
+        $this->data['posted_entries'] = $posted_entries;
+        $this->data['posted_by_source'] = $posted_by_source;
+        $this->data['posted_date_from'] = $posted_date_from;
+        $this->data['posted_date_to'] = $posted_date_to;
+        $this->data['posted_tab'] = $posted_tab;
+
+        // Initial badge counts for unposted source tabs
+        $this->data['unposted_source_counts'] = $this->finance_model->get_unposted_journal_review_source_counts();
         
         $this->data['content'] = 'finance/journal_entry_review';
         $this->load->view('template', $this->data);
@@ -825,6 +886,7 @@ class Finance extends CI_Controller {
                     'data' => $data,
                     'grand_total_debit' => number_format($result['grand_total_debit'], 2, '.', ''),
                     'grand_total_credit' => number_format($result['grand_total_credit'], 2, '.', ''),
+                    'source_counts' => isset($result['source_counts']) ? $result['source_counts'] : null,
                 )));
         } catch (Exception $e) {
             log_message('error', 'journal_entry_review_unposted_data: ' . $e->getMessage());

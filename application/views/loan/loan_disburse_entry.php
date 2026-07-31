@@ -151,9 +151,9 @@ $payment_method_credit_accounts = isset($payment_method_credit_accounts) ? $paym
                                 <select class="form-control account-select" name="account[]">
                                     <option value=""><?php echo lang('select_default_text'); ?></option>
                                     <?php foreach ((array)$account_list as $key1 => $value1) { if (!isset($value1['info']) || !isset($value1['data'])) continue; ?>
-                                        <optgroup label="<?php echo htmlspecialchars($value1['info']->name); ?>">
+                                        <optgroup label="<?php echo htmlspecialchars($value1['info']->account . ' - ' . $value1['info']->name); ?>">
                                             <?php foreach ($value1['data'] as $key => $value) { ?>
-                                                <option value="<?php echo $value->account; ?>" <?php echo ($line['account'] !== '' && $value->account == $line['account']) ? 'selected="selected"' : ''; ?>><?php echo $value->account . ' - ' . htmlspecialchars($value->name); ?></option>
+                                                <option value="<?php echo $value->account; ?>" <?php echo ($line['account'] !== '' && $value->account == $line['account']) ? 'selected="selected"' : ''; ?>><?php echo htmlspecialchars($value->account . ' - ' . $value->name); ?></option>
                                             <?php } ?>
                                         </optgroup>
                                     <?php } ?>
@@ -211,9 +211,9 @@ $payment_method_credit_accounts = isset($payment_method_credit_accounts) ? $paym
         function makeAccountSelectOptions(selectedAccount) {
             var opts = [];
             <?php foreach ((array)$account_list as $key1 => $value1) { if (!isset($value1['info']) || !isset($value1['data'])) continue; ?>
-            opts.push('<optgroup label="<?php echo addslashes(htmlspecialchars($value1['info']->name)); ?>">');
+            opts.push('<optgroup label="<?php echo addslashes(htmlspecialchars($value1['info']->account . ' - ' . $value1['info']->name)); ?>">');
             <?php foreach ($value1['data'] as $key => $value) { ?>
-            opts.push('<option value="<?php echo $value->account; ?>"' + (selectedAccount === "<?php echo $value->account; ?>" ? ' selected' : '') + '><?php echo addslashes($value->account . ' - ' . $value->name); ?></option>');
+            opts.push('<option value="<?php echo $value->account; ?>"' + (selectedAccount === "<?php echo $value->account; ?>" ? ' selected' : '') + '><?php echo addslashes(htmlspecialchars($value->account . ' - ' . $value->name)); ?></option>');
             <?php } ?>
             opts.push('</optgroup>');
             <?php } ?>

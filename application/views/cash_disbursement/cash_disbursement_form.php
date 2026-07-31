@@ -180,9 +180,9 @@ if (isset($message) && !empty($message)) {
                                         <select class="form-control account-select" name="account[]">
                                             <option value=""><?php echo lang('select_default_text'); ?></option>
                                             <?php foreach ($account_list as $key1 => $value1) { ?>
-                                                <optgroup label="<?php echo $value1['info']->name; ?>">
+                                                <optgroup label="<?php echo htmlspecialchars($value1['info']->account . ' - ' . $value1['info']->name); ?>">
                                                     <?php foreach ($value1['data'] as $key => $value) { ?>
-                                                        <option value="<?php echo $value->account; ?>"><?php echo $value->name; ?></option>
+                                                        <option value="<?php echo $value->account; ?>"><?php echo htmlspecialchars($value->account . ' - ' . $value->name); ?></option>
                                                     <?php } ?>
                                                 </optgroup>
                                             <?php } ?>

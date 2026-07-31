@@ -1996,6 +1996,7 @@ class Finance_Model extends CI_Model {
                 'entries' => array(),
                 'grand_total_debit' => 0.0,
                 'grand_total_credit' => 0.0,
+                'source_counts' => $this->_unposted_journal_review_source_counts($pin),
             );
         }
 
@@ -2107,7 +2108,62 @@ class Finance_Model extends CI_Model {
             'entries' => $entries,
             'grand_total_debit' => $grand_total_debit,
             'grand_total_credit' => $grand_total_credit,
+            'source_counts' => $this->_unposted_journal_review_source_counts($pin),
         );
+    }
+
+    /**
+     * Unposted journal review counts by source (for source tabs).
+     */
+    function get_unposted_journal_review_source_counts() {
+        return $this->_unposted_journal_review_source_counts(current_user()->PIN);
+    }
+
+    /**
+     * Unposted journal review counts by source (for source tabs).
+     */
+    private function _unposted_journal_review_source_counts($pin) {
+        $counts = array(
+            'all' => 0,
+            'general_journal' => 0,
+            'cash_receipt' => 0,
+            'cash_disbursement' => 0,
+        );
+
+        $gj = $this->db->query(
+            "SELECT COUNT(*) AS cnt
+             FROM general_journal_entry gje
+             LEFT JOIN general_ledger gl ON gl.refferenceID = gje.id AND gl.fromtable = 'general_journal' AND gl.PIN = gje.PIN
+             WHERE gl.id IS NULL AND gje.PIN = ?",
+            array($pin)
+        );
+        if ($gj !== false && $gj->row()) {
+            $counts['general_journal'] = (int) $gj->row()->cnt;
+        }
+
+        if ($this->db->table_exists('journal_entry')
+            && $this->db->query("SHOW COLUMNS FROM journal_entry LIKE 'reference_type'")->row()) {
+            $crcd = $this->db->query(
+                "SELECT je.reference_type AS entry_source, COUNT(*) AS cnt
+                 FROM journal_entry je
+                 LEFT JOIN general_ledger gl ON gl.refferenceID = je.id AND gl.fromtable = 'journal_entry' AND gl.PIN = je.PIN
+                 WHERE je.PIN = ?
+                   AND je.reference_type IN ('cash_receipt', 'cash_disbursement')
+                   AND gl.id IS NULL
+                 GROUP BY je.reference_type",
+                array($pin)
+            );
+            if ($crcd !== false) {
+                foreach ($crcd->result() as $row) {
+                    if (isset($counts[$row->entry_source])) {
+                        $counts[$row->entry_source] = (int) $row->cnt;
+                    }
+                }
+            }
+        }
+
+        $counts['all'] = $counts['general_journal'] + $counts['cash_receipt'] + $counts['cash_disbursement'];
+        return $counts;
     }
 
     /**

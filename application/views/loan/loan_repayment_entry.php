@@ -162,11 +162,11 @@ if (isset($message) && !empty($message)) {
                                         <select class="form-control account-select" name="account[]">
                                             <option value=""><?php echo lang('select_default_text'); ?></option>
                                             <?php if (isset($account_list) && is_array($account_list)) { foreach ($account_list as $key1 => $value1) { ?>
-                                                <optgroup label="<?php echo htmlspecialchars($value1['info']->name); ?>">
+                                                <optgroup label="<?php echo htmlspecialchars($value1['info']->account . ' - ' . $value1['info']->name); ?>">
                                                     <?php foreach ($value1['data'] as $key => $value) {
                                                         $sel = ($default_debit !== '' && (string)$value->account === (string)$default_debit) ? ' selected="selected"' : '';
                                                     ?>
-                                                        <option value="<?php echo $value->account; ?>"<?php echo $sel; ?>><?php echo htmlspecialchars($value->name); ?></option>
+                                                        <option value="<?php echo $value->account; ?>"<?php echo $sel; ?>><?php echo htmlspecialchars($value->account . ' - ' . $value->name); ?></option>
                                                     <?php } ?>
                                                 </optgroup>
                                             <?php } } ?>
@@ -192,11 +192,11 @@ if (isset($message) && !empty($message)) {
                                         <select class="form-control account-select" name="account[]">
                                             <option value=""><?php echo lang('select_default_text'); ?></option>
                                             <?php if (isset($account_list) && is_array($account_list)) { foreach ($account_list as $key1 => $value1) { ?>
-                                                <optgroup label="<?php echo htmlspecialchars($value1['info']->name); ?>">
+                                                <optgroup label="<?php echo htmlspecialchars($value1['info']->account . ' - ' . $value1['info']->name); ?>">
                                                     <?php foreach ($value1['data'] as $key => $value) {
                                                         $sel = ($loan_credit !== '' && (string)$value->account === (string)$loan_credit) ? ' selected="selected"' : '';
                                                     ?>
-                                                        <option value="<?php echo $value->account; ?>"<?php echo $sel; ?>><?php echo htmlspecialchars($value->name); ?></option>
+                                                        <option value="<?php echo $value->account; ?>"<?php echo $sel; ?>><?php echo htmlspecialchars($value->account . ' - ' . $value->name); ?></option>
                                                     <?php } ?>
                                                 </optgroup>
                                             <?php } } ?>

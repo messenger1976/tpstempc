@@ -193,6 +193,34 @@ The engine does **not** store a daily balance table. It reconstructs balances fr
 
 This approach was validated against live accounts: replayed ledger totals match stored balances when void rows are excluded.
 
+### Worked examples
+
+Both use a January period, 6% p.a. (monthly rate 0.005), ADB basis. These match the cooperative Manual worksheet.
+
+**1. Constant balance (no movement)**
+
+| Item | Value |
+|------|-------|
+| Beginning balance (Dec 31) | 1,196.17 |
+| Interest days | 30 |
+| ADB | 1,196.17 |
+| Interest | `1,196.17 × 0.06 × 30 ÷ 360` = **5.98** |
+
+**2. Mid-month deposit (deposit earns next day)**
+
+| Item | Value |
+|------|-------|
+| Beginning balance | 40,268.67 |
+| Deposit on Jan 9 | +5,000.00 |
+| Days on old balance (Jan 1–9) | 9 |
+| Days on new balance (Jan 10–30) | 21 |
+| ADB | `(40,268.67 × 9 + 45,268.67 × 21) ÷ 30` = 43,768.67 |
+| Interest | `43,768.67 × 0.06 × 30 ÷ 360` = **218.84** |
+
+Equivalent segmented form: `40,268.67 × 0.005 × 9⁄30 + 45,268.67 × 0.005 × 21⁄30` = **218.84**.
+
+Note the deposit on Jan 9 first earns interest on Jan 10 (start-of-day balance rule).
+
 ### Eligibility rules
 
 An account is **eligible** for posting when all of the following are true:
@@ -271,7 +299,7 @@ Existing column `interest_rate` is the annual rate (%).
 | `basis` | Basis used (`ADB`, `LOWEST`, `EOP`) |
 | `annual_rate` | Rate applied |
 | `base_balance` | Computed base balance |
-| `days` | Days in period |
+| `days` | Interest days used (30/360 grid: 30 per month, 90 per quarter) |
 | `interest_amount` | Amount posted |
 | `receipt` | `savings_transaction.receipt` |
 | `status` | `POSTED` or `VOIDED` |

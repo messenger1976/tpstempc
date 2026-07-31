@@ -186,6 +186,14 @@ $lang['SELL'] = 'SELL SHARES';
 
 $lang['share_trans_fail'] = 'Fail to record information';
 $lang['share_trans_success'] = 'Information successfully recorded';
+$lang['share_void_transaction'] = 'Void Share Transaction';
+$lang['share_void_transaction_warning'] = 'This will create a reversing share entry and restore the member share balance. Void newer transactions for this member first if needed. This cannot be undone.';
+$lang['share_void_success'] = 'Share transaction voided successfully';
+$lang['share_void_already_done'] = 'This share transaction has already been voided';
+$lang['share_void_not_found'] = 'Share transaction not found';
+$lang['share_void_not_allowed'] = 'Only buy/refund share transactions can be voided';
+$lang['share_voided_label'] = 'VOIDED';
+$lang['share_void_of'] = 'Void of';
 
 $lang['saving_account_edit']='Edit Account Information';
 $lang['account_name']='Account Name';

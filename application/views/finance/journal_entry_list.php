@@ -93,7 +93,11 @@ if (isset($message) && !empty($message)) {
                                             <td class="text-right"><?php echo number_format($entry->total_debit, 2); ?></td>
                                             <td class="text-right"><?php echo number_format($entry->total_credit, 2); ?></td>
                                             <td>
-                                                <?php if (!empty($entry->is_posted)): ?>
+                                                <?php if (!empty($entry->is_voided)): ?>
+                                                    <span class="label label-danger">Voided</span>
+                                                <?php elseif (!empty($entry->is_reversal)): ?>
+                                                    <span class="label label-info">Reversal</span>
+                                                <?php elseif (!empty($entry->is_posted)): ?>
                                                     <span class="label label-success"><?php echo lang('journal_entry_status_posted'); ?></span>
                                                 <?php else: ?>
                                                     <span class="label label-default"><?php echo lang('journal_entry_status_draft'); ?></span>

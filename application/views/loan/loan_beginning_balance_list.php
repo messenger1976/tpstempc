@@ -131,7 +131,11 @@
                                         <i class="fa fa-check"></i> <?php echo lang('loan_beginning_balance_post'); ?>
                                     </a>
                                 <?php } else { ?>
-                                    <span class="text-muted"><?php echo lang('loan_beginning_balance_no_edit'); ?></span>
+                                    <a href="<?php echo site_url(current_lang() . '/loan/loan_beginning_balance_void/' . encode_id($balance->id)); ?>"
+                                       onclick="return confirm('Void this loan beginning balance with a reversing GL entry?');"
+                                       style="color: #c9302c; margin-left: 10px;">
+                                        <i class="fa fa-undo"></i> Void
+                                    </a>
                                 <?php } ?>
                             </td>
                         </tr>

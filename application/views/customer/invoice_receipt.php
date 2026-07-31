@@ -95,9 +95,13 @@
 <div style="margin: auto; text-align: center; margin-top: 20px;">
             <?php echo anchor(current_lang().'/customer/print_invoice_receipt/'.$trans->receipt,  lang('print_receipt'),'class="btn btn-primary"'); ?>
     &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;
-    
-            
-    
-    
-   
+    <?php if (empty($trans->is_voided)) { ?>
+        <a class="btn btn-warning"
+           href="<?php echo site_url(current_lang() . '/customer/void_invoice_payment/' . $trans->receipt); ?>"
+           onclick="return confirm('Void this payment with a reversing GL entry? Invoice balance will be restored.');">
+            <i class="fa fa-undo"></i> Void Payment
+        </a>
+    <?php } else { ?>
+        <span class="label label-danger">Voided</span>
+    <?php } ?>
 </div>

@@ -567,6 +567,20 @@ class Contribution extends CI_Controller {
         $id = $this->input->post('id');
         $posted = $this->input->post('posted')?0:1;
 
+        // Void / unpost posted beginning balance with reversing entry
+        if ((string) $this->input->post('posted') === '1' || intval($this->input->post('posted')) === 1) {
+            $reason = trim((string) $this->input->post('void_reason'));
+            $result = $this->contribution_model->void_contribution_beginning_balance($id, $reason);
+            $status = array(
+                'id' => $id,
+                'success' => !empty($result['success']) ? 'Y' : 'N',
+                'message' => !empty($result['message']) ? $result['message'] : 'Void failed',
+                'posted' => !empty($result['success']) ? 0 : 1,
+            );
+            echo json_encode($status);
+            return;
+        }
+
         $resultset = $this->contribution_model->search_contribution_setting_id($id);
 
         $pid = trim($resultset->PID);
@@ -592,7 +606,6 @@ class Contribution extends CI_Controller {
             }
         }
         $status = array();
-        $postedsuccess = $posted;
         if ($continue) {
             //now finalize
             $receipt = $this->contribution_model->contribution_transaction($trans_type, $pid, $member_id, $amount, $paymethod, $comment, '','',0, $trans_date);
@@ -610,11 +623,6 @@ class Contribution extends CI_Controller {
                         $status['message'] = 'Successfully posted to GL';
                         $status['success'] = 'Y';
                     }
-                } else if ($ifposted && $posted == 0) {
-                    // Unpost from GL
-                    $gl_unposted = $this->contribution_model->post_contribution_to_gl($id, $posted, $pid, $member_id, $amount, $trans_date);
-                    $status['message'] = 'Successfully unposted from GL';
-                    $status['success'] = 'Y';
                 } else {
                     $status['success'] = 'Y';
                     $status['message'] = 'Posted successfully';
@@ -631,10 +639,7 @@ class Contribution extends CI_Controller {
             $status['success'] = 'N';
             $status['posted'] = $this->input->post('posted');
         }
-       // $ifposted = $this->mortuary_model->post_to_gl($id, $posted);
-        //$status['success'] = 'Y';
         $status['id'] = $id;
-        //$status['posted'] = $posted;
         
         echo json_encode($status);
     }

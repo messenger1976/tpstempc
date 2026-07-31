@@ -98,19 +98,88 @@ if (isset($message) && !empty($message)) {
 
 
 </div>
-<script type="text/javascript" src="<?php echo base_url(); ?>media/js/jquery.autocomplete_origin.js" ></script>
 <script type="text/javascript">
-    $(document).ready(function(){
-        $("#accountno").autocomplete("<?php echo site_url(current_lang() . '/saving/autosuggest_member_id_all/'); ?>",{
-            matchContains:true
-        });
+(function() {
+    function initScripts() {
+        if (typeof jQuery === 'undefined') {
+            setTimeout(initScripts, 50);
+            return;
+        }
 
+        // jQuery UI also defines .autocomplete(); load our plugin after it so the
+        // old API $("#el").autocomplete(url, options) works instead of treating the URL as a method.
+        function initAutocomplete() {
+            try {
+                if ($("#accountno").data('ui-autocomplete')) {
+                    $("#accountno").autocomplete('destroy');
+                }
+            } catch (e) {}
+
+            setTimeout(function() {
+                try {
+                    $("#accountno").autocomplete("<?php echo site_url(current_lang() . '/saving/autosuggest_member_id_all/'); ?>", {
+                        matchContains: true
+                    });
+                } catch (e) {
+                    console.error('Autocomplete initialization error:', e);
+                }
+            }, 150);
+        }
+
+        var existingScript = document.querySelector('script[src*="jquery.autocomplete_origin.js"]');
+        if (existingScript) {
+            setTimeout(initAutocomplete, 200);
+        } else {
+            var autocompleteScript = document.createElement('script');
+            autocompleteScript.src = '<?php echo base_url(); ?>media/js/jquery.autocomplete_origin.js';
+            autocompleteScript.onload = function() {
+                setTimeout(initAutocomplete, 300);
+            };
+            autocompleteScript.onerror = function() {
+                console.error('Failed to load autocomplete plugin');
+            };
+            document.head.appendChild(autocompleteScript);
+        }
+
+        $(document).ready(function(){
         $('.swtalert').click(function(e){
             e.preventDefault();
             id = $(this).data('id');
             postedvalue = $(this).data('value');
             textvalue = $(this).html();
-            if(postedvalue==1) return true;
+
+            if (postedvalue == 1 || postedvalue == '1') {
+                swal({
+                    title: "Void CBU Beginning Balance",
+                    text: "This will create reversing GL entries and reverse the member CBU balance. Continue?",
+                    showCancelButton: true,
+                    confirmButtonColor: '#d33',
+                    cancelButtonColor: '#3085d6',
+                    confirmButtonText: 'Yes, void it!',
+                    closeOnConfirm: false,
+                    closeOnCancel: true,
+                },
+                function (isConfirm) {
+                    if (!isConfirm) return;
+                    $.ajax({
+                        url: '<?php echo site_url(current_lang() . '/contribution/contribution_post_to_gl/'); ?>',
+                        type: 'POST',
+                        data:{ id: id, posted: 1, void_reason: 'Void from CBU setting list' },
+                        success:function(data){
+                            var json = JSON.parse(data);
+                            if (json['success'] == 'Y') {
+                                $('#posted'+id).html('No').css({'color':'white'});
+                                $('#posted'+id).removeClass('badge-success').addClass('badge-warning');
+                                $('#posted'+id).data('value', '0');
+                                swal('Voided!', json['message'], 'success');
+                            } else {
+                                swal('Failed', json['message'] || 'Void failed', 'error');
+                            }
+                        }
+                    });
+                });
+                return;
+            }
 
             swal({
                 title: "GL Posting ",
@@ -140,7 +209,6 @@ if (isset($message) && !empty($message)) {
                             }else{
                                 $('#posted'+id).html('No');
                             }
-                            //$('#posted'+id).data('id',json['posted'].toString());
                             $('#posted'+id).data('value',json['posted'].toString());
                             swal('Posted!', json['message'],'success');
                         }
@@ -154,5 +222,8 @@ if (isset($message) && !empty($message)) {
             
         });
     });
-        
+    }
+
+    initScripts();
+})();
 </script>

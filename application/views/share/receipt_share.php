@@ -41,6 +41,18 @@
     }
 </style>
 
+<?php
+if (isset($message) && !empty($message)) {
+    echo '<div class="label label-info displaymessage">' . $message . '</div>';
+} else if ($this->session->flashdata('message') != '') {
+    echo '<div class="label label-info displaymessage">' . $this->session->flashdata('message') . '</div>';
+} else if (isset($warning) && !empty($warning)) {
+    echo '<div class="label label-danger displaymessage">' . $warning . '</div>';
+} else if ($this->session->flashdata('warning') != '') {
+    echo '<div class="label label-danger displaymessage">' . $this->session->flashdata('warning') . '</div>';
+}
+?>
+
 <div id="receipt">
     <table id="receipt_header">
         <tr>
@@ -100,7 +112,29 @@
             echo anchor($this->session->flashdata('next_customer'),  $this->session->flashdata('next_customer_label'),'class="btn btn-primary"'); 
             
             }
+
+            $is_void_entry = $this->share_model->is_void_entry($trans);
+            $is_voided = $this->share_model->is_share_transaction_voided($trans->receipt);
+            $can_void = !$is_void_entry
+                && !$is_voided
+                && in_array($trans->trans_type, array('CR', 'DR'), true)
+                && !$this->share_model->has_later_share_transactions($trans)
+                && (has_role(4, 'Buy_shares') || has_role(4, 'Refund_shares'));
             ?>
+
+            <?php if ($is_void_entry) { ?>
+                <span class="label label-warning" style="font-size: 12px;">
+                    <i class="fa fa-reply"></i> <?php echo lang('share_void_of'); ?> <?php echo htmlspecialchars($this->share_model->get_voided_receipt($trans)); ?>
+                </span>
+            <?php } elseif ($is_voided) { ?>
+                <span class="label label-danger" style="font-size: 12px;">
+                    <i class="fa fa-check-circle"></i> <?php echo lang('share_voided_label'); ?>
+                </span>
+            <?php } elseif ($can_void) { ?>
+                <a href="#" class="btn btn-danger" onclick="if(confirm('<?php echo addslashes(lang('share_void_transaction_warning')); ?>')){ window.location.href='<?php echo site_url(current_lang() . '/share/void_transaction/' . $trans->receipt); ?>'; } return false;">
+                    <i class="fa fa-ban"></i> <?php echo lang('share_void_transaction'); ?>
+                </a>
+            <?php } ?>
     
     
    

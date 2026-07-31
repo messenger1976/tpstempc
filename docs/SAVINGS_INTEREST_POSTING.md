@@ -145,15 +145,21 @@ Receipts can be viewed from the posting history or **Savings → Search Transact
 
 ## Interest computation
 
-### Formula
+### Formula (Manual 30/360)
 
 ```
-Interest = base_balance × (annual_rate ÷ 100) × days_in_period ÷ 365
+Interest = base_balance × (annual_rate ÷ 100) × interest_days ÷ 360
 ```
+
+Equivalent forms:
+
+- Monthly rate = `annual_rate ÷ 100 ÷ 12` (e.g. 6% p.a. → 0.005)
+- Full 30-day interest month with unchanged balance: `balance × monthly_rate`
+- Mid-month balance changes: each day’s start-of-day balance × `monthly_rate × (1 ÷ 30)`
 
 - Result is rounded to **2 decimal places**.
 - Accounts with zero or negative computed interest are skipped.
-- **Days in period** = inclusive calendar days from `period_start` to `period_end` (e.g. May = 31 days).
+- **Interest days** use a 30-day month grid: days **1–30** of each month in the period (calendar day **31 is skipped**). February uses actual days **1–28/29**, still divided by 360 (so a constant February balance earns `28/30` of a full monthly amount).
 
 ### Balance used
 
@@ -169,9 +175,11 @@ The maintaining balance (`virtual_balance`) is included because it remains the m
 
 | Code | Name | Description |
 |------|------|-------------|
-| **ADB** | Average Daily Balance | Mean of end-of-day balances for every day in the period. **Recommended** — modern cooperative standard. |
-| **LOWEST** | Lowest Balance | Minimum end-of-day balance during the period. |
-| **EOP** | End-of-Period Balance | Balance at the close of the last day of the period. |
+| **ADB** | Average Daily Balance | Mean of **start-of-day** balances on interest days (1–30). **Recommended** — matches Manual worksheet. |
+| **LOWEST** | Lowest Balance | Minimum start-of-day balance on those interest days. |
+| **EOP** | End-of-Period Balance | Balance at the close of the last **calendar** day of the period. |
+
+**Deposit timing:** a deposit (or withdrawal) on day D affects interest from day **D+1** onward (start-of-day balance). Example: deposit on Jan 9 → Jan 1–9 earn on the old balance; Jan 10–30 earn on the new balance.
 
 ### How daily balances are derived
 
@@ -179,8 +187,9 @@ The engine does **not** store a daily balance table. It reconstructs balances fr
 
 1. Anchor at current `balance + virtual_balance`.
 2. Walk `savings_transaction` **backward** from today to derive balance at period end.
-3. Apply daily net movement (CR adds, DR subtracts) across the period.
-4. **Void reversal rows** (`system_comment` starting with `VOID TRANSACTION`) are **excluded** — they exist in the ledger but do not update `members_account.balance` in the current void implementation.
+3. Apply daily net movement (CR adds, DR subtracts) across the period to obtain each day’s **start-of-day** balance (balance before that day’s transactions).
+4. Average / lowest only over **interest days** (1–30; skip day 31).
+5. **Void reversal rows** (`system_comment` starting with `VOID TRANSACTION`) are **excluded** — they exist in the ledger but do not update `members_account.balance` in the current void implementation.
 
 This approach was validated against live accounts: replayed ledger totals match stored balances when void rows are excluded.
 
@@ -362,9 +371,9 @@ Journal: Savings Journal (ID 9), or Manual Journal (ID 5) as fallback.
 ### Interest amount seems wrong
 
 1. Confirm **Computation Basis** (ADB vs Lowest vs EOP).
-2. Check deposits/withdrawals during the period — ADB weights every day.
+2. Check deposits/withdrawals during the period — ADB uses start-of-day balances (deposit earns next day) on interest days 1–30.
 3. Verify total balance includes maintaining balance (`balance + virtual_balance`).
-4. Confirm annual rate and day count: `days_in_period` is inclusive.
+4. Confirm annual rate and Manual 30/360 day count (`interest_days ÷ 360`, not calendar ÷ 365).
 
 ### Menu item “Interest Posting” not visible
 

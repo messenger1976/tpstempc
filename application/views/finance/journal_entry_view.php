@@ -52,7 +52,25 @@ if (isset($message) && !empty($message)) {
                                 <tr>
                                     <th>Status:</th>
                                     <td>
-                                        <?php if ($entry->is_posted): ?>
+                                        <?php if (!empty($entry->is_voided)): ?>
+                                            <span class="label label-danger">Voided</span>
+                                            <?php if (!empty($entry->voided_by_entryid)): ?>
+                                                <br><small>Reversal:
+                                                    <a href="<?php echo site_url(current_lang() . '/finance/journal_entry_view/' . encode_id($entry->voided_by_entryid)); ?>">
+                                                        #<?php echo (int) $entry->voided_by_entryid; ?>
+                                                    </a>
+                                                </small>
+                                            <?php endif; ?>
+                                        <?php elseif (!empty($entry->is_reversal)): ?>
+                                            <span class="label label-info">Reversing Entry</span>
+                                            <?php if (!empty($entry->voids_entryid)): ?>
+                                                <br><small>Voids:
+                                                    <a href="<?php echo site_url(current_lang() . '/finance/journal_entry_view/' . encode_id($entry->voids_entryid)); ?>">
+                                                        #<?php echo (int) $entry->voids_entryid; ?>
+                                                    </a>
+                                                </small>
+                                            <?php endif; ?>
+                                        <?php elseif ($entry->is_posted): ?>
                                             <span class="label label-success">Posted</span>
                                         <?php else: ?>
                                             <span class="label label-warning">Pending Approval</span>
@@ -180,15 +198,34 @@ if (isset($message) && !empty($message)) {
                                     <?php endif; ?>
                                 <?php endif; ?>
                             <?php else: ?>
-                                <div class="alert alert-success">
-                                    <i class="fa fa-check-circle"></i> This journal entry has already been posted to General Ledger.
-                                </div>
-                                <?php if (has_role(6, 'Review_journal_entry')): ?>
-                                    <a href="<?php echo site_url(current_lang() . '/finance/void_gl_posting_general/' . $id); ?>"
-                                       onclick="return confirm('Void the GL posting only? The journal entry will stay and you can repost it later.');"
-                                       class="btn btn-warning">
-                                        <i class="fa fa-undo"></i> Void GL Posting
-                                    </a>
+                                <?php if (!empty($entry->is_voided)): ?>
+                                    <div class="alert alert-danger">
+                                        <i class="fa fa-ban"></i> This journal entry has been <strong>voided</strong>.
+                                        Original GL lines remain; a reversing journal was posted to offset them.
+                                        <?php if (!empty($entry->void_reason)): ?>
+                                            <br><small>Reason: <?php echo htmlspecialchars($entry->void_reason); ?></small>
+                                        <?php endif; ?>
+                                    </div>
+                                <?php elseif (!empty($entry->is_reversal)): ?>
+                                    <div class="alert alert-info">
+                                        <i class="fa fa-info-circle"></i> This is a <strong>reversing journal entry</strong> created to void another voucher. It is already posted to GL.
+                                    </div>
+                                <?php else: ?>
+                                    <div class="alert alert-success">
+                                        <i class="fa fa-check-circle"></i> This journal entry has already been posted to General Ledger.
+                                    </div>
+                                    <?php if (has_role(6, 'Review_journal_entry')): ?>
+                                        <form method="post" action="<?php echo site_url(current_lang() . '/finance/void_gl_posting_general/' . $id); ?>" style="display:inline-block; max-width:480px;"
+                                              onsubmit="return confirm('Void this journal by creating a reversing entry?\n\nThis will:\n1) Create a new reversing JE (debits/credits swapped)\n2) Post it to GL\n3) Reverse any CBU sub-ledger links\n\nOriginal GL lines are kept for audit.');">
+                                            <div class="form-group" style="margin-bottom:8px;">
+                                                <label>Void reason (optional)</label>
+                                                <input type="text" name="void_reason" class="form-control" maxlength="255" placeholder="e.g. Wrong member / incorrect amount"/>
+                                            </div>
+                                            <button type="submit" class="btn btn-warning">
+                                                <i class="fa fa-undo"></i> Void with Reversing Entry
+                                            </button>
+                                        </form>
+                                    <?php endif; ?>
                                 <?php endif; ?>
                             <?php endif; ?>
                             

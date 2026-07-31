@@ -3,10 +3,10 @@
  * Installation Script: Journal Entry Sub-ledger Links
  *
  * Adds optional per-line link fields on general_journal so manual journal
- * vouchers can attach to Customer (AR), Supplier (AP), or Member Loan.
- * On GL post, these copy into general_ledger.customerid / supplierid / LID / etc.
+ * vouchers can attach to Customer (AR), Supplier (AP), Member Loan, or CBU Account.
+ * On GL post, these copy into general_ledger.customerid / supplierid / LID / PID / etc.
  *
- * Does NOT auto-update invoice balances or loan repayment schedules.
+ * Does NOT auto-update invoice balances, loan repayment schedules, or CBU balances.
  */
 
 if (!defined('BASEPATH')) {
@@ -44,7 +44,7 @@ if (!$table || $table->num_rows === 0) {
 }
 
 $columns = array(
-    'link_type' => "VARCHAR(20) NULL DEFAULT NULL COMMENT 'none|customer|supplier|loan'",
+    'link_type' => "VARCHAR(20) NULL DEFAULT NULL COMMENT 'none|customer|supplier|loan|cbu'",
     'customerid' => "VARCHAR(50) NULL DEFAULT NULL",
     'supplierid' => "VARCHAR(50) NULL DEFAULT NULL",
     'LID' => "VARCHAR(50) NULL DEFAULT NULL",
@@ -67,6 +67,6 @@ foreach ($columns as $col => $definition) {
     }
 }
 
-echo '<div class="info">Manual journal lines can now link to Customer, Supplier, or Loan. Links copy to General Ledger on approval. Invoice/loan schedule balances are not auto-updated.</div>';
+echo '<div class="info">Manual journal lines can now link to Customer, Supplier, Loan, or CBU Account. Links copy to General Ledger on approval. Invoice/loan/CBU balances are not auto-updated.</div>';
 echo '</div></body></html>';
 $mysqli->close();

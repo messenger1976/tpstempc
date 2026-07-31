@@ -89,8 +89,8 @@ if (isset($message) && !empty($message)) {
                     <?php if (!empty($posted_entries)): ?>
                         <hr style="margin: 30px 0;">
                         <h4><i class="fa fa-check-circle"></i> Posted to General Ledger</h4>
-                        <p class="text-muted">These entries are already posted. Select rows and use "Void GL Posting (Selected)" to void multiple at once, or void one via the action button.</p>
-                        <form method="post" action="<?php echo site_url(current_lang() . '/finance/void_gl_posting_batch'); ?>" id="voidGlForm" onsubmit="return confirm('Void GL posting for the selected entries? Journal entries will stay and can be reposted later.');">
+                        <p class="text-muted">These entries are already posted. Void creates a reversing journal (debits/credits swapped) and posts it to GL. Original GL lines are kept for audit.</p>
+                        <form method="post" action="<?php echo site_url(current_lang() . '/finance/void_gl_posting_batch'); ?>" id="voidGlForm" onsubmit="return confirm('Void selected entries with reversing journals?\n\nThis will create and post reversing entries to GL. Original postings remain for audit.');">
                             <div class="table-responsive">
                                 <table class="table table-striped table-bordered table-hover" id="postedEntriesTable">
                                     <thead>
@@ -140,12 +140,12 @@ if (isset($message) && !empty($message)) {
                                                     <a href="<?php echo site_url($view_url); ?>" class="btn btn-info btn-xs" title="View"><i class="fa fa-eye"></i> View</a>
                                                     <?php if ($is_general): ?>
                                                         <a href="<?php echo site_url(current_lang() . '/finance/void_gl_posting_general/' . encode_id($entry->entryid)); ?>"
-                                                           onclick="return confirm('Void the GL posting only? The journal entry will stay and you can repost later.');"
-                                                           class="btn btn-warning btn-xs" title="Void GL Posting"><i class="fa fa-undo"></i> Void</a>
+                                                           onclick="return confirm('Void with reversing entry?\n\nCreates a reversing JE, posts it to GL, and reverses CBU links if any. Original GL is kept.');"
+                                                           class="btn btn-warning btn-xs" title="Void with Reversing Entry"><i class="fa fa-undo"></i> Void</a>
                                                     <?php else: ?>
                                                         <a href="<?php echo site_url(current_lang() . '/finance/void_gl_posting_journal_entry/' . encode_id($entry->entryid)); ?>"
-                                                           onclick="return confirm('Void the GL posting only? The entry will stay; you can repost from this page later.');"
-                                                           class="btn btn-warning btn-xs" title="Void GL Posting"><i class="fa fa-undo"></i> Void</a>
+                                                           onclick="return confirm('Void with reversing entry?\n\nCreates a reversing JE and posts it to GL. Original GL is kept for audit.');"
+                                                           class="btn btn-warning btn-xs" title="Void with Reversing Entry"><i class="fa fa-undo"></i> Void</a>
                                                     <?php endif; ?>
                                                 </td>
                                             </tr>
@@ -155,7 +155,7 @@ if (isset($message) && !empty($message)) {
                             </div>
                             <div style="margin-top: 15px;">
                                 <button type="submit" class="btn btn-warning" id="voidGlBatchBtn" disabled>
-                                    <i class="fa fa-undo"></i> Void GL Posting (Selected)
+                                    <i class="fa fa-undo"></i> Void with Reversing Entry (Selected)
                                 </button>
                                 <span id="voidSelectedCount" class="text-muted" style="margin-left: 10px;"></span>
                             </div>

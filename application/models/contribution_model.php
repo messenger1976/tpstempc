@@ -37,7 +37,7 @@ class Contribution_Model extends CI_Model {
            
             return $this->credit($pid, $member_id, $paymethod, $amount, $comment, $cheque_num,$month,$auto,$date);
         } else if ($trans_type == 'DR') {
-            return $this->debit($pid, $member_id, $paymethod, $amount, $comment, $cheque_num);
+            return $this->debit($pid, $member_id, $paymethod, $amount, $comment, $cheque_num, $date);
         }
 
         return false;
@@ -45,10 +45,14 @@ class Contribution_Model extends CI_Model {
     
     
 
-    function debit($pid, $member_id, $paymethod, $amount, $comment='', $cheque_num='') {
+    function debit($pid, $member_id, $paymethod, $amount, $comment='', $cheque_num='', $date='') {
         $pin = current_user()->PIN;
         $current_balance = $this->contribution_balance($pid, $member_id);
-        $previous_balance = $current_balance->balance;
+        if (!$current_balance) {
+            $this->db->insert('members_contribution', array('PID' => $pid, 'member_id' => $member_id));
+            $current_balance = $this->contribution_balance($pid, $member_id);
+        }
+        $previous_balance = $current_balance ? $current_balance->balance : 0;
 
 
         //increaase balance
@@ -69,6 +73,9 @@ class Contribution_Model extends CI_Model {
         $this->db->set('PID', $pid);
         $this->db->set('comment', $comment);
         $this->db->set('PIN', $pin);
+        if ($date !== '') {
+            $this->db->set('createdon', $date);
+        }
         $systemcomment = 'WITHDRAWAL';
         $this->db->set('system_comment', $systemcomment);
         $this->db->set('createdby', $this->session->userdata('user_id'));
@@ -166,6 +173,41 @@ class Contribution_Model extends CI_Model {
         $this->db->where('PID', $pid);
         $this->db->where('member_id', $member_id);
         return $this->db->get('members_contribution')->row();
+    }
+
+    /**
+     * Apply a manual journal CBU line to the member CBU sub-ledger.
+     * Credit on CBU COA → CR (increase balance); Debit on CBU COA → DR (decrease).
+     *
+     * @param int|string $pid
+     * @param string $member_id
+     * @param float $debit
+     * @param float $credit
+     * @param string $comment
+     * @param string $date Y-m-d or datetime
+     * @return string|false receipt number
+     */
+    function journal_cbu_subledger($pid, $member_id, $debit, $credit, $comment = '', $date = '') {
+        $debit = floatval($debit);
+        $credit = floatval($credit);
+        if ($credit <= 0 && $debit <= 0) {
+            return false;
+        }
+        // Equity CBU: credit increases member capital; debit decreases it
+        if ($credit > 0) {
+            $trans_type = 'CR';
+            $amount = $credit;
+        } else {
+            $trans_type = 'DR';
+            $amount = $debit;
+        }
+        if ($date === '') {
+            $date = date('Y-m-d H:i:s');
+        } elseif (strlen($date) <= 10) {
+            $date = $date . ' 00:00:00';
+        }
+        $comment = trim($comment) !== '' ? $comment : 'Journal Entry';
+        return $this->contribution_transaction($trans_type, $pid, $member_id, $amount, 'JOURNAL', $comment, '', '', 0, $date);
     }
 
     function contribution_setting($data, $id=null) {
@@ -410,25 +452,57 @@ class Contribution_Model extends CI_Model {
                 return TRUE;
             }
         } else {
-            // Unposting - Delete GL entries
+            // Unposting - reverse GL with reversing entry (keep original for audit)
             if (!empty($existing_entry)) {
-                $this->db->where('refferenceID', $id);
-                $this->db->where('fromtable', 'contribution_settings');
-                $this->db->where('PIN', $pin);
-                $this->db->delete('general_ledger');
-                
-                // Also delete ledger entry if no other records reference it
-                $this->db->where('entryid', $existing_entry->entryid);
-                $remaining = $this->db->count_all_results('general_ledger');
-                if ($remaining == 0) {
-                    $this->db->where('id', $existing_entry->entryid);
-                    $this->db->delete('general_ledger_entry');
-                }
-                return TRUE;
+                $this->load->model('finance_model');
+                $gl_void = $this->finance_model->void_gl_lines_with_reversal('contribution_settings', $id, 'Unpost CBU beginning balance');
+                return !empty($gl_void['success']);
             }
         }
         
         return FALSE;
+    }
+
+    /**
+     * Void a posted CBU beginning balance: reverse GL + reverse ops CR with DR + set posted=0.
+     */
+    function void_contribution_beginning_balance($id, $reason = '') {
+        $pin = current_user()->PIN;
+        $id = (int) $id;
+        $reason = trim((string) $reason);
+        $settings = $this->search_contribution_setting_id($id);
+        if (!$settings || (isset($settings->PIN) && $settings->PIN != $pin)) {
+            return array('success' => false, 'message' => 'CBU setting not found.');
+        }
+        if (empty($settings->posted)) {
+            return array('success' => false, 'message' => 'This CBU beginning balance is not posted.');
+        }
+
+        $this->db->trans_start();
+        $this->load->model('finance_model');
+        $gl_void = $this->finance_model->void_gl_lines_with_reversal('contribution_settings', $id, $reason !== '' ? $reason : 'Void CBU beginning balance');
+        if (empty($gl_void['success'])) {
+            $this->db->trans_complete();
+            return array('success' => false, 'message' => !empty($gl_void['message']) ? $gl_void['message'] : 'GL reverse failed.');
+        }
+
+        $pid = $settings->PID;
+        $member_id = $settings->member_id;
+        $amount = floatval($settings->amount);
+        $comment = 'VOID BEGINNING BALANCE' . ($reason !== '' ? (' — ' . $reason) : '');
+        $receipt = $this->contribution_transaction('DR', $pid, $member_id, $amount, 'JOURNAL', $comment, '', '', 0, date('Y-m-d H:i:s'));
+        if (!$receipt) {
+            $this->db->_trans_status = FALSE;
+            $this->db->trans_complete();
+            return array('success' => false, 'message' => 'Failed to reverse CBU sub-ledger balance.');
+        }
+
+        $this->post_to_gl($id, 0);
+        $this->db->trans_complete();
+        if ($this->db->trans_status() === FALSE) {
+            return array('success' => false, 'message' => 'Void failed.');
+        }
+        return array('success' => true, 'message' => 'CBU beginning balance voided with reversing GL and sub-ledger entry.', 'receipt' => $receipt);
     }
     
     function total_cbu_balance() {

@@ -68,12 +68,14 @@ if (isset($message) && !empty($message)) {
                             <th style="text-align: right;"><?php echo lang('loan_ledger_debit'); ?></th>
                             <th style="text-align: right;"><?php echo lang('loan_ledger_credit'); ?></th>
                             <th style="text-align: right;"><?php echo lang('loan_ledger_balance'); ?></th>
+                            <th><?php echo lang('index_action_th'); ?></th>
                         </tr>
                     </thead>
                     <tbody>
                         <?php
                         $ledger_transactions = isset($ledger_transactions) ? $ledger_transactions : array();
                         $running_balance = 0;
+                        $loan_lid = isset($loaninfo->LID) ? $loaninfo->LID : '';
                         foreach ($ledger_transactions as $row) {
                             $running_balance += (float)$row->credit - (float)$row->debit;
                             $is_repayment = isset($row->type) && $row->type === 'repayment';
@@ -95,6 +97,15 @@ if (isset($message) && !empty($message)) {
                             <td style="text-align: right;"><?php echo $row->debit > 0 ? number_format($row->debit, 2) : ''; ?></td>
                             <td style="text-align: right;"><?php echo $row->credit > 0 ? number_format($row->credit, 2) : ''; ?></td>
                             <td style="text-align: right;"><?php echo number_format($running_balance, 2); ?></td>
+                            <td>
+                                <?php if ($is_repayment && !empty($row->receipt) && $loan_lid !== '') { ?>
+                                    <a class="btn btn-warning btn-xs"
+                                       href="<?php echo site_url(current_lang() . '/loan/void_loan_repayment/' . rawurlencode($row->receipt) . '?LID=' . encode_id($loan_lid)); ?>"
+                                       onclick="return confirm('Void this repayment with a reversing GL entry? Schedule will reopen.');">
+                                        <i class="fa fa-undo"></i> Void
+                                    </a>
+                                <?php } else { echo '—'; } ?>
+                            </td>
                         </tr>
                         <?php } ?>
                     </tbody>

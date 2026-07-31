@@ -994,6 +994,9 @@ class Loan_Model extends CI_Model {
         $this->db->select('paydate as date, installment as schedule_installment, duedate, interest, penalt, amount, receipt');
         $this->db->where('LID', $LID);
         $this->db->where('PIN', $pin);
+        if ($this->db->query("SHOW COLUMNS FROM loan_contract_repayment LIKE 'is_voided'")->row()) {
+            $this->db->where('(is_voided IS NULL OR is_voided = 0)', null, false);
+        }
         $this->db->order_by('paydate', 'ASC');
         $repays = $this->db->get('loan_contract_repayment')->result();
         foreach ($repays as $r) {
@@ -1008,7 +1011,8 @@ class Loan_Model extends CI_Model {
                 'duedate' => isset($r->duedate) ? $r->duedate : null,
                 'interest' => isset($r->interest) ? floatval($r->interest) : 0,
                 'penalt' => isset($r->penalt) ? floatval($r->penalt) : 0,
-                'amount_paid' => $amount
+                'amount_paid' => $amount,
+                'receipt' => isset($r->receipt) ? $r->receipt : null,
             );
         }
 
@@ -1290,6 +1294,189 @@ class Loan_Model extends CI_Model {
         log_message('info', 'Loan beginning balance ID ' . $id . ' posted to general ledger successfully with ' . $ledger_items_inserted . ' ledger entries');
         
         return true;
+    }
+
+    /**
+     * Void a posted loan beginning balance with reversing GL entry.
+     */
+    function void_loan_beginning_balance($id, $reason = '') {
+        $pin = current_user()->PIN;
+        $id = (int) $id;
+        $balance = $this->loan_beginning_balance_list(null, $id)->row();
+        if (!$balance || empty($balance->posted)) {
+            return array('success' => false, 'message' => 'Loan beginning balance not found or not posted.');
+        }
+        $this->load->model('finance_model');
+        $this->db->trans_start();
+        $gl = $this->finance_model->void_gl_lines_with_reversal('loan_beginning_balances', $id, $reason !== '' ? $reason : 'Void loan beginning balance');
+        if (empty($gl['success'])) {
+            $this->db->trans_complete();
+            return array('success' => false, 'message' => !empty($gl['message']) ? $gl['message'] : 'GL reverse failed.');
+        }
+        $this->db->where('id', $id)->where('PIN', $pin)->update('loan_beginning_balances', array(
+            'posted' => 0,
+            'posted_date' => null,
+            'posted_by' => null,
+        ));
+        $this->db->trans_complete();
+        if ($this->db->trans_status() === FALSE) {
+            return array('success' => false, 'message' => 'Void failed.');
+        }
+        return array('success' => true, 'message' => 'Loan beginning balance voided with reversing GL entry.');
+    }
+
+    /**
+     * Void a loan repayment receipt: reverse GL for each repayment row and reopen schedule(s).
+     */
+    function void_loan_repayment_receipt($receipt, $reason = '') {
+        $pin = current_user()->PIN;
+        $receipt = trim((string) $receipt);
+        $reason = trim((string) $reason);
+        if ($receipt === '') {
+            return array('success' => false, 'message' => 'Invalid receipt.');
+        }
+
+        // Ensure void column
+        if (!$this->db->query("SHOW COLUMNS FROM loan_contract_repayment LIKE 'is_voided'")->row()) {
+            $this->db->query("ALTER TABLE loan_contract_repayment ADD COLUMN is_voided TINYINT(1) NOT NULL DEFAULT 0");
+        }
+        if (!$this->db->query("SHOW COLUMNS FROM loan_repayment_receipt LIKE 'is_voided'")->row()) {
+            $this->db->query("ALTER TABLE loan_repayment_receipt ADD COLUMN is_voided TINYINT(1) NOT NULL DEFAULT 0");
+        }
+
+        $rcpt = $this->db->where('receipt', $receipt)->get('loan_repayment_receipt')->row();
+        if ($rcpt && !empty($rcpt->is_voided)) {
+            return array('success' => false, 'message' => 'This repayment receipt is already voided.');
+        }
+
+        $rows = $this->db->where('receipt', $receipt)->where('(is_voided IS NULL OR is_voided = 0)', null, false)->get('loan_contract_repayment')->result();
+        if (empty($rows)) {
+            // legacy rows without is_voided filter
+            $rows = $this->db->where('receipt', $receipt)->get('loan_contract_repayment')->result();
+        }
+        if (empty($rows)) {
+            return array('success' => false, 'message' => 'No repayment lines found for this receipt.');
+        }
+
+        $this->load->model('finance_model');
+        $this->db->trans_start();
+        $LID = null;
+        foreach ($rows as $row) {
+            if (!empty($row->is_voided)) {
+                continue;
+            }
+            $LID = $row->LID;
+            $gl = $this->finance_model->void_gl_lines_with_reversal('loan_contract_repayment', $row->id, $reason !== '' ? $reason : ('Void repayment ' . $receipt));
+            if (empty($gl['success'])) {
+                $this->db->_trans_status = FALSE;
+                $this->db->trans_complete();
+                return array('success' => false, 'message' => !empty($gl['message']) ? $gl['message'] : ('GL reverse failed for repayment #' . $row->id));
+            }
+            $this->db->where('id', $row->id)->update('loan_contract_repayment', array('is_voided' => 1));
+            // Reopen matching schedule installment
+            if (!empty($row->installment)) {
+                $this->db->where('LID', $row->LID);
+                $this->db->where('installment_number', $row->installment);
+                $this->db->where_in('status', array(1, 2));
+                $this->db->update('loan_contract_repayment_schedule', array('status' => 0));
+            }
+        }
+        if ($LID) {
+            // Reopen any status=2 leftovers if no active (non-void) repayments remain after this void for later installments
+            $active = $this->db->query(
+                "SELECT COUNT(*) AS cnt FROM loan_contract_repayment WHERE LID = ? AND (is_voided IS NULL OR is_voided = 0)",
+                array($LID)
+            )->row();
+            if ($active && intval($active->cnt) === 0) {
+                $this->db->where('LID', $LID)->where('status', 2)->update('loan_contract_repayment_schedule', array('status' => 0));
+            }
+            // If loan was marked completed (5), reopen to released (4)
+            $loan = $this->db->where('LID', $LID)->get('loan_contract')->row();
+            if ($loan && isset($loan->status) && intval($loan->status) === 5) {
+                $this->db->where('LID', $LID)->update('loan_contract', array('status' => 4));
+            }
+        }
+        $this->db->where('receipt', $receipt)->update('loan_repayment_receipt', array('is_voided' => 1, 'affect_loan' => 0));
+        $this->db->trans_complete();
+        if ($this->db->trans_status() === FALSE) {
+            return array('success' => false, 'message' => 'Void failed.');
+        }
+        return array('success' => true, 'message' => 'Loan repayment voided with reversing GL entry.');
+    }
+
+    /**
+     * Void loan disbursement GL (by LID) when no repayments exist.
+     */
+    function void_loan_disbursement($LID, $reason = '') {
+        $pin = current_user()->PIN;
+        $LID = trim((string) $LID);
+        $loan = $this->db->where('LID', $LID)->where('PIN', $pin)->get('loan_contract')->row();
+        if (!$loan || empty($loan->disburse)) {
+            return array('success' => false, 'message' => 'Loan not found or not disbursed.');
+        }
+        $paid = $this->db->query(
+            "SELECT COUNT(*) AS cnt FROM loan_contract_repayment WHERE LID = ? AND (is_voided IS NULL OR is_voided = 0)",
+            array($LID)
+        )->row();
+        // is_voided may not exist yet
+        if (!$this->db->query("SHOW COLUMNS FROM loan_contract_repayment LIKE 'is_voided'")->row()) {
+            $paid = $this->db->query("SELECT COUNT(*) AS cnt FROM loan_contract_repayment WHERE LID = ?", array($LID))->row();
+        }
+        if ($paid && intval($paid->cnt) > 0) {
+            return array('success' => false, 'message' => 'Cannot void disbursement while repayments exist. Void repayments first.');
+        }
+
+        $this->load->model('finance_model');
+        $this->db->trans_start();
+        // Disbursement GL often keyed by LID without refferenceID — filter by LID + description
+        $gl = $this->finance_model->void_gl_lines_with_reversal('loan_contract', $LID, $reason !== '' ? $reason : 'Void loan disbursement', array(
+            'LID' => $LID,
+            'description' => 'Loan Disbursed',
+            'ignore_refferenceID' => 1,
+        ));
+        if (empty($gl['success'])) {
+            // Try with refferenceID = LID if that was stored
+            $gl = $this->finance_model->void_gl_lines_with_reversal('loan_contract', $LID, $reason !== '' ? $reason : 'Void loan disbursement');
+        }
+        if (empty($gl['success'])) {
+            $this->db->trans_complete();
+            return array('success' => false, 'message' => !empty($gl['message']) ? $gl['message'] : 'No disbursement GL found to reverse.');
+        }
+        $this->db->where('LID', $LID)->delete('loan_contract_repayment_schedule');
+        $this->db->where('LID', $LID)->update('loan_contract', array('disburse' => 0));
+        $this->db->trans_complete();
+        if ($this->db->trans_status() === FALSE) {
+            return array('success' => false, 'message' => 'Void failed.');
+        }
+        return array('success' => true, 'message' => 'Loan disbursement voided with reversing GL entry.');
+    }
+
+    /**
+     * Void loan processing fee GL.
+     */
+    function void_loan_processing_fee($fee_id, $reason = '') {
+        $pin = current_user()->PIN;
+        $fee_id = (int) $fee_id;
+        $fee = $this->db->where('id', $fee_id)->where('PIN', $pin)->get('loanprocessing_fee')->row();
+        if (!$fee) {
+            return array('success' => false, 'message' => 'Processing fee not found.');
+        }
+        if (!$this->db->query("SHOW COLUMNS FROM loanprocessing_fee LIKE 'is_voided'")->row()) {
+            $this->db->query("ALTER TABLE loanprocessing_fee ADD COLUMN is_voided TINYINT(1) NOT NULL DEFAULT 0");
+        }
+        if (!empty($fee->is_voided)) {
+            return array('success' => false, 'message' => 'Processing fee already voided.');
+        }
+        $this->load->model('finance_model');
+        $this->db->trans_start();
+        $gl = $this->finance_model->void_gl_lines_with_reversal('loanprocessing_fee', $fee_id, $reason !== '' ? $reason : 'Void loan processing fee');
+        if (empty($gl['success'])) {
+            $this->db->trans_complete();
+            return array('success' => false, 'message' => !empty($gl['message']) ? $gl['message'] : 'GL reverse failed.');
+        }
+        $this->db->where('id', $fee_id)->update('loanprocessing_fee', array('is_voided' => 1));
+        $this->db->trans_complete();
+        return array('success' => true, 'message' => 'Loan processing fee voided with reversing GL entry.');
     }
 
     function check_loan_beginning_balance_exists($fiscal_year_id, $member_id, $loan_product_id) {

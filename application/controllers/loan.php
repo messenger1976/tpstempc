@@ -2437,6 +2437,59 @@ $pin = current_user()->PIN;
         redirect(current_lang() . '/loan/loan_beginning_balance_list?fiscal_year_id=' . $balance->fiscal_year_id, 'refresh');
     }
 
+    /**
+     * Void posted loan beginning balance with reversing GL.
+     */
+    function loan_beginning_balance_void($id) {
+        $id = decode_id($id);
+        $balance = $this->loan_model->loan_beginning_balance_list(null, $id)->row();
+        if (!$balance) {
+            $this->session->set_flashdata('warning', lang('loan_beginning_balance_not_found'));
+            redirect(current_lang() . '/loan/loan_beginning_balance_list', 'refresh');
+            return;
+        }
+        $result = $this->loan_model->void_loan_beginning_balance($id, 'Void from loan beginning balance list');
+        if (!empty($result['success'])) {
+            $this->session->set_flashdata('message', $result['message']);
+        } else {
+            $this->session->set_flashdata('warning', !empty($result['message']) ? $result['message'] : 'Void failed');
+        }
+        redirect(current_lang() . '/loan/loan_beginning_balance_list?fiscal_year_id=' . $balance->fiscal_year_id, 'refresh');
+    }
+
+    /**
+     * Void a loan repayment receipt with reversing GL.
+     */
+    function void_loan_repayment($receipt) {
+        $receipt = rawurldecode($receipt);
+        $result = $this->loan_model->void_loan_repayment_receipt($receipt, 'Void from loan ledger');
+        if (!empty($result['success'])) {
+            $this->session->set_flashdata('message', $result['message']);
+        } else {
+            $this->session->set_flashdata('warning', !empty($result['message']) ? $result['message'] : 'Void failed');
+        }
+        $LID = $this->input->get('LID');
+        if ($LID) {
+            redirect(current_lang() . '/loan/loan_ledger/' . encode_id($LID), 'refresh');
+            return;
+        }
+        redirect(current_lang() . '/loan/loan_repayment', 'refresh');
+    }
+
+    /**
+     * Void loan disbursement with reversing GL (only if no repayments).
+     */
+    function void_loan_disbursement($loanid) {
+        $LID = decode_id($loanid);
+        $result = $this->loan_model->void_loan_disbursement($LID, 'Void loan disbursement');
+        if (!empty($result['success'])) {
+            $this->session->set_flashdata('message', $result['message']);
+        } else {
+            $this->session->set_flashdata('warning', !empty($result['message']) ? $result['message'] : 'Void failed');
+        }
+        redirect(current_lang() . '/loan/loan_view/' . encode_id($LID), 'refresh');
+    }
+
     // Member Autosuggest Methods for Loan Beginning Balance
     function autosuggest_member($id) {
         $pin = current_user()->PIN;

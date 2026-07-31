@@ -451,15 +451,56 @@ class Finance_Model extends CI_Model {
                 $ledger['account_type'] = $account_info->account_type;
                 $ledger['sub_account_type'] = isset($account_info->sub_account_type) ? $account_info->sub_account_type : null;
 
-                // Sub-ledger links from journal line (Customer AR / Supplier AP / Member Loan)
-                $ledger['customerid'] = !empty($item->customerid) ? $item->customerid : null;
-                $ledger['supplierid'] = !empty($item->supplierid) ? $item->supplierid : null;
-                $ledger['LID'] = !empty($item->LID) ? $item->LID : null;
-                $ledger['PID'] = !empty($item->PID) ? $item->PID : null;
-                $ledger['member_id'] = !empty($item->member_id) ? $item->member_id : null;
-                $ledger['invoiceid'] = !empty($item->invoiceid) ? intval($item->invoiceid) : null;
+                // Sub-ledger links (omit empty — general_ledger columns are NOT NULL)
+                unset($ledger['customerid'], $ledger['supplierid'], $ledger['LID'], $ledger['PID'], $ledger['member_id'], $ledger['invoiceid']);
+                if (!empty($item->customerid)) {
+                    $ledger['customerid'] = $item->customerid;
+                }
+                if (!empty($item->supplierid)) {
+                    $ledger['supplierid'] = $item->supplierid;
+                }
+                if (!empty($item->LID)) {
+                    $ledger['LID'] = $item->LID;
+                }
+                if (!empty($item->PID)) {
+                    $ledger['PID'] = $item->PID;
+                }
+                if (!empty($item->member_id)) {
+                    $ledger['member_id'] = $item->member_id;
+                }
+                if (!empty($item->invoiceid)) {
+                    $ledger['invoiceid'] = intval($item->invoiceid);
+                }
 
                 $this->db->insert('general_ledger', $ledger);
+
+                // CBU-linked lines also update member CBU sub-ledger
+                $link_type = isset($item->link_type) ? strtolower(trim($item->link_type)) : '';
+                if ($link_type === 'cbu' && !empty($item->PID) && !empty($item->member_id)) {
+                    if (!isset($this->contribution_model)) {
+                        $this->load->model('contribution_model');
+                    }
+                    $cbu_comment = isset($item->description) ? trim($item->description) : '';
+                    if ($cbu_comment === '' && !empty($entry->description)) {
+                        $cbu_comment = $entry->description;
+                    }
+                    if (!empty($entry->reference_no)) {
+                        $cbu_comment = trim($cbu_comment . ' [' . $entry->reference_no . ']');
+                    }
+                    $cbu_date = !empty($entry->entrydate) ? $entry->entrydate : date('Y-m-d');
+                    $cbu_receipt = $this->contribution_model->journal_cbu_subledger(
+                        $item->PID,
+                        $item->member_id,
+                        floatval($item->debit),
+                        floatval($item->credit),
+                        $cbu_comment,
+                        $cbu_date
+                    );
+                    if (!$cbu_receipt) {
+                        log_message('error', 'Failed to post CBU sub-ledger for journal entry ' . $entry->id . ' PID=' . $item->PID);
+                        $this->db->_trans_status = FALSE;
+                    }
+                }
             }
         }
         $this->db->trans_complete();
@@ -496,6 +537,9 @@ class Finance_Model extends CI_Model {
             $entry->line_items = array();
         }
         $entry->is_posted = $this->is_journal_posted($actual_id);
+        $this->ensure_general_journal_void_columns();
+        $entry->is_voided = !empty($entry->is_voided) ? 1 : 0;
+        $entry->is_reversal = !empty($entry->voids_entryid) ? 1 : 0;
         $entry->total_debit = 0;
         $entry->total_credit = 0;
         foreach ($entry->line_items as $item) {
@@ -538,11 +582,28 @@ class Finance_Model extends CI_Model {
     }
 
     /**
-     * Resolve posted link_type + entity into general_journal link fields.
-     * Does not update invoice balances or loan schedules.
+     * Members with a Capital Build Up (CBU) account setup for journal Link To.
      *
-     * @param string $link_type customer|supplier|loan|empty
-     * @param string $entity_id customerid, supplierid, or LID
+     * @return array
+     */
+    function cbu_member_list() {
+        $pin = current_user()->PIN;
+        $sql = "SELECT cs.PID, cs.member_id, m.firstname, m.middlename, m.lastname,
+                       COALESCE(mc.balance, 0) AS balance
+                FROM contribution_settings cs
+                INNER JOIN members m ON m.PID = cs.PID AND m.PIN = cs.PIN
+                LEFT JOIN members_contribution mc ON mc.PID = cs.PID AND mc.PIN = cs.PIN
+                WHERE cs.PIN = ?
+                ORDER BY m.firstname ASC, m.lastname ASC, cs.member_id ASC";
+        return $this->db->query($sql, array($pin))->result();
+    }
+
+    /**
+     * Resolve posted link_type + entity into general_journal link fields.
+     * Does not update invoice balances, loan schedules, or CBU balances.
+     *
+     * @param string $link_type customer|supplier|loan|cbu|empty
+     * @param string $entity_id customerid, supplierid, LID, or member PID (for cbu)
      * @return array Fields to merge into journal line
      */
     function resolve_journal_line_link($link_type, $entity_id) {
@@ -558,7 +619,7 @@ class Finance_Model extends CI_Model {
         );
         $link_type = strtolower(trim((string) $link_type));
         $entity_id = trim((string) $entity_id);
-        if ($entity_id === '' || !in_array($link_type, array('customer', 'supplier', 'loan'), true)) {
+        if ($entity_id === '' || !in_array($link_type, array('customer', 'supplier', 'loan', 'cbu'), true)) {
             return $out;
         }
 
@@ -576,6 +637,16 @@ class Finance_Model extends CI_Model {
             if ($row) {
                 $out['link_type'] = 'supplier';
                 $out['supplierid'] = $row->supplierid;
+            }
+            return $out;
+        }
+
+        if ($link_type === 'cbu') {
+            $cbu = $this->db->where('PIN', $pin)->where('PID', $entity_id)->get('contribution_settings')->row();
+            if ($cbu) {
+                $out['link_type'] = 'cbu';
+                $out['PID'] = $cbu->PID;
+                $out['member_id'] = isset($cbu->member_id) ? $cbu->member_id : null;
             }
             return $out;
         }
@@ -619,7 +690,7 @@ class Finance_Model extends CI_Model {
             $name = $s ? $s->name : $sid;
             return 'Supplier: ' . $sid . ' — ' . $name;
         }
-        if ($type === 'loan' || !empty($item->LID)) {
+        if ($type === 'loan' || (!empty($item->LID) && $type !== 'cbu')) {
             $lid = !empty($item->LID) ? $item->LID : '';
             if ($lid === '') {
                 return '';
@@ -629,6 +700,26 @@ class Finance_Model extends CI_Model {
             $label = 'Loan: ' . $lid;
             if ($member !== '') {
                 $label .= ' (Member ' . $member . ')';
+            }
+            return $label;
+        }
+        if ($type === 'cbu' || (!empty($item->PID) && empty($item->LID) && empty($item->customerid) && empty($item->supplierid))) {
+            $pid = !empty($item->PID) ? $item->PID : '';
+            if ($pid === '') {
+                return '';
+            }
+            $member = isset($item->member_id) ? $item->member_id : '';
+            $m = $this->db->where('PIN', $pin)->where('PID', $pid)->get('members')->row();
+            $name = '';
+            if ($m) {
+                $name = trim((isset($m->firstname) ? $m->firstname : '') . ' ' . (isset($m->lastname) ? $m->lastname : ''));
+                if ($member === '' && isset($m->member_id)) {
+                    $member = $m->member_id;
+                }
+            }
+            $label = 'CBU: ' . ($member !== '' ? $member : $pid);
+            if ($name !== '') {
+                $label .= ' — ' . $name;
             }
             return $label;
         }
@@ -717,6 +808,9 @@ class Finance_Model extends CI_Model {
             $entry->total_amount = max($entry->total_debit, $entry->total_credit);
             $entry->createdby = isset($totals->createdby) ? $totals->createdby : null;
             $entry->is_posted = $this->is_journal_posted($entry->id);
+            $this->ensure_general_journal_void_columns();
+            $entry->is_voided = !empty($entry->is_voided) ? 1 : 0;
+            $entry->is_reversal = !empty($entry->voids_entryid) ? 1 : 0;
 
             if (!empty($entry->createdby)) {
                 $user = $this->db->where('id', $entry->createdby)->get('users')->row();
@@ -902,11 +996,14 @@ class Finance_Model extends CI_Model {
      */
     function get_posted_general_journal_entries() {
         $pin = current_user()->PIN;
+        $this->ensure_general_journal_void_columns();
         $has_pin_col = $this->db->query("SHOW COLUMNS FROM general_journal LIKE 'PIN'")->row();
         $this->db->select('gje.*');
         $this->db->from('general_journal_entry gje');
         $this->db->join('general_ledger gl', 'gl.refferenceID = gje.id AND gl.fromtable = "general_journal" AND gl.PIN = gje.PIN', 'inner');
         $this->db->where('gje.PIN', $pin);
+        $this->db->where('(gje.is_voided IS NULL OR gje.is_voided = 0)', null, false);
+        $this->db->where('(gje.voids_entryid IS NULL OR gje.voids_entryid = 0)', null, false);
         $this->db->group_by('gje.id');
         $this->db->order_by('gje.entrydate', 'DESC');
         $this->db->order_by('gje.id', 'DESC');
@@ -945,10 +1042,13 @@ class Finance_Model extends CI_Model {
         if (!$this->db->query("SHOW COLUMNS FROM journal_entry LIKE 'reference_type'")->row()) {
             return array();
         }
+        $this->ensure_journal_entry_void_columns();
         $sql = "SELECT je.id, je.entry_date, je.description, je.reference_type, je.reference_id, je.createdby, je.PIN, je.created_at
                 FROM journal_entry je
                 INNER JOIN general_ledger gl ON gl.refferenceID = je.id AND gl.fromtable = 'journal_entry' AND gl.PIN = je.PIN
                 WHERE je.PIN = ? AND je.reference_type IN ('cash_receipt', 'cash_disbursement')
+                  AND (je.is_voided IS NULL OR je.is_voided = 0)
+                  AND (je.voids_entryid IS NULL OR je.voids_entryid = 0)
                 GROUP BY je.id, je.entry_date, je.description, je.reference_type, je.reference_id, je.createdby, je.PIN, je.created_at
                 ORDER BY je.entry_date DESC, je.id DESC";
         $rows = $this->db->query($sql, array($pin))->result();
@@ -1104,6 +1204,510 @@ class Finance_Model extends CI_Model {
             $this->db->delete('general_ledger_entry');
         }
         return true;
+    }
+
+    /**
+     * Ensure general_journal_entry has void/reversal tracking columns.
+     */
+    function ensure_general_journal_void_columns() {
+        static $done = false;
+        if ($done) {
+            return true;
+        }
+        $columns = array(
+            'is_voided' => "TINYINT(1) NOT NULL DEFAULT 0",
+            'voided_by_entryid' => "INT NULL DEFAULT NULL",
+            'voids_entryid' => "INT NULL DEFAULT NULL",
+            'void_reason' => "VARCHAR(255) NULL DEFAULT NULL",
+            'voided_on' => "DATETIME NULL DEFAULT NULL",
+            'voided_by' => "INT NULL DEFAULT NULL",
+        );
+        foreach ($columns as $col => $definition) {
+            $exists = $this->db->query("SHOW COLUMNS FROM general_journal_entry LIKE '" . $this->db->escape_str($col) . "'")->row();
+            if (!$exists) {
+                $this->db->query("ALTER TABLE general_journal_entry ADD COLUMN `$col` $definition");
+            }
+        }
+        $done = true;
+        return true;
+    }
+
+    /**
+     * Whether a manual journal entry has already been voided via reversing entry.
+     */
+    function is_manual_journal_voided($journal_entry_id) {
+        $this->ensure_general_journal_void_columns();
+        $pin = current_user()->PIN;
+        $row = $this->db->where('id', (int) $journal_entry_id)->where('PIN', $pin)->get('general_journal_entry')->row();
+        return ($row && !empty($row->is_voided));
+    }
+
+    /**
+     * Void a posted manual journal by creating and posting a full reversing JE.
+     * Original GL remains; reversing JE is posted to GL. CBU-linked lines reverse on the CBU sub-ledger.
+     *
+     * @param int $journal_entry_id Original general_journal_entry.id
+     * @param string $reason Optional void reason
+     * @return array
+     */
+    function void_manual_journal_with_reversal($journal_entry_id, $reason = '') {
+        $this->ensure_general_journal_void_columns();
+        $this->ensure_general_journal_link_columns();
+        $pin = current_user()->PIN;
+        $journal_entry_id = (int) $journal_entry_id;
+        $reason = trim((string) $reason);
+
+        $entry = $this->get_journal_entry_details($journal_entry_id);
+        if (!$entry) {
+            return array('success' => false, 'message' => 'Journal entry not found.');
+        }
+        if (!empty($entry->voids_entryid)) {
+            return array('success' => false, 'message' => 'This entry is itself a reversing voucher and cannot be voided. Create a new correcting journal if needed.');
+        }
+        if (!empty($entry->is_voided)) {
+            $ref = !empty($entry->voided_by_entryid) ? ' (reversal #' . $entry->voided_by_entryid . ')' : '';
+            return array('success' => false, 'message' => 'This journal entry has already been voided' . $ref . '.');
+        }
+        if (!$this->is_journal_posted($journal_entry_id)) {
+            return array('success' => false, 'message' => 'Only posted journal entries can be voided with a reversing entry.');
+        }
+        if (empty($entry->line_items)) {
+            return array('success' => false, 'message' => 'Journal entry has no line items to reverse.');
+        }
+
+        $orig_ref = !empty($entry->reference_no) ? $entry->reference_no : ('#' . $journal_entry_id);
+        $void_date = date('Y-m-d');
+        $desc = 'VOID: ' . $orig_ref;
+        if ($reason !== '') {
+            $desc .= ' — ' . $reason;
+        } elseif (!empty($entry->description)) {
+            $desc .= ' — ' . $entry->description;
+        }
+
+        $doc_no = !empty($entry->document_no) ? ('VOID-' . $entry->document_no) : ('VOID-' . $journal_entry_id);
+        if (strlen($doc_no) > 100) {
+            $doc_no = substr($doc_no, 0, 100);
+        }
+
+        $array_items = array();
+        foreach ($entry->line_items as $item) {
+            $debit = floatval($item->debit);
+            $credit = floatval($item->credit);
+            if (empty($item->account) || ($debit <= 0 && $credit <= 0)) {
+                continue;
+            }
+            $tmp = array(
+                'account' => $item->account,
+                'description' => !empty($item->description)
+                    ? ('VOID: ' . $item->description)
+                    : ('VOID: ' . $orig_ref),
+                'debit' => $credit > 0 ? $credit : 0,
+                'credit' => $debit > 0 ? $debit : 0,
+                'entrydate' => $void_date,
+                'createdby' => current_user()->id,
+            );
+            $link_type = isset($item->link_type) ? strtolower(trim($item->link_type)) : '';
+            if ($link_type !== '') {
+                $tmp['link_type'] = $link_type;
+            }
+            if (!empty($item->customerid)) {
+                $tmp['customerid'] = $item->customerid;
+            }
+            if (!empty($item->supplierid)) {
+                $tmp['supplierid'] = $item->supplierid;
+            }
+            if (!empty($item->LID)) {
+                $tmp['LID'] = $item->LID;
+            }
+            if (!empty($item->PID)) {
+                $tmp['PID'] = $item->PID;
+            }
+            if (!empty($item->member_id)) {
+                $tmp['member_id'] = $item->member_id;
+            }
+            if (!empty($item->invoiceid)) {
+                $tmp['invoiceid'] = $item->invoiceid;
+            }
+            $array_items[] = $tmp;
+        }
+
+        if (empty($array_items)) {
+            return array('success' => false, 'message' => 'No reversible line items found.');
+        }
+
+        $main_array = array(
+            'entrydate' => $void_date,
+            'description' => $desc,
+            'document_no' => $doc_no,
+            'PIN' => $pin,
+        );
+
+        $reverse_id = $this->enter_journal($main_array, $array_items, false);
+        if (!$reverse_id) {
+            return array('success' => false, 'message' => 'Failed to create reversing journal entry.');
+        }
+
+        $this->db->where('id', $reverse_id)->where('PIN', $pin)->update('general_journal_entry', array(
+            'voids_entryid' => $journal_entry_id,
+            'void_reason' => ($reason !== '' ? $reason : null),
+        ));
+
+        $posted = $this->post_journal_to_general_ledger($reverse_id, 5);
+        if (!$posted) {
+            $this->db->where('entryid', $reverse_id)->delete('general_journal');
+            $this->db->where('id', $reverse_id)->where('PIN', $pin)->delete('general_journal_entry');
+            return array('success' => false, 'message' => 'Reversing journal was created but posting to GL failed. Void cancelled.');
+        }
+
+        $this->db->where('id', $journal_entry_id)->where('PIN', $pin)->update('general_journal_entry', array(
+            'is_voided' => 1,
+            'voided_by_entryid' => $reverse_id,
+            'void_reason' => ($reason !== '' ? $reason : null),
+            'voided_on' => date('Y-m-d H:i:s'),
+            'voided_by' => current_user()->id,
+        ));
+
+        $rev = $this->db->where('id', $reverse_id)->get('general_journal_entry')->row();
+        $rev_ref = ($rev && !empty($rev->reference_no)) ? $rev->reference_no : ('#' . $reverse_id);
+
+        return array(
+            'success' => true,
+            'message' => 'Journal voided. Reversing entry ' . $rev_ref . ' created and posted to GL.',
+            'reverse_id' => $reverse_id,
+            'reference_no' => $rev_ref,
+        );
+    }
+
+    /**
+     * Ensure journal_entry (cash receipt/disbursement) has void/reversal columns.
+     */
+    function ensure_journal_entry_void_columns() {
+        static $done = false;
+        if ($done) {
+            return true;
+        }
+        if (!$this->db->table_exists('journal_entry')) {
+            return false;
+        }
+        $columns = array(
+            'is_voided' => "TINYINT(1) NOT NULL DEFAULT 0",
+            'voided_by_entryid' => "INT NULL DEFAULT NULL",
+            'voids_entryid' => "INT NULL DEFAULT NULL",
+            'void_reason' => "VARCHAR(255) NULL DEFAULT NULL",
+            'voided_on' => "DATETIME NULL DEFAULT NULL",
+            'voided_by' => "INT NULL DEFAULT NULL",
+        );
+        foreach ($columns as $col => $definition) {
+            $exists = $this->db->query("SHOW COLUMNS FROM journal_entry LIKE '" . $this->db->escape_str($col) . "'")->row();
+            if (!$exists) {
+                $this->db->query("ALTER TABLE journal_entry ADD COLUMN `$col` $definition");
+            }
+        }
+        $done = true;
+        return true;
+    }
+
+    /**
+     * Unified void-with-reversal for Journal Entry Review sources.
+     *
+     * @param string $source general_journal|journal_entry|cash_receipt|cash_disbursement
+     * @param int $id
+     * @param string $reason
+     * @return array
+     */
+    function void_with_reversal($source, $id, $reason = '') {
+        $source = strtolower(trim((string) $source));
+        $id = (int) $id;
+        if ($source === 'general_journal') {
+            return $this->void_manual_journal_with_reversal($id, $reason);
+        }
+        if (in_array($source, array('journal_entry', 'cash_receipt', 'cash_disbursement'), true)) {
+            return $this->void_cash_journal_entry_with_reversal($id, $reason);
+        }
+        // Generic GL reverse for other fromtable sources
+        $from_table = $source;
+        return $this->void_gl_lines_with_reversal($from_table, $id, $reason);
+    }
+
+    /**
+     * Void a posted cash receipt/disbursement journal_entry by creating and posting a reversing JE.
+     */
+    function void_cash_journal_entry_with_reversal($journal_entry_id, $reason = '') {
+        $this->ensure_journal_entry_void_columns();
+        $pin = current_user()->PIN;
+        $journal_entry_id = (int) $journal_entry_id;
+        $reason = trim((string) $reason);
+
+        $entry = $this->db->where('id', $journal_entry_id)->where('PIN', $pin)->get('journal_entry')->row();
+        if (!$entry) {
+            return array('success' => false, 'message' => 'Journal entry not found.');
+        }
+        if (!empty($entry->voids_entryid)) {
+            return array('success' => false, 'message' => 'This entry is itself a reversing voucher and cannot be voided.');
+        }
+        if (!empty($entry->is_voided)) {
+            return array('success' => false, 'message' => 'This journal entry has already been voided.');
+        }
+        if (!$this->is_journal_entry_posted_to_gl($journal_entry_id)) {
+            return array('success' => false, 'message' => 'Only posted entries can be voided with a reversing entry.');
+        }
+
+        $line_items = $this->_get_journal_entry_items_for_void($journal_entry_id, $entry);
+        if (empty($line_items)) {
+            return array('success' => false, 'message' => 'No line items found to reverse.');
+        }
+
+        $orig_label = '#' . $journal_entry_id;
+        if (!empty($entry->reference_type)) {
+            $orig_label = $entry->reference_type . ' #' . $journal_entry_id;
+        }
+        $void_date = date('Y-m-d');
+        $desc = 'VOID: ' . $orig_label;
+        if ($reason !== '') {
+            $desc .= ' — ' . $reason;
+        } elseif (!empty($entry->description)) {
+            $desc .= ' — ' . $entry->description;
+        }
+
+        $journal_data = array(
+            'entry_date' => $void_date,
+            'description' => $desc,
+            'createdby' => current_user()->id,
+            'PIN' => $pin,
+            'created_at' => date('Y-m-d H:i:s'),
+        );
+        if ($this->db->query("SHOW COLUMNS FROM journal_entry LIKE 'reference_type'")->row()) {
+            $journal_data['reference_type'] = !empty($entry->reference_type) ? $entry->reference_type : 'journal_entry';
+            $journal_data['reference_id'] = isset($entry->reference_id) ? $entry->reference_id : null;
+        }
+
+        $this->db->insert('journal_entry', $journal_data);
+        $reverse_id = $this->db->insert_id();
+        if (!$reverse_id) {
+            return array('success' => false, 'message' => 'Failed to create reversing journal entry.');
+        }
+
+        $this->db->where('id', $reverse_id)->update('journal_entry', array(
+            'voids_entryid' => $journal_entry_id,
+            'void_reason' => ($reason !== '' ? $reason : null),
+        ));
+
+        $has_journal_id = $this->db->query("SHOW COLUMNS FROM journal_entry_items LIKE 'journal_id'")->row();
+        $has_entry_id = $this->db->query("SHOW COLUMNS FROM journal_entry_items LIKE 'entry_id'")->row();
+        $link_key = $has_journal_id ? 'journal_id' : ($has_entry_id ? 'entry_id' : 'journal_id');
+        $has_desc = $this->db->query("SHOW COLUMNS FROM journal_entry_items LIKE 'description'")->row();
+        $has_ref_type = $this->db->query("SHOW COLUMNS FROM journal_entry_items LIKE 'reference_type'")->row();
+        $ref_type = !empty($entry->reference_type) ? $entry->reference_type : null;
+
+        $inserted = 0;
+        foreach ($line_items as $item) {
+            $debit = floatval(isset($item->debit) ? $item->debit : 0);
+            $credit = floatval(isset($item->credit) ? $item->credit : 0);
+            if (empty($item->account) || ($debit <= 0 && $credit <= 0)) {
+                continue;
+            }
+            $row = array(
+                $link_key => $reverse_id,
+                'account' => $item->account,
+                'debit' => $credit > 0 ? $credit : 0,
+                'credit' => $debit > 0 ? $debit : 0,
+                'PIN' => $pin,
+            );
+            if ($has_desc) {
+                $line_desc = !empty($item->description) ? ('VOID: ' . $item->description) : ('VOID: ' . $orig_label);
+                $row['description'] = $line_desc;
+            }
+            if ($has_ref_type && $ref_type) {
+                $row['reference_type'] = $ref_type;
+            }
+            if ($this->db->insert('journal_entry_items', $row)) {
+                $inserted++;
+            }
+        }
+
+        if ($inserted < 1) {
+            $this->db->where('id', $reverse_id)->delete('journal_entry');
+            return array('success' => false, 'message' => 'Failed to create reversing line items.');
+        }
+
+        $posted = $this->post_journal_entry_to_general_ledger($reverse_id, 5);
+        if (!$posted) {
+            $this->db->where($link_key, $reverse_id)->delete('journal_entry_items');
+            $this->db->where('id', $reverse_id)->delete('journal_entry');
+            return array('success' => false, 'message' => 'Reversing journal created but posting to GL failed. Void cancelled.');
+        }
+
+        $this->db->where('id', $journal_entry_id)->where('PIN', $pin)->update('journal_entry', array(
+            'is_voided' => 1,
+            'voided_by_entryid' => $reverse_id,
+            'void_reason' => ($reason !== '' ? $reason : null),
+            'voided_on' => date('Y-m-d H:i:s'),
+            'voided_by' => current_user()->id,
+        ));
+
+        return array(
+            'success' => true,
+            'message' => 'Entry voided. Reversing journal #' . $reverse_id . ' created and posted to GL.',
+            'reverse_id' => $reverse_id,
+        );
+    }
+
+    /**
+     * Load journal_entry_items for void; fall back to posted general_ledger lines.
+     */
+    function _get_journal_entry_items_for_void($journal_entry_id, $entry) {
+        $pin = current_user()->PIN;
+        $journal_entry_id = (int) $journal_entry_id;
+        $has_journal_id = $this->db->query("SHOW COLUMNS FROM journal_entry_items LIKE 'journal_id'")->row();
+        $has_entry_id = $this->db->query("SHOW COLUMNS FROM journal_entry_items LIKE 'entry_id'")->row();
+        $link_col = $has_journal_id ? 'journal_id' : ($has_entry_id ? 'entry_id' : null);
+        $items = array();
+        if ($link_col) {
+            $select = 'account, debit, credit';
+            if ($this->db->query("SHOW COLUMNS FROM journal_entry_items LIKE 'description'")->row()) {
+                $select .= ', description';
+            }
+            $items = $this->db->query(
+                "SELECT {$select} FROM journal_entry_items WHERE {$link_col} = ? ORDER BY id ASC",
+                array($journal_entry_id)
+            )->result();
+            if (empty($items) && $has_journal_id && $has_entry_id) {
+                $other = ($link_col === 'journal_id') ? 'entry_id' : 'journal_id';
+                $items = $this->db->query(
+                    "SELECT {$select} FROM journal_entry_items WHERE {$other} = ? ORDER BY id ASC",
+                    array($journal_entry_id)
+                )->result();
+            }
+        }
+        if (!empty($items)) {
+            return $items;
+        }
+        // Fallback: reverse from posted GL lines
+        return $this->db->query(
+            "SELECT account, debit, credit, description FROM general_ledger
+             WHERE refferenceID = ? AND fromtable = 'journal_entry' AND PIN = ?
+             ORDER BY id ASC",
+            array($journal_entry_id, $pin)
+        )->result();
+    }
+
+    /**
+     * Generic void: reverse any posted GL batch by creating offsetting GL lines.
+     * Does not unwind operational sub-ledgers (loan schedules, invoice balances, etc.).
+     *
+     * @param string $from_table general_ledger.fromtable
+     * @param int|string $reference_id general_ledger.refferenceID (ignored if filters['entryid'] set alone with use_entryid_as_key)
+     * @param string $reason
+     * @param array $filters Optional: entryid, description, description_like, LID
+     * @return array
+     */
+    function void_gl_lines_with_reversal($from_table, $reference_id, $reason = '', $filters = array()) {
+        $pin = current_user()->PIN;
+        $from_table = trim((string) $from_table);
+        $reason = trim((string) $reason);
+        if (!is_array($filters)) {
+            $filters = array();
+        }
+        if ($from_table === '') {
+            return array('success' => false, 'message' => 'Invalid GL reference.');
+        }
+
+        $void_from = $from_table . '_void';
+        $void_ref = (string) $reference_id;
+        if (!empty($filters['entryid'])) {
+            $void_ref = 'E' . (int) $filters['entryid'];
+        }
+
+        $already = $this->db->query(
+            "SELECT id FROM general_ledger
+             WHERE PIN = ? AND fromtable = ? AND refferenceID = ? AND description LIKE 'VOID:%'
+             LIMIT 1",
+            array($pin, $void_from, $void_ref)
+        )->row();
+        if ($already) {
+            return array('success' => false, 'message' => 'This GL posting has already been voided.');
+        }
+
+        $sql = "SELECT * FROM general_ledger WHERE PIN = ? AND fromtable = ?";
+        $params = array($pin, $from_table);
+        if ($reference_id !== '' && $reference_id !== null && empty($filters['ignore_refferenceID'])) {
+            $sql .= " AND refferenceID = ?";
+            $params[] = $reference_id;
+        }
+        if (!empty($filters['entryid'])) {
+            $sql .= " AND entryid = ?";
+            $params[] = (int) $filters['entryid'];
+        }
+        if (!empty($filters['description'])) {
+            $sql .= " AND description = ?";
+            $params[] = $filters['description'];
+        }
+        if (!empty($filters['description_like'])) {
+            $sql .= " AND description LIKE ?";
+            $params[] = $filters['description_like'];
+        }
+        if (!empty($filters['LID'])) {
+            $sql .= " AND LID = ?";
+            $params[] = $filters['LID'];
+        }
+        $sql .= " ORDER BY id ASC";
+
+        $lines = $this->db->query($sql, $params)->result();
+        if (empty($lines)) {
+            return array('success' => false, 'message' => 'No GL lines found to reverse.');
+        }
+
+        $void_date = date('Y-m-d');
+        $this->db->insert('general_ledger_entry', array('date' => $void_date, 'PIN' => $pin));
+        $ledger_entry_id = $this->db->insert_id();
+        if (!$ledger_entry_id) {
+            return array('success' => false, 'message' => 'Failed to create reversing GL header.');
+        }
+
+        $label = $from_table . ' #' . ($reference_id !== '' && $reference_id !== null ? $reference_id : $void_ref);
+        $inserted = 0;
+        foreach ($lines as $line) {
+            $debit = floatval($line->debit);
+            $credit = floatval($line->credit);
+            if ($debit <= 0 && $credit <= 0) {
+                continue;
+            }
+            $row = array(
+                'journalID' => isset($line->journalID) ? $line->journalID : 5,
+                'refferenceID' => $void_ref,
+                'entryid' => $ledger_entry_id,
+                'date' => $void_date,
+                'linkto' => isset($line->linkto) ? $line->linkto : ($from_table . '.id'),
+                'fromtable' => $void_from,
+                'PIN' => $pin,
+                'account' => $line->account,
+                'debit' => $credit > 0 ? $credit : 0,
+                'credit' => $debit > 0 ? $debit : 0,
+                'description' => 'VOID: ' . $label . ($reason !== '' ? (' — ' . $reason) : ''),
+                'account_type' => isset($line->account_type) ? $line->account_type : null,
+                'sub_account_type' => isset($line->sub_account_type) ? $line->sub_account_type : null,
+            );
+            foreach (array('customerid', 'supplierid', 'LID', 'PID', 'member_id', 'invoiceid') as $fk) {
+                if (!empty($line->$fk)) {
+                    $row[$fk] = $line->$fk;
+                }
+            }
+            if ($this->db->insert('general_ledger', $row)) {
+                $inserted++;
+            }
+        }
+
+        if ($inserted < 1) {
+            $this->db->where('id', $ledger_entry_id)->delete('general_ledger_entry');
+            return array('success' => false, 'message' => 'Failed to insert reversing GL lines.');
+        }
+
+        return array(
+            'success' => true,
+            'message' => 'GL posting voided with reversing entry (' . $inserted . ' line(s)).',
+            'reverse_ledger_entry_id' => $ledger_entry_id,
+            'lines_reversed' => $inserted,
+        );
     }
 
     function get_receipt_disbursement_journal_entries() {
@@ -3798,6 +4402,34 @@ $pin=current_user()->PIN;
         return true;
     }
 
+    /**
+     * Void a posted chart of accounts beginning balance with reversing GL.
+     */
+    function void_beginning_balance($id, $reason = '') {
+        $pin = current_user()->PIN;
+        $id = (int) $id;
+        $balance = $this->beginning_balance_list(null, $id)->row();
+        if (!$balance || empty($balance->posted)) {
+            return array('success' => false, 'message' => 'Beginning balance not found or not posted.');
+        }
+        $this->db->trans_start();
+        $gl = $this->void_gl_lines_with_reversal('beginning_balances', $id, $reason !== '' ? $reason : 'Void chart beginning balance');
+        if (empty($gl['success'])) {
+            $this->db->trans_complete();
+            return array('success' => false, 'message' => !empty($gl['message']) ? $gl['message'] : 'GL reverse failed.');
+        }
+        $this->db->where('id', $id)->where('PIN', $pin)->update('beginning_balances', array(
+            'posted' => 0,
+            'posted_date' => null,
+            'posted_by' => null,
+        ));
+        $this->db->trans_complete();
+        if ($this->db->trans_status() === FALSE) {
+            return array('success' => false, 'message' => 'Void failed.');
+        }
+        return array('success' => true, 'message' => 'Beginning balance voided with reversing GL entry.');
+    }
+
     function check_beginning_balance_exists($fiscal_year_id, $account) {
         $pin = current_user()->PIN;
         $this->db->where('PIN', $pin);
@@ -3881,11 +4513,15 @@ $pin=current_user()->PIN;
     /**
      * Compute interest for every active savings account of a given type for a period.
      *
-     * Interest = base_balance x (annual_rate / 100) x days_in_period / 365
-     * where base_balance depends on the type's interest_basis:
-     *  - ADB: average of the daily end-of-day balances over the period
-     *  - LOWEST: lowest end-of-day balance within the period
-     *  - EOP: balance at the end of the period
+     * Manual 30/360 convention (matches cooperative worksheet):
+     *   Interest = base_balance x (annual_rate / 100) x interest_days / 360
+     * which equals base_balance x (annual_rate / 100 / 12) for a full 30-day month.
+     *
+     * base_balance depends on the type's interest_basis:
+     *  - ADB: average of start-of-day balances on interest days (1..30 of each month;
+     *    February uses 1..28/29). Deposits earn from the following day.
+     *  - LOWEST: lowest start-of-day balance on those interest days
+     *  - EOP: balance at the end of the calendar period
      *
      * Balances include the maintaining balance (virtual_balance) since it is
      * still the member's deposit.
@@ -3911,8 +4547,7 @@ $pin=current_user()->PIN;
 
         $start_ts = strtotime($period_start);
         $end_ts = strtotime($period_end);
-        $days_in_period = (int) round(($end_ts - $start_ts) / 86400) + 1;
-        if ($days_in_period <= 0) {
+        if ($end_ts < $start_ts) {
             return $results;
         }
 
@@ -3955,6 +4590,7 @@ $pin=current_user()->PIN;
             $current_total = (float) $acc->balance + (float) $acc->virtual_balance;
 
             $bases = $this->savings_balance_bases($acc->account, $current_total, $period_start, $period_end);
+            $interest_days = (int) $bases['interest_days'];
 
             if ($basis == 'LOWEST') {
                 $base_balance = $bases['lowest'];
@@ -3972,11 +4608,12 @@ $pin=current_user()->PIN;
             $interest = 0;
             $eligible = true;
             $skip_reason = '';
-            if ($base_balance < $min_balance || $base_balance <= 0) {
+            if ($base_balance < $min_balance || $base_balance <= 0 || $interest_days <= 0) {
                 $eligible = false;
                 $skip_reason = 'BELOW_MIN_BALANCE';
             } else {
-                $interest = round($base_balance * ($annual_rate / 100) * $days_in_period / 365, 2);
+                // Manual 30/360: monthly_rate = annual/12; day fraction = days/30
+                $interest = round($base_balance * ($annual_rate / 100) * $interest_days / 360, 2);
                 if ($interest <= 0) {
                     $eligible = false;
                     $skip_reason = 'ZERO_INTEREST';
@@ -3997,7 +4634,7 @@ $pin=current_user()->PIN;
                 'basis' => $basis,
                 'base_balance' => $base_balance,
                 'annual_rate' => $annual_rate,
-                'days' => $days_in_period,
+                'days' => $interest_days,
                 'interest' => $interest,
                 'eligible' => $eligible,
                 'skip_reason' => $skip_reason,
@@ -4010,7 +4647,41 @@ $pin=current_user()->PIN;
     }
 
     /**
-     * Reconstruct daily end-of-day balances of a savings account over a period.
+     * Interest-earning dates under Manual 30/360: days 1..30 of each month
+     * overlapping the period (February uses 1..28/29). Calendar day 31 is skipped.
+     *
+     * @return string[] Y-m-d dates ascending
+     */
+    private function savings_interest_dates($period_start, $period_end) {
+        $dates = array();
+        $start_ts = strtotime($period_start);
+        $end_ts = strtotime($period_end);
+        if ($end_ts < $start_ts) {
+            return $dates;
+        }
+
+        $cursor = strtotime(date('Y-m-01', $start_ts));
+        $last_month = strtotime(date('Y-m-01', $end_ts));
+        while ($cursor <= $last_month) {
+            $year = (int) date('Y', $cursor);
+            $month = (int) date('m', $cursor);
+            $dim = (int) date('t', $cursor);
+            $last_interest_day = min(30, $dim);
+            for ($d = 1; $d <= $last_interest_day; $d++) {
+                $date = sprintf('%04d-%02d-%02d', $year, $month, $d);
+                $ts = strtotime($date);
+                if ($ts >= $start_ts && $ts <= $end_ts) {
+                    $dates[] = $date;
+                }
+            }
+            $cursor = strtotime('+1 month', $cursor);
+        }
+
+        return $dates;
+    }
+
+    /**
+     * Reconstruct daily balances of a savings account over a period for Manual interest.
      *
      * The current total balance (balance + virtual_balance) is used as the
      * anchor, and signed transaction amounts (CR +, DR -) are walked backward
@@ -4018,7 +4689,11 @@ $pin=current_user()->PIN;
      * amounts always include the maintaining-balance portion, so the math is
      * consistent with the total balance.
      *
-     * @return array ('adb' => float, 'lowest' => float, 'eop' => float)
+     * ADB/LOWEST use start-of-day balances on 30/360 interest days so that a
+     * deposit on day D earns from day D+1 (matches Manual worksheet).
+     * EOP remains the true end-of-period (calendar) balance.
+     *
+     * @return array ('adb' => float, 'lowest' => float, 'eop' => float, 'interest_days' => int)
      */
     private function savings_balance_bases($account, $current_total, $period_start, $period_end) {
         $pin = current_user()->PIN;
@@ -4053,24 +4728,27 @@ $pin=current_user()->PIN;
             $daily_net[$row->tdate] = (float) $row->net;
         }
 
-        // Walk backward from period end, computing each day's end-of-day balance
-        $eod_balances = array();
+        // Walk backward from period end: store start-of-day balance for each calendar day
+        // (balance before that day's transactions = Manual interest balance for the day).
+        $sod_balances = array();
         $running = $eop_balance;
         $ts = strtotime($period_end);
         $start_ts = strtotime($period_start);
         while ($ts >= $start_ts) {
             $date = date('Y-m-d', $ts);
-            $eod_balances[$date] = $running;
             if (isset($daily_net[$date])) {
                 $running -= $daily_net[$date];
             }
+            $sod_balances[$date] = $running;
             $ts = strtotime('-1 day', $ts);
         }
 
-        $count = count($eod_balances);
+        $interest_dates = $this->savings_interest_dates($period_start, $period_end);
+        $count = count($interest_dates);
         $sum = 0;
         $lowest = null;
-        foreach ($eod_balances as $bal) {
+        foreach ($interest_dates as $date) {
+            $bal = isset($sod_balances[$date]) ? $sod_balances[$date] : 0;
             $sum += $bal;
             if (is_null($lowest) || $bal < $lowest) {
                 $lowest = $bal;
@@ -4081,6 +4759,7 @@ $pin=current_user()->PIN;
             'adb' => ($count > 0) ? ($sum / $count) : 0,
             'lowest' => is_null($lowest) ? 0 : $lowest,
             'eop' => $eop_balance,
+            'interest_days' => $count,
         );
     }
 

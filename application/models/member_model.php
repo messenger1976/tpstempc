@@ -100,6 +100,35 @@ class Member_Model extends CI_Model {
 
         return $return;
     }
+
+    /**
+     * Void member registration fee GL by fee row id.
+     */
+    function void_member_registration_fee($fee_id, $reason = '') {
+        $pin = current_user()->PIN;
+        $fee_id = (int) $fee_id;
+        if (!$this->db->query("SHOW COLUMNS FROM member_registrationfee LIKE 'is_voided'")->row()) {
+            $this->db->query("ALTER TABLE member_registrationfee ADD COLUMN is_voided TINYINT(1) NOT NULL DEFAULT 0");
+        }
+        $fee = $this->db->where('id', $fee_id)->where('PIN', $pin)->get('member_registrationfee')->row();
+        if (!$fee) {
+            return array('success' => false, 'message' => 'Registration fee not found.');
+        }
+        if (!empty($fee->is_voided)) {
+            return array('success' => false, 'message' => 'Registration fee already voided.');
+        }
+        $this->load->model('finance_model');
+        $this->db->trans_start();
+        $gl = $this->finance_model->void_gl_lines_with_reversal('member_registrationfee', $fee_id, $reason !== '' ? $reason : 'Void registration fee');
+        if (empty($gl['success'])) {
+            $this->db->trans_complete();
+            return array('success' => false, 'message' => !empty($gl['message']) ? $gl['message'] : 'GL reverse failed.');
+        }
+        $this->db->where('id', $fee_id)->update('member_registrationfee', array('is_voided' => 1));
+        $this->db->trans_complete();
+        return array('success' => true, 'message' => 'Registration fee voided with reversing GL entry.');
+    }
+
     function add_none_member($data, $registrationfee = 0) {
         $pin = current_user()->PIN;
         $SMID = $this->db->get('auto_inc')->row()->PID;

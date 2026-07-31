@@ -377,12 +377,65 @@ class Share extends CI_Controller {
 
         $this->data['transactionlist'] = $this->share_model->search_transaction($key, $from, $upto, $config["per_page"], $page);
 
+        foreach ($this->data['transactionlist'] as $trans) {
+            $trans->is_voided = $this->share_model->is_share_transaction_voided($trans->receipt);
+            $trans->is_void_entry = $this->share_model->is_void_entry($trans);
+            $trans->voided_receipt = $this->share_model->get_voided_receipt($trans);
+            $trans->can_void = !$trans->is_void_entry
+                && !$trans->is_voided
+                && in_array($trans->trans_type, array('CR', 'DR'), true)
+                && !$this->share_model->has_later_share_transactions($trans);
+        }
 
         $this->data['content'] = 'share/transaction_history';
         $this->load->view('template', $this->data);
     }
-    
- 
+
+    /**
+     * Void a share buy/refund by creating a reversing entry and restoring balances.
+     */
+    function void_transaction($receipt = null) {
+        if (!$this->ion_auth->logged_in()) {
+            redirect('auth/login', 'refresh');
+        }
+
+        if (!has_role(4, 'Buy_shares') && !has_role(4, 'Refund_shares')) {
+            $this->session->set_flashdata('warning', lang('access_denied'));
+            redirect(current_lang() . '/share/share_transaction_search', 'refresh');
+            return;
+        }
+
+        if (!$receipt) {
+            $this->session->set_flashdata('warning', lang('share_void_not_found'));
+            redirect(current_lang() . '/share/share_transaction_search', 'refresh');
+            return;
+        }
+
+        $trans = $this->share_model->get_transaction($receipt);
+        if (!$trans) {
+            $this->session->set_flashdata('warning', lang('share_void_not_found'));
+            redirect(current_lang() . '/share/share_transaction_search', 'refresh');
+            return;
+        }
+
+        if ($this->share_model->is_share_transaction_voided($receipt)) {
+            $this->session->set_flashdata('warning', lang('share_void_already_done'));
+            redirect(current_lang() . '/share/receipt_view/' . $receipt, 'refresh');
+            return;
+        }
+
+        $reason = $this->input->post('void_reason') ? $this->input->post('void_reason') : 'Transaction voided by user';
+        $result = $this->share_model->void_share_transaction($receipt, $reason);
+
+        if (!empty($result['success'])) {
+            $this->session->set_flashdata('message', isset($result['message']) ? $result['message'] : lang('share_void_success'));
+            $redirect_receipt = !empty($result['void_receipt']) ? $result['void_receipt'] : $receipt;
+            redirect(current_lang() . '/share/receipt_view/' . $redirect_receipt, 'refresh');
+        } else {
+            $this->session->set_flashdata('warning', isset($result['message']) ? $result['message'] : lang('share_trans_fail'));
+            redirect(current_lang() . '/share/receipt_view/' . $receipt, 'refresh');
+        }
+    }
 
 }
 

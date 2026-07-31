@@ -72,7 +72,16 @@ $_GET['key'] = $jxy['key'];
                 <tr>
                     
                     <td><?php echo $index++; ?></td>
-                    <td><?php echo $value->receipt; ?></td>
+                    <td>
+                        <?php echo $value->receipt; ?>
+                        <?php if (!empty($value->is_void_entry)) { ?>
+                            <br/><span class="label label-warning" title="Reversing entry">
+                                <i class="fa fa-reply"></i> <?php echo lang('share_void_of'); ?> <?php echo htmlspecialchars($value->voided_receipt); ?>
+                            </span>
+                        <?php } elseif (!empty($value->is_voided)) { ?>
+                            <br/><span class="label label-danger"><?php echo lang('share_voided_label'); ?></span>
+                        <?php } ?>
+                    </td>
                     <td><?php echo $value->PID; ?></td>
                     <td><?php echo $value->member_id; ?></td>
                     <td><?php
@@ -85,7 +94,19 @@ $_GET['key'] = $jxy['key'];
                     <td><?php echo $value->createdon; ?></td>
                     
 
-                    <td><?php echo anchor(current_lang() . "/share/receipt_view/" . $value->receipt, ' <i class="fa fa-edit"></i> ' . lang('view_link')); ?></td>
+                    <td>
+                        <?php echo anchor(current_lang() . "/share/receipt_view/" . $value->receipt, ' <i class="fa fa-edit"></i> ' . lang('view_link')); ?>
+                        <?php if ((has_role(4, 'Buy_shares') || has_role(4, 'Refund_shares')) && empty($value->is_void_entry)) { ?>
+                            &nbsp;
+                            <?php if (!empty($value->is_voided)) { ?>
+                                <span class="label label-danger"><i class="fa fa-check-circle"></i> <?php echo lang('share_voided_label'); ?></span>
+                            <?php } elseif (!empty($value->can_void)) { ?>
+                                <a href="#" onclick="confirmShareVoid('<?php echo htmlspecialchars($value->receipt, ENT_QUOTES); ?>', '<?php echo site_url(current_lang() . '/share/void_transaction/' . $value->receipt); ?>'); return false;" title="<?php echo lang('share_void_transaction'); ?>">
+                                    <i class="fa fa-ban" style="color: red;"></i> <?php echo lang('void_link'); ?>
+                                </a>
+                            <?php } ?>
+                        <?php } ?>
+                    </td>
                 </tr>
             <?php } ?>
         </tbody>
@@ -124,4 +145,10 @@ $_GET['key'] = $jxy['key'];
         }
         initScripts();
     })();
+
+    function confirmShareVoid(receipt, url) {
+        if (confirm('<?php echo addslashes(lang('share_void_transaction_warning')); ?>')) {
+            window.location.href = url;
+        }
+    }
 </script>

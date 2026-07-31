@@ -404,6 +404,12 @@ $infoaccount = account_row_info($ledger['account']);
         $this->db->set('paid', $final_pay, FALSE);
         $this->db->update('general_ledger');
 
+        // Store GL header id on payment for accurate void later
+        if (!$this->db->query("SHOW COLUMNS FROM invoice_payment_transaction LIKE 'gl_entryid'")->row()) {
+            $this->db->query("ALTER TABLE invoice_payment_transaction ADD COLUMN gl_entryid INT NULL DEFAULT NULL");
+        }
+        $this->db->where('receipt', $receipt)->update('invoice_payment_transaction', array('gl_entryid' => $ledger_entry_id));
+
         $this->db->trans_complete();
 
         return $receipt;
@@ -412,6 +418,76 @@ $infoaccount = account_row_info($ledger['account']);
     function get_invoice_transaction($receipt) {
         $this->db->where('receipt', $receipt);
         return $this->db->get('invoice_payment_transaction')->row();
+    }
+
+    /**
+     * Void a customer invoice payment with reversing GL and restore invoice balances.
+     */
+    function void_customer_payment($receipt, $reason = '') {
+        $pin = current_user()->PIN;
+        $receipt = trim((string) $receipt);
+        $reason = trim((string) $reason);
+        if (!$this->db->query("SHOW COLUMNS FROM invoice_payment_transaction LIKE 'is_voided'")->row()) {
+            $this->db->query("ALTER TABLE invoice_payment_transaction ADD COLUMN is_voided TINYINT(1) NOT NULL DEFAULT 0");
+        }
+        if (!$this->db->query("SHOW COLUMNS FROM invoice_payment_transaction LIKE 'gl_entryid'")->row()) {
+            $this->db->query("ALTER TABLE invoice_payment_transaction ADD COLUMN gl_entryid INT NULL DEFAULT NULL");
+        }
+        $pay = $this->db->where('receipt', $receipt)->where('PIN', $pin)->get('invoice_payment_transaction')->row();
+        if (!$pay) {
+            return array('success' => false, 'message' => 'Payment not found.');
+        }
+        if (!empty($pay->is_voided)) {
+            return array('success' => false, 'message' => 'Payment already voided.');
+        }
+
+        $this->load->model('finance_model');
+        $this->db->trans_start();
+        $filters = array('description' => 'Receive Payment');
+        if (!empty($pay->gl_entryid)) {
+            $filters['entryid'] = $pay->gl_entryid;
+        }
+        $gl = $this->finance_model->void_gl_lines_with_reversal('sales_invoice', $pay->invoiceid, $reason !== '' ? $reason : ('Void payment ' . $receipt), $filters);
+        if (empty($gl['success'])) {
+            $this->db->trans_complete();
+            return array('success' => false, 'message' => !empty($gl['message']) ? $gl['message'] : 'GL reverse failed. Older payments without gl_entryid may need manual reverse.');
+        }
+
+        $amount = floatval($pay->amount);
+        $invoiceid = $pay->invoiceid;
+        $this->db->where('id', $invoiceid)->set('balance', "balance+{$amount}", FALSE)->update('sales_invoice');
+        $inv = $this->db->where('id', $invoiceid)->get('sales_invoice')->row();
+        if ($inv) {
+            $left = $amount;
+            $items = $this->db->where('invoiceid', $invoiceid)->order_by('id', 'ASC')->get('sales_invoice_item')->result();
+            foreach ($items as $item) {
+                if ($left <= 0) {
+                    break;
+                }
+                $add = $left;
+                $this->db->where('id', $item->id)->set('balance', "balance+{$add}", FALSE)->update('sales_invoice_item');
+                $left -= $add;
+                break; // apply restoration to first line then stop (simple restore)
+            }
+            $bal = floatval($inv->balance);
+            $status = ($bal <= 0) ? 1 : 2;
+            // If balance restored to roughly previous_balance of this payment, treat as unpaid when no other payments
+            $other = $this->db->query(
+                "SELECT COUNT(*) AS cnt FROM invoice_payment_transaction WHERE invoiceid = ? AND receipt <> ? AND PIN = ? AND (is_voided IS NULL OR is_voided = 0)",
+                array($invoiceid, $receipt, $pin)
+            )->row();
+            if ($other && intval($other->cnt) === 0) {
+                $status = 0;
+            }
+            $this->db->where('id', $invoiceid)->update('sales_invoice', array('status' => $status));
+            $this->db->where('invoiceid', $invoiceid)->set('paid', $status, FALSE)->update('general_ledger');
+        }
+        $this->db->where('receipt', $receipt)->update('invoice_payment_transaction', array('is_voided' => 1));
+        $this->db->trans_complete();
+        if ($this->db->trans_status() === FALSE) {
+            return array('success' => false, 'message' => 'Void failed.');
+        }
+        return array('success' => true, 'message' => 'Customer payment voided with reversing GL entry.');
     }
 
 }

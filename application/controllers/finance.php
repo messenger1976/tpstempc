@@ -462,6 +462,9 @@ class Finance extends CI_Controller {
         $this->data['customerlist'] = $this->customer_model->customer_info()->result();
         $this->data['supplierlist'] = $this->supplier_model->supplier_info()->result();
         $this->data['loanlist'] = $this->loan_model->loan_repay_list();
+        $this->data['cbulist'] = $this->finance_model->cbu_member_list();
+        $cbu_global = $this->setting_model->global_contribution_info();
+        $this->data['cbu_account'] = isset($cbu_global->capital_build_up_account) ? $cbu_global->capital_build_up_account : '';
         $this->data['next_reference_no'] = $this->finance_model->get_next_journal_voucher_no(date('Y'));
         
         // Get count of unposted entries for display
@@ -617,6 +620,9 @@ class Finance extends CI_Controller {
         $this->data['customerlist'] = $this->customer_model->customer_info()->result();
         $this->data['supplierlist'] = $this->supplier_model->supplier_info()->result();
         $this->data['loanlist'] = $this->loan_model->loan_repay_list();
+        $this->data['cbulist'] = $this->finance_model->cbu_member_list();
+        $cbu_global = $this->setting_model->global_contribution_info();
+        $this->data['cbu_account'] = isset($cbu_global->capital_build_up_account) ? $cbu_global->capital_build_up_account : '';
         $this->data['content'] = 'finance/journal_entry_edit';
         $this->load->view('template', $this->data);
     }
@@ -1005,12 +1011,14 @@ class Finance extends CI_Controller {
     }
 
     /**
-     * Void GL posting for a manual journal entry (general_journal). Journal entry stays active; can repost later.
+     * Void a posted manual journal entry by creating and posting a reversing JE (keeps original GL).
+     * CBU-linked lines are reversed on the CBU sub-ledger via the reversing post.
      */
     function void_gl_posting_general($id) {
+        $encoded = $id;
         $id = decode_id($id);
         if (!has_role(6, 'Review_journal_entry')) {
-            $this->session->set_flashdata('warning', 'You do not have permission to void GL postings.');
+            $this->session->set_flashdata('warning', 'You do not have permission to void journal entries.');
             redirect(current_lang() . '/finance/journal_entry_review', 'refresh');
             return;
         }
@@ -1019,18 +1027,31 @@ class Finance extends CI_Controller {
             redirect(current_lang() . '/finance/journal_entry_view/' . encode_id($id), 'refresh');
             return;
         }
-        $this->finance_model->void_journal_posting_to_gl($id, 'general_journal');
-        $this->session->set_flashdata('message', 'GL posting has been voided. You can repost this journal entry to the General Ledger when ready.');
-        redirect(current_lang() . '/finance/journal_entry_view/' . encode_id($id), 'refresh');
+        $reason = trim((string) $this->input->post('void_reason'));
+        if ($reason === '') {
+            $reason = trim((string) $this->input->get('void_reason'));
+        }
+        $result = $this->finance_model->void_manual_journal_with_reversal($id, $reason);
+        if (!empty($result['success'])) {
+            $msg = $result['message'];
+            if (!empty($result['reverse_id'])) {
+                $msg .= ' <a href="' . site_url(current_lang() . '/finance/journal_entry_view/' . encode_id($result['reverse_id'])) . '">View reversing entry</a>';
+            }
+            $this->session->set_flashdata('message', $msg);
+            redirect(current_lang() . '/finance/journal_entry_view/' . encode_id($id), 'refresh');
+            return;
+        }
+        $this->session->set_flashdata('warning', !empty($result['message']) ? $result['message'] : 'Void failed.');
+        redirect(current_lang() . '/finance/journal_entry_view/' . $encoded, 'refresh');
     }
 
     /**
-     * Void GL posting for a journal entry (cash receipt / cash disbursement). Journal stays active; can repost later.
+     * Void a posted cash receipt/disbursement journal_entry by creating and posting a reversing JE.
      */
     function void_gl_posting_journal_entry($id) {
         $id = decode_id($id);
         if (!has_role(6, 'Review_journal_entry')) {
-            $this->session->set_flashdata('warning', 'You do not have permission to void GL postings.');
+            $this->session->set_flashdata('warning', 'You do not have permission to void journal entries.');
             redirect(current_lang() . '/finance/journal_entry_review', 'refresh');
             return;
         }
@@ -1039,8 +1060,16 @@ class Finance extends CI_Controller {
             redirect(current_lang() . '/finance/journal_entry_review', 'refresh');
             return;
         }
-        $this->finance_model->void_journal_posting_to_gl($id, 'journal_entry');
-        $this->session->set_flashdata('message', 'GL posting has been voided. You can repost this entry to the General Ledger from Journal Entry Review when ready.');
+        $reason = trim((string) $this->input->post('void_reason'));
+        if ($reason === '') {
+            $reason = trim((string) $this->input->get('void_reason'));
+        }
+        $result = $this->finance_model->void_cash_journal_entry_with_reversal($id, $reason);
+        if (!empty($result['success'])) {
+            $this->session->set_flashdata('message', $result['message']);
+        } else {
+            $this->session->set_flashdata('warning', !empty($result['message']) ? $result['message'] : 'Void failed.');
+        }
         redirect(current_lang() . '/finance/journal_entry_review', 'refresh');
     }
 
@@ -1093,11 +1122,15 @@ class Finance extends CI_Controller {
                 $skip_count++;
                 continue;
             }
-            $this->finance_model->void_journal_posting_to_gl($id, $from_table);
-            $success_count++;
+            $result = $this->finance_model->void_with_reversal($source === 'general_journal' ? 'general_journal' : 'journal_entry', $id, 'Batch void');
+            if (!empty($result['success'])) {
+                $success_count++;
+            } else {
+                $skip_count++;
+            }
         }
         if ($success_count > 0) {
-            $this->session->set_flashdata('message', $success_count . ' GL posting(s) voided. You can repost from Journal Entry Review when ready.');
+            $this->session->set_flashdata('message', $success_count . ' entry/entries voided with reversing journals posted to GL.');
         }
         if ($skip_count > 0) {
             $this->session->set_flashdata('warning', $skip_count . ' selected entry/entries were not posted to GL and were skipped.');
@@ -1525,6 +1558,26 @@ class Finance extends CI_Controller {
             $this->session->set_flashdata('warning', lang('beginning_balance_post_fail'));
         }
         
+        redirect(current_lang() . '/finance/beginning_balance_list?fiscal_year_id=' . $balance->fiscal_year_id, 'refresh');
+    }
+
+    /**
+     * Void a posted chart beginning balance with reversing GL entry.
+     */
+    function beginning_balance_void($id) {
+        $id = decode_id($id);
+        $balance = $this->finance_model->beginning_balance_list(null, $id)->row();
+        if (!$balance) {
+            $this->session->set_flashdata('warning', lang('beginning_balance_not_found'));
+            redirect(current_lang() . '/finance/beginning_balance_list', 'refresh');
+            return;
+        }
+        $result = $this->finance_model->void_beginning_balance($id, 'Void from beginning balance list');
+        if (!empty($result['success'])) {
+            $this->session->set_flashdata('message', $result['message']);
+        } else {
+            $this->session->set_flashdata('warning', !empty($result['message']) ? $result['message'] : 'Void failed');
+        }
         redirect(current_lang() . '/finance/beginning_balance_list?fiscal_year_id=' . $balance->fiscal_year_id, 'refresh');
     }
 

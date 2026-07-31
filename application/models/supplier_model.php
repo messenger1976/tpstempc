@@ -419,9 +419,75 @@ $infoaccount = account_row_info($ledger['account']);
         $this->db->set('paid', $final_pay, FALSE);
         $this->db->update('general_ledger');
 
+        if (!$this->db->query("SHOW COLUMNS FROM invoice_payment_purchase_transaction LIKE 'gl_entryid'")->row()) {
+            $this->db->query("ALTER TABLE invoice_payment_purchase_transaction ADD COLUMN gl_entryid INT NULL DEFAULT NULL");
+        }
+        $this->db->where('receipt', $receipt)->update('invoice_payment_purchase_transaction', array('gl_entryid' => $ledger_entry_id));
+
         $this->db->trans_complete();
 
         return $receipt;
+    }
+
+    /**
+     * Void a supplier invoice payment with reversing GL and restore invoice balances.
+     */
+    function void_supplier_payment($receipt, $reason = '') {
+        $pin = current_user()->PIN;
+        $receipt = trim((string) $receipt);
+        $reason = trim((string) $reason);
+        if (!$this->db->query("SHOW COLUMNS FROM invoice_payment_purchase_transaction LIKE 'is_voided'")->row()) {
+            $this->db->query("ALTER TABLE invoice_payment_purchase_transaction ADD COLUMN is_voided TINYINT(1) NOT NULL DEFAULT 0");
+        }
+        if (!$this->db->query("SHOW COLUMNS FROM invoice_payment_purchase_transaction LIKE 'gl_entryid'")->row()) {
+            $this->db->query("ALTER TABLE invoice_payment_purchase_transaction ADD COLUMN gl_entryid INT NULL DEFAULT NULL");
+        }
+        $pay = $this->db->where('receipt', $receipt)->where('PIN', $pin)->get('invoice_payment_purchase_transaction')->row();
+        if (!$pay) {
+            return array('success' => false, 'message' => 'Payment not found.');
+        }
+        if (!empty($pay->is_voided)) {
+            return array('success' => false, 'message' => 'Payment already voided.');
+        }
+
+        $this->load->model('finance_model');
+        $this->db->trans_start();
+        $filters = array('description' => 'Purchase Invoice Payment');
+        if (!empty($pay->gl_entryid)) {
+            $filters['entryid'] = $pay->gl_entryid;
+        }
+        $gl = $this->finance_model->void_gl_lines_with_reversal('purchase_invoice', $pay->invoiceid, $reason !== '' ? $reason : ('Void payment ' . $receipt), $filters);
+        if (empty($gl['success'])) {
+            $this->db->trans_complete();
+            return array('success' => false, 'message' => !empty($gl['message']) ? $gl['message'] : 'GL reverse failed.');
+        }
+
+        $amount = floatval($pay->amount);
+        $invoiceid = $pay->invoiceid;
+        $this->db->where('id', $invoiceid)->set('balance', "balance+{$amount}", FALSE)->update('purchase_invoice');
+        $inv = $this->db->where('id', $invoiceid)->get('purchase_invoice')->row();
+        if ($inv) {
+            $item = $this->db->where('invoiceid', $invoiceid)->order_by('id', 'ASC')->get('purchase_invoice_item')->row();
+            if ($item) {
+                $this->db->where('id', $item->id)->set('balance', "balance+{$amount}", FALSE)->update('purchase_invoice_item');
+            }
+            $other = $this->db->query(
+                "SELECT COUNT(*) AS cnt FROM invoice_payment_purchase_transaction WHERE invoiceid = ? AND receipt <> ? AND PIN = ? AND (is_voided IS NULL OR is_voided = 0)",
+                array($invoiceid, $receipt, $pin)
+            )->row();
+            $status = ($other && intval($other->cnt) === 0) ? 0 : 2;
+            if (floatval($inv->balance) <= 0) {
+                $status = 1;
+            }
+            $this->db->where('id', $invoiceid)->update('purchase_invoice', array('status' => $status));
+            $this->db->where('invoiceid', $invoiceid)->set('paid', $status, FALSE)->update('general_ledger');
+        }
+        $this->db->where('receipt', $receipt)->update('invoice_payment_purchase_transaction', array('is_voided' => 1));
+        $this->db->trans_complete();
+        if ($this->db->trans_status() === FALSE) {
+            return array('success' => false, 'message' => 'Void failed.');
+        }
+        return array('success' => true, 'message' => 'Supplier payment voided with reversing GL entry.');
     }
 
 }

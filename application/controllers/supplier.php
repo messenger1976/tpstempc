@@ -600,6 +600,19 @@ class Supplier extends CI_Controller {
         $this->load->view('template', $this->data);
 
     }
+
+    /**
+     * Void a supplier invoice payment with reversing GL.
+     */
+    function void_invoice_payment($receipt) {
+        $result = $this->supplier_model->void_supplier_payment($receipt, 'Void supplier payment');
+        if (!empty($result['success'])) {
+            $this->session->set_flashdata('message', $result['message']);
+        } else {
+            $this->session->set_flashdata('warning', !empty($result['message']) ? $result['message'] : 'Void failed');
+        }
+        redirect(current_lang() . '/supplier/spendmoney_purchase_invoice', 'refresh');
+    }
     
     
     

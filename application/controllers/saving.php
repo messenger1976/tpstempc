@@ -2028,6 +2028,48 @@ class Saving extends CI_Controller {
         if (!in_array($posting_frequency, array('MONTHLY', 'QUARTERLY'))) {
             $posting_frequency = '';
         }
+
+        // Persist period/filters in session so they survive page reload / navigation
+        if ($this->input->post('period_month') !== false || $this->input->post('period_quarter') !== false || $account_type !== '' || $posting_frequency !== '') {
+            $session_data = array();
+            if ($account_type !== '') {
+                $session_data['interest_posting_account_type'] = $account_type;
+            }
+            if ($posting_frequency !== '') {
+                $session_data['interest_posting_frequency'] = $posting_frequency;
+            }
+            $pm = trim((string) $this->input->post('period_month'));
+            if ($pm !== '' && preg_match('/^\d{4}-\d{2}$/', $pm)) {
+                $session_data['interest_posting_period_month'] = $pm;
+            }
+            $pq = trim((string) $this->input->post('period_quarter'));
+            if ($pq !== '' && in_array((int) $pq, array(1, 2, 3, 4), true)) {
+                $session_data['interest_posting_period_quarter'] = (int) $pq;
+            }
+            $py = trim((string) $this->input->post('period_year'));
+            if ($py !== '' && preg_match('/^\d{4}$/', $py)) {
+                $session_data['interest_posting_period_year'] = (int) $py;
+            }
+            if (!empty($session_data)) {
+                $this->session->set_userdata($session_data);
+            }
+        }
+
+        $this->data['saved_account_type'] = $this->session->userdata('interest_posting_account_type');
+        $this->data['saved_posting_frequency'] = $this->session->userdata('interest_posting_frequency');
+        $this->data['saved_period_month'] = $this->session->userdata('interest_posting_period_month');
+        $this->data['saved_period_quarter'] = $this->session->userdata('interest_posting_period_quarter');
+        $this->data['saved_period_year'] = $this->session->userdata('interest_posting_period_year');
+
+        if ($account_type === '' && !empty($this->data['saved_account_type'])) {
+            $account_type = $this->data['saved_account_type'];
+        }
+        if ($posting_frequency === '' && !empty($this->data['saved_posting_frequency'])) {
+            $posting_frequency = strtoupper($this->data['saved_posting_frequency']);
+            if (!in_array($posting_frequency, array('MONTHLY', 'QUARTERLY'))) {
+                $posting_frequency = '';
+            }
+        }
         $this->data['posting_frequency'] = $posting_frequency;
 
         if (($action == 'preview' || $action == 'post' || $action == 'export') && $account_type != '') {
@@ -2123,7 +2165,7 @@ class Saving extends CI_Controller {
         }
 
         $sheet->setCellValue('A1', lang('interest_preview_title'));
-        $sheet->mergeCells('A1:J1');
+        $sheet->mergeCells('A1:K1');
         $sheet->getStyle('A1')->getFont()->setBold(true)->setSize(14);
 
         $sheet->setCellValue('A2', lang('interest_account_type') . ': ' . $type->name);
@@ -2134,21 +2176,22 @@ class Saving extends CI_Controller {
             'A6' => lang('sno'),
             'B6' => lang('account_no'),
             'C6' => lang('member_id'),
-            'D6' => lang('customer_name'),
-            'E6' => lang('interest_frequency'),
-            'F6' => lang('interest_base_balance'),
-            'G6' => lang('account_interest_rate') . ' (%)',
-            'H6' => lang('interest_days'),
-            'I6' => lang('interest_amount'),
-            'J6' => lang('interest_status'),
+            'D6' => lang('member_old_account_no'),
+            'E6' => lang('customer_name'),
+            'F6' => lang('interest_frequency'),
+            'G6' => lang('interest_base_balance'),
+            'H6' => lang('account_interest_rate') . ' (%)',
+            'I6' => lang('interest_days'),
+            'J6' => lang('interest_amount'),
+            'K6' => lang('interest_status'),
         );
         foreach ($headers as $cell => $label) {
             $sheet->setCellValue($cell, $label);
         }
-        $sheet->getStyle('A6:J6')->getFont()->setBold(true);
-        $sheet->getStyle('A6:J6')->getFill()->setFillType(PHPExcel_Style_Fill::FILL_SOLID);
-        $sheet->getStyle('A6:J6')->getFill()->getStartColor()->setARGB('FFCCCCCC');
-        $sheet->getStyle('A6:J6')->applyFromArray(array(
+        $sheet->getStyle('A6:K6')->getFont()->setBold(true);
+        $sheet->getStyle('A6:K6')->getFill()->setFillType(PHPExcel_Style_Fill::FILL_SOLID);
+        $sheet->getStyle('A6:K6')->getFill()->getStartColor()->setARGB('FFCCCCCC');
+        $sheet->getStyle('A6:K6')->applyFromArray(array(
             'borders' => array(
                 'allborders' => array(
                     'style' => PHPExcel_Style_Border::BORDER_THIN
@@ -2159,13 +2202,14 @@ class Saving extends CI_Controller {
         $sheet->getColumnDimension('A')->setWidth(8);
         $sheet->getColumnDimension('B')->setWidth(14);
         $sheet->getColumnDimension('C')->setWidth(16);
-        $sheet->getColumnDimension('D')->setWidth(30);
-        $sheet->getColumnDimension('E')->setWidth(14);
-        $sheet->getColumnDimension('F')->setWidth(16);
-        $sheet->getColumnDimension('G')->setWidth(14);
-        $sheet->getColumnDimension('H')->setWidth(10);
-        $sheet->getColumnDimension('I')->setWidth(16);
-        $sheet->getColumnDimension('J')->setWidth(22);
+        $sheet->getColumnDimension('D')->setWidth(18);
+        $sheet->getColumnDimension('E')->setWidth(30);
+        $sheet->getColumnDimension('F')->setWidth(14);
+        $sheet->getColumnDimension('G')->setWidth(16);
+        $sheet->getColumnDimension('H')->setWidth(14);
+        $sheet->getColumnDimension('I')->setWidth(10);
+        $sheet->getColumnDimension('J')->setWidth(16);
+        $sheet->getColumnDimension('K')->setWidth(22);
 
         $row = 7;
         $i = 1;
@@ -2196,19 +2240,20 @@ class Saving extends CI_Controller {
             $sheet->setCellValue('A' . $row, $i++);
             $sheet->setCellValue('B' . $row, $item['account']);
             $sheet->setCellValue('C' . $row, $item['member_id']);
-            $sheet->setCellValue('D' . $row, $item['holder_name']);
-            $sheet->setCellValue('E' . $row, $freq_text);
-            $sheet->setCellValue('F' . $row, number_format((float) $item['base_balance'], 2, '.', ''));
-            $sheet->setCellValue('G' . $row, number_format((float) $item['annual_rate'], 2, '.', ''));
-            $sheet->setCellValue('H' . $row, (int) $item['days']);
-            $sheet->setCellValue('I' . $row, number_format((float) $item['interest'], 2, '.', ''));
-            $sheet->setCellValue('J' . $row, $status);
+            $sheet->setCellValue('D' . $row, !empty($item['savings_account_no']) ? $item['savings_account_no'] : '-');
+            $sheet->setCellValue('E' . $row, $item['holder_name']);
+            $sheet->setCellValue('F' . $row, $freq_text);
+            $sheet->setCellValue('G' . $row, number_format((float) $item['base_balance'], 2, '.', ''));
+            $sheet->setCellValue('H' . $row, number_format((float) $item['annual_rate'], 2, '.', ''));
+            $sheet->setCellValue('I' . $row, (int) $item['days']);
+            $sheet->setCellValue('J' . $row, number_format((float) $item['interest'], 2, '.', ''));
+            $sheet->setCellValue('K' . $row, $status);
 
-            $sheet->getStyle('F' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_RIGHT);
             $sheet->getStyle('G' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_RIGHT);
             $sheet->getStyle('H' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_RIGHT);
             $sheet->getStyle('I' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_RIGHT);
-            $sheet->getStyle('A' . $row . ':J' . $row)->applyFromArray(array(
+            $sheet->getStyle('J' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_RIGHT);
+            $sheet->getStyle('A' . $row . ':K' . $row)->applyFromArray(array(
                 'borders' => array(
                     'allborders' => array(
                         'style' => PHPExcel_Style_Border::BORDER_THIN
@@ -2218,9 +2263,9 @@ class Saving extends CI_Controller {
             $row++;
         }
 
-        $sheet->setCellValue('H' . $row, lang('interest_total_eligible') . ' (' . $eligible_count . ')');
-        $sheet->setCellValue('I' . $row, number_format($eligible_total, 2, '.', ''));
-        $sheet->getStyle('H' . $row . ':I' . $row)->getFont()->setBold(true);
+        $sheet->setCellValue('I' . $row, lang('interest_total_eligible') . ' (' . $eligible_count . ')');
+        $sheet->setCellValue('J' . $row, number_format($eligible_total, 2, '.', ''));
+        $sheet->getStyle('I' . $row . ':J' . $row)->getFont()->setBold(true);
 
         $filename = 'Interest_Preview_' . preg_replace('/[^A-Za-z0-9_\-]/', '_', $period['label']) . '_' . date('Y-m-d_His') . '.xls';
 
@@ -2251,6 +2296,9 @@ class Saving extends CI_Controller {
 
         if ($frequency == 'MONTHLY') {
             $month = trim((string) $this->input->post('period_month'));
+            if ($month === '') {
+                $month = trim((string) $this->session->userdata('interest_posting_period_month'));
+            }
             if (!preg_match('/^\d{4}-(0[1-9]|1[0-2])$/', $month)) {
                 return FALSE;
             }
@@ -2261,6 +2309,12 @@ class Saving extends CI_Controller {
         } else if ($frequency == 'QUARTERLY') {
             $year = (int) $this->input->post('period_year');
             $quarter = (int) $this->input->post('period_quarter');
+            if (!$year) {
+                $year = (int) $this->session->userdata('interest_posting_period_year');
+            }
+            if (!$quarter) {
+                $quarter = (int) $this->session->userdata('interest_posting_period_quarter');
+            }
             if ($year < 2000 || $year > 2100 || $quarter < 1 || $quarter > 4) {
                 return FALSE;
             }

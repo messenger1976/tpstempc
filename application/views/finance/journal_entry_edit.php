@@ -1,4 +1,4 @@
-<link href="<?php echo base_url(); ?>media/css/plugins/datapicker/datepicker3.css" rel="stylesheet">
+<link href="<?php echo base_url(); ?>media/css/plugins/datapicker/datepicker3.css?v=20260801" rel="stylesheet">
 <?php
 if (!function_exists('journal_edit_link_entity')) {
     function journal_edit_link_entity($item) {

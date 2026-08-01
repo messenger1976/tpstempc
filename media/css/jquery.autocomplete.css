@@ -2,7 +2,10 @@
 	padding: 0px;
 	border: 1px solid #7FB7FB;
 	overflow: hidden;
-  background-color: #AFD2FD;
+	background-color: #AFD2FD;
+	/* Above Bootstrap .input-group .form-control (z-index: 2) and date fields */
+	position: absolute;
+	z-index: 10050;
 }
 
 .ac_results ul {

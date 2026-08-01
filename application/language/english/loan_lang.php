@@ -180,3 +180,14 @@ $lang['loan_beginning_balance_select_fiscal_year'] = 'Please select a fiscal yea
 $lang['loan_beginning_balance_member_not_found'] = 'Member not found';
 $lang['loan_beginning_balance_product_not_found'] = 'Loan product not found';
 $lang['export_to_excel'] = 'Export to Excel';
+
+$lang['loan_schedule_none_yet'] = 'No repayment schedule has been created for this loan yet.';
+$lang['loan_schedule_none_yet_note'] = 'The schedule is normally created when the loan is disbursed. For loans migrated into the system, generate it below using the date the first installment falls due.';
+$lang['loan_schedule_start_date'] = 'First Installment Due Date';
+$lang['loan_schedule_generate'] = 'Generate Schedule';
+$lang['loan_schedule_generated'] = 'Repayment schedule generated with %d installment(s).';
+$lang['loan_schedule_exists'] = 'This loan already has a repayment schedule.';
+$lang['loan_schedule_not_released'] = 'A repayment schedule can only be generated for a released loan.';
+$lang['loan_schedule_invalid_date'] = 'Please provide a valid first installment due date.';
+$lang['loan_schedule_incomplete_terms'] = 'This loan has no installment count or installment amount, so a schedule cannot be generated.';
+$lang['loan_schedule_generate_failed'] = 'Could not generate the repayment schedule. Please try again.';

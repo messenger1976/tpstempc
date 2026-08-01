@@ -1720,10 +1720,95 @@ $pin = current_user()->PIN;
             return;
         }
         $this->db->order_by('installment_number', 'ASC');
-        $data['schedule'] = $this->db->get_where('loan_contract_repayment_schedule', array('LID' => $LID))->result();
+        $data['schedule'] = $this->db->get_where('loan_contract_repayment_schedule', array('LID' => $LID, 'PIN' => $loaninfo->PIN))->result();
         $data['loaninfo'] = $loaninfo;
         $data['loanid'] = $loanid;
+        $data['can_generate'] = in_array((string) $loaninfo->status, array('4', '5'), TRUE);
         $this->load->view('loan/loan_repayment_schedule_popup', $data);
+    }
+
+    /**
+     * Build the repayment schedule for a released loan that has none, e.g. loans
+     * migrated in without going through the disbursement flow that creates it.
+     * Only the schedule is created; no disbursement or ledger entry is posted.
+     */
+    function generate_repayment_schedule($loanid) {
+        $pin = current_user()->PIN;
+        $LID = decode_id($loanid);
+        $redirect = current_lang() . '/loan/view_repayment_schedule_popup/' . $loanid;
+
+        $loaninfo = $this->loan_model->loan_info($LID)->row();
+        if (!$loaninfo) {
+            show_404();
+            return;
+        }
+        if (strtoupper((string) $this->input->server('REQUEST_METHOD')) !== 'POST') {
+            redirect($redirect);
+            return;
+        }
+        if (!in_array((string) $loaninfo->status, array('4', '5'), TRUE)) {
+            $this->session->set_flashdata('warning', lang('loan_schedule_not_released'));
+            redirect($redirect);
+            return;
+        }
+
+        $existing = $this->db->query(
+            'SELECT COUNT(*) AS cnt FROM loan_contract_repayment_schedule WHERE LID = ? AND PIN = ?',
+            array($LID, $pin)
+        )->row();
+        if ($existing && (int) $existing->cnt > 0) {
+            $this->session->set_flashdata('warning', lang('loan_schedule_exists'));
+            redirect($redirect);
+            return;
+        }
+
+        $startdate = format_date(trim((string) $this->input->post('startdate')));
+        if ($startdate === '') {
+            $startdate = $loaninfo->applicationdate;
+        }
+        if (!preg_match('/^[0-9]{4}-[0-9]{1,2}-[0-9]{1,2}$/', $startdate) || strtotime($startdate) === FALSE) {
+            $this->session->set_flashdata('warning', lang('loan_schedule_invalid_date'));
+            redirect($redirect);
+            return;
+        }
+
+        if ((int) $loaninfo->number_istallment < 1 || (float) $loaninfo->installment_amount <= 0) {
+            $this->session->set_flashdata('warning', lang('loan_schedule_incomplete_terms'));
+            redirect($redirect);
+            return;
+        }
+
+        $product = $this->setting_model->loanproduct($loaninfo->product_type)->row();
+        $interest_method = ($product && ((int) $product->interest_method === 1 || (int) $product->interest_method === 2)) ? (int) $product->interest_method : 1;
+        $interval = ($product && !empty($product->interval)) ? (int) $product->interval : (int) $loaninfo->interval;
+        if ($interval !== 1 && $interval !== 2) {
+            $interval = 1;
+        }
+
+        $schedule = $this->loanbase->create_repayment_schedule(
+            $loaninfo->installment_amount, $loaninfo->rate, $loaninfo->number_istallment,
+            $startdate, $loaninfo->basic_amount, $LID, $interest_method, $interval
+        );
+        if (empty($schedule)) {
+            $this->session->set_flashdata('warning', lang('loan_schedule_generate_failed'));
+            redirect($redirect);
+            return;
+        }
+        foreach ($schedule as $key => $row) {
+            $schedule[$key]['status'] = 0;
+            $schedule[$key]['sms_sent'] = 0;
+        }
+
+        $this->db->trans_start();
+        $this->db->insert_batch('loan_contract_repayment_schedule', $schedule);
+        $this->db->trans_complete();
+
+        if ($this->db->trans_status() === FALSE) {
+            $this->session->set_flashdata('warning', lang('loan_schedule_generate_failed'));
+        } else {
+            $this->session->set_flashdata('message', sprintf(lang('loan_schedule_generated'), count($schedule)));
+        }
+        redirect($redirect);
     }
 
     /**

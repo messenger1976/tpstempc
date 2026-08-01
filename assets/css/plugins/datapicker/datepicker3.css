@@ -787,3 +787,53 @@ fieldset[disabled] .datepicker table tr td span.active.disabled:hover.active {
 .datepicker.dropdown-menu td {
   padding: 4px 5px;
 }
+
+/* Eonasdan bootstrap-datetimepicker widget (used by media/js/.../bootstrap-datepicker.js) */
+.bootstrap-datetimepicker-widget {
+  z-index: 9999 !important;
+  width: auto !important;
+  min-width: 280px;
+  max-width: 320px;
+  padding: 4px;
+  background-color: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  border-radius: 4px;
+  -webkit-box-shadow: 0 6px 12px rgba(0, 0, 0, 0.175);
+  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.175);
+}
+.bootstrap-datetimepicker-widget.dropdown-menu {
+  display: block;
+  margin: 2px 0;
+  list-style: none;
+}
+.bootstrap-datetimepicker-widget .datepicker {
+  width: 100%;
+}
+.bootstrap-datetimepicker-widget .datepicker table {
+  width: 100%;
+  margin: 0;
+}
+/* Day cells stay compact; month/year container cells must expand so floated spans lay out */
+.bootstrap-datetimepicker-widget .datepicker-months table tr td,
+.bootstrap-datetimepicker-widget .datepicker-years table tr td,
+.datepicker-months table tr td,
+.datepicker-years table tr td {
+  width: auto !important;
+  height: auto !important;
+  overflow: hidden;
+}
+/* Month / year labels: 4-column float grid (fixes JanFebMarApr jammed layout) */
+.bootstrap-datetimepicker-widget .datepicker table tr td span,
+.datepicker table tr td span.month,
+.datepicker table tr td span.year {
+  display: block !important;
+  float: left !important;
+  width: 23% !important;
+  height: 54px !important;
+  line-height: 54px !important;
+  margin: 1% !important;
+  text-align: center;
+  cursor: pointer;
+  border-radius: 4px;
+  box-sizing: border-box;
+}

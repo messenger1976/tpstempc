@@ -1,4 +1,10 @@
-<link href="<?php echo base_url(); ?>media/css/jquery.autocomplete.css" rel="stylesheet">
+<link href="<?php echo base_url(); ?>media/css/jquery.autocomplete.css?v=20260801" rel="stylesheet">
+<link href="<?php echo base_url(); ?>media/css/plugins/datapicker/datepicker3.css?v=20260801" rel="stylesheet">
+<style type="text/css">
+/* Member ID / PID suggestions must sit above Transaction Date input-group */
+.ac_results { z-index: 10050 !important; }
+#datetimepicker { position: relative; z-index: 1; }
+</style>
 <?php echo form_open_multipart(current_lang() . "/contribution/contribution_payment", 'class="form-horizontal"'); ?>
 
 <?php
@@ -42,6 +48,18 @@ if (isset($message) && !empty($message)) {
         <div style="color: brown;margin: 20px; font-weight: bold; font-size: 13px; border-bottom: 1px solid #ccc;">
             <?php echo lang('contribution_payment'); ?>
         </div>     
+
+        <div class="form-group"><label class="col-lg-4 control-label"><?php echo lang('transaction_date'); ?>  : <span class="required">*</span></label>
+            <div class="col-lg-7">
+                <div class="input-group date" id="datetimepicker">
+                    <input type="text" name="trans_date" placeholder="<?php echo lang('hint_date'); ?>" value="<?php echo set_value('trans_date', date('d-m-Y')); ?>" data-date-format="DD-MM-YYYY" class="form-control"/>
+                    <span class="input-group-addon">
+                        <span class="fa fa-calendar"></span>
+                    </span>
+                </div>
+                <?php echo form_error('trans_date'); ?>
+            </div>
+        </div>
 
  <div class="form-group"><label class="col-lg-4 control-label"><?php echo lang('transaction_type'); ?>  : <span class="required">*</span></label>
             <div class="col-lg-7">
@@ -110,6 +128,7 @@ if (isset($message) && !empty($message)) {
 </div>
 <?php echo form_close(); ?>
 
+<script src="<?php echo base_url(); ?>media/js/script/moment.js"></script>
 <script type="text/javascript">
     (function() {
         function initScripts() {
@@ -132,6 +151,20 @@ if (isset($message) && !empty($message)) {
             
             function initMainScript() {
                 $(document).ready(function(){
+        function initTransactionDatePicker() {
+            if (typeof $.fn.datetimepicker === 'undefined') {
+                var datepickerScript = document.createElement('script');
+                datepickerScript.src = '<?php echo base_url(); ?>media/js/plugins/datapicker/bootstrap-datepicker.js';
+                datepickerScript.onload = initTransactionDatePicker;
+                document.head.appendChild(datepickerScript);
+                return;
+            }
+            $('#datetimepicker').datetimepicker({
+                pickTime: false,
+                format: 'DD-MM-YYYY'
+            });
+        }
+        initTransactionDatePicker();
         
            function addCommas(nStr)
         {

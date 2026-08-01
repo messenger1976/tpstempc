@@ -148,6 +148,14 @@ if (isset($message) && !empty($message)) {
                     
                     </tr>
             <?php } ?>
+                <tr>
+                    <td colspan="3" style="text-align: right;"><strong><?php echo lang('total'); ?>:</strong></td>
+                    <td style="text-align: right;"><strong><?php echo number_format($total_contribution, 2); ?></strong></td>
+                    <td style="text-align: right;"><strong><?php echo number_format($total_share, 0); ?></strong></td>
+                    <td style="text-align: right;"><strong><?php echo number_format($total_loan, 2); ?></strong></td>
+                    <td style="text-align: right;"><strong><?php echo number_format($total_loan_paid, 2); ?></strong></td>
+                    <td style="text-align: right;"><strong><?php echo number_format($total_savings, 2); ?></strong></td>
+                </tr>
         </tbody>
 
     </table>

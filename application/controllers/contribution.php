@@ -246,6 +246,7 @@ class Contribution extends CI_Controller {
         $this->form_validation->set_rules('pid', lang('member_pid'), 'required');
         $this->form_validation->set_rules('member_id', lang('member_member_id'), 'required');
         $this->form_validation->set_rules('trans_type', lang('transaction_type'), 'required');
+        $this->form_validation->set_rules('trans_date', lang('transaction_date'), 'required|valid_date');
         $this->form_validation->set_rules('amount', lang('amount'), 'required|numeric');
         $this->form_validation->set_rules('paymenthod', lang('paymentmethod'), 'required');
         $this->form_validation->set_rules('comment', lang('comment'), '');
@@ -287,6 +288,7 @@ class Contribution extends CI_Controller {
 
 
             $trans_type = $this->input->post('trans_type');
+            $trans_date = format_date(trim($this->input->post('trans_date'))) . ' ' . date('H:i:s');
 
             $comment = trim($this->input->post('comment'));
             $paymethod = trim($this->input->post('paymenthod'));
@@ -307,7 +309,7 @@ class Contribution extends CI_Controller {
 
             if ($continue) {
                 //now finalize
-                $receipt = $this->contribution_model->contribution_transaction($trans_type, $pid, $member_id, $amount, $paymethod, $comment, $check_number_received);
+                $receipt = $this->contribution_model->contribution_transaction($trans_type, $pid, $member_id, $amount, $paymethod, $comment, $check_number_received, '', 0, $trans_date);
                 if ($receipt) {
                     $this->session->set_flashdata('next_customer', site_url(current_lang() . '/contribution/contribution_payment'));
                     $this->session->set_flashdata('next_customer_label', lang('next_deposit_withdrawal'));

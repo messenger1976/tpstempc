@@ -1,5 +1,5 @@
 <link href="<?php echo base_url(); ?>media/css/jquery.autocomplete.css" rel="stylesheet">
-<link href="<?php echo base_url(); ?>media/css/plugins/datapicker/datepicker3.css" rel="stylesheet">
+<link href="<?php echo base_url(); ?>media/css/plugins/datapicker/datepicker3.css?v=20260801" rel="stylesheet">
 <style>
 /* Fix z-index for autocomplete dropdown in modal */
 .modal .ac_results,

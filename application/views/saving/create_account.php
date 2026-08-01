@@ -1,5 +1,5 @@
 <link href="<?php echo base_url(); ?>media/css/jquery.autocomplete.css" rel="stylesheet">
-<link href="<?php echo base_url(); ?>media/css/plugins/datapicker/datepicker3.css" rel="stylesheet">
+<link href="<?php echo base_url(); ?>media/css/plugins/datapicker/datepicker3.css?v=20260801" rel="stylesheet">
 <?php echo form_open_multipart(current_lang() . "/saving/create_saving_account", 'class="form-horizontal"'); ?>
 
 <?php

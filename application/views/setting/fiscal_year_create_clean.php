@@ -1,5 +1,5 @@
 <!-- Datepicker CSS -->
-<link href="<?php echo base_url(); ?>assets/css/plugins/datapicker/datepicker3.css" rel="stylesheet">
+<link href="<?php echo base_url(); ?>assets/css/plugins/datapicker/datepicker3.css?v=20260801" rel="stylesheet">
 
 <?php echo form_open_multipart(current_lang() . "/setting/fiscal_year_create/".$id, 'class="form-horizontal"'); ?>
 

@@ -299,11 +299,17 @@ $lang['account_update_failed']='Failed to update account';
 
 //contribution
 $lang['contribute_setting'] = 'CBU Masterfile';
+$lang['contribution_masterfile_list'] = 'Masterfile List';
 $lang['contribution_payment'] = 'CBU Payment';
 $lang['contribution_refund'] = 'CBU Refund';
 $lang['contribution_transaction'] = 'CBU Transaction';
 $lang['CONTRIBUTE'] = 'DEPOSIT';
 $lang['REFUND'] = 'REFUND';
+$lang['cbu_ledger'] = 'Ledger';
+$lang['cbu_ledger_title'] = 'CBU Ledger';
+$lang['cbu_ledger_loading'] = 'Loading CBU ledger...';
+$lang['cbu_ledger_empty'] = 'No CBU transactions found for this member.';
+$lang['button_close'] = 'Close';
 //mortuary
 
 $lang['mortuary_setting'] = 'Setup Mortuary Account';

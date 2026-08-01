@@ -272,11 +272,17 @@ $lang['saving_account_process_fail']='Fail to save information';
 
 //contribution
 $lang['contribute_setting'] = 'Contribution Setting';
+$lang['contribution_masterfile_list'] = 'Masterfile List';
 $lang['contribution_payment'] = 'Contribution Payment';
 $lang['contribution_refund'] = 'Contribution Refund';
 $lang['contribution_transaction'] = 'Contribution Transaction';
 $lang['CONTRIBUTE'] = 'CONTRIBUTE';
 $lang['REFUND'] = 'REFUND';
+$lang['cbu_ledger'] = 'Ledger';
+$lang['cbu_ledger_title'] = 'CBU Ledger';
+$lang['cbu_ledger_loading'] = 'Loading CBU ledger...';
+$lang['cbu_ledger_empty'] = 'No CBU transactions found for this member.';
+$lang['button_close'] = 'Close';
 
 // customer
 $lang['customer'] = 'Customer';

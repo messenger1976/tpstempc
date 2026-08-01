@@ -107,6 +107,7 @@ $lang['select_it'] = 'Select it';
 
 //contribution 
 $lang['contribution_setting_list'] = 'CBU Setting List';
+$lang['contribution_masterfile_list_title'] = 'Masterfile List';
 $lang['contribution_setting_create'] = 'Set Member CBU Amount';
 $lang['contribution_setting_title'] = 'CBU Information';
 $lang['contribution_member_name'] = 'Name';
@@ -119,6 +120,7 @@ $lang['contribution_setting_exist'] = 'Information already exist, Please edit it
 $lang['contribution_service'] = 'Member CBU Service';
 $lang['contribution_payment'] = 'Payment Information';
 $lang['contribution_payment_option'] = array('CR'=>'DEPOSIT','DR'=>'WITHDRAWAL');
+$lang['access_denied'] = 'Access Denied: You do not have permission to access this feature.';
 
 //mortuary
 $lang['mortuary_setting_list'] = 'Mortuary Setting List';

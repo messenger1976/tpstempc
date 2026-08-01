@@ -159,6 +159,156 @@ class Contribution extends CI_Controller {
         $this->load->view('template', $this->data);
     }
 
+    function masterfile_list() {
+        if (!has_role(2, 'Contribution_masterfile_list')) {
+            $this->session->set_flashdata('warning', lang('access_denied'));
+            redirect(current_lang() . '/dashboard', 'refresh');
+        }
+
+        $this->load->library('pagination');
+        $this->data['title'] = lang('contribution_masterfile_list');
+
+        if (isset($_GET['row_per_pg'])) {
+            $this->session->set_userdata('PER_PAGE', $_GET['row_per_pg']);
+        } else if (!$this->session->userdata('PER_PAGE')) {
+            $this->session->set_userdata('PER_PAGE', 40);
+        }
+
+        $config["per_page"] = $this->session->userdata('PER_PAGE');
+
+        $key = null;
+        if ($this->input->post('key') && $this->input->post('key') != '') {
+            $explode = explode('-', $this->input->post('key'));
+            $key = trim($explode[0]);
+        } else if ($this->input->get('key')) {
+            $key = $this->input->get('key');
+        }
+
+        $status = null;
+        if ($this->input->post('status') !== FALSE) {
+            $post_status = $this->input->post('status');
+            if ($post_status === '0' || $post_status === '1') {
+                $status = $post_status;
+            }
+        } else if ($this->input->get('status') !== FALSE) {
+            $get_status = $this->input->get('status');
+            if ($get_status === '0' || $get_status === '1') {
+                $status = $get_status;
+            }
+        }
+
+        $query_params = array();
+        if (!is_null($key) && $key != '') {
+            $query_params['key'] = $key;
+        }
+        if (!is_null($status) && ($status === '0' || $status === '1')) {
+            $query_params['status'] = $status;
+        }
+
+        $query_string = http_build_query($query_params);
+        if ($query_string) {
+            $config['suffix'] = '?' . $query_string;
+            $config['first_url'] = site_url(current_lang() . '/contribution/masterfile_list/?' . $query_string);
+        }
+
+        $config["base_url"] = site_url(current_lang() . '/contribution/masterfile_list');
+        $config["total_rows"] = $this->contribution_model->count_masterfile_list($key, $status);
+        $config["uri_segment"] = 4;
+
+        $config['full_tag_open'] = '<div class="pagination" style="background-color:#fff; margin-left:0px;">';
+        $config['full_tag_close'] = '</div>';
+        $config['num_tag_open'] = '<div class="link-pagination">';
+        $config['num_tag_close'] = '</div>';
+        $config['prev_tag_open'] = '<div class="link-pagination">';
+        $config['prev_tag_close'] = '</div>';
+        $config['next_tag_open'] = '<div class="link-pagination">';
+        $config['next_tag_close'] = '</div>';
+        $config['next_link'] = 'Next';
+        $config['prev_link'] = 'Previous';
+        $config['cur_tag_open'] = '<div class="link-pagination current">';
+        $config['cur_tag_close'] = '</div>';
+        $config["num_links"] = 10;
+
+        $this->pagination->initialize($config);
+        $page = ($this->uri->segment(4) ? $this->uri->segment(4) : 0);
+        $this->data['links'] = $this->pagination->create_links();
+        $this->data['masterfile_list'] = $this->contribution_model->search_masterfile_list($key, $config["per_page"], $page, $status);
+
+        $this->data['content'] = 'contribution/masterfile_list';
+        $this->load->view('template', $this->data);
+    }
+
+    function cbu_ledger_ajax() {
+        if (!has_role(2, 'Contribution_masterfile_list')) {
+            echo json_encode(array('success' => false, 'message' => lang('access_denied')));
+            return;
+        }
+
+        $pid = trim((string) $this->input->post('pid'));
+        $member_id = trim((string) $this->input->post('member_id'));
+
+        if ($member_id === '') {
+            echo json_encode(array('success' => false, 'message' => 'Member ID is required.'));
+            return;
+        }
+
+        $member = $this->member_model->member_basic_info(null, ($pid !== '' ? $pid : null), $member_id)->row();
+        $member_name = '';
+        if ($member) {
+            $member_name = trim($member->firstname . ' ' . $member->middlename . ' ' . $member->lastname);
+            if ($pid === '' && isset($member->PID)) {
+                $pid = $member->PID;
+            }
+        }
+
+        $balance_row = $this->contribution_model->contribution_balance($pid, trim($member_id));
+        $current_balance = ($balance_row && isset($balance_row->balance)) ? (float) $balance_row->balance : 0;
+
+        $transactions = $this->contribution_model->cbu_ledger_transactions($member_id, $pid);
+        $rows = array();
+        $running = 0;
+        $total_debit = 0;
+        $total_credit = 0;
+
+        foreach ($transactions as $value) {
+            $debit = (float) $value->debit;
+            $credit = (float) $value->credit;
+            if ($debit > 0) {
+                $running -= $debit;
+                $total_debit += $debit;
+            } else if ($credit > 0) {
+                $running += $credit;
+                $total_credit += $credit;
+            }
+            $dt = explode(' ', $value->createdon);
+            $description = trim($value->system_comment);
+            if ($description === '' && isset($value->comment)) {
+                $description = trim($value->comment);
+            }
+            if (!empty($value->paymethod)) {
+                $description .= ($description !== '' ? ' [' . $value->paymethod . ']' : $value->paymethod);
+            }
+            $rows[] = array(
+                'date' => isset($dt[0]) ? format_date($dt[0], FALSE) : '',
+                'description' => $description,
+                'debit' => $debit > 0 ? number_format($debit, 2) : '',
+                'credit' => $credit > 0 ? number_format($credit, 2) : '',
+                'balance' => number_format($running, 2),
+            );
+        }
+
+        echo json_encode(array(
+            'success' => true,
+            'member_id' => $member_id,
+            'pid' => $pid,
+            'member_name' => $member_name,
+            'current_balance' => number_format($current_balance, 2),
+            'total_debit' => number_format($total_debit, 2),
+            'total_credit' => number_format($total_credit, 2),
+            'rows' => $rows,
+        ));
+    }
+
     function contribute_setting_create($id = null) {
         $this->data['title'] = lang('contribute_setting');
         $this->data['id'] = $id;

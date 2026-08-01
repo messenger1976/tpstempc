@@ -282,6 +282,88 @@ class Contribution_Model extends CI_Model {
         $this->db->limit($limit, $start);
         return $this->db->get('contribution_settings')->result();
     }
+
+    /**
+     * Count CBU masterfile list rows (settings joined with member + balance).
+     *
+     * @param string|null $key PID or member_id
+     * @param string|null $status Member status (0/1)
+     * @return int
+     */
+    function count_masterfile_list($key = null, $status = null) {
+        $pin = $this->db->escape(current_user()->PIN);
+        $and = " cs.PIN = $pin AND m.status != 2 ";
+        if (!is_null($key) && $key !== '') {
+            $key_esc = $this->db->escape($key);
+            $and .= " AND (cs.PID = $key_esc OR cs.member_id = $key_esc) ";
+        }
+        if (!is_null($status) && $status !== '' && ($status === '0' || $status === '1')) {
+            $and .= " AND m.status = " . $this->db->escape($status) . " ";
+        }
+        $sql = "SELECT COUNT(*) AS total
+                FROM contribution_settings cs
+                INNER JOIN members m ON m.PID = cs.PID AND m.PIN = cs.PIN
+                WHERE $and";
+        $row = $this->db->query($sql)->row();
+        return $row ? (int) $row->total : 0;
+    }
+
+    /**
+     * Search CBU masterfile list with balance and member status.
+     *
+     * @param string|null $key PID or member_id
+     * @param int $limit
+     * @param int $start
+     * @param string|null $status Member status (0/1)
+     * @return array
+     */
+    function search_masterfile_list($key, $limit, $start, $status = null) {
+        $pin = $this->db->escape(current_user()->PIN);
+        $and = " cs.PIN = $pin AND m.status != 2 ";
+        if (!is_null($key) && $key !== '') {
+            $key_esc = $this->db->escape($key);
+            $and .= " AND (cs.PID = $key_esc OR cs.member_id = $key_esc) ";
+        }
+        if (!is_null($status) && $status !== '' && ($status === '0' || $status === '1')) {
+            $and .= " AND m.status = " . $this->db->escape($status) . " ";
+        }
+        $limit = (int) $limit;
+        $start = (int) $start;
+        $sql = "SELECT cs.id, cs.PID, cs.member_id, cs.PIN,
+                       m.firstname, m.middlename, m.lastname, m.status AS member_status,
+                       COALESCE(mc.balance, 0) AS balance
+                FROM contribution_settings cs
+                INNER JOIN members m ON m.PID = cs.PID AND m.PIN = cs.PIN
+                LEFT JOIN members_contribution mc ON mc.PID = cs.PID AND TRIM(mc.member_id) = TRIM(cs.member_id)
+                WHERE $and
+                ORDER BY cs.PID ASC
+                LIMIT $start, $limit";
+        return $this->db->query($sql)->result();
+    }
+
+    /**
+     * Full CBU ledger (statement lines) for a member.
+     *
+     * @param string $member_id
+     * @param int|string|null $pid
+     * @return array
+     */
+    function cbu_ledger_transactions($member_id, $pid = null) {
+        $pin = $this->db->escape(current_user()->PIN);
+        $member_id_esc = $this->db->escape(trim($member_id));
+        $and = " PIN = $pin AND TRIM(member_id) = $member_id_esc ";
+        if (!is_null($pid) && $pid !== '') {
+            $and .= " AND PID = " . $this->db->escape($pid) . " ";
+        }
+        $sql = "SELECT PID, member_id, createdon, comment, system_comment, trans_type, paymethod,
+                       CASE WHEN trans_type = 'CR' THEN amount ELSE 0 END AS credit,
+                       CASE WHEN trans_type = 'DR' THEN amount ELSE 0 END AS debit,
+                       previous_balance
+                FROM contribution_transaction
+                WHERE $and
+                ORDER BY createdon ASC, id ASC";
+        return $this->db->query($sql)->result();
+    }
     
     
     function search_contribution_setting_id($key) {

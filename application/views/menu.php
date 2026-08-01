@@ -93,6 +93,9 @@ $current_member_id = ($current_user_data && isset($current_user_data->member_id)
                         <?php if (has_role(2, 'Contribution_setting')) { ?>
                             <li class="<?php echo (($activefunction == 'contribute_setting' || $activefunction == 'contribute_setting_create') ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/contribution/contribute_setting'); ?>"><?php echo lang('contribute_setting'); ?></a></li>
                         <?php } ?>
+                        <?php if (has_role(2, 'Contribution_masterfile_list')) { ?>
+                            <li class="<?php echo ($activefunction == 'masterfile_list' ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/contribution/masterfile_list'); ?>"><?php echo lang('contribution_masterfile_list'); ?></a></li>
+                        <?php } ?>
                         <?php if (has_role(2, 'Contribution_payment')) { ?>
                             <li class="<?php echo ($activefunction == 'contribution_payment' ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/contribution/contribution_payment'); ?>"><?php echo lang('contribution_payment'); ?></a></li>
                         <?php } ?>

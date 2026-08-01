@@ -35,7 +35,7 @@ $this->load->view('loan/topmenu');
 <div class="col-lg-9">
 
 
-    <link href="<?php echo base_url(); ?>media/css/plugins/datapicker/datepicker3.css" rel="stylesheet"/>
+    <link href="<?php echo base_url(); ?>media/css/plugins/datapicker/datepicker3.css?v=20260801" rel="stylesheet"/>
     <?php echo form_open_multipart(current_lang() . "/loan/loan_editing/" . $loanid, 'class="form-horizontal"'); ?>
 
     <?php

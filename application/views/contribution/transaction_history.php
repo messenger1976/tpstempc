@@ -1,6 +1,6 @@
 <link href="<?php echo base_url(); ?>media/css/jquery.autocomplete.css" rel="stylesheet"/>
 
-<link href="<?php echo base_url(); ?>media/css/plugins/datapicker/datepicker3.css" rel="stylesheet"/>
+<link href="<?php echo base_url(); ?>media/css/plugins/datapicker/datepicker3.css?v=20260801" rel="stylesheet"/>
 <?php echo form_open(current_lang() . "/contribution/contribution_transaction", 'class="form-horizontal"'); ?>
 
 <?php

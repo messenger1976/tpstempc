@@ -4620,9 +4620,11 @@ $pin=current_user()->PIN;
 
         $has_override_col = $this->db->field_exists('interest_frequency', 'members_account');
         $freq_select = $has_override_col ? 'ma.interest_frequency AS account_interest_frequency' : "NULL AS account_interest_frequency";
+        $has_old_acct_col = $this->db->field_exists('old_members_acct', 'members_account');
+        $old_acct_select = $has_old_acct_col ? 'ma.old_members_acct' : "NULL AS old_members_acct";
 
         // Active accounts of this type with member/group names
-        $this->db->select("ma.account, ma.RFID, ma.member_id, ma.balance, ma.virtual_balance, ma.account_cat, {$freq_select}, COALESCE(NULLIF(TRIM(CONCAT(COALESCE(m.firstname,''),' ',COALESCE(m.lastname,''))), ''), mg.name, '') AS holder_name", FALSE);
+        $this->db->select("ma.account, ma.RFID, ma.member_id, ma.balance, ma.virtual_balance, ma.account_cat, {$old_acct_select}, {$freq_select}, COALESCE(NULLIF(TRIM(CONCAT(COALESCE(m.firstname,''),' ',COALESCE(m.lastname,''))), ''), mg.name, '') AS holder_name", FALSE);
         $this->db->from('members_account ma');
         $this->db->join('members m', "ma.RFID = m.PID AND m.PIN = ma.PIN AND ma.tablename = 'members'", 'left');
         $this->db->join('members_grouplist mg', "ma.RFID = mg.GID AND mg.PIN = ma.PIN AND ma.tablename = 'members_grouplist'", 'left');
@@ -4684,6 +4686,7 @@ $pin=current_user()->PIN;
                 'account' => $acc->account,
                 'account_cat' => $acc->account_cat,
                 'member_id' => $acc->member_id,
+                'savings_account_no' => isset($acc->old_members_acct) ? $acc->old_members_acct : '',
                 'holder_name' => trim($acc->holder_name),
                 'RFID' => $acc->RFID,
                 'current_balance' => $current_total,

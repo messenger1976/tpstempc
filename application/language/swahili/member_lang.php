@@ -99,6 +99,7 @@ $lang['contribution_setting_exist'] = 'Information already exist, Please edit it
 $lang['contribution_service'] = 'Member Contribution Service';
 $lang['contribution_payment'] = 'Payment Information';
 $lang['contribution_payment_option'] = array('CR'=>'CONTRIBUTE','DR'=>'REFUND');
+$lang['access_denied'] = 'Access Denied: You do not have permission to access this feature.';
 
 
 //report

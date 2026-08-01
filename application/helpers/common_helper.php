@@ -399,6 +399,9 @@ function page_selector() {
         $return .= '<option ' . ($selected == $value ? 'selected="selected"' : '') . ' value="' . $value . '">' . $value . '</option>';
     }
 
+    // Without this the parser stays "in select" and silently drops any markup that follows.
+    $return .= '</select>';
+
     $return .= '<script type="text/javascript">
 function page_selector(){
 var val = document.getElementById("per_pg").value;

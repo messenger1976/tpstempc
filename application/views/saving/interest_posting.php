@@ -17,11 +17,11 @@ if ($prev_quarter < 1) {
     $prev_quarter_year--;
 }
 
-$sel_type = set_value('account_type') ? set_value('account_type') : (isset($selected_type) ? $selected_type->account : '');
-$sel_month = set_value('period_month') ? set_value('period_month') : $prev_month;
-$sel_year = set_value('period_year') ? (int) set_value('period_year') : $prev_quarter_year;
-$sel_quarter = set_value('period_quarter') ? (int) set_value('period_quarter') : $prev_quarter;
-$sel_posting_freq = set_value('posting_frequency') ? set_value('posting_frequency') : (isset($posting_frequency) && $posting_frequency ? $posting_frequency : 'MONTHLY');
+$sel_type = set_value('account_type') ? set_value('account_type') : (isset($selected_type) ? $selected_type->account : (isset($saved_account_type) ? $saved_account_type : ''));
+$sel_month = set_value('period_month') ? set_value('period_month') : (isset($saved_period_month) && $saved_period_month ? $saved_period_month : $prev_month);
+$sel_year = set_value('period_year') ? (int) set_value('period_year') : (isset($saved_period_year) && $saved_period_year ? (int) $saved_period_year : $prev_quarter_year);
+$sel_quarter = set_value('period_quarter') ? (int) set_value('period_quarter') : (isset($saved_period_quarter) && $saved_period_quarter ? (int) $saved_period_quarter : $prev_quarter);
+$sel_posting_freq = set_value('posting_frequency') ? set_value('posting_frequency') : (isset($posting_frequency) && $posting_frequency ? $posting_frequency : (isset($saved_posting_frequency) && $saved_posting_frequency ? $saved_posting_frequency : 'MONTHLY'));
 if (!in_array($sel_posting_freq, array('MONTHLY', 'QUARTERLY'))) {
     $sel_posting_freq = 'MONTHLY';
 }
@@ -176,9 +176,9 @@ if (!in_array($sel_posting_freq, array('MONTHLY', 'QUARTERLY'))) {
             <input type="hidden" name="action" value="post"/>
             <input type="hidden" name="account_type" value="<?php echo htmlspecialchars($selected_type->account); ?>"/>
             <input type="hidden" name="posting_frequency" value="<?php echo htmlspecialchars($posting_frequency); ?>"/>
-            <input type="hidden" name="period_month" value="<?php echo htmlspecialchars((string) $this->input->post('period_month')); ?>"/>
-            <input type="hidden" name="period_year" value="<?php echo htmlspecialchars((string) $this->input->post('period_year')); ?>"/>
-            <input type="hidden" name="period_quarter" value="<?php echo htmlspecialchars((string) $this->input->post('period_quarter')); ?>"/>
+            <input type="hidden" name="period_month" value="<?php echo htmlspecialchars($sel_month); ?>"/>
+            <input type="hidden" name="period_year" value="<?php echo htmlspecialchars((string) $sel_year); ?>"/>
+            <input type="hidden" name="period_quarter" value="<?php echo htmlspecialchars((string) $sel_quarter); ?>"/>
 
             <div class="table-responsive">
                 <table class="table table-bordered table-striped">
@@ -187,6 +187,7 @@ if (!in_array($sel_posting_freq, array('MONTHLY', 'QUARTERLY'))) {
                             <th style="width: 30px;"><input type="checkbox" id="check_all" checked="checked"/></th>
                             <th><?php echo lang('account_no'); ?></th>
                             <th><?php echo lang('member_id'); ?></th>
+                            <th><?php echo lang('member_old_account_no'); ?></th>
                             <th><?php echo lang('customer_name'); ?></th>
                             <th><?php echo lang('interest_frequency'); ?></th>
                             <th style="text-align: right;"><?php echo lang('interest_base_balance'); ?></th>
@@ -206,6 +207,7 @@ if (!in_array($sel_posting_freq, array('MONTHLY', 'QUARTERLY'))) {
                                 </td>
                                 <td><?php echo htmlspecialchars($row['account']); ?></td>
                                 <td><?php echo htmlspecialchars($row['member_id']); ?></td>
+                                <td><?php echo htmlspecialchars(!empty($row['savings_account_no']) ? $row['savings_account_no'] : '-'); ?></td>
                                 <td><?php echo htmlspecialchars($row['holder_name']); ?></td>
                                 <td>
                                     <?php
@@ -239,7 +241,7 @@ if (!in_array($sel_posting_freq, array('MONTHLY', 'QUARTERLY'))) {
                     </tbody>
                     <tfoot>
                         <tr>
-                            <th colspan="8" style="text-align: right;"><?php echo lang('interest_total_eligible'); ?> (<?php echo $eligible_count; ?>)</th>
+                            <th colspan="9" style="text-align: right;"><?php echo lang('interest_total_eligible'); ?> (<?php echo $eligible_count; ?>)</th>
                             <th style="text-align: right;"><?php echo number_format($eligible_total, 2); ?></th>
                             <th></th>
                         </tr>
@@ -257,9 +259,9 @@ if (!in_array($sel_posting_freq, array('MONTHLY', 'QUARTERLY'))) {
                 <input type="hidden" name="action" value="export"/>
                 <input type="hidden" name="account_type" value="<?php echo htmlspecialchars($selected_type->account); ?>"/>
                 <input type="hidden" name="posting_frequency" value="<?php echo htmlspecialchars($posting_frequency); ?>"/>
-                <input type="hidden" name="period_month" value="<?php echo htmlspecialchars((string) $this->input->post('period_month')); ?>"/>
-                <input type="hidden" name="period_year" value="<?php echo htmlspecialchars((string) $this->input->post('period_year')); ?>"/>
-                <input type="hidden" name="period_quarter" value="<?php echo htmlspecialchars((string) $this->input->post('period_quarter')); ?>"/>
+                <input type="hidden" name="period_month" value="<?php echo htmlspecialchars($sel_month); ?>"/>
+                <input type="hidden" name="period_year" value="<?php echo htmlspecialchars((string) $sel_year); ?>"/>
+                <input type="hidden" name="period_quarter" value="<?php echo htmlspecialchars((string) $sel_quarter); ?>"/>
                 <button type="submit" class="btn btn-success" id="btn_export_interest">
                     <i class="fa fa-file-excel-o"></i> <?php echo lang('interest_export_excel'); ?>
                 </button>

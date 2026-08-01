@@ -1,6 +1,6 @@
 <link href="<?php echo base_url(); ?>media/css/jquery.autocomplete.css" rel="stylesheet">
 <!-- Datepicker CSS -->
-<link href="<?php echo base_url(); ?>assets/css/plugins/datapicker/datepicker3.css" rel="stylesheet">
+<link href="<?php echo base_url(); ?>assets/css/plugins/datapicker/datepicker3.css?v=20260801" rel="stylesheet">
 <?php echo form_open_multipart(current_lang() . "/loan/loan_beginning_balance_create/" . (isset($id) ? $id : ''), 'class="form-horizontal"'); ?>
 
 <?php

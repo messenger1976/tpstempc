@@ -1,5 +1,39 @@
 <link href="<?php echo base_url(); ?>media/css/jquery.autocomplete.css" rel="stylesheet">
-<link href="<?php echo base_url(); ?>media/css/plugins/datapicker/datepicker3.css" rel="stylesheet"/>
+<link href="<?php echo base_url(); ?>media/css/plugins/datapicker/datepicker3.css?v=20260801" rel="stylesheet"/>
+<style type="text/css">
+/* Keep Application Date month/year picker readable (Eonasdan widget + datepicker3.css) */
+.bootstrap-datetimepicker-widget {
+    z-index: 9999 !important;
+    min-width: 280px;
+    max-width: 320px;
+    padding: 4px;
+    background: #fff;
+    border: 1px solid rgba(0,0,0,.15);
+    border-radius: 4px;
+    box-shadow: 0 6px 12px rgba(0,0,0,.175);
+}
+.bootstrap-datetimepicker-widget .datepicker table { width: 100%; margin: 0; }
+.bootstrap-datetimepicker-widget .datepicker-months td,
+.bootstrap-datetimepicker-widget .datepicker-years td,
+.datepicker-months td,
+.datepicker-years td {
+    width: auto !important;
+    height: auto !important;
+    overflow: hidden;
+}
+.bootstrap-datetimepicker-widget .datepicker table tr td span,
+.datepicker table tr td span.month,
+.datepicker table tr td span.year {
+    display: block !important;
+    float: left !important;
+    width: 23% !important;
+    height: 54px !important;
+    line-height: 54px !important;
+    margin: 1% !important;
+    text-align: center;
+    box-sizing: border-box;
+}
+</style>
 <?php echo form_open_multipart(current_lang() . "/loan/loan_application", 'class="form-horizontal"'); ?>
 
 <?php

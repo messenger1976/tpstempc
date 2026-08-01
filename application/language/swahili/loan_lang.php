@@ -134,3 +134,14 @@ $lang['report_loan_transaction'] = 'Loan Transactions';
 $lang['report_loan_transaction_summary'] = 'Loan Transactions Summary';
 $lang['report_loan_aging'] = 'Loan Aging Report';
 $lang['report_loan_aging_status'] = 'Active or Accepted (disbursed) loans only';
+
+$lang['loan_schedule_none_yet'] = 'Hakuna ratiba ya malipo iliyoandaliwa kwa mkopo huu.';
+$lang['loan_schedule_none_yet_note'] = 'Ratiba huandaliwa mkopo unapotolewa. Kwa mikopo iliyohamishiwa kwenye mfumo, itengeneze hapa chini kwa kutumia tarehe ambayo kikomo cha kwanza kinaiva.';
+$lang['loan_schedule_start_date'] = 'Tarehe ya Kikomo cha Kwanza';
+$lang['loan_schedule_generate'] = 'Tengeneza Ratiba';
+$lang['loan_schedule_generated'] = 'Ratiba ya malipo imetengenezwa na vikomo %d.';
+$lang['loan_schedule_exists'] = 'Mkopo huu tayari una ratiba ya malipo.';
+$lang['loan_schedule_not_released'] = 'Ratiba ya malipo inaweza kutengenezwa kwa mkopo uliotolewa tu.';
+$lang['loan_schedule_invalid_date'] = 'Tafadhali weka tarehe sahihi ya kikomo cha kwanza.';
+$lang['loan_schedule_incomplete_terms'] = 'Mkopo huu hauna idadi ya vikomo au kiasi cha kikomo, hivyo ratiba haiwezi kutengenezwa.';
+$lang['loan_schedule_generate_failed'] = 'Imeshindikana kutengeneza ratiba ya malipo. Tafadhali jaribu tena.';

@@ -1,6 +1,6 @@
 <link href="<?php echo base_url(); ?>media/css/choosen/chosen.css" rel="stylesheet">
 <!-- Gritter -->
-<link href="<?php echo base_url(); ?>media/css/plugins/datapicker/datepicker3.css" rel="stylesheet">
+<link href="<?php echo base_url(); ?>media/css/plugins/datapicker/datepicker3.css?v=20260801" rel="stylesheet">
 <?php echo form_open_multipart(current_lang() . "/report_mortuary/create_contribution_report_title/" . $link_cat . '/' . $id, 'class="form-horizontal"'); ?>
 <?php
 if (isset($message) && !empty($message)) {

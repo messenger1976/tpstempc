@@ -105,7 +105,7 @@ if (isset($message) && !empty($message)) {
 <?php echo form_close(); ?>
 
 <!-- Gritter -->
-<link href="<?php echo base_url(); ?>media/css/plugins/datapicker/datepicker3.css" rel="stylesheet">
+<link href="<?php echo base_url(); ?>media/css/plugins/datapicker/datepicker3.css?v=20260801" rel="stylesheet">
 <script src="<?php echo base_url() ?>media/js/script/moment.js"></script>
 <script type="text/javascript">
     (function() {

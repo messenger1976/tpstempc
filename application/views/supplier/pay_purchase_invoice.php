@@ -1,4 +1,4 @@
-<link href="<?php echo base_url(); ?>media/css/plugins/datapicker/datepicker3.css" rel="stylesheet">
+<link href="<?php echo base_url(); ?>media/css/plugins/datapicker/datepicker3.css?v=20260801" rel="stylesheet">
 <link href="<?php echo base_url(); ?>media/css/choosen/chosen.css" rel="stylesheet">
 <?php echo form_open_multipart(current_lang() . "/supplier/spendmoney_purchase_invoice/".$quoteid, 'class="form-horizontal"'); ?>
 

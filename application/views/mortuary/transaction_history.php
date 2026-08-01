@@ -1,7 +1,7 @@
 <script type="text/javascript" src="<?php echo base_url(); ?>media/js/jquery.autocomplete_origin.js" ></script>
 <link href="<?php echo base_url(); ?>media/css/jquery.autocomplete.css" rel="stylesheet"/>
 
-<link href="<?php echo base_url(); ?>media/css/plugins/datapicker/datepicker3.css" rel="stylesheet"/>
+<link href="<?php echo base_url(); ?>media/css/plugins/datapicker/datepicker3.css?v=20260801" rel="stylesheet"/>
 <?php echo form_open(current_lang() . "/mortuary/mortuary_transaction", 'class="form-horizontal"'); ?>
 
 <?php

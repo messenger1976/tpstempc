@@ -53,6 +53,7 @@ $_GET['key'] = isset($jxy['key']) ? $jxy['key'] : (($this->session->userdata('co
                 <th><?php echo lang('member_member_id'); ?></th>
                 <th><?php echo lang('index_name'); ?></th>
                 <th><?php echo lang('index_transtype'); ?></th>
+                <th><?php echo lang('index_source'); ?></th>
                 <th><?php echo lang('index_transmethod'); ?></th>
                 <th><?php echo lang('index_chequeno'); ?></th>
                 <th><?php echo lang('index_amount'); ?></th>
@@ -77,6 +78,7 @@ $_GET['key'] = isset($jxy['key']) ? $jxy['key'] : (($this->session->userdata('co
                     $account_name = $this->member_model->member_basic_info(null,$value->PID,$value->member_id)->row();
                     echo $account_name->firstname.' '.$account_name->middlename.' '.$account_name->lastname;; ?></td>
                     <td><?php echo $value->trans_type; ?></td>
+                    <td><?php echo isset($value->transaction_source) ? $value->transaction_source : ''; ?></td>
                     <td><?php echo $value->paymethod; ?></td>
                     <td><?php echo $value->cheque_num; ?></td>
                     <td style="text-align: right;"><?php echo number_format($value->amount,2); ?></td>
@@ -85,7 +87,23 @@ $_GET['key'] = isset($jxy['key']) ? $jxy['key'] : (($this->session->userdata('co
 
                     <td>
                         <?php echo anchor(current_lang() . "/contribution/receipt_view/" . $value->receipt, ' <i class="fa fa-edit"></i> ' . lang('view_link'), 'class="btn btn-primary btn-xs"'); ?>
-                        <?php echo anchor(current_lang() . "/contribution/delete_transaction/" . $value->receipt, ' <i class="fa fa-trash"></i> Delete', 'class="btn btn-danger btn-xs delete-transaction" data-receipt="' . $value->receipt . '"'); ?>
+                        <?php if (!empty($value->is_gl_posted)): ?>
+                            <span class="label label-success" title="Posted to General Ledger">
+                                <i class="fa fa-book"></i> GL Posted
+                            </span>
+                        <?php else: ?>
+                            <span class="label label-default" title="Not yet posted to General Ledger">
+                                <i class="fa fa-book"></i> GL Not Posted
+                            </span>
+                            <?php if (!empty($value->can_post_to_gl) && has_role(2, 'Contribution_transaction')): ?>
+                                <a href="<?php echo site_url(current_lang() . '/contribution/post_receipt_to_gl/' . $value->receipt); ?>" class="btn btn-warning btn-xs" onclick="return confirm('<?php echo lang('contribution_gl_post_confirm'); ?>');" title="Post this transaction to GL">
+                                    <i class="fa fa-book"></i> Post to GL
+                                </a>
+                            <?php endif; ?>
+                        <?php endif; ?>
+                        <?php if (empty($value->is_gl_posted)): ?>
+                            <?php echo anchor(current_lang() . "/contribution/delete_transaction/" . $value->receipt, ' <i class="fa fa-trash"></i> Delete', 'class="btn btn-danger btn-xs delete-transaction" data-receipt="' . $value->receipt . '"'); ?>
+                        <?php endif; ?>
                     </td>
                 </tr>
             <?php } ?>

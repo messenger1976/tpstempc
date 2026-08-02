@@ -461,6 +461,10 @@ class Contribution extends CI_Controller {
                 //now finalize
                 $receipt = $this->contribution_model->contribution_transaction($trans_type, $pid, $member_id, $amount, $paymethod, $comment, $check_number_received, '', 0, $trans_date);
                 if ($receipt) {
+                    $gl_result = $this->contribution_model->post_contribution_receipt_to_gl($receipt);
+                    if (empty($gl_result['success'])) {
+                        $this->session->set_flashdata('warning', isset($gl_result['message']) ? $gl_result['message'] : 'CBU saved but GL posting failed. Use Post to GL on the transaction list.');
+                    }
                     $this->session->set_flashdata('next_customer', site_url(current_lang() . '/contribution/contribution_payment'));
                     $this->session->set_flashdata('next_customer_label', lang('next_deposit_withdrawal'));
                     redirect(current_lang() . '/contribution/receipt_view/' . $receipt, 'refresh');
@@ -686,7 +690,36 @@ class Contribution extends CI_Controller {
         $this->data['links'] = $this->pagination->create_links();
 
         // Pass key1 (can be null if empty) and date filters
-        $this->data['transactionlist'] = $this->contribution_model->search_transaction($key1, $from, $upto, $config["per_page"], $page);
+        $transactions = $this->contribution_model->search_transaction($key1, $from, $upto, $config["per_page"], $page);
+        if (is_array($transactions)) {
+            foreach ($transactions as $trans) {
+                $trans->transaction_source = $this->contribution_model->contribution_transaction_source($trans);
+                $receipt = isset($trans->receipt) ? $trans->receipt : null;
+                $comment_u = strtoupper(trim(isset($trans->comment) ? (string) $trans->comment : ''));
+                $pay_u = strtoupper(trim(isset($trans->paymethod) ? (string) $trans->paymethod : ''));
+                $is_beginning = (strpos($comment_u, 'BEGINNING BALANCE') !== FALSE);
+
+                if ($is_beginning) {
+                    // Beginning balance GL is keyed to contribution_settings, not the receipt
+                    $trans->is_gl_posted = $this->contribution_model->is_contribution_beginning_balance_posted(
+                        isset($trans->PID) ? $trans->PID : null,
+                        isset($trans->member_id) ? $trans->member_id : null
+                    );
+                    $trans->can_post_to_gl = false;
+                } else {
+                    $trans->is_gl_posted = (!empty($receipt)) ? $this->contribution_model->is_contribution_receipt_posted_to_gl($receipt) : false;
+                    $trans->can_post_to_gl = (!$trans->is_gl_posted
+                        && strpos($comment_u, 'VOID') !== 0
+                        && $pay_u !== 'JOURNAL'
+                        && strpos($pay_u, 'JOURNAL') === FALSE
+                        && strpos($pay_u, 'CASH RECEIPT') === FALSE
+                        && strpos($pay_u, 'CASH DISBURSEMENT') === FALSE);
+                }
+            }
+        } else {
+            $transactions = array();
+        }
+        $this->data['transactionlist'] = $transactions;
 
 
         $this->data['content'] = 'contribution/transaction_history';
@@ -697,6 +730,12 @@ class Contribution extends CI_Controller {
         // Verify receipt is provided
         if (empty($receipt)) {
             $this->session->set_flashdata('warning', 'Invalid transaction receipt');
+            redirect(current_lang() . '/contribution/contribution_transaction', 'refresh');
+            return;
+        }
+
+        if ($this->contribution_model->is_contribution_receipt_posted_to_gl($receipt)) {
+            $this->session->set_flashdata('warning', lang('contribution_gl_already_posted_delete'));
             redirect(current_lang() . '/contribution/contribution_transaction', 'refresh');
             return;
         }
@@ -711,6 +750,36 @@ class Contribution extends CI_Controller {
         }
         
         // Redirect back to transaction list
+        redirect(current_lang() . '/contribution/contribution_transaction', 'refresh');
+    }
+
+    /**
+     * Post a manual CBU Contribute receipt to the General Ledger.
+     */
+    function post_receipt_to_gl($receipt = null) {
+        if (!$this->ion_auth->logged_in()) {
+            redirect('auth/login', 'refresh');
+        }
+
+        if (!has_role(2, 'Contribution_transaction')) {
+            $this->session->set_flashdata('warning', lang('access_denied'));
+            redirect(current_lang() . '/contribution/contribution_transaction', 'refresh');
+            return;
+        }
+
+        if (!$receipt) {
+            $this->session->set_flashdata('warning', lang('invalid_receipt'));
+            redirect(current_lang() . '/contribution/contribution_transaction', 'refresh');
+            return;
+        }
+
+        $result = $this->contribution_model->post_contribution_receipt_to_gl($receipt);
+        if (!empty($result['success'])) {
+            $this->session->set_flashdata('message', isset($result['message']) ? $result['message'] : lang('contribution_gl_posted'));
+        } else {
+            $this->session->set_flashdata('warning', isset($result['message']) ? $result['message'] : lang('contribution_gl_post_failed'));
+        }
+
         redirect(current_lang() . '/contribution/contribution_transaction', 'refresh');
     }
 

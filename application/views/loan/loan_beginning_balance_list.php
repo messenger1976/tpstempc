@@ -106,7 +106,18 @@
                             <td style="text-align: right;"><?php echo number_format($balance->penalty_balance, 2); ?></td>
                             <td style="text-align: right;"><strong><?php echo number_format($balance->total_balance, 2); ?></strong></td>
                             <td>
-                                <?php if ($balance->posted == 1) { ?>
+                                <?php
+                                $is_activated = (isset($activated_map) && !empty($activated_map[$balance->id]));
+                                if ($is_activated) { ?>
+                                    <span class="label label-info"><?php echo lang('loan_beginning_balance_activated'); ?></span>
+                                    <?php if ($balance->loan_id) { ?>
+                                        <br><small>
+                                            <a href="<?php echo site_url(current_lang() . '/loan/view_indetail/' . encode_id($balance->loan_id)); ?>">
+                                                <?php echo htmlspecialchars($balance->loan_id); ?>
+                                            </a>
+                                        </small>
+                                    <?php } ?>
+                                <?php } else if ($balance->posted == 1) { ?>
                                     <span class="label label-success"><?php echo lang('loan_beginning_balance_posted'); ?></span>
                                     <?php if ($balance->posted_date) { ?>
                                         <br><small><?php echo date('M d, Y H:i', strtotime($balance->posted_date)); ?></small>
@@ -130,7 +141,21 @@
                                        style="color: green; margin-left: 10px;">
                                         <i class="fa fa-check"></i> <?php echo lang('loan_beginning_balance_post'); ?>
                                     </a>
+                                <?php } else if ($is_activated) { ?>
+                                    <a href="<?php echo site_url(current_lang() . '/loan/view_indetail/' . encode_id($balance->loan_id)); ?>">
+                                        <i class="fa fa-folder-open"></i> <?php echo lang('loan_view_detail'); ?>
+                                    </a>
+                                    <a href="<?php echo site_url(current_lang() . '/loan/loan_ledger/' . encode_id($balance->loan_id)); ?>" style="margin-left: 10px;">
+                                        <i class="fa fa-book"></i> <?php echo lang('loan_ledger'); ?>
+                                    </a>
                                 <?php } else { ?>
+                                    <a href="javascript:void(0);"
+                                       class="btn-activate-balance"
+                                       data-id="<?php echo encode_id($balance->id); ?>"
+                                       data-member="<?php echo htmlspecialchars($balance->member_id); ?>"
+                                       style="color: #0275d8; margin-left: 0;">
+                                        <i class="fa fa-play-circle"></i> <?php echo lang('loan_beginning_balance_activate'); ?>
+                                    </a>
                                     <a href="<?php echo site_url(current_lang() . '/loan/loan_beginning_balance_void/' . encode_id($balance->id)); ?>"
                                        onclick="return confirm('Void this loan beginning balance with a reversing GL entry?');"
                                        style="color: #c9302c; margin-left: 10px;">
@@ -206,6 +231,29 @@
                 }, function(isConfirm) {
                     if (isConfirm) {
                         window.location.href = postUrl;
+                    }
+                });
+            });
+
+            // Activate as Loan confirmation
+            $('.btn-activate-balance').click(function() {
+                var balanceId = $(this).data('id');
+                var member = $(this).data('member');
+                var activateUrl = '<?php echo site_url(current_lang() . '/loan/loan_beginning_balance_activate/'); ?>/' + balanceId;
+
+                swal({
+                    title: "<?php echo lang('are_you_sure'); ?>",
+                    text: "<?php echo lang('loan_beginning_balance_activate_confirm'); ?>" + (member ? " (Member: " + member + ")" : ""),
+                    type: "warning",
+                    showCancelButton: true,
+                    confirmButtonColor: "#0275d8",
+                    confirmButtonText: "<?php echo lang('loan_beginning_balance_activate'); ?>",
+                    cancelButtonText: "<?php echo lang('cancel'); ?>",
+                    closeOnConfirm: false,
+                    closeOnCancel: true
+                }, function(isConfirm) {
+                    if (isConfirm) {
+                        window.location.href = activateUrl;
                     }
                 });
             });

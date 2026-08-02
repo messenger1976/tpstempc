@@ -666,10 +666,12 @@ class Saving extends CI_Controller {
         }
         if ($this->form_validation->run() == TRUE) {
 
-            $PID_initial = explode('-', trim($this->input->post('pid')));
-            $member_id_initial = explode('-', trim($this->input->post('member_id')));
-            $PID = $PID_initial[0];
-            $member_id = $member_id_initial[0].'-'.$member_id_initial[1];
+            // The autocomplete leaves these fields as "<id> - <member name>", so keep only the
+            // id part. Splitting on a bare '-' would truncate member ids such as 2005-00177.
+            $PID_initial = explode(' - ', trim($this->input->post('pid')));
+            $member_id_initial = explode(' - ', trim($this->input->post('member_id')));
+            $PID = trim($PID_initial[0]);
+            $member_id = trim($member_id_initial[0]);
             $posting_date = date("Y-m-d",strtotime($this->input->post('posting_date')));
 
             $account_type = $this->input->post('saving_account');
@@ -997,6 +999,7 @@ class Saving extends CI_Controller {
                 $trans->is_void_entry = $this->finance_model->is_void_entry($trans);
                 $trans->voided_receipt = $this->finance_model->get_voided_receipt($trans);
                 $trans->is_gl_posted = (!empty($receipt)) ? $this->finance_model->is_savings_receipt_posted_to_gl($receipt) : false;
+                $trans->transaction_source = $this->finance_model->savings_transaction_source($trans);
                 $trans->void_original_method = '';
                 $system_comment = isset($trans->system_comment) ? (string) $trans->system_comment : '';
                 if ($trans->is_void_entry && $system_comment !== '') {
@@ -1342,8 +1345,9 @@ class Saving extends CI_Controller {
         $value = trim($this->input->post('value'));
         $column = trim($this->input->post('column'));
         
-        // Validate input
-        if (empty($value) || empty($column)) {
+        // Validate input. PID 0 is a real member, so compare against '' rather than using
+        // empty(), which would treat "0" as missing.
+        if ($value === '' || $column === '') {
             $status = array();
             $status['success'] = 'N';
             $status['error'] = lang('invalid_member_id');
@@ -1372,7 +1376,7 @@ class Saving extends CI_Controller {
             }
         }
         
-        if (empty($value)) {
+        if ($value === '') {
             $status = array();
             $status['success'] = 'N';
             $status['error'] = lang('invalid_member_id');
@@ -1398,7 +1402,7 @@ class Saving extends CI_Controller {
         }
         
         // Ensure values are not empty after trimming
-        if (($column == 'PID' && empty($pid)) || ($column == 'MID' && empty($member_id))) {
+        if (($column == 'PID' && $pid === '') || ($column == 'MID' && $member_id === '')) {
             $status = array();
             $status['success'] = 'N';
             $status['error'] = $error;
@@ -1413,7 +1417,7 @@ class Saving extends CI_Controller {
         $status = array();
         // Check if member exists and has valid PID
         // Use num_rows() to check if query returned results, then check object properties
-        if ($member_query->num_rows() > 0 && $member && isset($member->PID) && !empty($member->PID)){
+        if ($member_query->num_rows() > 0 && $member && isset($member->PID) && $member->PID !== ''){
             $contact = $this->member_model->member_contact($member->PID);
             $status['success'] = 'Y';
             $status['data'] = $member;

@@ -346,12 +346,58 @@ if (!function_exists('loan_status')) {
             '7' => 'Evaluated && Rejected',
             '8' => 'Accepted && Rejected',
             '9' => 'Accepted && Disbursed',
+            'bb' => 'Beginning Balance',
         );
         if (!is_null($id)) {
             return $array[$id];
         }
 
         return $array;
+    }
+
+}
+
+if (!function_exists('loan_disbursement_default_deductions')) {
+
+    /**
+     * Default loan proceeds deduction lines for disbursement GL autofill.
+     * Amounts are entered on the form; accounts come from the coop chart of accounts.
+     *
+     * @return array list of [key, label, account, description]
+     */
+    function loan_disbursement_default_deductions() {
+        return array(
+            array(
+                'key' => 'filing_fee',
+                'label' => 'Filing Fee',
+                'account' => '40130',
+                'description' => 'Filing Fee',
+            ),
+            array(
+                'key' => 'service_fee',
+                'label' => 'Service Fee',
+                'account' => '40120',
+                'description' => 'Service Fee',
+            ),
+            array(
+                'key' => 'savings_deposit',
+                'label' => 'Savings Deposit',
+                'account' => '21110',
+                'description' => 'Savings Deposit',
+            ),
+            array(
+                'key' => 'paid_up_share',
+                'label' => 'Paid-up Capital Share',
+                'account' => '30130',
+                'description' => 'Paid-up Capital Share',
+            ),
+            array(
+                'key' => 'insurance',
+                'label' => 'Insurance',
+                'account' => '21291',
+                'description' => 'Insurance Premium',
+            ),
+        );
     }
 
 }

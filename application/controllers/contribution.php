@@ -639,6 +639,49 @@ class Contribution extends CI_Controller {
             $upto = null;
         }
 
+        // Source Type filter
+        $source_options = $this->contribution_model->contribution_source_filter_options();
+        $source = 'all';
+        if (isset($_POST['source_type'])) {
+            $source = strtolower(trim((string) $_POST['source_type']));
+            if (!isset($source_options[$source])) {
+                $source = 'all';
+            }
+            $this->session->set_userdata('contribution_transaction_source', $source);
+        } else if (isset($_GET['source_type'])) {
+            $source = strtolower(trim((string) $_GET['source_type']));
+            if (!isset($source_options[$source])) {
+                $source = 'all';
+            }
+            $this->session->set_userdata('contribution_transaction_source', $source);
+        } else if ($this->session->userdata('contribution_transaction_source')) {
+            $source = strtolower(trim((string) $this->session->userdata('contribution_transaction_source')));
+            if (!isset($source_options[$source])) {
+                $source = 'all';
+            }
+        }
+
+        // Posted? filter
+        $posted_allowed = array('all' => 1, 'posted' => 1, 'unposted' => 1);
+        $posted = 'all';
+        if (isset($_POST['posted_filter'])) {
+            $posted = strtolower(trim((string) $_POST['posted_filter']));
+            if (!isset($posted_allowed[$posted])) {
+                $posted = 'all';
+            }
+            $this->session->set_userdata('contribution_transaction_posted', $posted);
+        } else if (isset($_GET['posted_filter'])) {
+            $posted = strtolower(trim((string) $_GET['posted_filter']));
+            if (!isset($posted_allowed[$posted])) {
+                $posted = 'all';
+            }
+            $this->session->set_userdata('contribution_transaction_posted', $posted);
+        } else if ($this->session->userdata('contribution_transaction_posted')) {
+            $posted = strtolower(trim((string) $this->session->userdata('contribution_transaction_posted')));
+            if (!isset($posted_allowed[$posted])) {
+                $posted = 'all';
+            }
+        }
 
         $suffix_array = array();
 
@@ -653,7 +696,19 @@ class Contribution extends CI_Controller {
         if (!is_null($upto) && $upto != '') {
             $suffix_array['upto'] = $upto;
         }
+
+        if (!empty($source) && $source !== 'all') {
+            $suffix_array['source_type'] = $source;
+        }
+
+        if (!empty($posted) && $posted !== 'all') {
+            $suffix_array['posted_filter'] = $posted;
+        }
+
         $this->data['jxy'] = $suffix_array;
+        $this->data['source_type'] = $source;
+        $this->data['posted_filter'] = $posted;
+        $this->data['source_type_options'] = $source_options;
 
         if (count($suffix_array) > 0) {
             $query_string = http_build_query($suffix_array, '', '&');
@@ -661,7 +716,7 @@ class Contribution extends CI_Controller {
         }
 
         $config["base_url"] = site_url(current_lang() . '/contribution/contribution_transaction');
-        $config["total_rows"] = $this->contribution_model->count_transaction($key1, $from, $upto);
+        $config["total_rows"] = $this->contribution_model->count_transaction($key1, $from, $upto, $source, $posted);
         $config["uri_segment"] = 4;
 
         $config['full_tag_open'] = '<div class="pagination" style="background-color:#fff; margin-left:0px;">';
@@ -690,7 +745,7 @@ class Contribution extends CI_Controller {
         $this->data['links'] = $this->pagination->create_links();
 
         // Pass key1 (can be null if empty) and date filters
-        $transactions = $this->contribution_model->search_transaction($key1, $from, $upto, $config["per_page"], $page);
+        $transactions = $this->contribution_model->search_transaction($key1, $from, $upto, $config["per_page"], $page, $source, $posted);
         if (is_array($transactions)) {
             foreach ($transactions as $trans) {
                 $trans->transaction_source = $this->contribution_model->contribution_transaction_source($trans);

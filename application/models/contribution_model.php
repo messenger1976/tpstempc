@@ -283,6 +283,104 @@ class Contribution_Model extends CI_Model {
         return 'CBU Transaction';
     }
 
+    /**
+     * Source Type filter options for CBU transaction search.
+     */
+    function contribution_source_filter_options() {
+        return array(
+            'all' => 'All',
+            'cbu_transaction' => 'CBU Transaction',
+            'beginning_balance' => 'Beginning Balance',
+            'cash_receipt' => 'Cash Receipt',
+            'cash_disbursement' => 'Cash Disbursement',
+            'journal_entry' => 'Journal Entry',
+            'auto_contribution' => 'Auto Contribution',
+            'loan_disbursement' => 'Loan Disbursement',
+            'migration' => 'Migration',
+            'void' => 'Void',
+        );
+    }
+
+    /**
+     * SQL fragment for Source Type filter on contribution_transaction.
+     */
+    function contribution_source_filter_sql($source) {
+        $source = strtolower(trim((string) $source));
+        if ($source === '' || $source === 'all') {
+            return '';
+        }
+
+        $c = "UPPER(IFNULL(comment,''))";
+        $s = "UPPER(IFNULL(system_comment,''))";
+        $p = "UPPER(IFNULL(paymethod,''))";
+        $is_void = "($c LIKE 'VOID%' OR $s LIKE 'VOID%')";
+        $is_bb = "($c LIKE '%BEGINNING BALANCE%')";
+        $is_mig = "($s LIKE '%CONTRIBUTION_MIGRATED%' OR $c LIKE '%CONTRIBUTION_MIGRATED%')";
+        $is_cr = "($p LIKE '%CASH RECEIPT%' OR $c LIKE '%CASH RECEIPT%' OR $c REGEXP '^(CV|OR|CR)[\\\\s#\\\\-/]')";
+        $is_cd = "($p LIKE '%CASH DISBURSEMENT%' OR $c LIKE '%CASH DISBURSEMENT%' OR $c REGEXP '^(CDS|CD)[\\\\s#\\\\-/]')";
+        $is_jv = "($p LIKE '%JOURNAL%' OR $c LIKE '%JOURNAL%' OR $c REGEXP '^JV[\\\\s#\\\\-/]')";
+        $is_loan = "($c LIKE '%LOAN%' OR $c REGEXP '^LN[\\\\s#\\\\-/]')";
+        $is_auto = "(IFNULL(auto,0) = 1)";
+
+        switch ($source) {
+            case 'void':
+                return " AND $is_void";
+            case 'beginning_balance':
+                return " AND $is_bb";
+            case 'migration':
+                return " AND $is_mig";
+            case 'cash_receipt':
+                return " AND NOT $is_void AND NOT $is_bb AND NOT $is_mig AND $is_cr";
+            case 'cash_disbursement':
+                return " AND NOT $is_void AND NOT $is_bb AND NOT $is_mig AND NOT $is_cr AND $is_cd";
+            case 'journal_entry':
+                return " AND NOT $is_void AND NOT $is_bb AND NOT $is_mig AND NOT $is_cr AND NOT $is_cd AND $is_jv";
+            case 'auto_contribution':
+                return " AND NOT $is_void AND NOT $is_bb AND NOT $is_mig AND NOT $is_cr AND NOT $is_cd AND NOT $is_jv AND $is_auto";
+            case 'loan_disbursement':
+                return " AND NOT $is_void AND NOT $is_bb AND NOT $is_mig AND NOT $is_cr AND NOT $is_cd AND NOT $is_jv AND NOT $is_auto AND $is_loan";
+            case 'cbu_transaction':
+                return " AND NOT $is_void AND NOT $is_bb AND NOT $is_mig AND NOT $is_cr AND NOT $is_cd AND NOT $is_jv AND NOT $is_auto AND NOT $is_loan";
+            default:
+                return '';
+        }
+    }
+
+    /**
+     * SQL fragment for GL Posted filter on contribution_transaction.
+     * Beginning Balance uses contribution_settings.posted; others use general_ledger.
+     */
+    function contribution_posted_filter_sql($posted) {
+        $posted = strtolower(trim((string) $posted));
+        if ($posted === '' || $posted === 'all') {
+            return '';
+        }
+
+        $is_bb = "UPPER(IFNULL(comment,'')) LIKE '%BEGINNING BALANCE%'";
+        $bb_posted = "EXISTS (
+            SELECT 1 FROM contribution_settings cs
+            WHERE cs.PID = contribution_transaction.PID
+              AND cs.member_id = contribution_transaction.member_id
+              AND cs.PIN = contribution_transaction.PIN
+              AND cs.posted = 1
+        )";
+        $rcpt_posted = "EXISTS (
+            SELECT 1 FROM general_ledger gl
+            WHERE gl.refferenceID = contribution_transaction.receipt
+              AND gl.fromtable = 'contribution_transaction'
+              AND gl.PIN = contribution_transaction.PIN
+        )";
+        $is_posted = "(($is_bb AND $bb_posted) OR (NOT ($is_bb) AND $rcpt_posted))";
+
+        if ($posted === 'posted') {
+            return " AND $is_posted";
+        }
+        if ($posted === 'unposted' || $posted === 'not_posted') {
+            return " AND NOT ($is_posted)";
+        }
+        return '';
+    }
+
     function contribution_setting($data, $id=null) {
         $check = $this->member_model->member_basic_info(null, $data['PID'], $data['member_id'])->row();
         if (!is_null($id)) {
@@ -445,7 +543,7 @@ class Contribution_Model extends CI_Model {
     } 
     
     
-     function count_transaction($key, $from, $upto) {
+     function count_transaction($key, $from, $upto, $source = 'all', $posted = 'all') {
       $pin = current_user()->PIN;
         $and = " PIN ='$pin'";
         
@@ -461,10 +559,13 @@ class Contribution_Model extends CI_Model {
             $and.=" AND (PID = '$key' OR member_id = '$key')";
         }
 
+        $and .= $this->contribution_source_filter_sql($source);
+        $and .= $this->contribution_posted_filter_sql($posted);
+
         return count($this->db->query("SELECT * FROM contribution_transaction WHERE $and ORDER BY createdon DESC")->result());
     }
 
-    function search_transaction($key, $from, $upto, $limit, $start) {
+    function search_transaction($key, $from, $upto, $limit, $start, $source = 'all', $posted = 'all') {
          $pin = current_user()->PIN;
        
         $and = " PIN ='$pin'";
@@ -480,6 +581,9 @@ class Contribution_Model extends CI_Model {
             // Member ID is provided, ignore date filters and filter by PID or member_id
             $and.=" AND (PID = '$key' OR member_id = '$key')";
         }
+
+        $and .= $this->contribution_source_filter_sql($source);
+        $and .= $this->contribution_posted_filter_sql($posted);
 
         return $this->db->query("SELECT * FROM contribution_transaction WHERE $and ORDER BY createdon DESC LIMIT $start,$limit")->result();
     }

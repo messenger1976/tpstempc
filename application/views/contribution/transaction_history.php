@@ -19,21 +19,46 @@ $_GET['from'] = isset($jxy['from']) && !empty($jxy['from']) ? format_date($jxy['
 $_GET['upto'] = isset($jxy['upto']) && !empty($jxy['upto']) ? format_date($jxy['upto'],FALSE) : (($this->session->userdata('contribution_transaction_upto')) ? $this->session->userdata('contribution_transaction_upto') : '');
 $_GET['key'] = isset($jxy['key']) ? $jxy['key'] : (($this->session->userdata('contribution_transaction_key')) ? $this->session->userdata('contribution_transaction_key') : '');
 
+$source_type = isset($source_type) ? $source_type : (isset($jxy['source_type']) ? $jxy['source_type'] : 'all');
+$posted_filter = isset($posted_filter) ? $posted_filter : (isset($jxy['posted_filter']) ? $jxy['posted_filter'] : 'all');
+$source_type_options = isset($source_type_options) && is_array($source_type_options) ? $source_type_options : array('all' => 'All');
 
 ?>
 
 <div class="form-group col-lg-12">
 
-    <div class="col-lg-4">
+    <div class="col-lg-3">
         <input type="text" class="form-control" name="key" id="accountno" placeholder="<?php echo lang('member_member_id').'/'.  lang('customer_name'); ?>" value="<?php echo (isset($_GET['key']) && $_GET['key'] != '' ? $_GET['key'] : ($this->session->userdata('contribution_transaction_key') ? $this->session->userdata('contribution_transaction_key') : '')); ?>"/> 
     </div>
-    <div class="col-lg-3">
+    <div class="col-lg-2">
         <input type="text" class="form-control" id="from" data-date-format="DD-MM-YYYY" placeholder="<?php echo lang('hint_date'); ?>" name="from" value="<?php echo (isset($_GET['from']) && $_GET['from'] != '' ? $_GET['from'] : ($this->session->userdata('contribution_transaction_from') ? $this->session->userdata('contribution_transaction_from') : '')); ?>"/> 
     </div>
-    <div class="col-lg-3">
+    <div class="col-lg-2">
         <input type="text" class="form-control" id="upto" data-date-format="DD-MM-YYYY" placeholder="<?php echo lang('hint_date'); ?>" name="upto" value="<?php echo (isset($_GET['upto']) && $_GET['upto'] != '' ? $_GET['upto'] : ($this->session->userdata('contribution_transaction_upto') ? $this->session->userdata('contribution_transaction_upto') : '')); ?>"/> 
     </div>
-    <div class="col-lg-2" style="text-align-last: right;">
+    <div class="col-lg-2">
+        <select name="source_type" class="form-control" title="<?php echo lang('contribution_filter_source_type'); ?>">
+            <?php foreach ($source_type_options as $opt_key => $opt_label): ?>
+                <option value="<?php echo htmlspecialchars($opt_key, ENT_QUOTES, 'UTF-8'); ?>" <?php echo ($source_type === $opt_key ? 'selected="selected"' : ''); ?>>
+                    <?php
+                    if ($opt_key === 'all') {
+                        echo lang('contribution_filter_source_type') . ' (' . lang('contribution_filter_all') . ')';
+                    } else {
+                        echo htmlspecialchars($opt_label, ENT_QUOTES, 'UTF-8');
+                    }
+                    ?>
+                </option>
+            <?php endforeach; ?>
+        </select>
+    </div>
+    <div class="col-lg-2">
+        <select name="posted_filter" class="form-control" title="<?php echo lang('contribution_filter_posted'); ?>">
+            <option value="all" <?php echo ($posted_filter === 'all' ? 'selected="selected"' : ''); ?>><?php echo lang('contribution_filter_posted') . ' (' . lang('contribution_filter_all') . ')'; ?></option>
+            <option value="posted" <?php echo ($posted_filter === 'posted' ? 'selected="selected"' : ''); ?>><?php echo lang('contribution_filter_posted_yes'); ?></option>
+            <option value="unposted" <?php echo ($posted_filter === 'unposted' ? 'selected="selected"' : ''); ?>><?php echo lang('contribution_filter_unposted'); ?></option>
+        </select>
+    </div>
+    <div class="col-lg-1" style="text-align-last: right;">
         <input type="submit" value="<?php echo lang('button_search'); ?>" class="btn btn-primary"/>
     </div>
 

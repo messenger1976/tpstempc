@@ -154,7 +154,7 @@ $current_member_id = ($current_user_data && isset($current_user_data->member_id)
             <?php } ?>
 
             <?php if (access_module(5)) { ?>
-                <li class="<?php echo ($active == 'loan' ? 'active' : ''); ?>">
+                <li class="<?php echo (($active == 'loan' || $active == 'cic') ? 'active' : ''); ?>">
                     <a href="#"><i class="fa fa-book"></i> <span class="nav-label"><?php echo lang('page_loan'); ?></span><span class="fa arrow"></span></a>
                     <ul class="nav nav-second-level">
                         <?php if (has_role(5, 'View_loan_list')) { ?>
@@ -177,6 +177,9 @@ $current_member_id = ($current_user_data && isset($current_user_data->member_id)
                         <?php } ?>
                         <?php if (has_role(5, 'Loan_beginning_balances')) { ?>
                             <li class="<?php echo (($activefunction == 'loan_beginning_balance_list' || $activefunction == 'loan_beginning_balance_create') ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/loan/loan_beginning_balance_list'); ?>"><?php echo lang('loan_beginning_balance_list'); ?></a></li>
+                        <?php } ?>
+                        <?php if (has_role(5, 'Export_CIC')) { ?>
+                            <li class="<?php echo (($active == 'cic') ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/cic/index'); ?>"><?php echo lang('cic_export_menu'); ?></a></li>
                         <?php } ?>
                         <?php if (has_role(5, 'automatic_repayment_process')) { ?>
                            <!-- <li class="<?php echo ($activefunction == 'automatic_repayment_process' ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/loan/automatic_repayment_process'); ?>"><?php echo 'Automatic Loan Repayment'; ?></a></li>-->

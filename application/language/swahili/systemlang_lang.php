@@ -18,6 +18,7 @@ $lang['page_share'] = 'Member Shares';
 $lang['page_contribution'] = 'Member Contribution';
 $lang['page_customer'] = 'Customer';
 $lang['page_loan'] = 'Loan Management';
+$lang['cic_export_menu'] = 'CIC Credit Export';
 $lang['page_report'] = 'Reports';
 $lang['page_supplier'] = 'Supplier';
 

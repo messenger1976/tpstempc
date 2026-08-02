@@ -185,9 +185,10 @@ class Contribution_Model extends CI_Model {
      * @param float $credit
      * @param string $comment
      * @param string $date Y-m-d or datetime
+     * @param string $source Origin module key: journal_entry|cash_receipt|cash_disbursement|general_journal|journal_voucher
      * @return string|false receipt number
      */
-    function journal_cbu_subledger($pid, $member_id, $debit, $credit, $comment = '', $date = '') {
+    function journal_cbu_subledger($pid, $member_id, $debit, $credit, $comment = '', $date = '', $source = 'journal_entry') {
         $debit = floatval($debit);
         $credit = floatval($credit);
         if ($credit <= 0 && $debit <= 0) {
@@ -206,8 +207,80 @@ class Contribution_Model extends CI_Model {
         } elseif (strlen($date) <= 10) {
             $date = $date . ' 00:00:00';
         }
-        $comment = trim($comment) !== '' ? $comment : 'Journal Entry';
-        return $this->contribution_transaction($trans_type, $pid, $member_id, $amount, 'JOURNAL', $comment, '', '', 0, $date);
+        $source = strtolower(trim((string) $source));
+        $paymethod_map = array(
+            'cash_receipt' => 'CASH RECEIPT',
+            'cash_disbursement' => 'CASH DISBURSEMENT',
+            'journal_entry' => 'JOURNAL',
+            'general_journal' => 'JOURNAL',
+            'journal_voucher' => 'JOURNAL',
+        );
+        $paymethod = isset($paymethod_map[$source]) ? $paymethod_map[$source] : 'JOURNAL';
+        $default_comments = array(
+            'cash_receipt' => 'Cash Receipt',
+            'cash_disbursement' => 'Cash Disbursement',
+            'journal_entry' => 'Journal Entry',
+            'general_journal' => 'Journal Entry',
+            'journal_voucher' => 'Journal Entry',
+        );
+        $comment = trim($comment) !== '' ? $comment : (isset($default_comments[$source]) ? $default_comments[$source] : 'Journal Entry');
+        return $this->contribution_transaction($trans_type, $pid, $member_id, $amount, $paymethod, $comment, '', '', 0, $date);
+    }
+
+    /**
+     * Human-readable origin of a contribution_transaction row.
+     */
+    function contribution_transaction_source($transaction) {
+        if (is_array($transaction)) {
+            $transaction = (object) $transaction;
+        }
+        if (!is_object($transaction)) {
+            return 'CBU Transaction';
+        }
+
+        $system = strtoupper(trim(isset($transaction->system_comment) ? (string) $transaction->system_comment : ''));
+        $comment = strtoupper(trim(isset($transaction->comment) ? (string) $transaction->comment : ''));
+        $paymethod = strtoupper(trim(isset($transaction->paymethod) ? (string) $transaction->paymethod : ''));
+        $auto = isset($transaction->auto) ? intval($transaction->auto) : 0;
+
+        if (strpos($comment, 'VOID') === 0 || strpos($system, 'VOID') === 0) {
+            return 'Void';
+        }
+        if (strpos($comment, 'BEGINNING BALANCE') !== FALSE) {
+            return 'Beginning Balance';
+        }
+        if (strpos($system, 'CONTRIBUTION_MIGRATED') !== FALSE || strpos($comment, 'CONTRIBUTION_MIGRATED') !== FALSE) {
+            return 'Migration';
+        }
+        if ($paymethod === 'CASH RECEIPT' || strpos($paymethod, 'CASH RECEIPT') !== FALSE) {
+            return 'Cash Receipt';
+        }
+        if ($paymethod === 'CASH DISBURSEMENT' || strpos($paymethod, 'CASH DISBURSEMENT') !== FALSE) {
+            return 'Cash Disbursement';
+        }
+        if ($paymethod === 'JOURNAL' || strpos($paymethod, 'JOURNAL') !== FALSE) {
+            return 'Journal Entry';
+        }
+        if ($auto === 1) {
+            return 'Auto Contribution';
+        }
+
+        if ($comment !== '') {
+            if (preg_match('/^(CV|OR|CR)[\s#\-\/]/i', $comment) || strpos($comment, 'CASH RECEIPT') !== FALSE) {
+                return 'Cash Receipt';
+            }
+            if (preg_match('/^(CDS|CD)[\s#\-\/]/i', $comment) || strpos($comment, 'CASH DISBURSEMENT') !== FALSE) {
+                return 'Cash Disbursement';
+            }
+            if (preg_match('/^JV[\s#\-\/]/i', $comment) || strpos($comment, 'JOURNAL') !== FALSE) {
+                return 'Journal Entry';
+            }
+            if (preg_match('/^LN[\s#\-\/]/i', $comment) || strpos($comment, 'LOAN') !== FALSE) {
+                return 'Loan Disbursement';
+            }
+        }
+
+        return 'CBU Transaction';
     }
 
     function contribution_setting($data, $id=null) {
@@ -543,6 +616,234 @@ class Contribution_Model extends CI_Model {
         }
         
         return FALSE;
+    }
+
+    /**
+     * Whether a contribution_transaction receipt already has GL lines.
+     */
+    function is_contribution_receipt_posted_to_gl($receipt) {
+        $pin = current_user()->PIN;
+        if ($receipt === null || $receipt === '') {
+            return false;
+        }
+        $this->db->where('refferenceID', $receipt);
+        $this->db->where('fromtable', 'contribution_transaction');
+        $this->db->where('PIN', $pin);
+        return $this->db->count_all_results('general_ledger') > 0;
+    }
+
+    /**
+     * Beginning-balance CBU is posted via contribution_settings.id, not the receipt.
+     */
+    function is_contribution_beginning_balance_posted($pid, $member_id) {
+        $pin = current_user()->PIN;
+        if ($pid === null || $pid === '' || $member_id === null || $member_id === '') {
+            return false;
+        }
+        $this->db->where('PID', $pid);
+        $this->db->where('member_id', $member_id);
+        $this->db->where('PIN', $pin);
+        $this->db->where('posted', 1);
+        return $this->db->count_all_results('contribution_settings') > 0;
+    }
+
+    /**
+     * Resolve cash/bank (or adjustment) GL account for a CBU payment method.
+     */
+    function get_cash_account_for_contribution($payment_method) {
+        $pin = current_user()->PIN;
+        $payment_method = trim((string) $payment_method);
+        if ($payment_method === '') {
+            $payment_method = 'CASH';
+        }
+
+        $this->load->model('payment_method_config_model');
+        $pm_config = $this->payment_method_config_model->get_account_for_payment_method($payment_method, $pin);
+        if ($pm_config && !empty($pm_config->gl_account_code)) {
+            $acct = $this->db->query(
+                'SELECT account FROM account_chart WHERE account = ? AND PIN = ? LIMIT 1',
+                array($pm_config->gl_account_code, $pin)
+            )->row();
+            if ($acct) {
+                return $acct->account;
+            }
+        }
+
+        $payment_upper = strtoupper($payment_method);
+        if (strpos($payment_upper, 'ADJUSTMENT') !== FALSE) {
+            $acct = $this->db->query(
+                "SELECT account FROM account_chart
+                 WHERE PIN = ?
+                   AND (name LIKE '%Opening Balance%' OR name LIKE '%Beginning Balance%' OR name LIKE '%Adjustment%' OR name LIKE '%Equity%')
+                   AND (account_type IN (30, 40, 30000, 40000) OR account_type BETWEEN 30000 AND 39999)
+                 ORDER BY account ASC LIMIT 1",
+                array($pin)
+            )->row();
+            if ($acct) {
+                return $acct->account;
+            }
+        }
+
+        $acct = $this->db->query(
+            "SELECT account FROM account_chart
+             WHERE PIN = ?
+               AND account_type IN (1, 10000)
+               AND (name LIKE '%Cash%' OR name LIKE '%Bank%')
+             ORDER BY account ASC LIMIT 1",
+            array($pin)
+        )->row();
+        return $acct ? $acct->account : null;
+    }
+
+    /**
+     * Post a manual Contribute (CR/DR) receipt to general_ledger.
+     * Skips beginning balance (posted via contribution_settings), journal-sourced
+     * rows (already in GL), voids, and already-posted receipts.
+     *
+     * @param string $receipt
+     * @return array {success:bool, message:string}
+     */
+    function post_contribution_receipt_to_gl($receipt) {
+        $pin = current_user()->PIN;
+        if ($receipt === null || $receipt === '') {
+            return array('success' => false, 'message' => 'Invalid receipt');
+        }
+
+        $this->db->where('receipt', $receipt);
+        $this->db->where('PIN', $pin);
+        $trans = $this->db->get('contribution_transaction')->row();
+        if (!$trans) {
+            return array('success' => false, 'message' => 'Transaction not found');
+        }
+
+        if ($this->is_contribution_receipt_posted_to_gl($receipt)) {
+            return array('success' => true, 'message' => 'Transaction already posted to GL');
+        }
+
+        $comment = strtoupper(trim(isset($trans->comment) ? (string) $trans->comment : ''));
+        $system = strtoupper(trim(isset($trans->system_comment) ? (string) $trans->system_comment : ''));
+        $paymethod = strtoupper(trim(isset($trans->paymethod) ? (string) $trans->paymethod : ''));
+
+        if (strpos($comment, 'VOID') === 0 || strpos($system, 'VOID') === 0) {
+            return array('success' => false, 'message' => 'Void entries cannot be posted to GL from this screen');
+        }
+        if (strpos($comment, 'BEGINNING BALANCE') !== FALSE) {
+            return array('success' => false, 'message' => 'Beginning Balance is posted from the CBU Setting List, not this screen');
+        }
+        if ($paymethod === 'JOURNAL' || strpos($paymethod, 'JOURNAL') !== FALSE
+            || $paymethod === 'CASH RECEIPT' || strpos($paymethod, 'CASH RECEIPT') !== FALSE
+            || $paymethod === 'CASH DISBURSEMENT' || strpos($paymethod, 'CASH DISBURSEMENT') !== FALSE) {
+            return array('success' => false, 'message' => 'This transaction already comes from a journal/cash document - post that document to GL instead');
+        }
+
+        $this->load->model('setting_model');
+        $global_contribution = $this->setting_model->global_contribution_info();
+        $capital_build_up_account = isset($global_contribution->capital_build_up_account) ? $global_contribution->capital_build_up_account : null;
+        if (empty($capital_build_up_account)) {
+            return array('success' => false, 'message' => 'Capital Build Up Account is not configured in Contribution Minimum settings');
+        }
+
+        $capital_account_info = account_row_info($capital_build_up_account);
+        if (!$capital_account_info) {
+            return array('success' => false, 'message' => 'Capital Build Up Account not found in chart of accounts');
+        }
+
+        $cash_account = $this->get_cash_account_for_contribution(isset($trans->paymethod) ? $trans->paymethod : 'CASH');
+        if (empty($cash_account)) {
+            return array('success' => false, 'message' => 'No cash/bank GL account mapped for payment method "' . (isset($trans->paymethod) ? $trans->paymethod : '') . '"');
+        }
+        $cash_account_info = account_row_info($cash_account);
+        if (!$cash_account_info) {
+            return array('success' => false, 'message' => 'Cash/bank account not found in chart of accounts');
+        }
+
+        $amount = floatval($trans->amount);
+        if ($amount <= 0) {
+            return array('success' => false, 'message' => 'Invalid amount');
+        }
+
+        $trans_type = strtoupper(trim($trans->trans_type));
+        if (!in_array($trans_type, array('CR', 'DR'), true)) {
+            return array('success' => false, 'message' => 'Only deposit (CR) and withdrawal (DR) can be posted');
+        }
+
+        $trans_date = !empty($trans->createdon) ? date('Y-m-d', strtotime($trans->createdon)) : date('Y-m-d');
+        $member_id = isset($trans->member_id) ? $trans->member_id : '';
+        $pid = isset($trans->PID) ? $trans->PID : '';
+        $label = ($trans_type === 'CR') ? 'CBU Deposit' : 'CBU Withdrawal';
+        $description = $label . ' - ' . $member_id . ' [' . $receipt . ']';
+        if (!empty($trans->comment)) {
+            $description .= ' ' . trim($trans->comment);
+        }
+
+        $this->db->trans_start();
+
+        $ledger_entry = array(
+            'date' => $trans_date,
+            'PIN' => $pin
+        );
+        $this->db->insert('general_ledger_entry', $ledger_entry);
+        $ledger_entry_id = $this->db->insert_id();
+        if (!$ledger_entry_id) {
+            $this->db->trans_complete();
+            return array('success' => false, 'message' => 'Failed to create GL entry header');
+        }
+
+        $ledger = array(
+            'journalID' => 7,
+            'refferenceID' => $receipt,
+            'entryid' => $ledger_entry_id,
+            'date' => $trans_date,
+            'description' => $description,
+            'linkto' => 'contribution_transaction.receipt',
+            'fromtable' => 'contribution_transaction',
+            'paid' => 0,
+            'PID' => $pid,
+            'member_id' => $member_id,
+            'PIN' => $pin,
+        );
+
+        // Deposit CR: Dr Cash, Cr CBU. Withdrawal DR: Dr CBU, Cr Cash.
+        if ($trans_type === 'CR') {
+            $ledger['account'] = $cash_account;
+            $ledger['debit'] = $amount;
+            $ledger['credit'] = 0;
+            $ledger['account_type'] = $cash_account_info->account_type;
+            $ledger['sub_account_type'] = isset($cash_account_info->sub_account_type) ? $cash_account_info->sub_account_type : null;
+            $this->db->insert('general_ledger', $ledger);
+
+            $ledger['account'] = $capital_build_up_account;
+            $ledger['debit'] = 0;
+            $ledger['credit'] = $amount;
+            $ledger['account_type'] = $capital_account_info->account_type;
+            $ledger['sub_account_type'] = isset($capital_account_info->sub_account_type) ? $capital_account_info->sub_account_type : null;
+            $this->db->insert('general_ledger', $ledger);
+        } else {
+            $ledger['account'] = $capital_build_up_account;
+            $ledger['debit'] = $amount;
+            $ledger['credit'] = 0;
+            $ledger['account_type'] = $capital_account_info->account_type;
+            $ledger['sub_account_type'] = isset($capital_account_info->sub_account_type) ? $capital_account_info->sub_account_type : null;
+            $this->db->insert('general_ledger', $ledger);
+
+            $ledger['account'] = $cash_account;
+            $ledger['debit'] = 0;
+            $ledger['credit'] = $amount;
+            $ledger['account_type'] = $cash_account_info->account_type;
+            $ledger['sub_account_type'] = isset($cash_account_info->sub_account_type) ? $cash_account_info->sub_account_type : null;
+            $this->db->insert('general_ledger', $ledger);
+        }
+
+        $this->db->trans_complete();
+        if ($this->db->trans_status() === FALSE) {
+            return array('success' => false, 'message' => 'GL posting failed');
+        }
+
+        if (!$this->is_contribution_receipt_posted_to_gl($receipt)) {
+            return array('success' => false, 'message' => 'GL posting pending. Please try again');
+        }
+
+        return array('success' => true, 'message' => 'Transaction posted to GL successfully');
     }
 
     /**

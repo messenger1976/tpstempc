@@ -150,49 +150,44 @@ if (isset($message) && !empty($message)) {
 <script src="<?php echo base_url() ?>media/js/script/moment.js"></script>
 <script type="text/javascript">
     (function() {
+        var memberAutocomplete = null;
+
+        function loadScript(src, done) {
+            var script = document.createElement('script');
+            script.src = src;
+            script.onload = function() {
+                done(true);
+            };
+            script.onerror = function() {
+                console.error('Failed to load ' + src);
+                done(false);
+            };
+            document.head.appendChild(script);
+        }
+
+        // The page template loads jQuery UI (which also defines $.fn.autocomplete) at the
+        // bottom of the body, so wait until the document has finished parsing before pulling
+        // in the custom plugin. Binding earlier races jQuery UI and the member lookup silently
+        // fails to bind, which is why the Member ID never got filled in.
         function initScripts() {
-            if (typeof jQuery === 'undefined') {
+            if (typeof jQuery === 'undefined' || document.readyState === 'loading') {
                 setTimeout(initScripts, 50);
                 return;
             }
-            
-            // jQuery UI is loaded in template and also defines autocomplete
-            // We need to load our custom autocomplete plugin AFTER jQuery UI
-            // and ensure it overwrites jQuery UI's autocomplete
-            var autocompleteScriptLoaded = false;
-            
-            // Check if script is already in the DOM
-            var existingScript = document.querySelector('script[src*="jquery.autocomplete.js"]');
-            if (existingScript) {
-                // Script already exists, just wait a bit and continue
-                setTimeout(function() {
-                    loadDatePicker();
-                }, 200);
-            } else {
-                var autocompleteScript = document.createElement('script');
-                autocompleteScript.src = '<?php echo base_url(); ?>media/js/jquery.autocomplete.js';
-                autocompleteScript.onload = function() {
-                    autocompleteScriptLoaded = true;
-                    // Wait longer to ensure the plugin fully registers and overwrites jQuery UI's autocomplete
-                    setTimeout(function() {
-                        loadDatePicker();
-                    }, 300);
-                };
-                autocompleteScript.onerror = function() {
-                    console.error('Failed to load autocomplete plugin');
-                };
-                document.head.appendChild(autocompleteScript);
-            }
+
+            loadScript('<?php echo base_url(); ?>media/js/jquery.autocomplete.js?v=20260802', function(loaded) {
+                // Loaded last on purpose, so $.fn.autocomplete is the custom plugin right now.
+                // Capture it here rather than at bind time, when jQuery UI's widget may have
+                // taken the name back.
+                if (loaded) {
+                    memberAutocomplete = $.fn.memberAutocomplete || $.fn.autocomplete;
+                }
+                loadDatePicker();
+            });
             
             function loadDatePicker() {
-                // Load bootstrap-datepicker after jQuery and autocomplete are available
                 if (typeof $.fn.datetimepicker === 'undefined') {
-                    var datepickerScript = document.createElement('script');
-                    datepickerScript.src = '<?php echo base_url() ?>media/js/plugins/datapicker/bootstrap-datepicker.js';
-                    datepickerScript.onload = function() {
-                        initMainScript();
-                    };
-                    document.head.appendChild(datepickerScript);
+                    loadScript('<?php echo base_url() ?>media/js/plugins/datapicker/bootstrap-datepicker.js', initMainScript);
                 } else {
                     initMainScript();
                 }
@@ -233,96 +228,34 @@ if (isset($message) && !empty($message)) {
         });
         
         
-        // Destroy any existing jQuery UI autocomplete instances
-        try {
-            if ($("#pid").data('ui-autocomplete')) {
-                $("#pid").autocomplete('destroy');
-            }
-            if ($("#member_id").data('ui-autocomplete')) {
-                $("#member_id").autocomplete('destroy');
-            }
-        } catch(e) {
-            // Ignore errors
-        }
-        
-        // Wait a bit to ensure cleanup is complete before initializing
-        setTimeout(function() {
+        if (typeof memberAutocomplete !== 'function') {
+            console.error('Member autocomplete plugin is not available; Member ID will not auto-fill.');
+        } else {
+            var lookupOptions = {
+                pleasewait:'<?php echo lang("please_wait"); ?>',
+                serverURLq:'<?php echo site_url(current_lang() . '/saving/search_member/'); ?>',
+                Name: '<?php echo lang('member_fullname'); ?>',
+                gender: '<?php echo lang('member_gender'); ?>',
+                dob: '<?php echo lang('member_dob'); ?>',
+                joindate: '<?php echo lang('member_join_date'); ?>',
+                phone1: '<?php echo lang('member_contact_phone1'); ?> ',
+                phone2: '<?php echo lang('member_contact_phone2'); ?>',
+                email: '<?php echo lang('member_contact_email'); ?>',
+                photourl: '<?php echo base_url(); ?>uploads/memberphoto/',
+                matchContains:true
+            };
+
+            // Guarded so a failed bind still leaves the magnifier lookups below wired up.
             try {
-                $("#pid").autocomplete("<?php echo site_url(current_lang() . '/saving/autosuggest/pid'); ?>",
-                {
-                    pleasewait:'<?php echo lang("please_wait"); ?>',
-                    serverURLq:'<?php echo site_url(current_lang() . '/saving/search_member/'); ?>',
-                    secondID: 'member_id',
-                    Name: '<?php echo lang('member_fullname'); ?>',
-                    gender: '<?php echo lang('member_gender'); ?>',
-                    dob: '<?php echo lang('member_dob'); ?>',
-                    joindate: '<?php echo lang('member_join_date'); ?>',
-                    phone1: '<?php echo lang('member_contact_phone1'); ?> ',
-                    phone2: '<?php echo lang('member_contact_phone2'); ?>',
-                    email: '<?php echo lang('member_contact_email'); ?>',
-                    photourl: '<?php echo base_url(); ?>uploads/memberphoto/',
-                    matchContains:true,
-                    column: 'PID'
-                }); 
-                
-                $("#member_id").autocomplete("<?php echo site_url(current_lang() . '/saving/autosuggest/mid'); ?>",{
-                    pleasewait:'<?php echo lang("please_wait"); ?>',
-                    serverURLq:'<?php echo site_url(current_lang() . '/saving/search_member/'); ?>',
-                    secondID: 'pid',
-                    Name: '<?php echo lang('member_fullname'); ?>',
-                    gender: '<?php echo lang('member_gender'); ?>',
-                    dob: '<?php echo lang('member_dob'); ?>',
-                    joindate: '<?php echo lang('member_join_date'); ?>',
-                    phone1: '<?php echo lang('member_contact_phone1'); ?> ',
-                    phone2: '<?php echo lang('member_contact_phone2'); ?>',
-                    email: '<?php echo lang('member_contact_email'); ?>',
-                    photourl: '<?php echo base_url(); ?>uploads/memberphoto/',
-                    matchContains:true,
-                    column: 'MID'
-                });
-            } catch(e) {
-                console.error('Autocomplete initialization error:', e);
-                // Retry once more after a longer delay
-                setTimeout(function() {
-                    try {
-                        $("#pid").autocomplete("<?php echo site_url(current_lang() . '/saving/autosuggest/pid'); ?>",
-                        {
-                            pleasewait:'<?php echo lang("please_wait"); ?>',
-                            serverURLq:'<?php echo site_url(current_lang() . '/saving/search_member/'); ?>',
-                            secondID: 'member_id',
-                            Name: '<?php echo lang('member_fullname'); ?>',
-                            gender: '<?php echo lang('member_gender'); ?>',
-                            dob: '<?php echo lang('member_dob'); ?>',
-                            joindate: '<?php echo lang('member_join_date'); ?>',
-                            phone1: '<?php echo lang('member_contact_phone1'); ?> ',
-                            phone2: '<?php echo lang('member_contact_phone2'); ?>',
-                            email: '<?php echo lang('member_contact_email'); ?>',
-                            photourl: '<?php echo base_url(); ?>uploads/memberphoto/',
-                            matchContains:true,
-                            column: 'PID'
-                        }); 
-                        
-                        $("#member_id").autocomplete("<?php echo site_url(current_lang() . '/saving/autosuggest/mid'); ?>",{
-                            pleasewait:'<?php echo lang("please_wait"); ?>',
-                            serverURLq:'<?php echo site_url(current_lang() . '/saving/search_member/'); ?>',
-                            secondID: 'pid',
-                            Name: '<?php echo lang('member_fullname'); ?>',
-                            gender: '<?php echo lang('member_gender'); ?>',
-                            dob: '<?php echo lang('member_dob'); ?>',
-                            joindate: '<?php echo lang('member_join_date'); ?>',
-                            phone1: '<?php echo lang('member_contact_phone1'); ?> ',
-                            phone2: '<?php echo lang('member_contact_phone2'); ?>',
-                            email: '<?php echo lang('member_contact_email'); ?>',
-                            photourl: '<?php echo base_url(); ?>uploads/memberphoto/',
-                            matchContains:true,
-                            column: 'MID'
-                        });
-                    } catch(e2) {
-                        console.error('Autocomplete retry failed:', e2);
-                    }
-                }, 300);
+                memberAutocomplete.call($("#pid"), "<?php echo site_url(current_lang() . '/saving/autosuggest/pid'); ?>",
+                    $.extend({}, lookupOptions, { secondID: 'member_id', column: 'PID' }));
+
+                memberAutocomplete.call($("#member_id"), "<?php echo site_url(current_lang() . '/saving/autosuggest/mid'); ?>",
+                    $.extend({}, lookupOptions, { secondID: 'pid', column: 'MID' }));
+            } catch (e) {
+                console.error('Member autocomplete failed to bind; Member ID will not auto-fill.', e);
             }
-        }, 150);   
+        }
      
      
         

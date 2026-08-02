@@ -488,13 +488,18 @@ class Finance_Model extends CI_Model {
                         $cbu_comment = trim($cbu_comment . ' [' . $entry->reference_no . ']');
                     }
                     $cbu_date = !empty($entry->entrydate) ? $entry->entrydate : date('Y-m-d');
+                    $cbu_source = 'general_journal';
+                    if (!empty($entry->reference_type)) {
+                        $cbu_source = strtolower(trim($entry->reference_type));
+                    }
                     $cbu_receipt = $this->contribution_model->journal_cbu_subledger(
                         $item->PID,
                         $item->member_id,
                         floatval($item->debit),
                         floatval($item->credit),
                         $cbu_comment,
-                        $cbu_date
+                        $cbu_date,
+                        $cbu_source
                     );
                     if (!$cbu_receipt) {
                         log_message('error', 'Failed to post CBU sub-ledger for journal entry ' . $entry->id . ' PID=' . $item->PID);
@@ -3296,6 +3301,77 @@ $pin=current_user()->PIN;
         // Check if this transaction is a reversing entry (void transaction)
         $comment = isset($transaction->comment) ? (string)$transaction->comment : '';
         return (strpos($comment, 'VOID-') === 0);
+    }
+
+    /**
+     * Human-readable origin of a savings_transaction row.
+     * Uses system_comment for module-created rows, then refno prefixes
+     * (CV / CDS / JV / SAWS / LN) that staff enter on Deposit & Withdrawal.
+     *
+     * @param object|array $transaction
+     * @return string
+     */
+    function savings_transaction_source($transaction) {
+        if (is_array($transaction)) {
+            $transaction = (object) $transaction;
+        }
+        if (!is_object($transaction)) {
+            return 'Deposit & Withdrawal';
+        }
+
+        $system = strtoupper(trim(isset($transaction->system_comment) ? (string) $transaction->system_comment : ''));
+        $refno = strtoupper(trim(isset($transaction->refno) ? (string) $transaction->refno : ''));
+        $comment = strtoupper(trim(isset($transaction->comment) ? (string) $transaction->comment : ''));
+
+        if ($system !== '' && strpos($system, 'VOID TRANSACTION') === 0) {
+            return 'Void';
+        }
+        if ($comment !== '' && strpos($comment, 'VOID-') === 0) {
+            return 'Void';
+        }
+        if (strpos($system, 'LOAN DISBURSEMENT') !== FALSE || strpos($refno, 'LN') === 0) {
+            return 'Loan Disbursement';
+        }
+        if (strpos($system, 'BEGINNING BALANCE') !== FALSE) {
+            return 'Beginning Balance';
+        }
+        if (strpos($system, 'OPEN ACCOUNT') !== FALSE) {
+            return 'Create Saving Account';
+        }
+        if (strpos($system, 'INTEREST') !== FALSE) {
+            return 'Interest Posting';
+        }
+
+        // Document / module hint from Ref. No. entered on Deposit & Withdrawal
+        if ($refno !== '') {
+            if (preg_match('/^CV[\s#\-\/]?/i', $refno) || strpos($refno, 'CV#') === 0) {
+                return 'Cash Receipt';
+            }
+            if (preg_match('/^CDS[\s#\-\/]?/i', $refno) || strpos($refno, 'CDS#') === 0) {
+                return 'Cash Disbursement';
+            }
+            if (preg_match('/^JV[\s#\-\/]?/i', $refno) || strpos($refno, 'JV#') === 0) {
+                return 'Journal Entry';
+            }
+            if (preg_match('/^SAWS[\s#\-\/]?/i', $refno) || strpos($refno, 'SAWS#') === 0) {
+                return 'Deposit & Withdrawal';
+            }
+            if (preg_match('/^OR[\s#\-\/]?/i', $refno) || strpos($refno, 'OR#') === 0) {
+                return 'Cash Receipt';
+            }
+            if (preg_match('/^CR[\s#\-\/]?/i', $refno) || strpos($refno, 'CR#') === 0) {
+                return 'Cash Receipt';
+            }
+            if (preg_match('/^CD[\s#\-\/]?/i', $refno) || strpos($refno, 'CD#') === 0) {
+                return 'Cash Disbursement';
+            }
+        }
+
+        if (strpos($system, 'NORMAL WITHDRAWAL') !== FALSE || strpos($system, 'NORMAL DEPOSIT') !== FALSE) {
+            return 'Deposit & Withdrawal';
+        }
+
+        return 'Deposit & Withdrawal';
     }
 
     function get_voided_receipt($transaction) {

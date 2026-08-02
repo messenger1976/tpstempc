@@ -1,4 +1,4 @@
-<link href="<?php echo base_url(); ?>media/css/plugins/datapicker/datepicker3.css?v=20260801" rel="stylesheet"/>
+<link href="<?php echo base_url(); ?>media/css/plugins/datapicker/datepicker3.css?v=20260802" rel="stylesheet"/>
 <?php echo form_open(current_lang() . "/saving/transaction_search", 'class="form-horizontal"'); ?>
 
 <?php
@@ -71,6 +71,7 @@ $account_type_filter = isset($account_type_filter) ? $account_type_filter : (iss
                 <th><?php echo lang('index_account'); ?></th>
                 <th><?php echo lang('index_name'); ?></th>
                 <th><?php echo lang('index_transtype'); ?></th>
+                <th><?php echo lang('index_source'); ?></th>
                 <th><?php echo lang('index_transmethod'); ?></th>
                 <th><?php echo lang('index_amount'); ?></th>
                 <th><?php echo lang('index_trans_date'); ?></th>
@@ -107,6 +108,7 @@ $account_type_filter = isset($account_type_filter) ? $account_type_filter : (iss
                         echo $trans_type_label;
                         ?>
                     </td>
+                    <td><?php echo isset($value->transaction_source) ? $value->transaction_source : ''; ?></td>
                     <td>
                         <?php echo isset($value->paymethod) ? $value->paymethod : ''; ?>
                         <?php if (isset($value->is_void_entry) && $value->is_void_entry && !empty($value->void_original_method)): ?>

@@ -660,8 +660,13 @@ jQuery.fn.autocomplete = function(url, options, data) {
     return this;
 }
 
+// jQuery UI is loaded near the bottom of the page template and defines its own
+// $.fn.autocomplete. Whichever file executes last wins, so $.fn.autocomplete cannot be
+// relied on. Nothing else defines this alias, so callers can bind to it safely.
+jQuery.fn.memberAutocomplete = jQuery.fn.autocomplete;
+
 jQuery.fn.autocompleteArray = function(data, options) {
-    return this.autocomplete(null, options, data);
+    return jQuery.fn.memberAutocomplete.call(this, null, options, data);
 }
 
 jQuery.fn.indexOf = function(e){

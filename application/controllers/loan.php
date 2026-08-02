@@ -926,7 +926,65 @@ $pin = current_user()->PIN;
                     }
                 }
             }
-            if (empty($line_items)) {
+
+            // Validate selected offset loans (same member, active, outstanding)
+            $offset_lids = $this->input->post('offset_loans');
+            $offset_loans_selected = array();
+            $offset_total = 0.0;
+            if (is_array($offset_lids)) {
+                foreach ($offset_lids as $old_lid) {
+                    $old_lid = trim($old_lid);
+                    if ($old_lid === '' || $old_lid === $LID) {
+                        continue;
+                    }
+                    $old = $this->loan_model->loan_info($old_lid)->row();
+                    if (!$old || (string) $old->PIN !== (string) $pin || (string) $old->PID !== (string) $loaninfo->PID) {
+                        $this->data['warning'] = lang('loan_offset_invalid_loan') . ' (' . htmlspecialchars($old_lid) . ')';
+                        $offset_loans_selected = array();
+                        break;
+                    }
+                    if ((int) $old->status !== 4 || (int) $old->disburse !== 1) {
+                        $this->data['warning'] = lang('loan_offset_invalid_loan') . ' (' . htmlspecialchars($old_lid) . ')';
+                        $offset_loans_selected = array();
+                        break;
+                    }
+                    $bd = $this->loan_model->get_loan_outstanding_for_offset($old_lid);
+                    if (!$bd || $bd['total'] <= 0) {
+                        continue;
+                    }
+                    $offset_loans_selected[] = array('LID' => $old_lid, 'breakdown' => $bd);
+                    $offset_total += $bd['total'];
+                }
+            }
+            $offset_total = round($offset_total, 2);
+
+            // Proceeds deductions are entered directly in Accounting Entries.
+            $deduction_defs = loan_disbursement_default_deductions();
+            $deduction_by_account = array();
+            foreach ($deduction_defs as $ded) {
+                $deduction_by_account[(string) $ded['account']] = $ded;
+            }
+            $deduction_total = 0.0;
+            $deduction_labels = array();
+            foreach ($line_items as $item) {
+                $account = isset($item['account']) ? (string) $item['account'] : '';
+                $credit = isset($item['credit']) ? floatval($item['credit']) : 0;
+                if ($credit > 0.009 && isset($deduction_by_account[$account])) {
+                    $deduction_total += $credit;
+                    $deduction_labels[] = $deduction_by_account[$account]['label'] . ' ' . number_format($credit, 2);
+                }
+            }
+            $deduction_total = round($deduction_total, 2);
+
+            if (($offset_total + $deduction_total) > (floatval($loaninfo->basic_amount) + 0.009)) {
+                $this->data['warning'] = lang('loan_disburse_deductions_exceed');
+            } elseif ($offset_total > 0 && $offset_total > (floatval($loaninfo->basic_amount) + 0.009)) {
+                $this->data['warning'] = lang('loan_offset_exceeds_new_loan');
+            }
+
+            if (!empty($this->data['warning'])) {
+                // fall through to redisplay form
+            } elseif (empty($line_items)) {
                 $this->data['warning'] = lang('loan_disburse_entries_required');
             } elseif (abs($total_debit - $total_credit) > 0.01) {
                 $this->data['warning'] = lang('debits_credits_not_balanced');
@@ -942,10 +1000,22 @@ $pin = current_user()->PIN;
                 }
 
                 $disburse_date = format_date(trim($this->input->post('disbursedate')));
+                $comment = $this->input->post('comment');
+                if (!empty($offset_loans_selected)) {
+                    $offset_ids = array();
+                    foreach ($offset_loans_selected as $o) {
+                        $offset_ids[] = $o['LID'];
+                    }
+                    $comment = trim($comment . ' | Offset: ' . implode(', ', $offset_ids) . ' (Total ' . number_format($offset_total, 2) . ')');
+                    $this->loan_model->ensure_offset_loans_column();
+                }
+                if ($deduction_total > 0 && !empty($deduction_labels)) {
+                    $comment = trim($comment . ' | Deductions: ' . implode(', ', $deduction_labels));
+                }
                 $array_data = array(
                     'LID' => $LID,
                     'disbursedate' => $disburse_date,
-                    'comment' => $this->input->post('comment'),
+                    'comment' => $comment,
                     'createdby' => current_user()->id,
                     'PIN' => $pin,
                 );
@@ -959,34 +1029,81 @@ $pin = current_user()->PIN;
                 $this->db->trans_start();
                 $this->db->insert('loan_contract_disburse', $array_data);
                 $this->db->update('loan_contract', array('disburse' => 1), array('LID' => $LID));
-                $this->loan_model->save_disbursement_gl_items($LID, $pin, $line_items);
-                $this->loan_model->post_loan_disbursement_to_gl($LID, $pin, $line_items, $disburse_date, $loaninfo);
 
-                $product = $this->setting_model->loanproduct($loaninfo->product_type)->row();
-                if (!$product) {
-                    $this->db->trans_rollback();
-                    $this->data['warning'] = 'Loan product not found. Cannot create repayment schedule.';
-                } else {
-                    $interest_method = (isset($product->interest_method) && ($product->interest_method == 1 || $product->interest_method == 2)) ? (int) $product->interest_method : 1;
-                    $interval = isset($product->interval) ? (int) $product->interval : 1;
-                    $schedule = $this->loanbase->create_repayment_schedule(
-                        $loaninfo->installment_amount, $loaninfo->rate, $loaninfo->number_istallment,
-                        $disburse_date, $loaninfo->basic_amount, $LID, $interest_method, $interval
-                    );
-                    if (!empty($schedule)) {
-                        $this->db->insert_batch('loan_contract_repayment_schedule', $schedule);
+                if (!empty($offset_loans_selected)) {
+                    $offset_ids = array();
+                    foreach ($offset_loans_selected as $o) {
+                        $offset_ids[] = $o['LID'];
                     }
-                    $this->db->trans_complete();
-
-                    if ($this->db->trans_status() === FALSE) {
-                        $this->data['warning'] = lang('loan_evaluation_error') . ' Transaction was rolled back. Please try again or contact support.';
-                    } else {
-                        $this->session->set_flashdata('message', lang('loan_info_saved'));
-                        redirect(current_lang() . '/loan/view_repayment_schedule/' . $loanid, 'refresh');
-                        return;
+                    $this->db->where('LID', $LID)->where('PIN', $pin)->update('loan_contract', array(
+                        'offset_loans' => implode(',', $offset_ids),
+                    ));
+                    foreach ($offset_loans_selected as $o) {
+                        $settle = $this->loan_model->settle_loan_by_offset($o['LID'], $LID, $disburse_date);
+                        if (empty($settle['success'])) {
+                            $this->db->trans_rollback();
+                            $this->data['warning'] = !empty($settle['message']) ? $settle['message'] : lang('loan_offset_settle_fail');
+                            break;
+                        }
                     }
                 }
-                $this->db->trans_complete();
+
+                if (empty($this->data['warning'])) {
+                    $this->loan_model->save_disbursement_gl_items($LID, $pin, $line_items);
+                    $this->loan_model->post_loan_disbursement_to_gl($LID, $pin, $line_items, $disburse_date, $loaninfo);
+
+                    $subledger = $this->loan_model->post_disbursement_deduction_subledgers(
+                        $LID, $loaninfo, $line_items, $disburse_date, $payment_method_name
+                    );
+                    if (empty($subledger['success'])) {
+                        $this->db->trans_rollback();
+                        $this->data['warning'] = !empty($subledger['message'])
+                            ? $subledger['message']
+                            : lang('loan_disburse_subledger_fail');
+                    }
+
+                    $product = empty($this->data['warning'])
+                        ? $this->setting_model->loanproduct($loaninfo->product_type)->row()
+                        : null;
+                    if (empty($this->data['warning']) && !$product) {
+                        $this->db->trans_rollback();
+                        $this->data['warning'] = 'Loan product not found. Cannot create repayment schedule.';
+                    } elseif (empty($this->data['warning'])) {
+                        $interest_method = (isset($product->interest_method) && ($product->interest_method == 1 || $product->interest_method == 2)) ? (int) $product->interest_method : 1;
+                        $interval = isset($product->interval) ? (int) $product->interval : 1;
+                        $schedule = $this->loanbase->create_repayment_schedule(
+                            $loaninfo->installment_amount, $loaninfo->rate, $loaninfo->number_istallment,
+                            $disburse_date, $loaninfo->basic_amount, $LID, $interest_method, $interval
+                        );
+                        if (!empty($schedule)) {
+                            foreach ($schedule as $sk => $srow) {
+                                if (!isset($schedule[$sk]['status'])) {
+                                    $schedule[$sk]['status'] = 0;
+                                }
+                                if (!isset($schedule[$sk]['sms_sent'])) {
+                                    $schedule[$sk]['sms_sent'] = 0;
+                                }
+                            }
+                            $this->db->insert_batch('loan_contract_repayment_schedule', $schedule);
+                        }
+                        $this->db->trans_complete();
+
+                        if ($this->db->trans_status() === FALSE) {
+                            $this->data['warning'] = lang('loan_evaluation_error') . ' Transaction was rolled back. Please try again or contact support.';
+                        } else {
+                            $msg = lang('loan_info_saved');
+                            if (!empty($offset_loans_selected)) {
+                                $msg .= ' ' . sprintf(lang('loan_offset_success'), count($offset_loans_selected), number_format($offset_total, 2));
+                            }
+                            $this->session->set_flashdata('message', $msg);
+                            redirect(current_lang() . '/loan/view_repayment_schedule/' . $loanid, 'refresh');
+                            return;
+                        }
+                    }
+                }
+                if ($this->db->trans_status() !== FALSE) {
+                    $this->db->trans_complete();
+                }
             }
         }
 
@@ -1024,6 +1141,34 @@ $pin = current_user()->PIN;
             $payment_method_credit_accounts[$method->id] = $this->loan_model->get_credit_account_for_payment_method($method->id);
         }
         $this->data['payment_method_credit_accounts'] = $payment_method_credit_accounts;
+
+        // Default proceeds deduction templates (Filing Fee, Service Fee, etc.)
+        $deductions = loan_disbursement_default_deductions();
+        foreach ($deductions as $di => $ded) {
+            $deductions[$di]['amount'] = 0;
+        }
+        $this->data['disburse_deductions'] = $deductions;
+
+        // Offset / reloan: other active loans for this member
+        $offsetable = $this->loan_model->get_offsetable_loans($loaninfo->PID, $LID);
+        $this->data['offsetable_loans'] = $offsetable;
+        $offset_json = array();
+        foreach ($offsetable as $ol) {
+            $offset_json[] = array(
+                'LID' => $ol->LID,
+                'principal' => floatval($ol->principal_outstanding),
+                'interest' => floatval($ol->interest_outstanding),
+                'total' => floatval($ol->total_outstanding),
+                'principle_account' => $ol->principle_account,
+                'interest_account' => $ol->interest_account,
+                'product_name' => $ol->product_name,
+                'basic_amount' => floatval($ol->basic_amount),
+            );
+        }
+        $this->data['offsetable_loans_json'] = $offset_json;
+        $posted_offsets = $this->input->post('offset_loans');
+        $this->data['selected_offset_loans'] = is_array($posted_offsets) ? $posted_offsets : array();
+
         $this->data['content'] = 'loan/loan_disburse_entry';
         $this->load->view('template', $this->data);
     }
@@ -2095,10 +2240,18 @@ $pin = current_user()->PIN;
             $this->data['loan_beginning_balances'] = $balances;
             $this->data['member_names'] = $member_names;
             $this->data['product_info'] = $product_info;
+
+            // Which balances are already activated into loan_contract
+            $activated_map = array();
+            foreach ($balances as $balance) {
+                $activated_map[$balance->id] = $this->loan_model->is_loan_beginning_balance_activated($balance);
+            }
+            $this->data['activated_map'] = $activated_map;
         } else {
             $this->data['loan_beginning_balances'] = array();
             $this->data['member_names'] = array();
             $this->data['product_info'] = array();
+            $this->data['activated_map'] = array();
         }
         
         $this->data['content'] = 'loan/loan_beginning_balance_list';
@@ -2538,6 +2691,32 @@ $pin = current_user()->PIN;
             $this->session->set_flashdata('message', $result['message']);
         } else {
             $this->session->set_flashdata('warning', !empty($result['message']) ? $result['message'] : 'Void failed');
+        }
+        redirect(current_lang() . '/loan/loan_beginning_balance_list?fiscal_year_id=' . $balance->fiscal_year_id, 'refresh');
+    }
+
+    /**
+     * Activate a posted beginning balance into Loan Management
+     * (creates loan_contract + opening disburse + repayment schedule).
+     */
+    function loan_beginning_balance_activate($id) {
+        $id = decode_id($id);
+        $balance = $this->loan_model->loan_beginning_balance_list(null, $id)->row();
+        if (!$balance) {
+            $this->session->set_flashdata('warning', lang('loan_beginning_balance_not_found'));
+            redirect(current_lang() . '/loan/loan_beginning_balance_list', 'refresh');
+            return;
+        }
+
+        $result = $this->loan_model->activate_loan_beginning_balance($id);
+        if (!empty($result['success'])) {
+            $this->session->set_flashdata('message', $result['message']);
+            if (!empty($result['LID'])) {
+                redirect(current_lang() . '/loan/view_indetail/' . encode_id($result['LID']), 'refresh');
+                return;
+            }
+        } else {
+            $this->session->set_flashdata('warning', !empty($result['message']) ? $result['message'] : lang('loan_beginning_balance_activate_fail'));
         }
         redirect(current_lang() . '/loan/loan_beginning_balance_list?fiscal_year_id=' . $balance->fiscal_year_id, 'refresh');
     }

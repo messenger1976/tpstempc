@@ -125,6 +125,63 @@ $payment_method_credit_accounts = isset($payment_method_credit_accounts) ? $paym
                 <?php echo form_error('comment'); ?>
             </div>
 
+            <?php
+            $offsetable_loans = isset($offsetable_loans) ? $offsetable_loans : array();
+            $selected_offset_loans = isset($selected_offset_loans) ? $selected_offset_loans : array();
+            if (!empty($offsetable_loans)) {
+            ?>
+            <div class="panel panel-info" style="margin-bottom: 15px;">
+                <div class="panel-heading"><h4 style="margin:0;"><?php echo lang('loan_offset_section'); ?></h4></div>
+                <div class="panel-body">
+                    <p class="text-muted"><?php echo lang('loan_offset_help'); ?></p>
+                    <div class="table-responsive">
+                        <table class="table table-bordered table-condensed" id="offsetLoansTable">
+                            <thead>
+                                <tr>
+                                    <th style="width:40px;"></th>
+                                    <th><?php echo lang('loan_LID'); ?></th>
+                                    <th><?php echo lang('loan_product'); ?></th>
+                                    <th class="text-right"><?php echo lang('loan_offset_principal'); ?></th>
+                                    <th class="text-right"><?php echo lang('loan_offset_interest'); ?></th>
+                                    <th class="text-right"><?php echo lang('loan_offset_total'); ?></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($offsetable_loans as $ol) {
+                                    $checked = in_array($ol->LID, $selected_offset_loans, true);
+                                ?>
+                                <tr>
+                                    <td class="text-center">
+                                        <input type="checkbox" class="offset-loan-cb" name="offset_loans[]" value="<?php echo htmlspecialchars($ol->LID); ?>"
+                                               data-principal="<?php echo htmlspecialchars($ol->principal_outstanding); ?>"
+                                               data-interest="<?php echo htmlspecialchars($ol->interest_outstanding); ?>"
+                                               data-total="<?php echo htmlspecialchars($ol->total_outstanding); ?>"
+                                               data-principle-account="<?php echo htmlspecialchars($ol->principle_account); ?>"
+                                               data-interest-account="<?php echo htmlspecialchars($ol->interest_account); ?>"
+                                               <?php echo $checked ? 'checked="checked"' : ''; ?> />
+                                    </td>
+                                    <td><?php echo htmlspecialchars($ol->LID); ?></td>
+                                    <td><?php echo htmlspecialchars($ol->product_name); ?></td>
+                                    <td class="text-right"><?php echo number_format($ol->principal_outstanding, 2); ?></td>
+                                    <td class="text-right"><?php echo number_format($ol->interest_outstanding, 2); ?></td>
+                                    <td class="text-right"><strong><?php echo number_format($ol->total_outstanding, 2); ?></strong></td>
+                                </tr>
+                                <?php } ?>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="alert alert-info" id="offsetSummary" style="margin-bottom:0;">
+                        <strong><?php echo lang('loan_applied_amount'); ?>:</strong> <span id="offsetNewAmount"><?php echo number_format($basic_amount, 2); ?></span>
+                        &nbsp;|&nbsp;
+                        <strong><?php echo lang('loan_offset_total'); ?>:</strong> <span id="offsetTotalAmt">0.00</span>
+                        &nbsp;|&nbsp;
+                        <strong><?php echo lang('loan_offset_net_proceeds'); ?>:</strong> <span id="offsetNetProceeds"><?php echo number_format($basic_amount, 2); ?></span>
+                        <div id="offsetWarning" class="text-danger" style="display:none; margin-top:6px;"></div>
+                    </div>
+                </div>
+            </div>
+            <?php } ?>
+
             <h5><?php echo lang('loan_disburse_line_items'); ?></h5>
             <p class="text-muted"><?php echo lang('loan_disburse_line_help'); ?></p>
             <div class="table-responsive">
@@ -140,9 +197,23 @@ $payment_method_credit_accounts = isset($payment_method_credit_accounts) ? $paym
                     </thead>
                     <tbody>
                         <?php
+                        $disburse_deductions = isset($disburse_deductions) ? $disburse_deductions : array();
                         $default_lines = array(
                             array('account' => $loan_principle_account, 'debit' => $basic_amount, 'credit' => 0, 'desc' => 'Loan principal'),
-                            array('account' => $default_credit_account, 'debit' => 0, 'credit' => $basic_amount, 'desc' => 'Disbursement source'),
+                        );
+                        foreach ($disburse_deductions as $ded) {
+                            $default_lines[] = array(
+                                'account' => $ded['account'],
+                                'debit' => 0,
+                                'credit' => isset($ded['amount']) ? $ded['amount'] : 0,
+                                'desc' => $ded['description'],
+                            );
+                        }
+                        $default_lines[] = array(
+                            'account' => $default_credit_account,
+                            'debit' => 0,
+                            'credit' => $basic_amount,
+                            'desc' => 'Net cash to member',
                         );
                         foreach ($default_lines as $idx => $line):
                         ?>
@@ -195,6 +266,11 @@ $payment_method_credit_accounts = isset($payment_method_credit_accounts) ? $paym
 (function(){
     var paymentMethodAccounts = <?php echo json_encode($payment_method_credit_accounts); ?>;
     var firstCreditAccount = <?php echo json_encode($default_credit_account); ?>;
+    var newLoanAmount = <?php echo json_encode((float) $basic_amount); ?>;
+    var newPrincipleAccount = <?php echo json_encode($loan_principle_account); ?>;
+    var offsetExceedsMsg = <?php echo json_encode(lang('loan_offset_exceeds_new_loan')); ?>;
+    var deductionsExceedMsg = <?php echo json_encode(lang('loan_disburse_deductions_exceed')); ?>;
+    var deductionDefs = <?php echo json_encode(isset($disburse_deductions) ? $disburse_deductions : array()); ?>;
 
     function loadScript(src, cb) {
         var s = document.createElement('script');
@@ -225,7 +301,7 @@ $payment_method_credit_accounts = isset($payment_method_credit_accounts) ? $paym
             var html = '<tr class="line-item">' +
                 '<td><select class="form-control account-select" name="account[]">' +
                 '<option value=""><?php echo addslashes(lang('select_default_text')); ?></option>' + makeAccountSelectOptions(account || '') + '</select></td>' +
-                '<td><input type="text" name="line_description[]" class="form-control" value="' + (desc || '') + '"/></td>' +
+                '<td><input type="text" name="line_description[]" class="form-control" value="' + (desc || '').replace(/"/g, '&quot;') + '"/></td>' +
                 '<td><input type="number" step="0.01" min="0" name="debit[]" class="form-control debit-input" value="' + (debit || '') + '" placeholder="0.00"/></td>' +
                 '<td><input type="number" step="0.01" min="0" name="credit[]" class="form-control credit-input" value="' + (credit || '') + '" placeholder="0.00"/></td>' +
                 '<td><button type="button" class="btn btn-danger btn-xs remove-line" title="<?php echo addslashes(lang('delete')); ?>"><i class="fa fa-trash"></i></button></td></tr>';
@@ -248,15 +324,113 @@ $payment_method_credit_accounts = isset($payment_method_credit_accounts) ? $paym
             }
         }
 
+        function getSelectedOffsets() {
+            var rows = [];
+            $('.offset-loan-cb:checked').each(function() {
+                var $cb = $(this);
+                rows.push({
+                    LID: $cb.val(),
+                    principal: parseFloat($cb.data('principal')) || 0,
+                    interest: parseFloat($cb.data('interest')) || 0,
+                    total: parseFloat($cb.data('total')) || 0,
+                    principle_account: String($cb.data('principle-account') || ''),
+                    interest_account: String($cb.data('interest-account') || '')
+                });
+            });
+            return rows;
+        }
+
+        function getDeductions() {
+            var amountsByAccount = {};
+            $('#lineItemsTable tbody tr.line-item').each(function() {
+                var $row = $(this);
+                var account = String($row.find('.account-select').val() || '');
+                var credit = parseFloat($row.find('.credit-input').val()) || 0;
+                if (account) {
+                    amountsByAccount[account] = (amountsByAccount[account] || 0) + credit;
+                }
+            });
+            var rows = [];
+            (deductionDefs || []).forEach(function(d) {
+                rows.push({
+                    key: String(d.key || ''),
+                    account: String(d.account || ''),
+                    description: String(d.description || d.label || ''),
+                    amount: parseFloat(amountsByAccount[String(d.account || '')]) || 0
+                });
+            });
+            return rows;
+        }
+
+        function rebuildGlLinesFromOffset() {
+            var offsets = getSelectedOffsets();
+            var deductions = getDeductions();
+            var offsetTotal = 0;
+            offsets.forEach(function(o) { offsetTotal += o.total; });
+            offsetTotal = Math.round(offsetTotal * 100) / 100;
+            var deductionTotal = 0;
+            deductions.forEach(function(d) { deductionTotal += d.amount; });
+            deductionTotal = Math.round(deductionTotal * 100) / 100;
+            var net = Math.round((newLoanAmount - offsetTotal - deductionTotal) * 100) / 100;
+
+            $('#offsetTotalAmt').text(offsetTotal.toFixed(2));
+            $('#offsetNetProceeds').text(net.toFixed(2));
+            if ((offsetTotal + deductionTotal) > newLoanAmount + 0.009) {
+                $('#offsetWarning').text(deductionsExceedMsg).show();
+            } else {
+                $('#offsetWarning').hide().text('');
+            }
+
+            var cashAccount = firstCreditAccount || '';
+            var pmId = $('#payment_method').val();
+            if (pmId && paymentMethodAccounts && paymentMethodAccounts[pmId]) {
+                cashAccount = paymentMethodAccounts[pmId];
+            }
+
+            $('#lineItemsTable tbody').empty();
+            addRow(newPrincipleAccount, newLoanAmount.toFixed(2), '', 'Loan principal');
+
+            deductions.forEach(function(d) {
+                if (d.account) {
+                    addRow(d.account, '', d.amount > 0.009 ? d.amount.toFixed(2) : '', d.description);
+                }
+            });
+
+            offsets.forEach(function(o) {
+                if (o.principal > 0.009 && o.principle_account) {
+                    addRow(o.principle_account, '', o.principal.toFixed(2), 'Offset principal ' + o.LID);
+                }
+                if (o.interest > 0.009 && o.interest_account) {
+                    addRow(o.interest_account, '', o.interest.toFixed(2), 'Offset interest ' + o.LID);
+                }
+            });
+
+            if (net > 0.009) {
+                addRow(cashAccount, '', net.toFixed(2), 'Net cash to member');
+            } else if (offsets.length === 0 && deductions.length === 0) {
+                addRow(cashAccount, '', newLoanAmount.toFixed(2), 'Disbursement source');
+            }
+            updateTotals();
+        }
+
         $('#payment_method').on('change', function() {
             var id = $(this).val();
             var account = (paymentMethodAccounts && paymentMethodAccounts[id]) ? paymentMethodAccounts[id] : '';
+            firstCreditAccount = account || firstCreditAccount;
+            if ($('.offset-loan-cb').length || deductionDefs.length) {
+                rebuildGlLinesFromOffset();
+                return;
+            }
             var $rows = $('#lineItemsTable tbody tr.line-item');
             if ($rows.length >= 2 && account) {
                 var $secondRow = $rows.eq(1);
                 $secondRow.find('.account-select').val(account);
             }
             updateTotals();
+        });
+
+        $(document).on('change', '.offset-loan-cb', function() {
+            rebuildGlLinesFromOffset();
         });
 
         $('#addLineItem').on('click', function() {
@@ -274,7 +448,28 @@ $payment_method_credit_accounts = isset($payment_method_credit_accounts) ? $paym
             updateTotals();
         });
 
+        $(document).on('change', '#lineItemsTable .credit-input', function() {
+            var account = String($(this).closest('tr').find('.account-select').val() || '');
+            var isDeduction = (deductionDefs || []).some(function(d) {
+                return String(d.account || '') === account;
+            });
+            if (isDeduction) {
+                rebuildGlLinesFromOffset();
+            }
+        });
+
         $('#loanDisburseEntryForm').on('submit', function(e) {
+            var offsets = getSelectedOffsets();
+            var deductions = getDeductions();
+            var offsetTotal = 0;
+            offsets.forEach(function(o) { offsetTotal += o.total; });
+            var deductionTotal = 0;
+            deductions.forEach(function(d) { deductionTotal += d.amount; });
+            if ((offsetTotal + deductionTotal) > newLoanAmount + 0.009) {
+                e.preventDefault();
+                alert(deductionsExceedMsg);
+                return false;
+            }
             var totalDebit = 0, totalCredit = 0, hasItems = false;
             $('.debit-input').each(function() { totalDebit += parseFloat($(this).val()) || 0; });
             $('.credit-input').each(function() {
@@ -296,7 +491,7 @@ $payment_method_credit_accounts = isset($payment_method_credit_accounts) ? $paym
             return true;
         });
 
-        updateTotals();
+        rebuildGlLinesFromOffset();
 
         function ensureBootstrapDP(cb) {
             function wrapBootstrapDP() {

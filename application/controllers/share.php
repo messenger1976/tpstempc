@@ -47,6 +47,7 @@ class Share extends CI_Controller {
         }
         $this->form_validation->set_rules('pid', lang('member_pid'), 'required');
         $this->form_validation->set_rules('member_id', lang('member_member_id'), 'required');
+        $this->form_validation->set_rules('trans_date', lang('transaction_date'), 'required|valid_date');
         $this->form_validation->set_rules('open_balance', lang('index_amount'), 'required|numeric');
         $this->form_validation->set_rules('paymenthod', lang('paymentmethod'), 'required');
         $this->form_validation->set_rules('comment', lang('comment'), '');
@@ -83,6 +84,7 @@ class Share extends CI_Controller {
             $real_amount = $amount;
             $comment = trim($this->input->post('comment'));
             $paymethod = trim($this->input->post('paymenthod'));
+            $trans_date = format_date(trim($this->input->post('trans_date'))) . ' ' . date('H:i:s');
 
             $share_info = $this->share_model->share_member_info($pid, $member_id);
             $share_setup = $this->setting_model->share_setting_info();
@@ -104,7 +106,7 @@ class Share extends CI_Controller {
                     $amountshare = ($totalshare * $share_setup->amount);
                     $remain_amount = $remaining_amount;
                     
-                    $add_share = $this->share_model->refund_share($pid, $member_id, $paymethod, $cost_per_share, $share_number, $amountshare, $remain_amount, $real_amount, $comment, $check_number_received);
+                    $add_share = $this->share_model->refund_share($pid, $member_id, $paymethod, $cost_per_share, $share_number, $amountshare, $remain_amount, $real_amount, $comment, $check_number_received, $trans_date);
 
                     if ($add_share) {
                         $this->session->set_flashdata('next_customer', site_url(current_lang() . '/share/refund_share'));
@@ -158,6 +160,7 @@ class Share extends CI_Controller {
         }
         $this->form_validation->set_rules('pid', lang('member_pid'), 'required');
         $this->form_validation->set_rules('member_id', lang('member_member_id'), 'required');
+        $this->form_validation->set_rules('trans_date', lang('transaction_date'), 'required|valid_date');
         $this->form_validation->set_rules('open_balance', lang('index_amount'), 'required|numeric');
         $this->form_validation->set_rules('paymenthod', lang('paymentmethod'), 'required');
         $this->form_validation->set_rules('comment', lang('comment'), '');
@@ -194,6 +197,7 @@ class Share extends CI_Controller {
             $real_amount = $amount;
             $comment = trim($this->input->post('comment'));
             $paymethod = trim($this->input->post('paymenthod'));
+            $trans_date = format_date(trim($this->input->post('trans_date'))) . ' ' . date('H:i:s');
 
             $share_info = $this->share_model->share_member_info($pid, $member_id);
             $share_setup = $this->setting_model->share_setting_info();
@@ -214,7 +218,7 @@ class Share extends CI_Controller {
                     $amountshare = ($totalshare * $share_setup->amount);
                     $remain_amount = $remaining_amount;
                     
-                    $add_share = $this->share_model->add_share($pid, $member_id, $paymethod, $cost_per_share, $share_number, $amountshare, $remain_amount, $real_amount, $comment, $check_number_received);
+                    $add_share = $this->share_model->add_share($pid, $member_id, $paymethod, $cost_per_share, $share_number, $amountshare, $remain_amount, $real_amount, $comment, $check_number_received, $trans_date);
 
                     if ($add_share) {
                         $this->session->set_flashdata('next_customer', site_url(current_lang() . '/share/share_buy'));
@@ -239,7 +243,7 @@ class Share extends CI_Controller {
                     $share_number = $totalshare;
                     $amountshare = ($totalshare * $share_setup->amount);
                     $remain_amount = $remaining_amount;
-                    $add_share = $this->share_model->add_share($pid, $member_id,  $paymethod, $cost_per_share, $share_number, $amountshare, $remain_amount, $real_amount, $comment, $check_number_received);
+                    $add_share = $this->share_model->add_share($pid, $member_id,  $paymethod, $cost_per_share, $share_number, $amountshare, $remain_amount, $real_amount, $comment, $check_number_received, $trans_date);
 
                     if ($add_share) {
                         $this->session->set_flashdata('next_customer', site_url(current_lang() . '/share/share_buy'));

@@ -1,4 +1,3 @@
-<script type="text/javascript" src="<?php echo base_url(); ?>media/js/jquery.autocomplete_origin.js" ></script>
 <link href="<?php echo base_url(); ?>media/css/jquery.autocomplete.css" rel="stylesheet"/>
 
 <link href="<?php echo base_url(); ?>media/css/plugins/datapicker/datepicker3.css?v=20260801" rel="stylesheet"/>
@@ -119,7 +118,6 @@ $_GET['key'] = $jxy['key'];
     
 </div>
 <script src="<?php echo base_url() ?>media/js/script/moment.js"></script>
-<script src="<?php echo base_url() ?>media/js/plugins/datapicker/bootstrap-datepicker.js"></script>
 <script type="text/javascript">
     (function() {
         function initScripts() {
@@ -127,21 +125,61 @@ $_GET['key'] = $jxy['key'];
                 setTimeout(initScripts, 50);
                 return;
             }
-            
-            $(document).ready(function(){
-                $("#accountno").autocomplete("<?php echo site_url(current_lang() . '/saving/autosuggest_member_id_all/'); ?>",{
-                    matchContains:true
+
+            // Load custom autocomplete AFTER jQuery (and after jQuery UI in template)
+            var existingScript = document.querySelector('script[src*="jquery.autocomplete_origin.js"]');
+            if (existingScript) {
+                setTimeout(loadDatePicker, 200);
+            } else {
+                var autocompleteScript = document.createElement('script');
+                autocompleteScript.src = '<?php echo base_url(); ?>media/js/jquery.autocomplete_origin.js';
+                autocompleteScript.onload = function() {
+                    setTimeout(loadDatePicker, 300);
+                };
+                autocompleteScript.onerror = function() {
+                    console.error('Failed to load autocomplete plugin');
+                    loadDatePicker();
+                };
+                document.head.appendChild(autocompleteScript);
+            }
+
+            function loadDatePicker() {
+                if (typeof $.fn.datetimepicker === 'undefined') {
+                    var datepickerScript = document.createElement('script');
+                    datepickerScript.src = '<?php echo base_url() ?>media/js/plugins/datapicker/bootstrap-datepicker.js';
+                    datepickerScript.onload = initMainScript;
+                    document.head.appendChild(datepickerScript);
+                } else {
+                    initMainScript();
+                }
+            }
+
+            function initMainScript() {
+                $(document).ready(function(){
+                    try {
+                        if ($("#accountno").data('ui-autocomplete')) {
+                            $("#accountno").autocomplete('destroy');
+                        }
+                    } catch (e) {}
+
+                    setTimeout(function() {
+                        try {
+                            $("#accountno").autocomplete("<?php echo site_url(current_lang() . '/saving/autosuggest_member_id_all/'); ?>", {
+                                matchContains: true
+                            });
+                        } catch (e) {
+                            console.error('Autocomplete initialization error:', e);
+                        }
+                    }, 150);
+
+                    $('#from').datetimepicker({
+                        pickTime: false
+                    });
+                    $('#upto').datetimepicker({
+                        pickTime: false
+                    });
                 });
-            });
-                
-            $(function () {
-                $('#from').datetimepicker({
-                    pickTime: false
-                });
-                $('#upto').datetimepicker({
-                    pickTime: false
-                });
-            });
+            }
         }
         initScripts();
     })();

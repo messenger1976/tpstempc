@@ -153,7 +153,7 @@ $current_member_id = ($current_user_data && isset($current_user_data->member_id)
             <?php } ?>
 
             <?php if (access_module(5)) { ?>
-                <li class="<?php echo ($active == 'loan' ? 'active' : ''); ?>">
+                <li class="<?php echo (($active == 'loan' || $active == 'cic') ? 'active' : ''); ?>">
                     <a href="#"><i class="fa fa-book"></i> <span class="nav-label"><?php echo lang('page_loan'); ?></span><span class="fa arrow"></span></a>
                     <ul class="nav nav-second-level">
                         <?php if (has_role(5, 'View_loan_list')) { ?>
@@ -176,6 +176,9 @@ $current_member_id = ($current_user_data && isset($current_user_data->member_id)
                         <?php } ?>
                         <?php if (has_role(5, 'Loan_beginning_balances')) { ?>
                             <li class="<?php echo (($activefunction == 'loan_beginning_balance_list' || $activefunction == 'loan_beginning_balance_create' || $activefunction == 'loan_beginning_balance_activate') ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/loan/loan_beginning_balance_list'); ?>"><?php echo lang('loan_beginning_balance_list'); ?></a></li>
+                        <?php } ?>
+                        <?php if (has_role(5, 'Export_CIC')) { ?>
+                            <li class="<?php echo (($active == 'cic') ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/cic/index'); ?>"><?php echo lang('cic_export_menu'); ?></a></li>
                         <?php } ?>
                         <?php if (has_role(5, 'automatic_repayment_process')) { ?>
                            <!-- <li class="<?php echo ($activefunction == 'automatic_repayment_process' ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/loan/automatic_repayment_process'); ?>"><?php echo 'Automatic Loan Repayment'; ?></a></li>-->
@@ -265,7 +268,7 @@ $current_member_id = ($current_user_data && isset($current_user_data->member_id)
             <?php } ?>
 
             <?php if (access_module(9)) { ?>
-                <li class="<?php echo ($active == 'setting' ? 'active' : ''); ?>">
+                <li class="<?php echo (($active == 'setting' || $active == 'backup' || $active == 'activity_log') ? 'active' : ''); ?>">
                     <a href="#"><i class="fa fa-cogs"></i> <span class="nav-label"><?php echo lang('setting_account'); ?></span><span class="fa arrow"></span></a>
                     <ul class="nav nav-second-level">
                       <!--<li class="<?php echo ($activefunction == 'client_account' ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/setting/client_account');         ?>"><?php echo lang('setting_addaccount');         ?></a></li>
@@ -305,6 +308,10 @@ $current_member_id = ($current_user_data && isset($current_user_data->member_id)
                         
                         <?php if ($this->ion_auth->is_admin()) { ?>
                             <li class="<?php echo (($active == 'activity_log' || $activefunction == 'index' || $activefunction == 'view') ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/activity_log/index'); ?>"><i class="fa fa-history"></i> Activity Logs</a></li>
+                        <?php } ?>
+
+                        <?php if ($this->ion_auth->is_admin()) { ?>
+                            <li class="<?php echo ($active == 'backup' ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/backup/index'); ?>"><i class="fa fa-database"></i> Database Backup</a></li>
                         <?php } ?>
                       
                     </ul>

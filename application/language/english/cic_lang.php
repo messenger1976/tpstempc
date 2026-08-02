@@ -1,0 +1,29 @@
+<?php
+
+$lang['cic_module_title']     = 'CIC Credit Data Export';
+$lang['cic_module_intro']     = 'Prepare borrower and loan data for Credit Information Corporation (CIC) / CISA submission.';
+$lang['cic_no_permission']    = 'You do not have permission to export CIC credit data.';
+$lang['cic_as_of']            = 'As of Date';
+$lang['cic_include_closed']   = 'Include closed loans';
+$lang['cic_export_invalid']   = 'Also write invalid rows to error CSV (on server)';
+$lang['cic_preview']          = 'Preview';
+$lang['cic_download_csv']     = 'Download CSV';
+$lang['cic_summary']          = 'Validation summary';
+$lang['cic_total']            = 'Total';
+$lang['cic_valid']            = 'Valid';
+$lang['cic_invalid']          = 'Invalid';
+$lang['cic_no_data']          = 'No disbursed loans found for the selected criteria.';
+$lang['cic_export_failed']    = 'Export failed. Please try again or check server write permissions under cic_export/output.';
+$lang['cic_privacy_note']     = 'Export files contain personal and credit data. Store and transmit them securely (Data Privacy Act / CISA). Server copies are kept under cic_export/output for audit.';
+$lang['cic_preview_truncated'] = 'Showing first %d of %d rows. Download CSV for the full file.';
+$lang['cic_row_valid']        = 'Valid';
+$lang['cic_row_invalid']      = 'Invalid';
+$lang['cic_col_status']       = 'Status';
+$lang['cic_col_borrower_id']  = 'Borrower ID';
+$lang['cic_col_name']         = 'Name';
+$lang['cic_col_loan_date']    = 'Loan Date';
+$lang['cic_col_loan_amount']  = 'Loan Amount';
+$lang['cic_col_outstanding']  = 'Outstanding';
+$lang['cic_col_payment_status'] = 'Payment Status';
+$lang['cic_col_errors']       = 'Validation Errors';
+$lang['cic_export_menu']      = 'CIC Credit Export';

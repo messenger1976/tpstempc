@@ -1,0 +1,7 @@
+# Never commit sensitive credit data exports or validation logs
+output/*
+!output/.gitkeep
+logs/*
+!logs/.gitkeep
+*.csv
+!config/

@@ -1,5 +1,5 @@
-<script type="text/javascript" src="<?php echo base_url(); ?>media/js/jquery.autocomplete_buysahre.js" ></script>
 <link href="<?php echo base_url(); ?>media/css/jquery.autocomplete.css" rel="stylesheet">
+<link href="<?php echo base_url(); ?>media/css/plugins/datapicker/datepicker3.css?v=20260801" rel="stylesheet">
 <?php echo form_open_multipart(current_lang() . "/share/refund_share", 'class="form-horizontal"'); ?>
 
 <?php
@@ -44,7 +44,17 @@ if (isset($message) && !empty($message)) {
             <?php echo lang('share_refund_info_label'); ?>
         </div>     
 
-
+        <div class="form-group"><label class="col-lg-4 control-label"><?php echo lang('transaction_date'); ?>  : <span class="required">*</span></label>
+            <div class="col-lg-7">
+                <div class="input-group date" id="datetimepicker">
+                    <input type="text" name="trans_date" placeholder="<?php echo lang('hint_date'); ?>" value="<?php echo set_value('trans_date', date('d-m-Y')); ?>" data-date-format="DD-MM-YYYY" class="form-control"/>
+                    <span class="input-group-addon">
+                        <span class="fa fa-calendar"></span>
+                    </span>
+                </div>
+                <?php echo form_error('trans_date'); ?>
+            </div>
+        </div>
 
         <div class="form-group"><label class="col-lg-4 control-label"><?php echo lang('index_amount'); ?>  : <span class="required">*</span></label>
             <div class="col-lg-7">
@@ -98,8 +108,44 @@ if (isset($message) && !empty($message)) {
 <?php echo form_close(); ?>
 
 <script type="text/javascript">
-    $(document).ready(function(){
-        
+    (function() {
+        function initScripts() {
+            if (typeof jQuery === 'undefined') {
+                setTimeout(initScripts, 50);
+                return;
+            }
+            // Load custom autocomplete plugin AFTER jQuery (template loads jQuery at page bottom)
+            var existingScript = document.querySelector('script[src*="jquery.autocomplete_buysahre.js"]');
+            if (existingScript) {
+                runMainScript();
+                return;
+            }
+            var autocompleteScript = document.createElement('script');
+            autocompleteScript.src = '<?php echo base_url(); ?>media/js/jquery.autocomplete_buysahre.js';
+            autocompleteScript.onload = function() { runMainScript(); };
+            autocompleteScript.onerror = function() {
+                console.error('Failed to load autocomplete plugin');
+                runMainScript();
+            };
+            document.head.appendChild(autocompleteScript);
+
+            function runMainScript() {
+                $(document).ready(function(){
+        function initTransactionDatePicker() {
+            if (typeof $.fn.datetimepicker === 'undefined') {
+                var datepickerScript = document.createElement('script');
+                datepickerScript.src = '<?php echo base_url(); ?>media/js/plugins/datapicker/bootstrap-datepicker.js';
+                datepickerScript.onload = initTransactionDatePicker;
+                document.head.appendChild(datepickerScript);
+                return;
+            }
+            $('#datetimepicker').datetimepicker({
+                pickTime: false,
+                format: 'DD-MM-YYYY'
+            });
+        }
+        initTransactionDatePicker();
+
            function addCommas(nStr)
         {
             nStr += '';
@@ -347,11 +393,15 @@ if (isset($message) && !empty($message)) {
         
         
         
-        
+                
         
         
         
         
         
     });
+            }
+        }
+        initScripts();
+    })();
 </script>

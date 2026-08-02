@@ -1,4 +1,5 @@
 <link href="<?php echo base_url(); ?>media/css/jquery.autocomplete.css" rel="stylesheet">
+<link href="<?php echo base_url(); ?>media/css/plugins/datapicker/datepicker3.css?v=20260801" rel="stylesheet">
 <?php echo form_open_multipart(current_lang() . "/share/share_buy", 'class="form-horizontal"'); ?>
 
 <?php
@@ -43,7 +44,17 @@ if (isset($message) && !empty($message)) {
             <?php echo lang('share_payment_info_label'); ?>
         </div>     
 
-
+        <div class="form-group"><label class="col-lg-4 control-label"><?php echo lang('transaction_date'); ?>  : <span class="required">*</span></label>
+            <div class="col-lg-7">
+                <div class="input-group date" id="datetimepicker">
+                    <input type="text" name="trans_date" placeholder="<?php echo lang('hint_date'); ?>" value="<?php echo set_value('trans_date', date('d-m-Y')); ?>" data-date-format="DD-MM-YYYY" class="form-control"/>
+                    <span class="input-group-addon">
+                        <span class="fa fa-calendar"></span>
+                    </span>
+                </div>
+                <?php echo form_error('trans_date'); ?>
+            </div>
+        </div>
 
         <div class="form-group"><label class="col-lg-4 control-label"><?php echo lang('index_amount'); ?>  : <span class="required">*</span></label>
             <div class="col-lg-7">
@@ -120,7 +131,21 @@ if (isset($message) && !empty($message)) {
 
             function runMainScript() {
                 $(document).ready(function(){
-        
+        function initTransactionDatePicker() {
+            if (typeof $.fn.datetimepicker === 'undefined') {
+                var datepickerScript = document.createElement('script');
+                datepickerScript.src = '<?php echo base_url(); ?>media/js/plugins/datapicker/bootstrap-datepicker.js';
+                datepickerScript.onload = initTransactionDatePicker;
+                document.head.appendChild(datepickerScript);
+                return;
+            }
+            $('#datetimepicker').datetimepicker({
+                pickTime: false,
+                format: 'DD-MM-YYYY'
+            });
+        }
+        initTransactionDatePicker();
+
            function addCommas(nStr)
         {
             nStr += '';

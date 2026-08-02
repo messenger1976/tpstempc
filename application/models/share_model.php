@@ -106,7 +106,7 @@ class Share_Model extends CI_Model {
         return FALSE;
     }
 
-    function refund_share($pid, $member_id, $paymethod, $cost_per_share, $share_number, $amountshare, $remain_amount, $real_amount, $comment, $cheque_num) {
+    function refund_share($pid, $member_id, $paymethod, $cost_per_share, $share_number, $amountshare, $remain_amount, $real_amount, $comment, $cheque_num, $date = '') {
         //test
         $prev_share_info = $this->share_member_info($pid, $member_id);
         if ($prev_share_info) {
@@ -145,7 +145,7 @@ class Share_Model extends CI_Model {
 
         $systemcomment = 'REFUND SHARE';
         $amount = $real_amount;
-        $trans = $this->debit_share($pid, $member_id, $paymethod, $cost_per_share, $amount, $previous_share, $systemcomment, $comment, $cheque_num,$share_number,$previous_amount);
+        $trans = $this->debit_share($pid, $member_id, $paymethod, $cost_per_share, $amount, $previous_share, $systemcomment, $comment, $cheque_num,$share_number,$previous_amount, 0, $date);
         if ($trans) {
             return $trans;
         }
@@ -158,7 +158,7 @@ class Share_Model extends CI_Model {
         return alphaID(($query->id * time()), FALSE, 12);
     }
 
-    function debit_share($pid, $member_id, $paymethod, $cost_per_share, $amount, $previous_share, $systemcomment='', $comment='', $cheque_num='',$share_number=0,$previous_amount=0, $transfer_deposit_to_PID=0) {
+    function debit_share($pid, $member_id, $paymethod, $cost_per_share, $amount, $previous_share, $systemcomment='', $comment='', $cheque_num='',$share_number=0,$previous_amount=0, $transfer_deposit_to_PID=0, $date='') {
        $pin = current_user()->PIN;
         //create transaction history
         $receipt = $this->receiptNo();
@@ -171,6 +171,9 @@ class Share_Model extends CI_Model {
         $this->db->set('previous_share', $previous_share);
         $this->db->set('PID', $pid);
         $this->db->set('comment', $comment);
+        if ($date <> '') {
+            $this->db->set('createdon', $date);
+        }
         $this->db->set('PIN', $pin);
         $this->db->set('share_no', $share_number);
         $this->db->set('previous_balance', $previous_amount);

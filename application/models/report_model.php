@@ -1382,4 +1382,904 @@ FROM
         return $data;
     }
 
+    /**
+     * Account balances as of a date for Consolidated Statement of Financial Condition.
+     * Assets: debit - credit; Liabilities / Equity / Statutory: credit - debit.
+     */
+    function get_financial_condition_balances($date) {
+        $pin = current_user()->PIN;
+        if (empty($date) || empty($pin)) {
+            return array();
+        }
+        $date = date('Y-m-d', strtotime($date));
+        if ($date === false || $date === '1970-01-01') {
+            return array();
+        }
+
+        $sql = "SELECT
+                    account_chart.account AS account,
+                    account_chart.name AS name,
+                    account_chart.account_type AS account_type,
+                    account_chart.sub_account_type AS sub_account_type,
+                    COALESCE(SUM(general_ledger.debit), 0) AS debit,
+                    COALESCE(SUM(general_ledger.credit), 0) AS credit
+                FROM account_chart
+                LEFT JOIN general_ledger
+                    ON general_ledger.account = account_chart.account
+                    AND general_ledger.PIN = account_chart.PIN
+                    AND general_ledger.date <= ?
+                WHERE account_chart.PIN = ?
+                    AND (
+                        CAST(account_chart.account_type AS UNSIGNED) IN (10000, 20000, 30000, 30800)
+                        OR account_chart.account_type IN ('10000', '20000', '30000', '30800')
+                    )
+                    AND CAST(account_chart.account AS UNSIGNED) BETWEEN 10000 AND 39999
+                GROUP BY account_chart.account, account_chart.name, account_chart.account_type, account_chart.sub_account_type
+                ORDER BY CAST(account_chart.account AS UNSIGNED) ASC";
+
+        $rows = $this->db->query($sql, array($date, $pin))->result();
+        $balances = array();
+        foreach ($rows as $row) {
+            $type = (int) $row->account_type;
+            if ($type == 10000) {
+                $bal = floatval($row->debit) - floatval($row->credit);
+            } else {
+                $bal = floatval($row->credit) - floatval($row->debit);
+            }
+            $balances[$row->account] = array(
+                'account' => $row->account,
+                'name' => $row->name,
+                'account_type' => $row->account_type,
+                'sub_account_type' => $row->sub_account_type,
+                'balance' => $bal,
+            );
+        }
+        return $balances;
+    }
+
+    /**
+     * Build hierarchical rows for Consolidated Statement of Financial Condition.
+     */
+    function get_financial_condition_data($date) {
+        $bal = $this->get_financial_condition_balances($date);
+        $used = array();
+
+        $amt = function ($code) use ($bal, &$used) {
+            $code = (string) $code;
+            if (!isset($bal[$code])) {
+                return 0.0;
+            }
+            $used[$code] = true;
+            return floatval($bal[$code]['balance']);
+        };
+
+        $peek = function ($code) use ($bal) {
+            $code = (string) $code;
+            return isset($bal[$code]) ? floatval($bal[$code]['balance']) : 0.0;
+        };
+
+        $name = function ($code, $fallback = null) use ($bal) {
+            $code = (string) $code;
+            if (isset($bal[$code]) && !empty($bal[$code]['name'])) {
+                return $bal[$code]['name'];
+            }
+            return $fallback !== null ? $fallback : $code;
+        };
+
+        $rows = array();
+        $push = function ($type, $label, $amount = null, $opts = array()) use (&$rows) {
+            $rows[] = array_merge(array(
+                'type' => $type,
+                'label' => $label,
+                'amount' => $amount,
+                'indent' => 0,
+                'bold' => false,
+                'italic' => false,
+                'peso' => false,
+                'line' => '',
+                'always_show' => false,
+                'is_less' => false,
+            ), $opts);
+        };
+
+        $sum_mark = function ($codes) use ($amt) {
+            $t = 0.0;
+            foreach ($codes as $c) {
+                $t += $amt($c);
+            }
+            return $t;
+        };
+
+        // ===================== ASSETS =====================
+        $push('section', 'ASSETS', null, array('bold' => true));
+        $push('section', 'CURRENT ASSETS', null, array('bold' => true));
+
+        $push('group', 'Cash and Cash Equivalents', null, array('bold' => true, 'indent' => 1));
+        $cash_primary = array(
+            '11110' => 'Cash on Hand',
+            '11131' => 'Cash in Bank - LBP',
+            '11132' => 'Cash in Bank - Bayanihan Coop.',
+            '11150' => 'Petty Cash Fund',
+        );
+        $cash_all = array('11100', '11110', '11130', '11131', '11132', '11140', '11150', '11190');
+        foreach ($cash_primary as $code => $label) {
+            $push('account', $label, $amt($code), array('indent' => 2, 'always_show' => true));
+        }
+        foreach ($cash_all as $code) {
+            if (isset($cash_primary[$code])) {
+                continue;
+            }
+            $v = $amt($code);
+            if (abs($v) >= 0.005) {
+                $push('account', $name($code), $v, array('indent' => 2));
+            }
+        }
+        $total_cash = 0.0;
+        foreach ($cash_all as $c) {
+            $total_cash += $peek($c);
+            $used[$c] = true;
+        }
+        $push('subtotal', 'Total Cash and Cash Equivalents', $total_cash, array(
+            'indent' => 2, 'bold' => true, 'peso' => true, 'line' => 'single', 'always_show' => true
+        ));
+
+        $push('group', 'Loans and Receivables', null, array('bold' => true, 'indent' => 1));
+        $push('group', 'Loans Receivable', null, array('bold' => true, 'indent' => 2));
+        $loan_aging = array(
+            '11210' => 'Loans Receivable - Current',
+            '11220' => 'Loans Receivable - Past Due',
+            '11230' => 'Loans Receivable - Restructured',
+            '11240' => 'Loans Receivable - Loans in Litigation',
+        );
+        foreach ($loan_aging as $code => $label) {
+            $push('account', $label, $amt($code), array('indent' => 3, 'always_show' => true));
+        }
+        $loan_products = array('11201', '11202', '11203', '11204', '11205', '11206');
+        foreach ($loan_products as $code) {
+            $v = $amt($code);
+            if (abs($v) >= 0.005) {
+                $push('account', $name($code), $v, array('indent' => 3));
+            }
+        }
+        $v11200 = $amt('11200');
+        if (abs($v11200) >= 0.005) {
+            $push('account', $name('11200', 'Loans Receivable'), $v11200, array('indent' => 3));
+        }
+        $loan_allow = $amt('11242');
+        $push('account', 'Less: All. For Prob. Losses on Loans', $loan_allow, array(
+            'indent' => 3, 'always_show' => true, 'is_less' => true
+        ));
+        $gross_loans = 0.0;
+        foreach (array_merge(array_keys($loan_aging), $loan_products, array('11200')) as $c) {
+            $gross_loans += $peek($c);
+            $used[$c] = true;
+        }
+        $net_loans = $gross_loans + $loan_allow;
+        $push('subtotal', 'Net, Loans Receivable', $net_loans, array(
+            'indent' => 3, 'bold' => true, 'line' => 'single', 'always_show' => true
+        ));
+
+        $push('group', 'Accounts Receivable', null, array('bold' => true, 'indent' => 2));
+        $ar_codes = array(
+            '11250' => 'Accounts Receivable Trade - Current',
+            '11260' => 'Accounts Receivable Trade - Past Due',
+            '11270' => 'Accounts Receivable Trade - Restructured',
+            '11280' => 'Accounts Receivable Trade - in Litigation',
+        );
+        foreach ($ar_codes as $code => $label) {
+            $push('account', $label, $amt($code), array('indent' => 3, 'always_show' => ($code === '11260')));
+        }
+        $ar_allow = $amt('11281');
+        $push('account', 'Less: All. For Prob. Losses on AR Trade PD', $ar_allow, array(
+            'indent' => 3, 'always_show' => true, 'is_less' => true
+        ));
+        $gross_ar = 0.0;
+        foreach (array_keys($ar_codes) as $c) {
+            $gross_ar += $peek($c);
+            $used[$c] = true;
+        }
+        $net_ar = $gross_ar + $ar_allow;
+        $push('subtotal', 'Net, Accounts Receivable', $net_ar, array(
+            'indent' => 3, 'bold' => true, 'line' => 'single', 'always_show' => true
+        ));
+
+        $other_recv = $sum_mark(array('11360', '11399'));
+        $push('account', 'Other Current Receivables', $other_recv, array('indent' => 2, 'always_show' => true));
+        $total_loans_recv = $net_loans + $net_ar + $other_recv;
+        $push('subtotal', 'Total Loans and Receivables', $total_loans_recv, array(
+            'indent' => 2, 'bold' => true, 'line' => 'single', 'always_show' => true
+        ));
+
+        $push('group', 'Other Current Assets', null, array('bold' => true, 'indent' => 1));
+        $push('account', 'Unused Supplies', $amt('12150'), array('indent' => 2, 'always_show' => true));
+        $push('account', 'Prepaid Expenses', $amt('12170'), array('indent' => 2, 'always_show' => true));
+        foreach (array('12160', '12161', '12200') as $code) {
+            $v = $amt($code);
+            if (abs($v) >= 0.005) {
+                $push('account', $name($code), $v, array('indent' => 2));
+            }
+        }
+        $total_other_ca = 0.0;
+        foreach (array('12150', '12170', '12160', '12161', '12200') as $c) {
+            $total_other_ca += $peek($c);
+            $used[$c] = true;
+        }
+        $push('subtotal', 'Total Other Current Assets', $total_other_ca, array(
+            'indent' => 2, 'bold' => true, 'line' => 'single', 'always_show' => true
+        ));
+
+        $total_current_assets = $total_cash + $total_loans_recv + $total_other_ca;
+        $push('subtotal', 'Total Current Assets', $total_current_assets, array(
+            'indent' => 1, 'bold' => true, 'peso' => true, 'line' => 'single', 'always_show' => true
+        ));
+
+        $push('section', 'NON - CURRENT ASSETS', null, array('bold' => true));
+        $push('group', 'Investment', null, array('bold' => true, 'indent' => 1));
+        $long_term_inv = $amt('13100') + $amt('13300') + $amt('13302');
+        $push('account', 'Long-term Investment', $long_term_inv, array('indent' => 2, 'always_show' => true));
+        $push('account', 'Investment in CLIMBS', $amt('13301'), array('indent' => 2, 'always_show' => true));
+        $total_investment = $long_term_inv + $peek('13301');
+
+        $push('group', 'Property, Plant and Equipment', null, array('bold' => true, 'indent' => 1));
+        $ppe_pairs = array(
+            array('14100', 'Land', null, true),
+            array('14120', 'Building', '14121', true),
+            array('14130', 'Building Improvements', '14131', true),
+            array('14180', 'Furniture, Fixtures & Equip.', '14181', true),
+            array('14210', 'Transportation Equipment', '14211', false),
+            array('14220', 'Linens and Uniforms', '14221', false),
+            array('14240', 'Leasehold Rights & Improvement', '14241', false),
+        );
+        $total_ppe = 0.0;
+        foreach ($ppe_pairs as $pair) {
+            $code = $pair[0];
+            $label = $pair[1];
+            $accum = $pair[2];
+            $force = $pair[3];
+            $v = $amt($code);
+            if ($force || abs($v) >= 0.005) {
+                $push('account', $label, $v, array('indent' => 2, 'always_show' => $force));
+                $total_ppe += $v;
+                if ($accum) {
+                    $av = $amt($accum);
+                    $push('account', 'Less: Accum. Depreciation- ' . $label, $av, array(
+                        'indent' => 2,
+                        'always_show' => ($force || abs($av) >= 0.005),
+                        'is_less' => true
+                    ));
+                    $total_ppe += $av;
+                }
+            } elseif ($accum && abs($peek($accum)) >= 0.005) {
+                $av = $amt($accum);
+                $push('account', $label, $v, array('indent' => 2));
+                $push('account', 'Less: Accum. Depreciation- ' . $label, $av, array(
+                    'indent' => 2, 'is_less' => true
+                ));
+                $total_ppe += $v + $av;
+            }
+        }
+
+        $push('group', 'Other Non Current Assets', null, array('bold' => true, 'indent' => 1));
+        $push('account', 'Other Funds and Deposits', $amt('18200'), array('indent' => 2, 'always_show' => true));
+        foreach (array('17400', '18100') as $code) {
+            $v = $amt($code);
+            if (abs($v) >= 0.005) {
+                $push('account', $name($code), $v, array('indent' => 2));
+            }
+        }
+        $total_other_nca = 0.0;
+        foreach (array('18200', '17400', '18100') as $c) {
+            $total_other_nca += $peek($c);
+            $used[$c] = true;
+        }
+        $total_noncurrent = $total_investment + $total_ppe + $total_other_nca;
+        $push('subtotal', 'Total Non-Current Assets', $total_noncurrent, array(
+            'indent' => 1, 'bold' => true, 'peso' => true, 'line' => 'single', 'always_show' => true
+        ));
+
+        $unmapped_assets = 0.0;
+        $added_other_asset_hdr = false;
+        foreach ($bal as $code => $info) {
+            if ((int) $info['account_type'] != 10000 || !empty($used[$code])) {
+                continue;
+            }
+            $v = floatval($info['balance']);
+            if (abs($v) < 0.005) {
+                continue;
+            }
+            if (!$added_other_asset_hdr) {
+                $push('group', 'Other Assets', null, array('bold' => true, 'indent' => 1));
+                $added_other_asset_hdr = true;
+            }
+            $push('account', $info['name'], $v, array('indent' => 2));
+            $used[$code] = true;
+            $unmapped_assets += $v;
+        }
+
+        $total_assets = $total_current_assets + $total_noncurrent + $unmapped_assets;
+        $push('total', 'TOTAL ASSETS', $total_assets, array(
+            'bold' => true, 'peso' => true, 'line' => 'double', 'always_show' => true
+        ));
+
+        // ===================== LIABILITIES =====================
+        $push('spacer', '', null);
+        $push('section', 'LIABILITIES & EQUITIES', null, array('bold' => true));
+        $push('section', 'Current Liabilities', null, array('bold' => true));
+
+        $push('account', 'Savings Deposit Payable - Special', $amt('21110'), array('indent' => 1, 'always_show' => true));
+        $push('account', 'Savings Deposit Payable - MSO', $amt('21120'), array('indent' => 1, 'always_show' => true));
+        $push('account', 'Loans Payable-Current', $amt('22100'), array('indent' => 1, 'always_show' => true));
+        foreach (array('21100', '21130') as $code) {
+            $v = $amt($code);
+            if (abs($v) >= 0.005) {
+                $push('account', $name($code), $v, array('indent' => 1));
+            }
+        }
+        $total_ap = 0.0;
+        foreach (array('21110', '21120', '22100', '21100', '21130') as $c) {
+            $total_ap += $peek($c);
+            $used[$c] = true;
+        }
+        $push('subtotal', 'Total Accounts and Other Payables', $total_ap, array(
+            'indent' => 1, 'bold' => true, 'line' => 'single', 'always_show' => true
+        ));
+
+        $push('group', 'Accrued Expenses', null, array('bold' => true, 'indent' => 1));
+        // Sample "Accounts Payable" maps to Non-Trade AP under accrued section
+        $push('account', 'Accounts Payable', $amt('21220'), array('indent' => 2, 'always_show' => true));
+        $push('account', 'SSS/ECC/Phil/Pag-ibig Prem. Payable', $amt('21320'), array('indent' => 2, 'always_show' => true));
+        $push('account', 'SSS/Pag-ibig Loans Payable', $amt('21330'), array('indent' => 2, 'always_show' => true));
+        $push('account', 'Withholding Tax Payable', $amt('21340'), array('indent' => 2, 'always_show' => true));
+        foreach (array('21300', '21310', '21370', '21390') as $code) {
+            $v = $amt($code);
+            if (abs($v) >= 0.005) {
+                $push('account', $name($code), $v, array('indent' => 2));
+            }
+        }
+        $total_accrued = 0.0;
+        foreach (array('21220', '21320', '21330', '21340', '21300', '21310', '21370', '21390') as $c) {
+            $total_accrued += $peek($c);
+            $used[$c] = true;
+        }
+        $push('subtotal', 'Total Accrued Expenses', $total_accrued, array(
+            'indent' => 2, 'bold' => true, 'line' => 'single', 'always_show' => true
+        ));
+
+        $push('group', 'Other Current Liabilities', null, array('bold' => true, 'indent' => 1));
+        $push('account', 'Interest on Share Capital Payable', $amt('21440'), array('indent' => 2, 'always_show' => true));
+        $push('account', 'Patronage Refund Payable', $amt('21450'), array('indent' => 2, 'always_show' => true));
+        $push('account', 'Due to Union Fed. CETF (APEX)', $amt('21460'), array('indent' => 2, 'always_show' => true));
+        $push('account', 'Unearned Income', $amt('21410'), array('indent' => 2, 'always_show' => true));
+        $push('account', 'Insurance Payable', $amt('21291'), array('indent' => 2, 'always_show' => true));
+        foreach (array('21470', '21490') as $code) {
+            $v = $amt($code);
+            if (abs($v) >= 0.005) {
+                $push('account', $name($code), $v, array('indent' => 2));
+            }
+        }
+        $total_ocl = 0.0;
+        foreach (array('21440', '21450', '21460', '21410', '21291', '21470', '21490') as $c) {
+            $total_ocl += $peek($c);
+            $used[$c] = true;
+        }
+        $push('subtotal', 'Total Other Current Liabilities', $total_ocl, array(
+            'indent' => 2, 'bold' => true, 'line' => 'single', 'always_show' => true
+        ));
+
+        $total_current_liab = $total_ap + $total_accrued + $total_ocl;
+        $push('subtotal', 'Total Current Liabilities', $total_current_liab, array(
+            'indent' => 1, 'bold' => true, 'italic' => true, 'peso' => true, 'line' => 'single', 'always_show' => true
+        ));
+
+        $push('section', 'Non-Current Liabilities', null, array('bold' => true));
+        $push('account', 'Retirement Payable', $amt('22400'), array('indent' => 1, 'always_show' => true));
+        $push('account', 'Members Benefit & Other Funds Payable', $amt('24120'), array('indent' => 1, 'always_show' => true));
+        foreach (array('24150', '24190') as $code) {
+            $v = $amt($code);
+            if (abs($v) >= 0.005) {
+                $push('account', $name($code), $v, array('indent' => 1));
+            }
+        }
+        $total_ncl = 0.0;
+        foreach (array('22400', '24120', '24150', '24190') as $c) {
+            $total_ncl += $peek($c);
+            $used[$c] = true;
+        }
+        $push('subtotal', 'Total Non-Current Liabilities', $total_ncl, array(
+            'indent' => 1, 'bold' => true, 'italic' => true, 'line' => 'single', 'always_show' => true
+        ));
+
+        $unmapped_liab = 0.0;
+        $added_other_liab_hdr = false;
+        foreach ($bal as $code => $info) {
+            if ((int) $info['account_type'] != 20000 || !empty($used[$code])) {
+                continue;
+            }
+            $v = floatval($info['balance']);
+            if (abs($v) < 0.005) {
+                continue;
+            }
+            if (!$added_other_liab_hdr) {
+                $push('group', 'Other Liabilities', null, array('bold' => true, 'indent' => 1));
+                $added_other_liab_hdr = true;
+            }
+            $push('account', $info['name'], $v, array('indent' => 1));
+            $used[$code] = true;
+            $unmapped_liab += $v;
+        }
+
+        $total_liabilities = $total_current_liab + $total_ncl + $unmapped_liab;
+        $push('total', 'TOTAL LIABILITIES', $total_liabilities, array(
+            'bold' => true, 'peso' => true, 'line' => 'double', 'always_show' => true
+        ));
+
+        // ===================== EQUITY =====================
+        $push('spacer', '', null);
+        $push('section', "MEMBERS' EQUITY", null, array('bold' => true));
+        $push('account', 'Subscribed Share Capital - Common', $amt('30110'), array('indent' => 1, 'always_show' => true));
+        $push('account', 'Less: Subscription Receivable', $amt('30120'), array(
+            'indent' => 1, 'always_show' => true, 'is_less' => true
+        ));
+        $push('account', 'Paid-Up Share Capital', $amt('30130'), array('indent' => 1, 'always_show' => true));
+        $push('account', 'Less: Treasury Share Capital', $amt('30131'), array(
+            'indent' => 1, 'always_show' => true, 'is_less' => true
+        ));
+        $total_paid_up = $peek('30110') + $peek('30120') + $peek('30130') + $peek('30131');
+        foreach (array('30110', '30120', '30130', '30131') as $c) {
+            $used[$c] = true;
+        }
+        $push('subtotal', 'Total Paid-Up Share Capital', $total_paid_up, array(
+            'indent' => 1, 'bold' => true, 'line' => 'single', 'always_show' => true
+        ));
+        $push('account', 'Deposit for Share Capital Subscription', $amt('30300'), array('indent' => 1, 'always_show' => true));
+        $push('account', 'Undivided Net Surplus (Loss)', $amt('30600'), array('indent' => 1, 'always_show' => true));
+        $push('account', 'Donations and Grants', $amt('30700'), array('indent' => 1, 'always_show' => true));
+        foreach (array('30150', '30400') as $code) {
+            $v = $amt($code);
+            if (abs($v) >= 0.005) {
+                $push('account', $name($code), $v, array('indent' => 1));
+            }
+        }
+        $total_equity = $total_paid_up;
+        foreach (array('30300', '30600', '30700', '30150', '30400') as $c) {
+            $total_equity += $peek($c);
+            $used[$c] = true;
+        }
+
+        $unmapped_equity = 0.0;
+        foreach ($bal as $code => $info) {
+            if ((int) $info['account_type'] != 30000 || !empty($used[$code])) {
+                continue;
+            }
+            $v = floatval($info['balance']);
+            if (abs($v) < 0.005) {
+                continue;
+            }
+            $push('account', $info['name'], $v, array('indent' => 1));
+            $used[$code] = true;
+            $unmapped_equity += $v;
+        }
+        $total_equity += $unmapped_equity;
+        $push('total', 'TOTAL EQUITIES', $total_equity, array(
+            'bold' => true, 'peso' => true, 'line' => 'double', 'always_show' => true
+        ));
+
+        // ===================== STATUTORY FUNDS =====================
+        $push('spacer', '', null);
+        $push('section', 'Statutory Funds', null, array('bold' => true));
+        $push('account', 'General Reserve Fund', $amt('30810'), array('indent' => 1, 'always_show' => true));
+        $push('account', 'Coop. Education & Training Fund-Local', $amt('30820'), array('indent' => 1, 'always_show' => true));
+        $push('account', 'Community Dev. Fund', $amt('30830'), array('indent' => 1, 'always_show' => true));
+        $push('account', 'Optional Fund', $amt('30840'), array('indent' => 1, 'always_show' => true));
+        foreach (array('31000') as $code) {
+            $v = $amt($code);
+            if (abs($v) >= 0.005) {
+                $push('account', $name($code), $v, array('indent' => 1));
+            }
+        }
+        $total_statutory = 0.0;
+        foreach (array('30810', '30820', '30830', '30840', '31000') as $c) {
+            $total_statutory += $peek($c);
+            $used[$c] = true;
+        }
+        foreach ($bal as $code => $info) {
+            if ((int) $info['account_type'] != 30800 || !empty($used[$code])) {
+                continue;
+            }
+            $v = floatval($info['balance']);
+            if (abs($v) < 0.005) {
+                continue;
+            }
+            $push('account', $info['name'], $v, array('indent' => 1));
+            $used[$code] = true;
+            $total_statutory += $v;
+        }
+        $push('subtotal', 'Total Statutory Funds', $total_statutory, array(
+            'indent' => 1, 'bold' => true, 'italic' => true, 'line' => 'double', 'always_show' => true
+        ));
+
+        $total_liab_equity = $total_liabilities + $total_equity + $total_statutory;
+        $push('total', 'TOTAL LIABILITIES AND EQUITIES', $total_liab_equity, array(
+            'bold' => true, 'peso' => true, 'line' => 'double', 'always_show' => true
+        ));
+
+        return array(
+            'rows' => $rows,
+            'totals' => array(
+                'assets' => $total_assets,
+                'liabilities' => $total_liabilities,
+                'equity' => $total_equity,
+                'statutory' => $total_statutory,
+                'liabilities_and_equities' => $total_liab_equity,
+                'difference' => $total_assets - $total_liab_equity,
+            ),
+        );
+    }
+
+    /**
+     * Period activity for P&L accounts (revenue/expense/other) between dates inclusive.
+     * Revenue/subsidy (40000/80000 income-like): credit - debit
+     * Expense (70000 / subsidized expense): debit - credit
+     */
+    function get_financial_operations_balances($from, $until) {
+        $pin = current_user()->PIN;
+        if (empty($from) || empty($until) || empty($pin)) {
+            return array();
+        }
+        $from = date('Y-m-d', strtotime($from));
+        $until = date('Y-m-d', strtotime($until));
+        if ($from === false || $until === false || $from === '1970-01-01' || $until === '1970-01-01') {
+            return array();
+        }
+
+        $sql = "SELECT
+                    account_chart.account AS account,
+                    account_chart.name AS name,
+                    account_chart.account_type AS account_type,
+                    account_chart.sub_account_type AS sub_account_type,
+                    COALESCE(SUM(general_ledger.debit), 0) AS debit,
+                    COALESCE(SUM(general_ledger.credit), 0) AS credit
+                FROM account_chart
+                LEFT JOIN general_ledger
+                    ON general_ledger.account = account_chart.account
+                    AND general_ledger.PIN = account_chart.PIN
+                    AND general_ledger.date >= ?
+                    AND general_ledger.date <= ?
+                WHERE account_chart.PIN = ?
+                    AND (
+                        CAST(account_chart.account_type AS UNSIGNED) IN (40000, 70000, 80000)
+                        OR account_chart.account_type IN ('40000', '70000', '80000')
+                    )
+                    AND CAST(account_chart.account AS UNSIGNED) BETWEEN 40000 AND 89999
+                GROUP BY account_chart.account, account_chart.name, account_chart.account_type, account_chart.sub_account_type
+                ORDER BY CAST(account_chart.account AS UNSIGNED) ASC";
+
+        $rows = $this->db->query($sql, array($from, $until, $pin))->result();
+        $balances = array();
+        $expense_like_800 = array('80450', '80510', '80560');
+        foreach ($rows as $row) {
+            $type = (int) $row->account_type;
+            $code = (string) $row->account;
+            if ($type == 70000 || in_array($code, $expense_like_800, true)) {
+                $bal = floatval($row->debit) - floatval($row->credit);
+            } else {
+                $bal = floatval($row->credit) - floatval($row->debit);
+            }
+            $balances[$code] = array(
+                'account' => $code,
+                'name' => $row->name,
+                'account_type' => $row->account_type,
+                'sub_account_type' => $row->sub_account_type,
+                'balance' => $bal,
+            );
+        }
+        return $balances;
+    }
+
+    /**
+     * Comparative Statement of Financial Operations - Lending
+     * Columns: YTD (as-of), Current month, Prior month YTD
+     */
+    function get_financial_operations_data($as_of) {
+        $as_of = date('Y-m-d', strtotime($as_of));
+        $year_start = date('Y-01-01', strtotime($as_of));
+        $month_start = date('Y-m-01', strtotime($as_of));
+        $prev_month_end = date('Y-m-d', strtotime($month_start . ' -1 day'));
+
+        $ytd = $this->get_financial_operations_balances($year_start, $as_of);
+        $month = $this->get_financial_operations_balances($month_start, $as_of);
+        // Prior YTD is only within the same calendar year (Jan as-of => empty prior)
+        if ($prev_month_end < $year_start) {
+            $prior = array();
+            $prev_label_date = $prev_month_end;
+        } else {
+            $prior = $this->get_financial_operations_balances($year_start, $prev_month_end);
+            $prev_label_date = $prev_month_end;
+        }
+
+        $cols = array('ytd' => $ytd, 'month' => $month, 'prior' => $prior);
+        $used = array('ytd' => array(), 'month' => array(), 'prior' => array());
+
+        $amt = function ($code, $col) use ($cols, &$used) {
+            $code = (string) $code;
+            $used[$col][$code] = true;
+            if (!isset($cols[$col][$code])) {
+                return 0.0;
+            }
+            return floatval($cols[$col][$code]['balance']);
+        };
+
+        $triple = function ($codes) use ($amt) {
+            if (!is_array($codes)) {
+                $codes = array($codes);
+            }
+            $out = array('ytd' => 0.0, 'month' => 0.0, 'prior' => 0.0);
+            foreach ($codes as $code) {
+                $out['ytd'] += $amt($code, 'ytd');
+                $out['month'] += $amt($code, 'month');
+                $out['prior'] += $amt($code, 'prior');
+            }
+            return $out;
+        };
+
+        $add = function ($a, $b) {
+            return array(
+                'ytd' => $a['ytd'] + $b['ytd'],
+                'month' => $a['month'] + $b['month'],
+                'prior' => $a['prior'] + $b['prior'],
+            );
+        };
+
+        $sub = function ($a, $b) {
+            return array(
+                'ytd' => $a['ytd'] - $b['ytd'],
+                'month' => $a['month'] - $b['month'],
+                'prior' => $a['prior'] - $b['prior'],
+            );
+        };
+
+        $zero = array('ytd' => 0.0, 'month' => 0.0, 'prior' => 0.0);
+        $rows = array();
+        $push = function ($type, $label, $amounts = null, $opts = array()) use (&$rows, $zero) {
+            $rows[] = array_merge(array(
+                'type' => $type,
+                'label' => $label,
+                'amounts' => $amounts,
+                'indent' => 0,
+                'bold' => false,
+                'italic' => false,
+                'peso' => false,
+                'line' => '',
+                'always_show' => false,
+                'negate_display' => false,
+            ), $opts);
+        };
+
+        $has_any = function ($amounts) {
+            if ($amounts === null) {
+                return false;
+            }
+            return abs($amounts['ytd']) >= 0.005 || abs($amounts['month']) >= 0.005 || abs($amounts['prior']) >= 0.005;
+        };
+
+        // ---- REVENUE ----
+        $push('section', 'REVENUE ITEMS', null, array('bold' => true));
+        $push('group', 'Income From Credit Operations', null, array('bold' => true, 'indent' => 0));
+
+        $interest = $triple(array('40110', '40111', '40112', '40113', '40114', '40115', '40116', '40117'));
+        $push('account', 'Interest Income from Loans', $interest, array('indent' => 1, 'always_show' => true));
+        $service = $triple('40120');
+        $push('account', 'Service Fees', $service, array('indent' => 1, 'always_show' => true));
+        $filing = $triple('40130');
+        $push('account', 'Filing Fees', $filing, array('indent' => 1, 'always_show' => true));
+        $fines = $triple('40140');
+        $push('account', 'Fines, Penalties & Surcharges', $fines, array('indent' => 1, 'always_show' => true));
+
+        $total_credit_ops = $add($add($add($interest, $service), $filing), $fines);
+        $push('subtotal', 'Total Income from Credit Operations', $total_credit_ops, array(
+            'indent' => 1, 'bold' => true, 'line' => 'single', 'always_show' => true
+        ));
+
+        $push('group', 'Add: Other Income', null, array('bold' => true));
+        $inv_inc = $triple('40610');
+        $push('account', 'Income/Interest from Investment/Deposits', $inv_inc, array('indent' => 1, 'always_show' => true));
+        $memb = $triple('40620');
+        $push('account', 'Membership Fees', $memb, array('indent' => 1, 'always_show' => true));
+        $comm = $triple('40630');
+        $push('account', 'Commission Income', $comm, array('indent' => 1, 'always_show' => true));
+        $rental = $triple('40650');
+        $push('account', 'Rental Income', $rental, array('indent' => 1, 'always_show' => true));
+        $misc = $triple('40700');
+        $push('account', 'Miscellaneous Income', $misc, array('indent' => 1, 'always_show' => true));
+
+        // Unmapped other revenue under 40000
+        $extra_rev = $zero;
+        $mapped_rev = array('40110','40111','40112','40113','40114','40115','40116','40117','40120','40130','40140','40610','40620','40630','40650','40700');
+        foreach ($ytd as $code => $info) {
+            if ((int) $info['account_type'] != 40000) {
+                continue;
+            }
+            if (in_array($code, $mapped_rev, true)) {
+                continue;
+            }
+            $t = $triple($code);
+            if ($has_any($t)) {
+                $push('account', $info['name'], $t, array('indent' => 1));
+                $extra_rev = $add($extra_rev, $t);
+            }
+        }
+
+        $total_other_inc = $add($add($add($add($add($inv_inc, $memb), $comm), $rental), $misc), $extra_rev);
+        $push('subtotal', 'Total Other Income', $total_other_inc, array(
+            'indent' => 1, 'bold' => true, 'line' => 'single', 'always_show' => true
+        ));
+
+        $gross_rev = $add($total_credit_ops, $total_other_inc);
+        $push('total', 'Total Gross Revenues', $gross_rev, array(
+            'bold' => true, 'peso' => true, 'line' => 'double', 'always_show' => true
+        ));
+
+        // ---- EXPENSES ----
+        $push('section', 'Less: Expenses', null, array('bold' => true));
+        $push('group', 'Financing Costs', null, array('bold' => true));
+        $int_bor = $triple('71100');
+        $push('account', 'Interest Expense on Borrowings - LBP', $int_bor, array('indent' => 1, 'always_show' => true));
+        $int_dep = $triple('71200');
+        $push('account', 'Interest Expense on Deposits', $int_dep, array('indent' => 1, 'always_show' => true));
+        $oth_fin = $triple('71300');
+        $push('account', 'Other Financing Charges', $oth_fin, array('indent' => 1, 'always_show' => true));
+        $total_fin = $add($add($int_bor, $int_dep), $oth_fin);
+        $push('subtotal', 'Total Financing Costs', $total_fin, array(
+            'indent' => 1, 'bold' => true, 'line' => 'single', 'always_show' => true
+        ));
+
+        $push('group', 'Administrative Costs', null, array('bold' => true));
+        $admin_lines = array(
+            '73110' => 'Salaries & Wages',
+            '73120' => 'Employees Benefits',
+            '73130' => 'SSS, PHIC, ECC, PAG-IBIG Premium Contrit.',
+            '73140' => 'Retirement Benefit Expense',
+            '73150' => "Officers' Honorarium & Allowances",
+            '73170' => 'Litigation Expenses',
+            '73190' => 'Office Supplies',
+            '73200' => 'Meetings & Conferences',
+            '73210' => 'Trainings / Seminars',
+            '73230' => 'Power Light & Water',
+            '73240' => 'Travel & Transportation',
+            '73250' => 'Insurance',
+            '73260' => 'Repair & Maintenance',
+            '73280' => 'Taxes, Fees and Charges',
+            '73291' => 'Professional Fee',
+            '73290' => 'Communication Expense',
+            '73300' => 'Representation Expense',
+            '73340' => 'Miscellaneous Expenses',
+            '73350' => 'Depreciation - Furn., Fixture Equipment',
+            '73380' => 'Provision for Probable Losses on Loans',
+            '73410' => 'Gen. Assembly Expenses',
+            '73420' => 'Cooperative Celebration Expense',
+            '73430' => "Member's Benefit Expenses",
+            '73440' => 'Affiliation Fee',
+        );
+        // Sample-only lines without dedicated COA (show as dash unless later mapped)
+        $admin_extra_labels = array(
+            'Depreciation - Building',
+            'Depreciation - Building Improvements',
+            'Provision for Probable Losses on Accts. Rec.',
+        );
+
+        $total_admin = $zero;
+        $admin_codes_used = array();
+        foreach ($admin_lines as $code => $label) {
+            $t = $triple($code);
+            $admin_codes_used[] = $code;
+            $push('account', $label, $t, array('indent' => 1, 'always_show' => true));
+            $total_admin = $add($total_admin, $t);
+        }
+        foreach ($admin_extra_labels as $label) {
+            $push('account', $label, $zero, array('indent' => 1, 'always_show' => true));
+        }
+
+        // Other admin expense accounts with activity
+        foreach ($ytd as $code => $info) {
+            if ((int) $info['account_type'] != 70000) {
+                continue;
+            }
+            if (in_array($code, array('71100', '71200', '71300'), true)) {
+                continue;
+            }
+            if (in_array($code, $admin_codes_used, true)) {
+                continue;
+            }
+            $t = $triple($code);
+            if ($has_any($t)) {
+                $push('account', $info['name'], $t, array('indent' => 1));
+                $total_admin = $add($total_admin, $t);
+            }
+        }
+
+        $push('subtotal', 'Total Administrative Cost', $total_admin, array(
+            'indent' => 1, 'bold' => true, 'line' => 'single', 'always_show' => true
+        ));
+
+        $total_exp = $add($total_fin, $total_admin);
+        $push('total', 'Total Expenses', $total_exp, array(
+            'bold' => true, 'peso' => true, 'line' => 'double', 'always_show' => true
+        ));
+
+        $net_before = $sub($gross_rev, $total_exp);
+        $push('total', 'Net Surplus (Loss) Before Other', $net_before, array(
+            'bold' => true, 'peso' => true, 'line' => 'double', 'always_show' => true
+        ));
+
+        // ---- OTHER ITEMS ----
+        $push('group', 'Add/(Less): OTHER Items', null, array('bold' => true));
+        $opt_sub = $triple('80400');
+        $push('account', 'Optional Fund Subsidy', $opt_sub, array('indent' => 1, 'always_show' => true));
+        $edu_sub = $triple('80500');
+        $push('account', 'Education and Training Fund Subsidy', $edu_sub, array('indent' => 1, 'always_show' => true));
+        $cdf_sub = $triple('80550');
+        $push('account', 'CDF Subsidy', $cdf_sub, array('indent' => 1, 'always_show' => true));
+        $cdf_exp = $triple('80560');
+        // expense-like already positive as debit-credit; display as deduction (negate for netting)
+        $cdf_exp_disp = array(
+            'ytd' => -1 * $cdf_exp['ytd'],
+            'month' => -1 * $cdf_exp['month'],
+            'prior' => -1 * $cdf_exp['prior'],
+        );
+        $push('account', 'CDF Subsidized Expenses', $cdf_exp_disp, array(
+            'indent' => 1, 'always_show' => true, 'negate_display' => false
+        ));
+
+        $total_other = $add($add($add($opt_sub, $edu_sub), $cdf_sub), $cdf_exp_disp);
+
+        // Other 80000 activity
+        foreach ($ytd as $code => $info) {
+            if ((int) $info['account_type'] != 80000) {
+                continue;
+            }
+            if (in_array($code, array('80400', '80500', '80550', '80560'), true)) {
+                continue;
+            }
+            $t = $triple($code);
+            if (!$has_any($t)) {
+                continue;
+            }
+            // Subsidized expenses: show as negative contribution
+            if (in_array($code, array('80450', '80510'), true)) {
+                $t = array('ytd' => -$t['ytd'], 'month' => -$t['month'], 'prior' => -$t['prior']);
+            }
+            $push('account', $info['name'], $t, array('indent' => 1));
+            $total_other = $add($total_other, $t);
+        }
+
+        $push('total', 'TOTAL OTHER ITEMS', $total_other, array(
+            'bold' => true, 'line' => 'double', 'always_show' => true
+        ));
+
+        $net_surplus = $add($net_before, $total_other);
+        $push('total', 'NET SURPLUS (NET LOSS)', $net_surplus, array(
+            'bold' => true, 'peso' => true, 'line' => 'double', 'always_show' => true
+        ));
+
+        return array(
+            'rows' => $rows,
+            'periods' => array(
+                'as_of' => $as_of,
+                'year_start' => $year_start,
+                'month_start' => $month_start,
+                'prev_month_end' => $prev_month_end,
+                'ytd_label' => 'For the period ended ' . strtoupper(date('F d, Y', strtotime($as_of))) . ' (Total)',
+                'month_label' => 'For the month of ' . strtoupper(date('F Y', strtotime($as_of))),
+                'prior_label' => 'For the period ended ' . strtoupper(date('F d, Y', strtotime($prev_label_date))) . ' (Previous Mo.)',
+            ),
+            'totals' => array(
+                'gross_revenues' => $gross_rev,
+                'total_expenses' => $total_exp,
+                'net_before_other' => $net_before,
+                'other_items' => $total_other,
+                'net_surplus' => $net_surplus,
+            ),
+        );
+    }
+
 }

@@ -13,7 +13,7 @@ if (isset($message) && !empty($message)) {
 }
 ?>
 
-<div class="form-group"><label class="col-lg-3 control-label"><?php echo ($link_cat != 5 ? 'From':'Date'); ?>  : <span class="required">*</span></label>
+<div class="form-group"><label class="col-lg-3 control-label"><?php echo (($link_cat != 5 && $link_cat != 7 && $link_cat != 8) ? 'From':'Date'); ?>  : <span class="required">*</span></label>
     <div class=" col-lg-6">
         <div class="input-group date" id="datetimepicker" >
             <input type="text" name="fromdate" placeholder="<?php echo lang('hint_date'); ?>" value="<?php echo (isset($reportinfo) ? format_date($reportinfo->fromdate,false) : set_value('fromdate')); ?>"  data-date-format="DD-MM-YYYY" class="form-control"/> 
@@ -24,7 +24,7 @@ if (isset($message) && !empty($message)) {
         <?php echo form_error('fromdate'); ?>
     </div>
 </div>
-<?php if($link_cat != 5){ ?>
+<?php if($link_cat != 5 && $link_cat != 7 && $link_cat != 8){ ?>
 <div class="form-group"><label class="col-lg-3 control-label"><?php echo 'Until'; ?>  : <span class="required">*</span></label>
     <div class=" col-lg-6">
         <div class="input-group date" id="datetimepicker2" >

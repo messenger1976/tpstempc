@@ -77,6 +77,10 @@ class Report extends CI_Controller {
             $this->data['title'] = 'Income Statement';
         } else if ($link == 5) {
             $this->data['title'] = 'Balance Sheet';
+        } else if ($link == 7) {
+            $this->data['title'] = 'Consolidated Statement Of Financial Condition';
+        } else if ($link == 8) {
+            $this->data['title'] = 'Comparative Statement of Financial Operations - Lending';
         }
         $this->data['link_cat'] = $link;
         $this->data['reportlist'] = $this->report_model->report_list(null, $link)->result();
@@ -158,6 +162,10 @@ class Report extends CI_Controller {
             $this->data['title'] = 'Income Statement';
         } else if ($link == 5) {
             $this->data['title'] = 'Balance Sheet';
+        } else if ($link == 7) {
+            $this->data['title'] = 'Consolidated Statement Of Financial Condition';
+        } else if ($link == 8) {
+            $this->data['title'] = 'Comparative Statement of Financial Operations - Lending';
         }
         $this->data['id'] = $id;
         $this->data['link_cat'] = $link;
@@ -165,8 +173,9 @@ class Report extends CI_Controller {
             $id = decode_id($id);
         }
 
-        $this->form_validation->set_rules('fromdate', ($link != 5 ? 'From' : 'Date'), 'required|valid_date');
-        if ($link != 5) {
+        $as_of_report = ($link == 5 || $link == 7 || $link == 8);
+        $this->form_validation->set_rules('fromdate', ($as_of_report ? 'Date' : 'From'), 'required|valid_date');
+        if (!$as_of_report) {
             $this->form_validation->set_rules('todate', 'Until', 'required|valid_date');
         }
         $this->form_validation->set_rules('description', 'Description', 'required');
@@ -177,7 +186,7 @@ class Report extends CI_Controller {
             $description = trim($this->input->post('description'));
             $page = trim($this->input->post('page'));
             $pass = false;
-            if ($link != 5) {
+            if (!$as_of_report) {
                 
                 if (strtotime($from) > strtotime($to)) {
                    
@@ -186,6 +195,8 @@ class Report extends CI_Controller {
                     $pass = TRUE;
                 }
             } else {
+                // As-of reports use fromdate only; comparative ops derives YTD/month/prior from it
+                $to = $from;
                 $pass = TRUE;
             }
             if ($pass) {
@@ -544,6 +555,90 @@ class Report extends CI_Controller {
 
         $html = $this->load->view('report/ledger/print/ledger_balance_sheet_print', $this->data, true);
         $this->export_to_pdf($html, 'Balance_sheet', $reportinfo->page);
+    }
+
+    function ledger_financial_condition_view($link, $id) {
+        $this->data['title'] = 'Consolidated Statement Of Financial Condition';
+        $this->data['link_cat'] = $link;
+        $this->data['id'] = $id;
+        if (!is_null($id)) {
+            $id = decode_id($id);
+        }
+        $reportinfo = $this->report_model->report_list($id)->row();
+
+        if (!$reportinfo) {
+            $this->session->set_flashdata('error', 'Report not found.');
+            redirect(current_lang() . '/report/general_leger_transaction/' . $link);
+            return;
+        }
+
+        if (empty($reportinfo->fromdate)) {
+            $this->session->set_flashdata('error', 'Report date is missing. Please edit the report and set a valid date.');
+            redirect(current_lang() . '/report/create_ledger_trans_title/' . $link . '/' . encode_id($id));
+            return;
+        }
+
+        $this->data['reportinfo'] = $reportinfo;
+        $this->data['fc_data'] = $this->report_model->get_financial_condition_data($reportinfo->fromdate);
+        $this->data['content'] = 'report/ledger/ledger_financial_condition';
+        $this->load->view('template', $this->data);
+    }
+
+    function ledger_financial_condition_print($link, $id) {
+        $this->data['title'] = 'Consolidated Statement Of Financial Condition';
+        $this->data['link_cat'] = $link;
+        $this->data['id'] = $id;
+        if (!is_null($id)) {
+            $id = decode_id($id);
+        }
+        $reportinfo = $this->report_model->report_list($id)->row();
+        $this->data['reportinfo'] = $reportinfo;
+        $this->data['fc_data'] = $this->report_model->get_financial_condition_data($reportinfo->fromdate);
+
+        $html = $this->load->view('report/ledger/print/ledger_financial_condition_print', $this->data, true);
+        $this->export_to_pdf($html, 'Financial_Condition', $reportinfo->page);
+    }
+
+    function ledger_financial_operations_view($link, $id) {
+        $this->data['title'] = 'Comparative Statement of Financial Operations - Lending';
+        $this->data['link_cat'] = $link;
+        $this->data['id'] = $id;
+        if (!is_null($id)) {
+            $id = decode_id($id);
+        }
+        $reportinfo = $this->report_model->report_list($id)->row();
+
+        if (!$reportinfo) {
+            $this->session->set_flashdata('error', 'Report not found.');
+            redirect(current_lang() . '/report/general_leger_transaction/' . $link);
+            return;
+        }
+
+        if (empty($reportinfo->fromdate)) {
+            $this->session->set_flashdata('error', 'Report date is missing. Please edit the report and set a valid date.');
+            redirect(current_lang() . '/report/create_ledger_trans_title/' . $link . '/' . encode_id($id));
+            return;
+        }
+
+        $this->data['reportinfo'] = $reportinfo;
+        $this->data['fo_data'] = $this->report_model->get_financial_operations_data($reportinfo->fromdate);
+        $this->data['content'] = 'report/ledger/ledger_financial_operations';
+        $this->load->view('template', $this->data);
+    }
+
+    function ledger_financial_operations_print($link, $id) {
+        $this->data['title'] = 'Comparative Statement of Financial Operations - Lending';
+        $this->data['link_cat'] = $link;
+        $this->data['id'] = $id;
+        if (!is_null($id)) {
+            $id = decode_id($id);
+        }
+        $reportinfo = $this->report_model->report_list($id)->row();
+        $this->data['reportinfo'] = $reportinfo;
+        $this->data['fo_data'] = $this->report_model->get_financial_operations_data($reportinfo->fromdate);
+
+        $html = $this->load->view('report/ledger/print/ledger_financial_operations_print', $this->data, true);
+        $this->export_to_pdf($html, 'Financial_Operations', $reportinfo->page ? $reportinfo->page : 'A4-L');
     }
 
   

@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF Viewer</title>
+    <link href="css/bootstrap.min.css" rel="stylesheet">
+    <link href="font-awesome/css/font-awesome.css" rel="stylesheet">
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            background: #f3f3f4;
+        }
+        .pdf-toolbar {
+            padding: 10px;
+            background: #fff;
+            border-bottom: 1px solid #e7eaec;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+        .pdf-toolbar .input-group {
+            display: inline-table;
+            vertical-align: middle;
+            width: 110px;
+        }
+        .pdf-canvas-wrap {
+            text-align: center;
+            padding: 15px;
+            overflow: auto;
+            height: calc(100% - 52px);
+        }
+        #the-canvas {
+            max-width: 100%;
+            box-shadow: 0 1px 4px rgba(0,0,0,.15);
+            background: #fff;
+        }
+        #pdf-loading, #pdf-error {
+            padding: 40px 20px;
+            text-align: center;
+            color: #676a6c;
+        }
+        #pdf-error { color: #ed5565; display: none; }
+        #print-container { display: none; }
+        #pdf-print-progress {
+            display: none;
+            position: fixed;
+            left: 0;
+            top: 0;
+            right: 0;
+            bottom: 0;
+            z-index: 10000;
+            background: rgba(255,255,255,0.85);
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            text-align: center;
+        }
+        #pdf-print-progress.is-visible { display: flex; }
+        #pdf-print-progress .spinner {
+            width: 42px;
+            height: 42px;
+            border: 4px solid #e7eaec;
+            border-top-color: #1ab394;
+            border-radius: 50%;
+            animation: pdf-spin 0.8s linear infinite;
+            margin-bottom: 12px;
+        }
+        #pdf-print-progress .msg { color: #676a6c; font-size: 14px; }
+        @keyframes pdf-spin { to { transform: rotate(360deg); } }
+        @media print {
+            html, body {
+                height: auto !important;
+                background: #fff !important;
+                margin: 0 !important;
+                padding: 0 !important;
+            }
+            .pdf-toolbar,
+            #pdf-loading,
+            #pdf-error,
+            #pdf-print-progress,
+            .pdf-canvas-wrap,
+            #pdf-print-frame {
+                display: none !important;
+            }
+            #print-container {
+                display: block !important;
+            }
+            #print-container .print-page {
+                page-break-after: always;
+                page-break-inside: avoid;
+                text-align: center;
+            }
+            #print-container .print-page:last-child {
+                page-break-after: auto;
+            }
+            #print-container canvas {
+                max-width: 100% !important;
+                height: auto !important;
+                box-shadow: none !important;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="text-center pdf-toolbar">
+        <div class="btn-group">
+            <button id="prev" type="button" class="btn btn-white btn-sm"><i class="fa fa-long-arrow-left"></i> Previous</button>
+            <button id="next" type="button" class="btn btn-white btn-sm"><i class="fa fa-long-arrow-right"></i> Next</button>
+            <button id="zoomin" type="button" class="btn btn-white btn-sm"><i class="fa fa-search-plus"></i> Zoom In</button>
+            <button id="zoomout" type="button" class="btn btn-white btn-sm"><i class="fa fa-search-minus"></i> Zoom Out</button>
+            <button id="zoomfit" type="button" class="btn btn-white btn-sm">100%</button>
+            <span class="btn btn-white btn-sm hidden-xs">Page:</span>
+            <div class="input-group input-group-sm">
+                <input type="text" class="form-control" id="page_num" value="1">
+                <div class="input-group-btn">
+                    <button type="button" class="btn btn-white" id="page_count">/ 1</button>
+                </div>
+            </div>
+            <button id="btn-print-pdf" type="button" class="btn btn-primary btn-sm" style="margin-left:8px;" title="Print">
+                <i class="fa fa-print"></i> Print
+            </button>
+        </div>
+    </div>
+
+    <div id="pdf-print-progress" aria-live="polite" aria-busy="false">
+        <div class="spinner"></div>
+        <div class="msg">Preparing print...</div>
+    </div>
+
+    <div id="pdf-loading">Loading PDF...</div>
+    <div id="pdf-error"></div>
+    <div class="pdf-canvas-wrap">
+        <canvas id="the-canvas" class="pdfcanvas"></canvas>
+    </div>
+    <div id="print-container"></div>
+
+    <script src="js/jquery-3.1.1.min.js"></script>
+    <script src="js/plugins/pdfjs/pdf.js"></script>
+    <script>
+        (function () {
+            function getQueryParam(name) {
+                var match = new RegExp('[?&]' + name + '=([^&]*)').exec(window.location.search);
+                return match ? decodeURIComponent(match[1].replace(/\+/g, ' ')) : null;
+            }
+
+            var url = getQueryParam('file');
+            if (!url) {
+                document.getElementById('pdf-loading').style.display = 'none';
+                var err = document.getElementById('pdf-error');
+                err.style.display = 'block';
+                err.textContent = 'No PDF file specified. Pass ?file=URL';
+                return;
+            }
+
+            var pdfFileUrl = url;
+            var printInProgress = false;
+            var printHideTimer = null;
+            var activeBlobUrl = null;
+            var pdfDoc = null,
+                pageNum = 1,
+                pageRendering = false,
+                pageNumPending = null,
+                scale = 1.25,
+                zoomRange = 0.25,
+                canvas = document.getElementById('the-canvas'),
+                ctx = canvas.getContext('2d');
+
+            function notifyParentPrintProgress(show) {
+                try {
+                    if (window.parent && window.parent !== window) {
+                        if (show && typeof window.parent.showLoanPdfPrintProgress === 'function') {
+                            window.parent.showLoanPdfPrintProgress();
+                        } else if (!show && typeof window.parent.hideLoanPdfPrintProgress === 'function') {
+                            window.parent.hideLoanPdfPrintProgress();
+                        }
+                    }
+                } catch (e) {}
+            }
+
+            function setProgressMsg(text) {
+                var msg = document.querySelector('#pdf-print-progress .msg');
+                if (msg) {
+                    msg.textContent = text;
+                }
+            }
+
+            function showPrintProgress() {
+                var el = document.getElementById('pdf-print-progress');
+                var btn = document.getElementById('btn-print-pdf');
+                if (el) {
+                    el.className = 'is-visible';
+                    el.setAttribute('aria-busy', 'true');
+                }
+                if (btn) {
+                    btn.disabled = true;
+                }
+                setProgressMsg('Preparing print...');
+                notifyParentPrintProgress(true);
+            }
+
+            function hidePrintProgress() {
+                if (printHideTimer) {
+                    clearTimeout(printHideTimer);
+                    printHideTimer = null;
+                }
+                printInProgress = false;
+                var el = document.getElementById('pdf-print-progress');
+                var btn = document.getElementById('btn-print-pdf');
+                if (el) {
+                    el.className = '';
+                    el.setAttribute('aria-busy', 'false');
+                }
+                if (btn) {
+                    btn.disabled = false;
+                }
+                notifyParentPrintProgress(false);
+            }
+
+            function cleanupPrintFrame() {
+                var existing = document.getElementById('pdf-print-frame');
+                if (existing && existing.parentNode) {
+                    existing.parentNode.removeChild(existing);
+                }
+                if (activeBlobUrl) {
+                    try { URL.revokeObjectURL(activeBlobUrl); } catch (e) {}
+                    activeBlobUrl = null;
+                }
+            }
+
+            function clearPrintContainer() {
+                var printContainer = document.getElementById('print-container');
+                if (printContainer) {
+                    printContainer.innerHTML = '';
+                }
+            }
+
+            function renderPageForPrint(num, printScale) {
+                return pdfDoc.getPage(num).then(function (page) {
+                    var viewport = page.getViewport(printScale);
+                    var pageWrap = document.createElement('div');
+                    pageWrap.className = 'print-page';
+                    var pageCanvas = document.createElement('canvas');
+                    pageCanvas.width = viewport.width;
+                    pageCanvas.height = viewport.height;
+                    pageWrap.appendChild(pageCanvas);
+                    document.getElementById('print-container').appendChild(pageWrap);
+                    return page.render({
+                        canvasContext: pageCanvas.getContext('2d'),
+                        viewport: viewport
+                    }).promise;
+                });
+            }
+
+            // Fallback that always shows the browser print dialog
+            function printViaPdfJs() {
+                if (!pdfDoc) {
+                    hidePrintProgress();
+                    return;
+                }
+                setProgressMsg('Preparing print pages...');
+                clearPrintContainer();
+                var printScale = 1.5;
+                var chain = Promise.resolve();
+                for (var i = 1; i <= pdfDoc.numPages; i++) {
+                    (function (pageNo) {
+                        chain = chain.then(function () {
+                            setProgressMsg('Preparing print... ' + pageNo + '/' + pdfDoc.numPages);
+                            return renderPageForPrint(pageNo, printScale);
+                        });
+                    })(i);
+                }
+                return chain.then(function () {
+                    var done = false;
+                    function finish() {
+                        if (done) return;
+                        done = true;
+                        hidePrintProgress();
+                    }
+                    window.addEventListener('beforeprint', finish);
+                    window.addEventListener('afterprint', function onAfter() {
+                        window.removeEventListener('afterprint', onAfter);
+                        clearPrintContainer();
+                        finish();
+                    });
+                    printHideTimer = setTimeout(finish, 1000);
+                    window.focus();
+                    window.print();
+                }).catch(function () {
+                    clearPrintContainer();
+                    hidePrintProgress();
+                });
+            }
+
+            function getPrintFrame() {
+                cleanupPrintFrame();
+                var iframe = document.createElement('iframe');
+                iframe.id = 'pdf-print-frame';
+                // Off-screen but not 0x0 (some browsers ignore print on zero-size frames)
+                iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:800px;height:600px;border:0;opacity:0;pointer-events:none;z-index:-1;';
+                iframe.setAttribute('aria-hidden', 'true');
+                document.body.appendChild(iframe);
+                return iframe;
+            }
+
+            function triggerIframePrint(iframe, onSuccess, onFail) {
+                var printShown = false;
+                var win = iframe.contentWindow;
+                if (!win) {
+                    onFail();
+                    return;
+                }
+
+                function markShown() {
+                    if (printShown) return;
+                    printShown = true;
+                    onSuccess();
+                }
+
+                try {
+                    win.addEventListener('beforeprint', markShown);
+                    win.addEventListener('afterprint', markShown);
+                } catch (e) {}
+
+                try {
+                    win.focus();
+                    win.print();
+                } catch (err) {
+                    onFail();
+                    return;
+                }
+
+                // If browser silently ignores PDF iframe print, fall back
+                setTimeout(function () {
+                    if (!printShown) {
+                        onFail();
+                    }
+                }, 900);
+            }
+
+            function printPdfFile() {
+                if (printInProgress) {
+                    return;
+                }
+                printInProgress = true;
+                showPrintProgress();
+
+                var iframe = getPrintFrame();
+                var usedFallback = false;
+
+                function useFallback() {
+                    if (usedFallback) return;
+                    usedFallback = true;
+                    cleanupPrintFrame();
+                    printViaPdfJs();
+                }
+
+                function onPrintDialogReady() {
+                    hidePrintProgress();
+                }
+
+                // Prefer fetching as blob so the iframe gets a clean PDF URL
+                var loadPromise;
+                if (window.fetch) {
+                    setProgressMsg('Loading PDF for print...');
+                    loadPromise = fetch(pdfFileUrl, {
+                        credentials: 'same-origin',
+                        cache: 'no-store'
+                    }).then(function (res) {
+                        if (!res.ok) {
+                            throw new Error('HTTP ' + res.status);
+                        }
+                        return res.blob();
+                    }).then(function (blob) {
+                        var pdfBlob = blob;
+                        // Ensure PDF mime type when server sends octet-stream
+                        if (!pdfBlob.type || pdfBlob.type.indexOf('pdf') === -1) {
+                            pdfBlob = new Blob([blob], { type: 'application/pdf' });
+                        }
+                        activeBlobUrl = URL.createObjectURL(pdfBlob);
+                        return activeBlobUrl;
+                    });
+                } else {
+                    loadPromise = Promise.resolve(pdfFileUrl);
+                }
+
+                loadPromise.then(function (src) {
+                    return new Promise(function (resolve, reject) {
+                        var settled = false;
+                        iframe.onload = function () {
+                            if (settled) return;
+                            settled = true;
+                            // Give browser PDF plugin time to initialize
+                            setTimeout(function () {
+                                resolve(src);
+                            }, 600);
+                        };
+                        iframe.onerror = function () {
+                            if (settled) return;
+                            settled = true;
+                            reject(new Error('iframe load failed'));
+                        };
+                        iframe.src = src;
+                        // Some browsers never fire onload for PDF plugins
+                        setTimeout(function () {
+                            if (!settled) {
+                                settled = true;
+                                resolve(src);
+                            }
+                        }, 2500);
+                    });
+                }).then(function () {
+                    setProgressMsg('Opening print dialog...');
+                    triggerIframePrint(iframe, onPrintDialogReady, useFallback);
+                }).catch(function () {
+                    useFallback();
+                });
+            }
+
+            // Expose for parent modal "Print" button
+            window.printPdfFile = printPdfFile;
+
+            document.getElementById('btn-print-pdf').addEventListener('click', function () {
+                printPdfFile();
+            });
+
+            if (typeof PDFJS !== 'undefined') {
+                PDFJS.workerSrc = 'js/plugins/pdfjs/pdf.worker.js';
+            }
+
+            function renderPage(num) {
+                pageRendering = true;
+                pdfDoc.getPage(num).then(function (page) {
+                    var viewport = page.getViewport(scale);
+                    canvas.height = viewport.height;
+                    canvas.width = viewport.width;
+                    var renderTask = page.render({
+                        canvasContext: ctx,
+                        viewport: viewport
+                    });
+                    renderTask.promise.then(function () {
+                        pageRendering = false;
+                        if (pageNumPending !== null) {
+                            renderPage(pageNumPending);
+                            pageNumPending = null;
+                        }
+                    });
+                });
+                document.getElementById('page_num').value = num;
+            }
+
+            function queueRenderPage(num) {
+                if (pageRendering) {
+                    pageNumPending = num;
+                } else {
+                    renderPage(num);
+                }
+            }
+
+            document.getElementById('prev').addEventListener('click', function () {
+                if (pageNum <= 1) return;
+                pageNum--;
+                queueRenderPage(pageNum);
+            });
+            document.getElementById('next').addEventListener('click', function () {
+                if (!pdfDoc || pageNum >= pdfDoc.numPages) return;
+                pageNum++;
+                queueRenderPage(pageNum);
+            });
+            document.getElementById('zoomin').addEventListener('click', function () {
+                if (scale >= 3) return;
+                scale += zoomRange;
+                queueRenderPage(pageNum);
+            });
+            document.getElementById('zoomout').addEventListener('click', function () {
+                if (scale <= 0.5) return;
+                scale -= zoomRange;
+                queueRenderPage(pageNum);
+            });
+            document.getElementById('zoomfit').addEventListener('click', function () {
+                scale = 1.25;
+                queueRenderPage(pageNum);
+            });
+
+            PDFJS.getDocument(url).then(function (pdfDoc_) {
+                pdfDoc = pdfDoc_;
+                document.getElementById('pdf-loading').style.display = 'none';
+                document.getElementById('page_count').textContent = '/ ' + pdfDoc.numPages;
+                $('#page_num').on('change', function () {
+                    var pageNumber = Number($(this).val());
+                    if (pageNumber > 0 && pageNumber <= pdfDoc.numPages) {
+                        pageNum = pageNumber;
+                        queueRenderPage(pageNumber);
+                    }
+                });
+                renderPage(pageNum);
+            }).catch(function (e) {
+                document.getElementById('pdf-loading').style.display = 'none';
+                var err = document.getElementById('pdf-error');
+                err.style.display = 'block';
+                err.textContent = 'Failed to load PDF. ' + (e && e.message ? e.message : '');
+            });
+        })();
+    </script>
+</body>
+</html>

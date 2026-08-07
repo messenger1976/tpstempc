@@ -96,7 +96,7 @@
             margin-bottom: 3px;
             margin-top: 5px;
             background-color: #f8f8f8;
-            padding-left: 30px;
+            padding-left: 12px;
         }
         .account-item {
             padding: 8px 0;
@@ -106,57 +106,50 @@
             line-height: 1.6;
         }
         .account-item.level-0 {
-            padding-left: 15px;
+            padding-left: 12px;
             font-weight: bold;
             background-color: #f5f5f5;
             font-size: 13px;
         }
         .account-item.level-1 {
-            padding-left: 50px;
-            margin-left: 15px;
+            padding-left: 24px;
             position: relative;
         }
         .account-item.level-2 {
-            padding-left: 90px;
-            margin-left: 50px;
+            padding-left: 36px;
             position: relative;
         }
         .account-item.level-3 {
-            padding-left: 130px;
-            margin-left: 90px;
+            padding-left: 48px;
             position: relative;
         }
         .account-item.level-4 {
-            padding-left: 170px;
-            margin-left: 130px;
+            padding-left: 60px;
             position: relative;
         }
         .account-row {
             display: table;
             width: 100%;
             table-layout: fixed;
-            padding-left: 5px;
+            padding-left: 0;
         }
-        .account-number {
-            display: table-cell;
-            width: 130px;
-            font-weight: bold;
-            vertical-align: middle;
-            padding-right: 5px;
-        }
-        .account-name {
+        .account-code-name {
             display: table-cell;
             width: auto;
             vertical-align: middle;
             padding-right: 10px;
         }
+        .account-code-name .account-number {
+            font-weight: bold;
+        }
         .account-type-name {
             display: table-cell;
-            width: 150px;
+            width: 120px;
             vertical-align: middle;
             font-size: 11px;
             color: #666;
             padding-right: 10px;
+            text-align: right;
         }
         .ladder-line {
             position: absolute;
@@ -316,8 +309,9 @@
                                 ?>
                                 <div class="account-item level-<?php echo $level; ?>">
                                     <div class="account-row">
-                                        <div class="account-number"><?php echo $account->account; ?></div>
-                                        <div class="account-name"><?php echo $account->name; ?></div>
+                                        <div class="account-code-name">
+                                            <span class="account-number"><?php echo $account->account; ?></span> - <?php echo $account->name; ?>
+                                        </div>
                                         <div class="account-type-name"><?php echo $account_type_info->name; ?></div>
                                     </div>
                                 </div>
@@ -373,8 +367,9 @@
                 ?>
                 <div class="account-item level-<?php echo $level; ?>">
                     <div class="account-row">
-                        <div class="account-number"><?php echo $account->account; ?></div>
-                        <div class="account-name"><?php echo $account->name; ?></div>
+                        <div class="account-code-name">
+                            <span class="account-number"><?php echo $account->account; ?></span> - <?php echo $account->name; ?>
+                        </div>
                         <div class="account-type-name"><?php echo isset($account_type->name) ? $account_type->name : ''; ?></div>
                         <?php
                         // Get sub account type information

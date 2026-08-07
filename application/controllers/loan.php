@@ -1957,16 +1957,15 @@ $pin = current_user()->PIN;
     }
 
     /**
-     * Print loan disbursement voucher (for cashier release).
-     * Shows latest disbursement header + accounting entries.
+     * Load loan disbursement voucher data (latest header + accounting lines).
+     * @return array|null
      */
-    function loan_disbursement_print($loanid) {
+    private function _loan_disbursement_print_data($loanid) {
         $pin = current_user()->PIN;
         $LID = decode_id($loanid);
         $loaninfo = $this->loan_model->loan_info($LID)->row();
         if (!$loaninfo || (string) $loaninfo->PIN !== (string) $pin) {
-            show_404();
-            return;
+            return null;
         }
 
         // Latest disbursement header for this loan
@@ -1976,7 +1975,7 @@ $pin = current_user()->PIN;
         $this->db->limit(1);
         $disburse = $this->db->get('loan_contract_disburse')->row();
         if (!$disburse) {
-            return show_error('Loan disbursement not found.', 404);
+            return false;
         }
 
         // Prefer saved editable lines, otherwise fall back to GL lines
@@ -2025,14 +2024,48 @@ $pin = current_user()->PIN;
             }
         }
 
-        $data = array(
+        return array(
             'loanid' => $loanid,
             'loaninfo' => $loaninfo,
             'disburse' => $disburse,
             'line_items' => $line_items,
             'ledger_entry_id' => $ledger_entry_id,
         );
+    }
+
+    /**
+     * Print loan disbursement voucher (HTML, for cashier release).
+     * Shows latest disbursement header + accounting entries.
+     */
+    function loan_disbursement_print($loanid) {
+        $data = $this->_loan_disbursement_print_data($loanid);
+        if ($data === null) {
+            show_404();
+            return;
+        }
+        if ($data === false) {
+            return show_error('Loan disbursement not found.', 404);
+        }
         $this->load->view('loan/print/loan_disbursement_print', $data);
+    }
+
+    /**
+     * Stream loan disbursement voucher as PDF (for modal / PDF.js viewer).
+     */
+    function print_loan_disbursement($loanid) {
+        $data = $this->_loan_disbursement_print_data($loanid);
+        if ($data === null) {
+            show_404();
+            return;
+        }
+        if ($data === false) {
+            return show_error('Loan disbursement not found.', 404);
+        }
+        $loaninfo = $data['loaninfo'];
+        $disburse = $data['disburse'];
+        $line_items = $data['line_items'];
+        $ledger_entry_id = $data['ledger_entry_id'];
+        include 'pdf/loan_disbursement.php';
     }
 
     function print_repayment_schedule($loanid) {

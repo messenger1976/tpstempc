@@ -1,6 +1,20 @@
-<?php if (isset($link_cat) && $link_cat == 5): ?>
+<?php if (isset($link_cat) && (int) $link_cat === 3): ?>
 <div class="alert alert-info" style="margin-bottom: 15px;">
-    <i class="fa fa-info-circle"></i> This report includes <strong>Journal Entries / General Journal</strong> (journal 5) transactions: manual journal entries, <strong>Cash Receipt</strong>, and <strong>Cash Disbursement</strong> transactions (once posted to the General Ledger).
+    <i class="fa fa-info-circle"></i>
+    <strong>Cash Receipts Journal</strong> lists General Ledger lines posted from
+    <strong>Cash Receipt</strong> transactions (journal ID 3), including received-from / payor details with links to the receipt and account ledger.
+</div>
+<?php elseif (isset($link_cat) && (int) $link_cat === 10): ?>
+<div class="alert alert-info" style="margin-bottom: 15px;">
+    <i class="fa fa-info-circle"></i>
+    <strong>Cash Disbursement Journal</strong> lists General Ledger lines posted from
+    <strong>Cash Disbursement</strong> transactions (journal ID 10).
+</div>
+<?php elseif (isset($link_cat) && (int) $link_cat === 5): ?>
+<div class="alert alert-info" style="margin-bottom: 15px;">
+    <i class="fa fa-info-circle"></i>
+    This report covers <strong>Journal Entries / General Journal</strong> (manual journal vouchers).
+    Cash Receipts and Cash Disbursements have their own journal reports.
 </div>
 <?php endif; ?>
 

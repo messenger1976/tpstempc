@@ -39,7 +39,7 @@ class Finance_Model extends CI_Model {
             log_message('error', 'post_journal_entry_to_general_ledger: journal_entry not found id=' . $journal_entry_id);
             return false;
         }
-        // Use journal_id = 3 (Receive Money) for cash_receipt, 10 for cash_disbursement
+        // Use journal_id = 3 (Cash Receipts) for cash_receipt, 10 for cash_disbursement
         if (isset($entry->reference_type)) {
             if ($entry->reference_type == 'cash_receipt') {
                 $journal_id = 3;

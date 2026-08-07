@@ -16,12 +16,12 @@ This package is wired into the live app:
 | Model | `application/models/cic_model.php` (maps members / loan_contract) |
 | View | `application/views/cic/index.php` |
 | Permission | `Export_CIC` on Loan module (5) |
-| Installer | `add_cic_export_permission.php` (run once, then remove) |
+| Installer | `tools/add_cic_export_permission.php` (run once, then remove) |
 | Menu | Loan → **CIC Credit Export** |
 
 ### Enable access
 
-1. Open `http://localhost/tapstemco/add_cic_export_permission.php`
+1. Open `http://localhost/tapstemco/tools/add_cic_export_permission.php`
 2. Optionally click **Enable for All Groups**, or assign **Export_CIC** under User Management → Privileges → Loan
 3. Delete or lock down the installer script afterward
 4. Use **Loan → CIC Credit Export** to preview and download CSV

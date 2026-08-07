@@ -102,22 +102,22 @@ $col_w = '95px';
     <table style="width:100%; margin-top:24px; font-size:10px;">
         <tr>
             <td style="width:33%; vertical-align:top; text-align:center;">
-                <div>Certified Correct:</div>
-                <div style="height:28px;"></div>
-                <div style="font-weight:bold; text-decoration:underline;">ANTONINA P. PATUNGAN</div>
-                <div>Bookkeeper</div>
+                Certified Correct:<br/>
+                <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;"><tr><td height="95" style="height:95px; font-size:1px; line-height:95px;">&nbsp;</td></tr></table>
+                <span style="font-weight:bold; text-decoration:underline;">ANTONINA P. PATUNGAN</span><br/>
+                Bookkeeper
             </td>
             <td style="width:33%; vertical-align:top; text-align:center;">
-                <div>Checked by:</div>
-                <div style="height:28px;"></div>
-                <div style="font-weight:bold; text-decoration:underline;">ANA MARIE F. VALMORIA</div>
-                <div>AICOM</div>
+                Checked by:<br/>
+                <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;"><tr><td height="95" style="height:95px; font-size:1px; line-height:95px;">&nbsp;</td></tr></table>
+                <span style="font-weight:bold; text-decoration:underline;">ANA MARIE F. VALMORIA</span><br/>
+                AICOM
             </td>
             <td style="width:33%; vertical-align:top; text-align:center;">
-                <div>Noted by:</div>
-                <div style="height:28px;"></div>
-                <div style="font-weight:bold; text-decoration:underline;">REMEDIOS T. AUXTERO</div>
-                <div>Manager</div>
+                Noted by:<br/>
+                <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;"><tr><td height="95" style="height:95px; font-size:1px; line-height:95px;">&nbsp;</td></tr></table>
+                <span style="font-weight:bold; text-decoration:underline;">REMEDIOS T. AUXTERO</span><br/>
+                Manager
             </td>
         </tr>
     </table>

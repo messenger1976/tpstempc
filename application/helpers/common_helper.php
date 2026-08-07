@@ -210,6 +210,26 @@ if (!function_exists('decode_id')) {
 
 }
 
+if (!function_exists('journal_display_type')) {
+
+    /**
+     * Normalize journal type labels for display (Reports menu, titles, print headers).
+     *
+     * @param string $type Raw journal.type value
+     * @return string
+     */
+    function journal_display_type($type) {
+        $t = trim((string) $type);
+        if ($t === '') {
+            return $t;
+        }
+        if (preg_match('/^(receipt\s*money|received\s*money|receive\s*money)$/i', $t)) {
+            return 'Cash Receipts';
+        }
+        return $t;
+    }
+}
+
 if (!function_exists('get_gl_reference_url')) {
 
     /**
@@ -236,6 +256,13 @@ if (!function_exists('get_gl_reference_url')) {
             case 'savings_transaction':
                 return current_lang() . '/saving/receipt_view/' . $ref;
             case 'contribution_settings':
+                // Beginning-balance CBU uses contribution_settings.id (not a receipt).
+                // Receipt-style refs still deep-link to the contribution receipt.
+                if (!is_numeric($ref) && !ctype_digit((string) $ref)) {
+                    return current_lang() . '/contribution/receipt_view/' . $ref;
+                }
+                return '';
+            case 'contribution_transaction':
                 return current_lang() . '/contribution/receipt_view/' . $ref;
             case 'cash_receipt':
                 return current_lang() . '/cash_receipt/cash_receipt_view/' . (is_numeric($ref) || ctype_digit((string)$ref) ? encode_id($ref) : $ref);

@@ -43,6 +43,16 @@ class Report extends CI_Controller {
     }
 
     function index() {
+        // One-time label heal for legacy journal names on Reports home
+        if (function_exists('journal_display_type')) {
+            $row = $this->db->query("SELECT id, type FROM journal WHERE id = 3 LIMIT 1")->row();
+            if ($row) {
+                $display = journal_display_type($row->type);
+                if ($display !== $row->type) {
+                    $this->db->update('journal', array('type' => $display), array('id' => 3));
+                }
+            }
+        }
         $this->data['title'] = lang('page_report');
         $this->data['content'] = 'report/home';
         $this->load->view('template', $this->data);
@@ -91,8 +101,23 @@ class Report extends CI_Controller {
     function journal_entry($link) {
         $this->db->where('id', $link);
         $title = $this->db->get('journal')->row();
+        if (!$title) {
+            $this->session->set_flashdata('error', 'Journal type not found.');
+            redirect(current_lang() . '/report/index');
+            return;
+        }
 
-        $this->data['title'] = $title->type . ' Journal';
+        // Persist renamed Cash Receipts label (legacy: Receipt/Received/Receive Money)
+        if ((int) $title->id === 3 && function_exists('journal_display_type')) {
+            $display = journal_display_type($title->type);
+            if ($display !== $title->type) {
+                $this->db->update('journal', array('type' => $display), array('id' => 3));
+                $title->type = $display;
+            }
+        }
+
+        $this->data['title'] = (function_exists('journal_display_type') ? journal_display_type($title->type) : $title->type) . ' Journal';
+        $this->data['journalinfo'] = $title;
 
         $this->data['link_cat'] = $link;
         $this->data['reportlist'] = $this->report_model->report_list_journal(null, $link)->result();
@@ -103,9 +128,21 @@ class Report extends CI_Controller {
     function create_journal_trans_title($link, $id = null) {
         $this->db->where('id', $link);
         $title = $this->db->get('journal')->row();
+        if (!$title) {
+            $this->session->set_flashdata('error', 'Journal type not found.');
+            redirect(current_lang() . '/report/index');
+            return;
+        }
+        if ((int) $title->id === 3 && function_exists('journal_display_type')) {
+            $display = journal_display_type($title->type);
+            if ($display !== $title->type) {
+                $this->db->update('journal', array('type' => $display), array('id' => 3));
+                $title->type = $display;
+            }
+        }
 
-        $this->data['title'] = $title->type . ' Journal';
-
+        $this->data['title'] = (function_exists('journal_display_type') ? journal_display_type($title->type) : $title->type) . ' Journal';
+        $this->data['journalinfo'] = $title;
         $this->data['id'] = $id;
         $this->data['link_cat'] = $link;
         if (!is_null($id)) {
@@ -245,6 +282,11 @@ class Report extends CI_Controller {
             $id = decode_id($id);
         }
         $reportinfo = $this->report_model->report_list($id)->row();
+        if (!$reportinfo) {
+            $this->session->set_flashdata('error', 'Report not found.');
+            redirect(current_lang() . '/report/general_leger_transaction/' . $link);
+            return;
+        }
         $this->data['reportinfo'] = $reportinfo;
         $account = (!empty($reportinfo->account) ? $reportinfo->account : null);
         $this->data['transaction'] = $this->report_model->ledger_trans($reportinfo->fromdate, $reportinfo->todate, $account);
@@ -276,7 +318,7 @@ class Report extends CI_Controller {
         }
         
         $this->data['journalinfo'] = $title;
-        $this->data['title'] = $title->type . ' Journal';
+        $this->data['title'] = (function_exists('journal_display_type') ? journal_display_type($title->type) : $title->type) . ' Journal';
 
         $this->data['link_cat'] = $link;
         $this->data['id'] = $id;
@@ -300,7 +342,15 @@ class Report extends CI_Controller {
         }
         
         $this->data['reportinfo'] = $reportinfo;
-        $this->data['transaction'] = $this->report_model->journal_trans($reportinfo->fromdate, $reportinfo->todate, $link);
+        $transactions = $this->report_model->journal_trans($reportinfo->fromdate, $reportinfo->todate, $link);
+        foreach ($transactions as $t) {
+            $ent = $this->report_model->get_gl_related_entity($t);
+            $t->related_entity_name = $ent['name'];
+            $t->related_entity_url = $ent['url'];
+            $t->related_ref_no = isset($ent['ref_no']) ? $ent['ref_no'] : '';
+            $t->related_ref_url = isset($ent['ref_url']) ? $ent['ref_url'] : '';
+        }
+        $this->data['transaction'] = $transactions;
 
         $this->data['content'] = 'report/journal/journal_transaction';
         $this->load->view('template', $this->data);
@@ -314,6 +364,11 @@ class Report extends CI_Controller {
             $id = decode_id($id);
         }
         $reportinfo = $this->report_model->report_list($id)->row();
+        if (!$reportinfo) {
+            $this->session->set_flashdata('error', 'Report not found.');
+            redirect(current_lang() . '/report/general_leger_transaction/' . $link);
+            return;
+        }
         $this->data['reportinfo'] = $reportinfo;
 
         $this->data['content'] = 'report/ledger/ledger_transaction_summary';
@@ -332,7 +387,7 @@ class Report extends CI_Controller {
 
         $html = $this->load->view('report/ledger/print/ledger_transaction_summary', $this->data, true);
 
-        $this->export_to_pdf($html, 'Ledger_transaction_summary', $reportinfo->page);
+        $this->export_to_pdf($html, 'Ledger_transaction_summary', $reportinfo->page ? $reportinfo->page : 'A4-L', false);
     }
 
     function ledger_trial_balance_view($link, $id) {
@@ -343,6 +398,11 @@ class Report extends CI_Controller {
             $id = decode_id($id);
         }
         $reportinfo = $this->report_model->report_list($id)->row();
+        if (!$reportinfo) {
+            $this->session->set_flashdata('error', 'Report not found.');
+            redirect(current_lang() . '/report/general_leger_transaction/' . $link);
+            return;
+        }
         $this->data['reportinfo'] = $reportinfo;
 
         $this->data['content'] = 'report/ledger/ledger_trial_balance';
@@ -360,10 +420,10 @@ class Report extends CI_Controller {
         $this->data['reportinfo'] = $reportinfo;
 
 
-        $html = $this->load->view('report/ledger/print//ledger_trial_balance', $this->data, true);
+        $html = $this->load->view('report/ledger/print/ledger_trial_balance', $this->data, true);
 
 
-        $this->export_to_pdf($html, 'Trial_balance', $reportinfo->page);
+        $this->export_to_pdf($html, 'Trial_balance', $reportinfo->page ? $reportinfo->page : 'A4', false);
     }
 
     function ledger_trans_print($link, $id) {
@@ -389,7 +449,7 @@ class Report extends CI_Controller {
         }
 
         $html = $this->load->view('report/ledger/print/ledger_transaction', $this->data, true);
-        $this->export_to_pdf($html, 'Ledger_transaction', $reportinfo->page);
+        $this->export_to_pdf($html, 'Ledger_transaction', $reportinfo->page ? $reportinfo->page : 'A4-L', false);
     }
 
     /**
@@ -499,6 +559,13 @@ class Report extends CI_Controller {
 
         $this->db->where('id', $link);
         $title = $this->db->get('journal')->row();
+        if ($title && (int) $title->id === 3 && function_exists('journal_display_type')) {
+            $display = journal_display_type($title->type);
+            if ($display !== $title->type) {
+                $this->db->update('journal', array('type' => $display), array('id' => 3));
+                $title->type = $display;
+            }
+        }
         $this->data['journalinfo'] = $title;
 
         $this->data['link_cat'] = $link;
@@ -508,10 +575,24 @@ class Report extends CI_Controller {
         }
         $reportinfo = $this->report_model->report_list_journal($id)->row();
         $this->data['reportinfo'] = $reportinfo;
-        $this->data['transaction'] = $this->report_model->journal_trans($reportinfo->fromdate, $reportinfo->todate, $link);
+        $transactions = $this->report_model->journal_trans($reportinfo->fromdate, $reportinfo->todate, $link);
+        foreach ($transactions as $t) {
+            $ent = $this->report_model->get_gl_related_entity($t);
+            $t->related_entity_name = $ent['name'];
+            $t->related_entity_url = $ent['url'];
+            $t->related_ref_no = isset($ent['ref_no']) ? $ent['ref_no'] : '';
+            $t->related_ref_url = isset($ent['ref_url']) ? $ent['ref_url'] : '';
+        }
+        $this->data['transaction'] = $transactions;
 
         $html = $this->load->view('report/journal/print/journal_transaction_print', $this->data, true);
-        $this->export_to_pdf($html, 'Journal_Entries', $reportinfo->page);
+        $pdf_name = 'Journal_Entries';
+        if ($title && function_exists('journal_display_type')) {
+            $pdf_name = preg_replace('/[^A-Za-z0-9_-]+/', '_', journal_display_type($title->type)) . '_Journal';
+        } elseif ($title && !empty($title->type)) {
+            $pdf_name = preg_replace('/[^A-Za-z0-9_-]+/', '_', $title->type) . '_Journal';
+        }
+        $this->export_to_pdf($html, $pdf_name, $reportinfo->page ? $reportinfo->page : 'A4-L', false);
     }
 
     function ledger_balance_sheet_view($link, $id) {
@@ -538,9 +619,142 @@ class Report extends CI_Controller {
         }
         
         $this->data['reportinfo'] = $reportinfo;
+        $this->data['bs_data'] = $this->report_model->get_financial_condition_data($reportinfo->fromdate);
 
         $this->data['content'] = 'report/ledger/ledger_balance_sheet';
         $this->load->view('template', $this->data);
+    }
+
+    /**
+     * Account ledger drill-down (from Balance Sheet / other FS reports).
+     * URL: report/account_ledger/{encoded_account}/{back_link}/{encoded_report_id}
+     */
+    function account_ledger($account_enc = null, $back_link = null, $back_id = null) {
+        $this->data['title'] = 'Account Ledger';
+        $this->data['back_link'] = $back_link;
+        $this->data['back_id'] = $back_id;
+
+        $account = null;
+        if (!is_null($account_enc) && $account_enc !== '') {
+            $account = decode_id($account_enc);
+        }
+        if (empty($account)) {
+            $this->session->set_flashdata('warning', 'Account not found.');
+            redirect(current_lang() . '/report/index');
+            return;
+        }
+
+        // Default date range from parent report context
+        $default_until = date('Y-m-d');
+        $default_from = date('Y-01-01');
+        if (!is_null($back_id) && $back_id !== '' && !is_null($back_link)) {
+            $report_id = decode_id($back_id);
+            if ($report_id) {
+                $back_link_str = (string) $back_link;
+                $is_journal_back = (strlen($back_link_str) > 1 && $back_link_str[0] === 'j');
+                $ri = $is_journal_back
+                    ? $this->report_model->report_list_journal($report_id)->row()
+                    : $this->report_model->report_list($report_id)->row();
+                if ($ri && !empty($ri->fromdate)) {
+                    // Period reports (Income Statement, journal, etc.): use from–until
+                    // As-of reports (Balance Sheet / Financial Condition): year start → as-of
+                    $as_of_links = array('5', '7');
+                    if (!$is_journal_back && in_array($back_link_str, $as_of_links, true)) {
+                        $default_until = $ri->fromdate;
+                        $default_from = date('Y-01-01', strtotime($ri->fromdate));
+                    } elseif (!empty($ri->todate) && $ri->todate != '0000-00-00') {
+                        $default_from = $ri->fromdate;
+                        $default_until = $ri->todate;
+                    } else {
+                        $default_until = $ri->fromdate;
+                        $default_from = date('Y-01-01', strtotime($ri->fromdate));
+                    }
+                }
+            }
+        }
+
+        $from_in = trim($this->input->get_post('fromdate'));
+        $until_in = trim($this->input->get_post('todate'));
+        if ($from_in !== '') {
+            $from = format_date($from_in);
+        } else {
+            $from = $default_from;
+        }
+        if ($until_in !== '') {
+            $until = format_date($until_in);
+        } else {
+            $until = $default_until;
+        }
+
+        if (strtotime($from) > strtotime($until)) {
+            $this->data['warning'] = 'From date is greater than until date.';
+            $tmp = $from;
+            $from = $until;
+            $until = $tmp;
+        }
+
+        $ledger = $this->report_model->get_account_ledger($account, $from, $until);
+        if (!$ledger) {
+            $this->session->set_flashdata('warning', 'Account not found in Chart of Accounts.');
+            redirect(current_lang() . '/report/index');
+            return;
+        }
+
+        $this->data['account_enc'] = $account_enc;
+        $this->data['ledger'] = $ledger;
+        $this->data['fromdate'] = $from;
+        $this->data['todate'] = $until;
+        $this->data['content'] = 'report/ledger/account_ledger';
+        $this->load->view('template', $this->data);
+    }
+
+    function account_ledger_print($account_enc = null, $back_link = null, $back_id = null) {
+        $account = decode_id($account_enc);
+        $from_in = trim($this->input->get('fromdate'));
+        $until_in = trim($this->input->get('todate'));
+        $from = $from_in !== '' ? format_date($from_in) : date('Y-01-01');
+        $until = $until_in !== '' ? format_date($until_in) : date('Y-m-d');
+
+        if (!is_null($back_id) && $back_id !== '' && ($from_in === '' || $until_in === '')) {
+            $report_id = decode_id($back_id);
+            if ($report_id) {
+                $back_link_str = (string) $back_link;
+                $is_journal_back = (strlen($back_link_str) > 1 && $back_link_str[0] === 'j');
+                $ri = $is_journal_back
+                    ? $this->report_model->report_list_journal($report_id)->row()
+                    : $this->report_model->report_list($report_id)->row();
+                if ($ri && !empty($ri->fromdate)) {
+                    $as_of_links = array('5', '7');
+                    $is_as_of = !$is_journal_back && in_array($back_link_str, $as_of_links, true);
+                    if (!$is_as_of && !empty($ri->todate) && $ri->todate != '0000-00-00') {
+                        if ($from_in === '') {
+                            $from = $ri->fromdate;
+                        }
+                        if ($until_in === '') {
+                            $until = $ri->todate;
+                        }
+                    } else {
+                        if ($until_in === '') {
+                            $until = $ri->fromdate;
+                        }
+                        if ($from_in === '') {
+                            $from = date('Y-01-01', strtotime($ri->fromdate));
+                        }
+                    }
+                }
+            }
+        }
+
+        $ledger = $this->report_model->get_account_ledger($account, $from, $until);
+        if (!$ledger) {
+            show_error('Account not found.');
+            return;
+        }
+        $this->data['ledger'] = $ledger;
+        $this->data['fromdate'] = $from;
+        $this->data['todate'] = $until;
+        $html = $this->load->view('report/ledger/print/account_ledger_print', $this->data, true);
+        $this->export_to_pdf($html, 'Account_Ledger_' . $account, 'A4-L');
     }
 
     function ledger_balance_sheet_print($link, $id) {
@@ -552,9 +766,11 @@ class Report extends CI_Controller {
         }
         $reportinfo = $this->report_model->report_list($id)->row();
         $this->data['reportinfo'] = $reportinfo;
+        $this->data['bs_data'] = $this->report_model->get_financial_condition_data($reportinfo->fromdate);
 
         $html = $this->load->view('report/ledger/print/ledger_balance_sheet_print', $this->data, true);
-        $this->export_to_pdf($html, 'Balance_sheet', $reportinfo->page);
+        // Stream PDF inline for modal viewer (same pattern as loan disbursement print)
+        $this->export_to_pdf($html, 'Balance_sheet', $reportinfo->page ? $reportinfo->page : 'A4', false);
     }
 
     function ledger_financial_condition_view($link, $id) {
@@ -643,13 +859,18 @@ class Report extends CI_Controller {
 
   
      function ledger_income_statement_view($link, $id) {
-        $this->data['title'] = 'Balance Sheet';
+        $this->data['title'] = 'Income Statement';
         $this->data['link_cat'] = $link;
         $this->data['id'] = $id;
         if (!is_null($id)) {
             $id = decode_id($id);
         }
         $reportinfo = $this->report_model->report_list($id)->row();
+        if (!$reportinfo) {
+            $this->session->set_flashdata('error', 'Report not found.');
+            redirect(current_lang() . '/report/general_leger_transaction/' . $link);
+            return;
+        }
         $this->data['reportinfo'] = $reportinfo;
 
         $this->data['content'] = 'report/ledger/ledger_income_statement';
@@ -659,7 +880,7 @@ class Report extends CI_Controller {
     
   
      function ledger_income_statement_print($link, $id) {
-        $this->data['title'] = 'Balance Sheet';
+        $this->data['title'] = 'Income Statement';
         $this->data['link_cat'] = $link;
         $this->data['id'] = $id;
         if (!is_null($id)) {
@@ -669,31 +890,56 @@ class Report extends CI_Controller {
         $this->data['reportinfo'] = $reportinfo;
 
          $html = $this->load->view('report/ledger/print/ledger_income_statement_print', $this->data, true);
-        $this->export_to_pdf($html, 'Income_statement', $reportinfo->page);
+        $this->export_to_pdf($html, 'Income_statement', $reportinfo->page ? $reportinfo->page : 'A4', false);
         
     }
     
     
     
     function cash_flow_report($id = null) {
-        $this->data['title'] = 'Cash Flow Report';
-        $this->data['link_cat'] = 6; // Use 6 for cash flow report
+        // Keep old edit URLs working: /cash_flow_report/{encoded_id} → filter form
+        if (!is_null($id) && $id !== '') {
+            redirect(current_lang() . '/report/create_cash_flow_report/' . $id, 'refresh');
+            return;
+        }
+
+        $this->data['title'] = 'Statement of Cash Flows';
+        $this->data['link_cat'] = 6;
+        $this->data['id'] = null;
+        $this->data['reportlist'] = $this->report_model->report_list(null, 6)->result();
+        $this->data['content'] = 'report/cash_flow/cash_flow_report_title';
+        $this->load->view('template', $this->data);
+    }
+
+    function create_cash_flow_report($id = null) {
+        $this->data['title'] = 'Statement of Cash Flows';
+        $this->data['link_cat'] = 6;
         $this->data['id'] = $id;
-        
-        if (!is_null($id)) {
-            $id = decode_id($id);
+
+        $decoded_id = null;
+        if (!is_null($id) && $id !== '') {
+            $decoded_id = decode_id($id);
+            if (!$decoded_id) {
+                $this->session->set_flashdata('warning', 'Report not found.');
+                redirect(current_lang() . '/report/cash_flow_report', 'refresh');
+                return;
+            }
         }
 
         $this->form_validation->set_rules('fromdate', 'From', 'required|valid_date');
         $this->form_validation->set_rules('todate', 'Until', 'required|valid_date');
         $this->form_validation->set_rules('description', 'Description', 'required');
+        $this->form_validation->set_rules('page', 'Page Orientation', 'required');
 
         if ($this->form_validation->run() == TRUE) {
             $from = format_date(trim($this->input->post('fromdate')));
             $to = format_date(trim($this->input->post('todate')));
             $description = trim($this->input->post('description'));
             $page = trim($this->input->post('page'));
-            
+            if ($page !== 'A4' && $page !== 'A4-L') {
+                $page = 'A4';
+            }
+
             if (strtotime($from) <= strtotime($to)) {
                 $array = array(
                     'fromdate' => $from,
@@ -703,30 +949,41 @@ class Report extends CI_Controller {
                     'page' => $page,
                     'PIN' => current_user()->PIN,
                 );
-                if (is_null($id)) {
+                if (is_null($decoded_id)) {
                     $this->db->insert('report_table', $array);
                     $new_id = $this->db->insert_id();
                     redirect(current_lang() . '/report/cash_flow_report_view/' . encode_id($new_id), 'refresh');
-                } else {
-                    $this->db->update('report_table', $array, array('id' => $id));
-                    redirect(current_lang() . '/report/cash_flow_report_view/' . encode_id($id), 'refresh');
+                    return;
                 }
-            } else {
-                $this->data['warning'] = 'From date is greater than until date';
+
+                $this->db->update('report_table', $array, array(
+                    'id' => $decoded_id,
+                    'link' => 6,
+                    'PIN' => current_user()->PIN,
+                ));
+                redirect(current_lang() . '/report/cash_flow_report_view/' . encode_id($decoded_id), 'refresh');
+                return;
             }
+
+            $this->data['warning'] = 'From date is greater than until date';
         }
 
-        if (!is_null($id)) {
-            $this->data['reportinfo'] = $this->report_model->report_list($id)->row();
+        if (!is_null($decoded_id)) {
+            $reportinfo = $this->report_model->report_list($decoded_id, 6)->row();
+            if (!$reportinfo) {
+                $this->session->set_flashdata('warning', 'Report not found.');
+                redirect(current_lang() . '/report/cash_flow_report', 'refresh');
+                return;
+            }
+            $this->data['reportinfo'] = $reportinfo;
         }
 
-        $this->data['reportlist'] = $this->report_model->report_list(null, 6)->result();
-        $this->data['content'] = 'report/cash_flow/cash_flow_report_title';
+        $this->data['content'] = 'report/cash_flow/create_cash_flow_report';
         $this->load->view('template', $this->data);
     }
 
     function cash_flow_report_view($id) {
-        $this->data['title'] = 'Cash Flow Report';
+        $this->data['title'] = 'Statement of Cash Flows';
         $this->data['link_cat'] = 6;
         $this->data['id'] = $id;
         
@@ -735,6 +992,11 @@ class Report extends CI_Controller {
         }
         
         $reportinfo = $this->report_model->report_list($id)->row();
+        if (!$reportinfo) {
+            $this->session->set_flashdata('error', 'Report not found.');
+            redirect(current_lang() . '/report/cash_flow_report');
+            return;
+        }
         $this->data['reportinfo'] = $reportinfo;
         $this->data['cash_flow_data'] = $this->report_model->get_cash_flow_data($reportinfo->fromdate, $reportinfo->todate);
 
@@ -743,7 +1005,7 @@ class Report extends CI_Controller {
     }
 
     function cash_flow_report_print($id) {
-        $this->data['title'] = 'Cash Flow Report';
+        $this->data['title'] = 'Statement of Cash Flows';
         $this->data['link_cat'] = 6;
         $this->data['id'] = $id;
         
@@ -756,7 +1018,7 @@ class Report extends CI_Controller {
         $this->data['cash_flow_data'] = $this->report_model->get_cash_flow_data($reportinfo->fromdate, $reportinfo->todate);
 
         $html = $this->load->view('report/cash_flow/print/cash_flow_report_print', $this->data, true);
-        $this->export_to_pdf($html, 'Cash_Flow_Report', $reportinfo->page);
+        $this->export_to_pdf($html, 'Cash_Flow_Report', $reportinfo->page ? $reportinfo->page : 'A4', false);
     }
 
     function delete_cash_flow_report($id = null) {
@@ -768,19 +1030,32 @@ class Report extends CI_Controller {
         redirect(current_lang() . '/report/cash_flow_report', 'refresh');
     }
     
-    function export_to_pdf($html, $filename, $page_orientation = null) {
+    function export_to_pdf($html, $filename, $page_orientation = null, $with_default_header = true) {
         //$html = "Tanzania";
         $this->load->library('pdf1');
-        $pdf = $this->pdf1->load($page_orientation);
-        $header = '<div style="border-bottom:1px solid #000; text-align:center;">
+        if ($page_orientation == NULL) {
+            $page_orientation = 'A4';
+        }
+        if ($with_default_header) {
+            $pdf = $this->pdf1->load($page_orientation);
+            $header = '<div style="border-bottom:1px solid #000; text-align:center;">
                 <table style="display:inline-block;"><tr><td valign="top"><img style="height:50px; display:inline-block;" src="' . base_url() . 'logo/' . company_info()->logo . '"/></td>
                     <td><h2 style="padding: 0px; margin: 0px; font-size:23px;"><strong>' . company_info()->name . '</strong></h2>
                         <h5 style="padding: 0px; margin: 0px; font-size:15px;"><strong> P.O.Box' . strtoupper(company_info()->box) . ' , ' . strtoupper(lang('clientaccount_label_phone')) . ':' . company_info()->mobile . '</strong></h5></td></tr></table> 
                 </div>';
-        $pdf->SetHTMLHeader($header);
-        $pdf->SetFooter('SACCO PLUS' . '|{PAGENO}|' . date('d-m-Y H:i:s')); // Add a footer for good measure <img src="https://davidsimpson.me/wp-includes/images/smilies/icon_wink.gif" alt=";)" class="wp-smiley">
-        $pdf->WriteHTML($html); // write the HTML into the PDF
-        $pdf->Output($filename, 'I'); // save to file because we can  
+            $pdf->SetHTMLHeader($header);
+        } else {
+            // Compact top margin when report HTML already includes its own header (e.g. Balance Sheet)
+            include_once APPPATH . '/third_party/mpdf/mpdf.php';
+            $pdf = new mPDF('', $page_orientation, '', '', 10, 10, 8, 12, 5, 5);
+        }
+        $pdf->SetFooter('|{PAGENO}|' . date('d-m-Y H:i:s'));
+        // Avoid browsers / PDF.js keeping a stale preview after template changes
+        header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+        header('Pragma: no-cache');
+        header('Expires: 0');
+        $pdf->WriteHTML($html);
+        $pdf->Output($filename . '.pdf', 'I');
     }
 
 }

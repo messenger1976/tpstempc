@@ -1,189 +1,161 @@
-<div class="row">
-    <div class="col-lg-12">
-        <div style="padding: 0px; margin: auto;">
-            <div style="text-align: center;">
-                <h3 style="margin: 0px; padding: 0px;"><strong>Cash Flow Statement</strong></h3>
-                <h4 style="margin: 0px; padding: 0px;"><strong>For the period from <?php echo format_date($reportinfo->fromdate, false); ?> to <?php echo format_date($reportinfo->todate, false); ?></strong></h4>
-            </div>
-            <style type="text/css">
-                table.table tbody tr td{
-                    border: 0px;
-                    font-size: 13px;
-                }
-                table tr td{
-                    padding-top: 5px;
-                    font-size: 13px;
-                }
-            </style>
-            
-            <table class="table" cellpadding='0' cellspacing='0' style="border-top: 1px solid #000;">
-                <thead>
-                    <tr>
-                        <th style="text-align: left; width: 500px;"></th>
-                        <th style="text-align: right; width: 250px;"></th>
-                    </tr>
-                </thead>
+<?php
+if (!function_exists('cf_format_amount')) {
+    function cf_format_amount($amount) {
+        if ($amount === null) {
+            return '';
+        }
+        $v = floatval($amount);
+        if (abs($v) < 0.005) {
+            return '-';
+        }
+        if ($v < 0) {
+            return '(' . number_format(abs($v), 2) . ')';
+        }
+        return number_format($v, 2);
+    }
+}
 
-                <tbody>
-                    <?php $cash_flow = $cash_flow_data; ?>
-                    
-                    <!-- Operating Activities -->
-                    <tr>
-                        <td colspan="2"><strong>CASH FLOWS FROM OPERATING ACTIVITIES</strong></td>
-                    </tr>
-                    
-                    <!-- Cash Receipts (Inflows) -->
-                    <?php if (!empty($cash_flow['operating_activities']['cash_inflows'])): ?>
-                        <?php foreach ($cash_flow['operating_activities']['cash_inflows'] as $inflow): ?>
-                            <tr>
-                                <td style="padding-left: 40px;">
-                                    <?php echo htmlspecialchars($inflow['description']); ?>
-                                    <?php if (!empty($inflow['received_from'])): ?>
-                                        <small>(from: <?php echo htmlspecialchars($inflow['received_from']); ?>)</small>
-                                    <?php endif; ?>
-                                </td>
-                                <td style="text-align: right;"><?php echo number_format($inflow['amount'], 2); ?></td>
-                            </tr>
-                        <?php endforeach; ?>
-                    <?php else: ?>
-                        <tr>
-                            <td style="padding-left: 40px;">No cash receipts</td>
-                            <td style="text-align: right;">0.00</td>
-                        </tr>
-                    <?php endif; ?>
-                    
-                    <!-- Cash Disbursements (Outflows) -->
-                    <?php if (!empty($cash_flow['operating_activities']['cash_outflows'])): ?>
-                        <?php foreach ($cash_flow['operating_activities']['cash_outflows'] as $outflow): ?>
-                            <tr>
-                                <td style="padding-left: 40px;">
-                                    <?php echo htmlspecialchars($outflow['description']); ?>
-                                    <?php if (!empty($outflow['paid_to'])): ?>
-                                        <small>(to: <?php echo htmlspecialchars($outflow['paid_to']); ?>)</small>
-                                    <?php endif; ?>
-                                </td>
-                                <td style="text-align: right;">(<?php echo number_format($outflow['amount'], 2); ?>)</td>
-                            </tr>
-                        <?php endforeach; ?>
-                    <?php else: ?>
-                        <tr>
-                            <td style="padding-left: 40px;">No cash disbursements</td>
-                            <td style="text-align: right;">(0.00)</td>
-                        </tr>
-                    <?php endif; ?>
-                    
-                    <!-- Net Cash from Operating Activities -->
-                    <tr>
-                        <td style="padding-left: 60px; border-bottom: 1px solid #000; border-top: 1px solid #000;"><strong>Net Cash from Operating Activities</strong></td>
-                        <td style="text-align: right; border-bottom: 1px solid #000; border-top: 1px solid #000;">
-                            <strong><?php echo number_format($cash_flow['operating_activities']['net_cash'], 2); ?></strong>
-                        </td>
-                    </tr>
-                    
-                    <tr><td colspan="2"><br/></td></tr>
-                    
-                    <!-- Investing Activities -->
-                    <tr>
-                        <td colspan="2"><strong>CASH FLOWS FROM INVESTING ACTIVITIES</strong></td>
-                    </tr>
-                    
-                    <?php if (!empty($cash_flow['investing_activities']['cash_inflows']) || !empty($cash_flow['investing_activities']['cash_outflows'])): ?>
-                        <?php foreach ($cash_flow['investing_activities']['cash_inflows'] as $inflow): ?>
-                            <tr>
-                                <td style="padding-left: 40px;"><?php echo htmlspecialchars($inflow['description']); ?></td>
-                                <td style="text-align: right;"><?php echo number_format($inflow['amount'], 2); ?></td>
-                            </tr>
-                        <?php endforeach; ?>
-                        
-                        <?php foreach ($cash_flow['investing_activities']['cash_outflows'] as $outflow): ?>
-                            <tr>
-                                <td style="padding-left: 40px;"><?php echo htmlspecialchars($outflow['description']); ?></td>
-                                <td style="text-align: right;">(<?php echo number_format($outflow['amount'], 2); ?>)</td>
-                            </tr>
-                        <?php endforeach; ?>
-                    <?php else: ?>
-                        <tr>
-                            <td style="padding-left: 40px;">No investing activities</td>
-                            <td style="text-align: right;">0.00</td>
-                        </tr>
-                    <?php endif; ?>
-                    
-                    <!-- Net Cash from Investing Activities -->
-                    <tr>
-                        <td style="padding-left: 60px; border-bottom: 1px solid #000; border-top: 1px solid #000;"><strong>Net Cash from Investing Activities</strong></td>
-                        <td style="text-align: right; border-bottom: 1px solid #000; border-top: 1px solid #000;">
-                            <strong><?php echo number_format($cash_flow['investing_activities']['net_cash'], 2); ?></strong>
-                        </td>
-                    </tr>
-                    
-                    <tr><td colspan="2"><br/></td></tr>
-                    
-                    <!-- Financing Activities -->
-                    <tr>
-                        <td colspan="2"><strong>CASH FLOWS FROM FINANCING ACTIVITIES</strong></td>
-                    </tr>
-                    
-                    <!-- Financing Inflows -->
-                    <?php if (!empty($cash_flow['financing_activities']['cash_inflows'])): ?>
-                        <?php foreach ($cash_flow['financing_activities']['cash_inflows'] as $inflow): ?>
-                            <tr>
-                                <td style="padding-left: 40px;"><?php echo htmlspecialchars($inflow['description']); ?></td>
-                                <td style="text-align: right;"><?php echo number_format($inflow['amount'], 2); ?></td>
-                            </tr>
-                        <?php endforeach; ?>
-                    <?php endif; ?>
-                    
-                    <!-- Financing Outflows -->
-                    <?php if (!empty($cash_flow['financing_activities']['cash_outflows'])): ?>
-                        <?php foreach ($cash_flow['financing_activities']['cash_outflows'] as $outflow): ?>
-                            <tr>
-                                <td style="padding-left: 40px;"><?php echo htmlspecialchars($outflow['description']); ?></td>
-                                <td style="text-align: right;">(<?php echo number_format($outflow['amount'], 2); ?>)</td>
-                            </tr>
-                        <?php endforeach; ?>
-                    <?php endif; ?>
-                    
-                    <?php if (empty($cash_flow['financing_activities']['cash_inflows']) && empty($cash_flow['financing_activities']['cash_outflows'])): ?>
-                        <tr>
-                            <td style="padding-left: 40px;">No financing activities</td>
-                            <td style="text-align: right;">0.00</td>
-                        </tr>
-                    <?php endif; ?>
-                    
-                    <!-- Net Cash from Financing Activities -->
-                    <tr>
-                        <td style="padding-left: 60px; border-bottom: 1px solid #000; border-top: 1px solid #000;"><strong>Net Cash from Financing Activities</strong></td>
-                        <td style="text-align: right; border-bottom: 1px solid #000; border-top: 1px solid #000;">
-                            <strong><?php echo number_format($cash_flow['financing_activities']['net_cash'], 2); ?></strong>
-                        </td>
-                    </tr>
-                    
-                    <tr><td colspan="2"><br/><br/></td></tr>
-                    
-                    <!-- Net Increase/Decrease in Cash -->
-                    <tr>
-                        <td style="border-bottom: 1px solid #000; border-top: 1px solid #000;"><strong>Net Increase (Decrease) in Cash</strong></td>
-                        <td style="text-align: right; border-bottom: 1px solid #000; border-top: 1px solid #000;">
-                            <strong><?php echo number_format($cash_flow['total_net_cash_flow'], 2); ?></strong>
-                        </td>
-                    </tr>
-                    
-                    <!-- Beginning Cash -->
-                    <tr>
-                        <td><strong>Cash at Beginning of Period</strong></td>
-                        <td style="text-align: right;"><?php echo number_format($cash_flow['beginning_cash'], 2); ?></td>
-                    </tr>
-                    
-                    <!-- Ending Cash -->
-                    <tr>
-                        <td style="border-bottom: 1px solid #000; border-top: 1px solid #000;"><strong>Cash at End of Period</strong></td>
-                        <td style="text-align: right; border-bottom: 1px solid #000; border-top: 1px solid #000;">
-                            <strong><?php echo number_format($cash_flow['ending_cash'], 2); ?></strong>
-                        </td>
-                    </tr>
-                    
-                </tbody>
-            </table>
+$company = company_info();
+$period_from = !empty($reportinfo->fromdate) ? strtoupper(date('F d, Y', strtotime($reportinfo->fromdate))) : '';
+$period_to = !empty($reportinfo->todate) ? strtoupper(date('F d, Y', strtotime($reportinfo->todate))) : '';
+$cf_rows = isset($cash_flow_data['rows']) ? $cash_flow_data['rows'] : array();
+$cf_totals = isset($cash_flow_data['totals']) ? $cash_flow_data['totals'] : array();
+$indent_px = array(0 => 0, 1 => 14, 2 => 28, 3 => 42, 4 => 56);
+
+$logo_src = '';
+$logo_w = 55;
+$logo_h = 55;
+if (!empty($company->logo)) {
+    $logo_file = FCPATH . 'logo' . DIRECTORY_SEPARATOR . $company->logo;
+    if (is_file($logo_file)) {
+        $logo_src = str_replace('\\', '/', $logo_file);
+        $size = @getimagesize($logo_file);
+        if ($size && !empty($size[0]) && !empty($size[1])) {
+            $max = 55;
+            if ($size[0] >= $size[1]) {
+                $logo_w = $max;
+                $logo_h = max(1, (int) round($max * ($size[1] / $size[0])));
+            } else {
+                $logo_h = $max;
+                $logo_w = max(1, (int) round($max * ($size[0] / $size[1])));
+            }
+        }
+    } else {
+        $logo_src = base_url() . 'logo/' . $company->logo;
+    }
+}
+?>
+<div style="padding: 0; margin: 0;">
+    <table style="width:100%; margin:0 0 6px 0; border-collapse:collapse;">
+        <tr>
+            <td style="width:<?php echo ($logo_w + 10); ?>px; vertical-align:middle; padding:0; text-align:left;">
+                <?php if ($logo_src !== '') { ?>
+                    <img src="<?php echo $logo_src; ?>" width="<?php echo (int) $logo_w; ?>" height="<?php echo (int) $logo_h; ?>" alt="logo"/>
+                <?php } ?>
+            </td>
+            <td style="text-align:center; vertical-align:middle; padding:0 6px;">
+                <div style="font-weight:bold; font-size:13px; text-transform:uppercase; line-height:1.25;">
+                    <?php echo htmlspecialchars($company->name); ?>
+                </div>
+                <div style="font-size:11px; line-height:1.2;">
+                    <?php echo htmlspecialchars($company->address ? $company->address : $company->box); ?>
+                </div>
+                <div style="font-weight:bold; font-size:14px; margin-top:4px; line-height:1.2;">STATEMENT OF CASH FLOWS</div>
+                <div style="font-size:10px; font-style:italic; line-height:1.2;">Indirect Method</div>
+                <div style="font-size:11px; line-height:1.2;">
+                    For the period from <?php echo $period_from; ?> to <?php echo $period_to; ?>
+                </div>
+            </td>
+            <td style="width:80px; text-align:right; vertical-align:bottom; font-weight:bold; font-size:11px; padding:0;">
+                LENDING
+            </td>
+        </tr>
+    </table>
+
+    <table style="width:100%; border-collapse:collapse; font-size:11px;">
+        <tbody>
+        <?php foreach ($cf_rows as $row) {
+            $type = $row['type'];
+            if ($type === 'spacer') {
+                echo '<tr><td colspan="2" style="height:10px;"></td></tr>';
+                continue;
+            }
+            $indent = isset($indent_px[$row['indent']]) ? $indent_px[$row['indent']] : ($row['indent'] * 14);
+            $has_amount = array_key_exists('amount', $row) && $row['amount'] !== null;
+            $show = !empty($row['always_show']) || $type === 'section' || $type === 'group' || $type === 'subtotal' || $type === 'total'
+                || ($has_amount && abs(floatval($row['amount'])) >= 0.005);
+            if (!$show) {
+                continue;
+            }
+            $label_style = 'padding:2px 4px 2px ' . $indent . 'px;';
+            if (!empty($row['bold'])) {
+                $label_style .= 'font-weight:bold;';
+            }
+            if (!empty($row['italic'])) {
+                $label_style .= 'font-style:italic;';
+            }
+            if ($type === 'section') {
+                $label_style .= 'padding-top:8px;';
+            }
+            $amt_style = 'text-align:right; white-space:nowrap; padding:2px 4px; width:120px;';
+            if (!empty($row['bold'])) {
+                $amt_style .= 'font-weight:bold;';
+            }
+            if (!empty($row['line'])) {
+                $amt_style .= 'border-top:1px solid #000;';
+            }
+
+            $amount_html = '';
+            if ($has_amount) {
+                $formatted = cf_format_amount($row['amount']);
+                if (!empty($row['peso']) && $formatted !== '-') {
+                    $amount_html = '<span style="float:left;">P</span>' . $formatted;
+                } else {
+                    $amount_html = $formatted;
+                }
+                if (!empty($row['line']) && $row['line'] === 'double') {
+                    $amount_html = '<div style="border-bottom:3px double #000; display:inline-block; min-width:110px; text-align:right;">' . $amount_html . '</div>';
+                }
+            }
+            ?>
+            <tr>
+                <td style="<?php echo $label_style; ?>"><?php echo htmlspecialchars($row['label']); ?></td>
+                <td style="<?php echo $amt_style; ?>"><?php echo $amount_html; ?></td>
+            </tr>
+        <?php } ?>
+        </tbody>
+    </table>
+
+    <?php
+    $end = isset($cf_totals['ending_cash']) ? floatval($cf_totals['ending_cash']) : 0;
+    $recon = isset($cf_totals['ending_cash_reconciled']) ? floatval($cf_totals['ending_cash_reconciled']) : 0;
+    if (abs($end - $recon) >= 0.05) {
+        ?>
+        <div style="margin-top:8px; font-size:10px;">
+            Note: Cash end and beginning + net change differ by <?php echo number_format(abs($end - $recon), 2); ?>.
         </div>
-    </div>
+    <?php } ?>
+
+    <table style="width:100%; margin-top:36px; font-size:11px; border-collapse:collapse;">
+        <tr>
+            <td style="width:33%; vertical-align:top; text-align:center;">
+                Certified Correct:<br/>
+                <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;"><tr><td height="95" style="height:95px; font-size:1px; line-height:95px;">&nbsp;</td></tr></table>
+                <span style="font-weight:bold; text-decoration:underline;">ANTONINA P. PATUNGAN</span><br/>
+                Bookkeeper
+            </td>
+            <td style="width:33%; vertical-align:top; text-align:center;">
+                Checked by:<br/>
+                <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;"><tr><td height="95" style="height:95px; font-size:1px; line-height:95px;">&nbsp;</td></tr></table>
+                <span style="font-weight:bold; text-decoration:underline;">ANA MARIE F. VALMORIA</span><br/>
+                AICOM
+            </td>
+            <td style="width:33%; vertical-align:top; text-align:center;">
+                Noted by:<br/>
+                <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;"><tr><td height="95" style="height:95px; font-size:1px; line-height:95px;">&nbsp;</td></tr></table>
+                <span style="font-weight:bold; text-decoration:underline;">REMEDIOS T. AUXTERO</span><br/>
+                Manager
+            </td>
+        </tr>
+    </table>
 </div>

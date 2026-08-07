@@ -149,7 +149,7 @@
                 <?php $journal = $this->db->get('journal')->result(); ?>
                 <div class="inside_content">
                     <?php foreach ($journal as $key => $value) { ?>
-                        <a href="<?php echo site_url(current_lang().'/report/journal_entry/'.$value->id); ?>"><?php echo $value->type; ?></a>
+                        <a href="<?php echo site_url(current_lang().'/report/journal_entry/'.$value->id); ?>"><?php echo htmlspecialchars(function_exists('journal_display_type') ? journal_display_type($value->type) : $value->type); ?></a>
                   <?php  } ?>
                 </div>
             </div>

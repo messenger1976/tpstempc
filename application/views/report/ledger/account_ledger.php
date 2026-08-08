@@ -213,6 +213,12 @@ $print_url = site_url(current_lang() . '/report/account_ledger_print/' . $accoun
             </div>
 
             <div style="text-align:center; margin-top: 20px;">
+                <button type="button" class="btn btn-success js-download-report-pdf"
+                        data-pdf-url="<?php echo htmlspecialchars($print_url); ?>"
+                        data-pdf-name="Account_Ledger.pdf">
+                    <i class="fa fa-download"></i> Download PDF
+                </button>
+                &nbsp;&nbsp;
                 <a href="<?php echo $print_url; ?>" class="btn btn-primary">Print</a>
                 &nbsp;&nbsp;
                 <a href="<?php echo $back_url; ?>" class="btn btn-default">Back</a>

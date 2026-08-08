@@ -218,6 +218,12 @@ $request_url = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https:
     </div>
 
     <div style="text-align:center; margin-top:18px;">
+        <button type="button" class="btn btn-success js-download-report-pdf"
+                data-pdf-url="<?php echo htmlspecialchars($print_url); ?>"
+                data-pdf-name="Savings_Account_Ledger.pdf">
+            <i class="fa fa-download"></i> Download PDF
+        </button>
+        &nbsp;
         <a href="<?php echo $print_url; ?>" class="btn btn-primary" target="_blank"><i class="fa fa-print"></i> Print</a>
         &nbsp;
         <a href="<?php echo $export_url; ?>" class="btn btn-success"><i class="fa fa-file-excel-o"></i> Export</a>

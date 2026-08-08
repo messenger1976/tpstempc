@@ -119,7 +119,10 @@
                     <button type="button" class="btn btn-white" id="page_count">/ 1</button>
                 </div>
             </div>
-            <button id="btn-print-pdf" type="button" class="btn btn-primary btn-sm" style="margin-left:8px;" title="Print">
+            <button id="btn-download-pdf" type="button" class="btn btn-white btn-sm" style="margin-left:8px;" title="Download PDF">
+                <i class="fa fa-download"></i> Download
+            </button>
+            <button id="btn-print-pdf" type="button" class="btn btn-primary btn-sm" style="margin-left:4px;" title="Print">
                 <i class="fa fa-print"></i> Print
             </button>
         </div>
@@ -419,11 +422,99 @@
                 });
             }
 
-            // Expose for parent modal "Print" button
+            function suggestPdfFilename() {
+                try {
+                    var path = (pdfFileUrl || '').split('?')[0];
+                    var parts = path.split('/');
+                    var last = parts.length ? parts[parts.length - 1] : '';
+                    if (last && /\.pdf$/i.test(last)) {
+                        return decodeURIComponent(last);
+                    }
+                    if (last) {
+                        return decodeURIComponent(last).replace(/[^\w\-]+/g, '_') + '.pdf';
+                    }
+                } catch (e) {}
+                return 'report.pdf';
+            }
+
+            function downloadPdfFile() {
+                var btn = document.getElementById('btn-download-pdf');
+                if (btn) {
+                    btn.disabled = true;
+                }
+                var filename = suggestPdfFilename();
+                var finish = function () {
+                    if (btn) {
+                        btn.disabled = false;
+                    }
+                };
+
+                function triggerBlobDownload(blob) {
+                    var pdfBlob = blob;
+                    if (!pdfBlob.type || pdfBlob.type.indexOf('pdf') === -1) {
+                        pdfBlob = new Blob([blob], { type: 'application/pdf' });
+                    }
+                    var objectUrl = URL.createObjectURL(pdfBlob);
+                    var a = document.createElement('a');
+                    a.href = objectUrl;
+                    a.download = filename;
+                    a.style.display = 'none';
+                    document.body.appendChild(a);
+                    a.click();
+                    setTimeout(function () {
+                        try { URL.revokeObjectURL(objectUrl); } catch (e) {}
+                        if (a.parentNode) {
+                            a.parentNode.removeChild(a);
+                        }
+                        finish();
+                    }, 1000);
+                }
+
+                if (window.fetch) {
+                    fetch(pdfFileUrl, {
+                        credentials: 'same-origin',
+                        cache: 'no-store'
+                    }).then(function (res) {
+                        if (!res.ok) {
+                            throw new Error('HTTP ' + res.status);
+                        }
+                        var cd = res.headers.get('Content-Disposition') || '';
+                        var m = /filename\*?=(?:UTF-8''|")?([^\";]+)/i.exec(cd);
+                        if (m && m[1]) {
+                            filename = decodeURIComponent(m[1].replace(/"/g, '').trim());
+                            if (!/\.pdf$/i.test(filename)) {
+                                filename += '.pdf';
+                            }
+                        }
+                        return res.blob();
+                    }).then(triggerBlobDownload).catch(function () {
+                        // Fallback: open in new tab so user can save manually
+                        window.open(pdfFileUrl, '_blank');
+                        finish();
+                    });
+                } else {
+                    var a = document.createElement('a');
+                    a.href = pdfFileUrl;
+                    a.download = filename;
+                    a.target = '_blank';
+                    document.body.appendChild(a);
+                    a.click();
+                    if (a.parentNode) {
+                        a.parentNode.removeChild(a);
+                    }
+                    finish();
+                }
+            }
+
+            // Expose for parent modal buttons
             window.printPdfFile = printPdfFile;
+            window.downloadPdfFile = downloadPdfFile;
 
             document.getElementById('btn-print-pdf').addEventListener('click', function () {
                 printPdfFile();
+            });
+            document.getElementById('btn-download-pdf').addEventListener('click', function () {
+                downloadPdfFile();
             });
 
             if (typeof PDFJS !== 'undefined') {

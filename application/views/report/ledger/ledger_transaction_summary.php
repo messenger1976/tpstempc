@@ -290,6 +290,12 @@ $col_w = '100px';
         </div>
 
         <div style="text-align: center; margin-top: 20px;">
+            <button type="button" class="btn btn-success js-download-report-pdf"
+                    data-pdf-url="<?php echo htmlspecialchars(site_url(current_lang() . '/report/ledger_trans_print_summary/' . $link_cat . '/' . $id)); ?>"
+                    data-pdf-name="Ledger_Transaction_Summary.pdf">
+                <i class="fa fa-download"></i> Download PDF
+            </button>
+            &nbsp; &nbsp; &nbsp; &nbsp;
             <button type="button" class="btn btn-primary" id="btnPrintLedgerSummary">
                 <i class="fa fa-print"></i> Print
             </button>

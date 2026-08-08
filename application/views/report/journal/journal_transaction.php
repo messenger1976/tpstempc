@@ -232,6 +232,12 @@ $transaction = isset($transaction) ? $transaction : array();
         </div>
 
         <div style="text-align: center; margin-top: 20px;">
+            <button type="button" class="btn btn-success js-download-report-pdf"
+                    data-pdf-url="<?php echo htmlspecialchars(site_url(current_lang() . '/report/journal_trans_print/' . $link_cat . '/' . $id)); ?>"
+                    data-pdf-name="Journal_Transactions.pdf">
+                <i class="fa fa-download"></i> Download PDF
+            </button>
+            &nbsp; &nbsp; &nbsp; &nbsp;
             <button type="button" class="btn btn-primary" id="btnPrintJournalTrans">
                 <i class="fa fa-print"></i> Print
             </button>

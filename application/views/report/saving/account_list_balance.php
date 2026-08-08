@@ -191,6 +191,12 @@ $ledger_embed_url = function ($account) use ($ledger_url) {
         </div>
 
         <div style="text-align: center; margin-top: 20px;">
+            <button type="button" class="btn btn-success js-download-report-pdf"
+                    data-pdf-url="<?php echo htmlspecialchars(site_url(current_lang() . '/report_saving/saving_account_accountlist_print/' . $link_cat . '/' . $id)); ?>"
+                    data-pdf-name="Savings_Account_List.pdf">
+                <i class="fa fa-download"></i> Download PDF
+            </button>
+            &nbsp; &nbsp; &nbsp; &nbsp;
             <button type="button" class="btn btn-primary" id="btnPrintSavingAcctList">
                 <i class="fa fa-print"></i> Print
             </button>

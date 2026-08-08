@@ -155,6 +155,12 @@ $indent_px = array(0 => 0, 1 => 18, 2 => 36, 3 => 54, 4 => 72);
         </div>
 
         <div style="text-align: center; margin-top: 20px;">
+            <button type="button" class="btn btn-success js-download-report-pdf"
+                    data-pdf-url="<?php echo htmlspecialchars(site_url(current_lang() . '/report/cash_flow_report_print/' . $id)); ?>"
+                    data-pdf-name="Cash_Flow_Report.pdf">
+                <i class="fa fa-download"></i> Download PDF
+            </button>
+            &nbsp; &nbsp; &nbsp; &nbsp;
             <button type="button" class="btn btn-primary" id="btnPrintCashFlow">
                 <i class="fa fa-print"></i> Print
             </button>

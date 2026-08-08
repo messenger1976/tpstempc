@@ -1057,7 +1057,8 @@ class Report extends CI_Controller {
         header('Pragma: no-cache');
         header('Expires: 0');
         $pdf->WriteHTML($html);
-        $pdf->Output($filename . '.pdf', 'I');
+        $output_mode = ($this->input->get('download') === '1') ? 'D' : 'I';
+        $pdf->Output($filename . '.pdf', $output_mode);
     }
 
 }

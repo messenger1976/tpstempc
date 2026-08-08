@@ -630,9 +630,14 @@ FROM member_registrationfee INNER JOIN members ON member_registrationfee.member_
 
     function account_contribution_balance($fromdate, $todate) {
         $pin = current_user()->PIN;
-        //$sql = "SELECT members.PID,members.member_id,CONCAT(members.firstname,' ',members.middlename,' ',members.lastname) as name,members_contribution.balance FROM members LEFT JOIN members_contribution ON members.PID=members_contribution.PID  WHERE members.PIN='$pin' AND members.joiningdate >= '$fromdate 00:00:00' AND members.joiningdate <= '$todate 23:59:59' ";
-        $sql = "SELECT members.PID,members.member_id,CONCAT(members.firstname,' ',members.middlename,' ',members.lastname) as name,members_contribution.balance FROM members LEFT JOIN members_contribution ON members.PID=members_contribution.PID  WHERE members.PIN='$pin' AND members.joiningdate <= '$todate 23:59:59' ";
-        $sql.=" ORDER BY members.PID ASC";
+        // As-of report: members joined on or before todate (fromdate retained for report metadata / edit form).
+        $sql = "SELECT members.PID, members.member_id, members.joiningdate,
+CONCAT(TRIM(members.firstname), ' ', TRIM(IFNULL(members.middlename, '')), ' ', TRIM(members.lastname)) AS name,
+IFNULL(members_contribution.balance, 0) AS balance
+FROM members
+LEFT JOIN members_contribution ON members.PID = members_contribution.PID
+WHERE members.PIN = '$pin' AND members.joiningdate <= '$todate 23:59:59'
+ORDER BY ABS(members.member_id) ASC, members.member_id ASC";
 
         return $this->db->query($sql)->result();
     }
@@ -713,14 +718,18 @@ FROM
     }
 
     function contribution_statement($fromdate, $until, $member_id) {
- $pin = current_user()->PIN;
-        $sql = "SELECT  PID,member_id, createdon,comment,system_comment,trans_type,paymethod,
-case when trans_type = 'CR' then amount else 0 end as credit,
-case when trans_type = 'DR' then amount else 0 end as debit,
+        $pin = current_user()->PIN;
+        $member_id = $this->db->escape_str($member_id);
+        $sql = "SELECT PID, member_id, createdon, comment, system_comment, trans_type, paymethod,
+CASE WHEN trans_type = 'CR' THEN amount ELSE 0 END AS credit,
+CASE WHEN trans_type = 'DR' THEN amount ELSE 0 END AS debit,
 previous_balance
-   
-FROM  
-  contribution_transaction WHERE member_id='$member_id' AND PIN='$pin' AND createdon>='$fromdate 00:00:00' AND createdon <= '$until 23:59:59'  ORDER BY createdon ASC";
+FROM contribution_transaction
+WHERE member_id = '$member_id' AND PIN = '$pin'
+  AND createdon >= '$fromdate 00:00:00' AND createdon <= '$until 23:59:59'
+  AND (comment IS NULL OR comment NOT LIKE 'VOID%')
+  AND (system_comment IS NULL OR system_comment NOT LIKE 'VOID%')
+ORDER BY createdon ASC";
 
         return $this->db->query($sql)->result();
     }
@@ -749,12 +758,16 @@ FROM
     }
 
     function contribution_statement_previous($fromdate, $member_id) {
-$current_user = current_user()->PIN;
-        $sql = "SELECT  PID,member_id,
-SUM(COALESCE(case when trans_type = 'CR' then amount else 0 end)) as credit,
-SUM(COALESCE(case when trans_type = 'DR' then amount else 0 end)) as debit
-FROM  
-  contribution_transaction WHERE member_id='$member_id' AND PIN='$current_user' AND createdon < '$fromdate 00:00:00' GROUP BY member_id";
+        $current_user = current_user()->PIN;
+        $member_id = $this->db->escape_str($member_id);
+        $sql = "SELECT PID, member_id,
+SUM(COALESCE(CASE WHEN trans_type = 'CR' THEN amount ELSE 0 END, 0)) AS credit,
+SUM(COALESCE(CASE WHEN trans_type = 'DR' THEN amount ELSE 0 END, 0)) AS debit
+FROM contribution_transaction
+WHERE member_id = '$member_id' AND PIN = '$current_user' AND createdon < '$fromdate 00:00:00'
+  AND (comment IS NULL OR comment NOT LIKE 'VOID%')
+  AND (system_comment IS NULL OR system_comment NOT LIKE 'VOID%')
+GROUP BY member_id, PID";
         return $this->db->query($sql)->row();
     }
     function mortuary_statement_previous($fromdate, $member_id) {
@@ -782,24 +795,36 @@ FROM
 
     function account_saving_transactions($fromdate, $until) {
         $pin = current_user()->PIN;
-        $sql = "SELECT  account, trans_date,comment,system_comment,trans_type,paymethod,
-case when trans_type = 'CR' then amount else 0 end as credit,
-case when trans_type = 'DR' then amount else 0 end as debit,
-previous_balance
+        $sql = "SELECT st.account, st.trans_date, st.comment, st.system_comment, st.trans_type, st.paymethod, st.receipt,
+case when st.trans_type = 'CR' then st.amount else 0 end as credit,
+case when st.trans_type = 'DR' then st.amount else 0 end as debit,
+st.previous_balance,
+COALESCE(NULLIF(ma.old_members_acct, ''), st.account) AS display_account,
+ma.member_id AS member_id
 FROM  
-  savings_transaction WHERE PIN='$pin' AND  trans_date>='$fromdate 00:00:00' AND trans_date <= '$until 23:59:59'  ORDER BY trans_date ASC";
+  savings_transaction st
+LEFT JOIN members_account ma ON ma.account = st.account AND ma.PIN = st.PIN
+WHERE st.PIN='$pin' AND st.trans_date>='$fromdate 00:00:00' AND st.trans_date <= '$until 23:59:59'
+  AND (st.comment IS NULL OR st.comment NOT LIKE 'VOID-%')
+ORDER BY st.trans_date ASC, st.account ASC";
 
         return $this->db->query($sql)->result();
     }
 
     function contribution_transactions($fromdate, $until) {
         $pin = current_user()->PIN;
-        $sql = "SELECT  PID,member_id, createdon,comment,system_comment,trans_type,paymethod,
-case when trans_type = 'CR' then amount else 0 end as credit,
-case when trans_type = 'DR' then amount else 0 end as debit,
-previous_balance
-FROM  
-  contribution_transaction WHERE PIN='$pin' AND  createdon>='$fromdate 00:00:00' AND createdon <= '$until 23:59:59'  ORDER BY createdon ASC";
+        $sql = "SELECT ct.PID, ct.member_id, ct.createdon, ct.comment, ct.system_comment, ct.trans_type, ct.paymethod,
+CASE WHEN ct.trans_type = 'CR' THEN ct.amount ELSE 0 END AS credit,
+CASE WHEN ct.trans_type = 'DR' THEN ct.amount ELSE 0 END AS debit,
+ct.previous_balance,
+CONCAT(TRIM(IFNULL(m.firstname, '')), ' ', TRIM(IFNULL(m.middlename, '')), ' ', TRIM(IFNULL(m.lastname, ''))) AS member_name
+FROM contribution_transaction ct
+LEFT JOIN members m ON m.PID = ct.PID AND m.PIN = ct.PIN
+WHERE ct.PIN = '$pin'
+  AND ct.createdon >= '$fromdate 00:00:00' AND ct.createdon <= '$until 23:59:59'
+  AND (ct.comment IS NULL OR ct.comment NOT LIKE 'VOID%')
+  AND (ct.system_comment IS NULL OR ct.system_comment NOT LIKE 'VOID%')
+ORDER BY ct.createdon ASC, ct.member_id ASC";
 
         return $this->db->query($sql)->result();
     }
@@ -830,20 +855,36 @@ FROM
 
     function account_saving_transactions_summary($fromdate, $until) {
         $pin = current_user()->PIN;
-        $sql = "SELECT  account, SUM(case when trans_type = 'CR' then amount else 0 end) as credit, SUM(case when trans_type = 'DR' then amount else 0 end) as debit
-
-FROM  
-  savings_transaction WHERE PIN='$pin' AND   trans_date>='$fromdate 00:00:00' AND trans_date <= '$until 23:59:59'  GROUP BY account";
+        $sql = "SELECT st.account,
+SUM(CASE WHEN st.trans_type = 'CR' THEN st.amount ELSE 0 END) AS credit,
+SUM(CASE WHEN st.trans_type = 'DR' THEN st.amount ELSE 0 END) AS debit,
+MAX(COALESCE(NULLIF(ma.old_members_acct, ''), st.account)) AS display_account,
+MAX(ma.member_id) AS member_id
+FROM savings_transaction st
+LEFT JOIN members_account ma ON ma.account = st.account AND ma.PIN = st.PIN
+WHERE st.PIN='$pin'
+  AND st.trans_date>='$fromdate 00:00:00' AND st.trans_date <= '$until 23:59:59'
+  AND (st.comment IS NULL OR st.comment NOT LIKE 'VOID-%')
+GROUP BY st.account
+ORDER BY display_account ASC, st.account ASC";
 
         return $this->db->query($sql)->result();
     }
 
     function contribution_transactions_summary($fromdate, $until) {
         $pin = current_user()->PIN;
-        $sql = "SELECT  member_id, SUM(case when trans_type = 'CR' then amount else 0 end) as credit, SUM(case when trans_type = 'DR' then amount else 0 end) as debit
-
-FROM  
-  contribution_transaction WHERE PIN='$pin' AND   createdon>='$fromdate 00:00:00' AND createdon <= '$until 23:59:59'  GROUP BY member_id ORDER BY member_id";
+        $sql = "SELECT ct.member_id,
+SUM(CASE WHEN ct.trans_type = 'CR' THEN ct.amount ELSE 0 END) AS credit,
+SUM(CASE WHEN ct.trans_type = 'DR' THEN ct.amount ELSE 0 END) AS debit,
+MAX(CONCAT(TRIM(IFNULL(m.firstname, '')), ' ', TRIM(IFNULL(m.middlename, '')), ' ', TRIM(IFNULL(m.lastname, '')))) AS member_name
+FROM contribution_transaction ct
+LEFT JOIN members m ON m.PID = ct.PID AND m.PIN = ct.PIN
+WHERE ct.PIN = '$pin'
+  AND ct.createdon >= '$fromdate 00:00:00' AND ct.createdon <= '$until 23:59:59'
+  AND (ct.comment IS NULL OR ct.comment NOT LIKE 'VOID%')
+  AND (ct.system_comment IS NULL OR ct.system_comment NOT LIKE 'VOID%')
+GROUP BY ct.member_id
+ORDER BY ABS(ct.member_id) ASC, ct.member_id ASC";
 
         return $this->db->query($sql)->result();
     }
@@ -870,20 +911,27 @@ FROM
 
     function account_saving_transactions_summary_previous($fromdate, $account) {
         $pin = current_user()->PIN;
-        $sql = "SELECT  account, SUM(case when trans_type = 'CR' then amount else 0 end) as credit, SUM(case when trans_type = 'DR' then amount else 0 end) as debit
-
-FROM  
-  savings_transaction WHERE PIN='$pin' AND   trans_date < '$fromdate 00:00:00' AND account = '$account'";
+        $account = $this->db->escape_str($account);
+        $sql = "SELECT account,
+SUM(CASE WHEN trans_type = 'CR' THEN amount ELSE 0 END) AS credit,
+SUM(CASE WHEN trans_type = 'DR' THEN amount ELSE 0 END) AS debit
+FROM savings_transaction
+WHERE PIN='$pin' AND trans_date < '$fromdate 00:00:00' AND account = '$account'
+  AND (comment IS NULL OR comment NOT LIKE 'VOID-%')";
 
         return $this->db->query($sql)->row();
     }
 
     function contribution_transactions_summary_previous($fromdate, $member_id) {
         $pin = current_user()->PIN;
-        $sql = "SELECT  member_id, SUM(case when trans_type = 'CR' then amount else 0 end) as credit, SUM(case when trans_type = 'DR' then amount else 0 end) as debit
-
-FROM  
-  contribution_transaction WHERE PIN='$pin' AND   createdon < '$fromdate 00:00:00' AND member_id = '$member_id'";
+        $member_id = $this->db->escape_str($member_id);
+        $sql = "SELECT member_id,
+SUM(CASE WHEN trans_type = 'CR' THEN amount ELSE 0 END) AS credit,
+SUM(CASE WHEN trans_type = 'DR' THEN amount ELSE 0 END) AS debit
+FROM contribution_transaction
+WHERE PIN = '$pin' AND createdon < '$fromdate 00:00:00' AND member_id = '$member_id'
+  AND (comment IS NULL OR comment NOT LIKE 'VOID%')
+  AND (system_comment IS NULL OR system_comment NOT LIKE 'VOID%')";
 
         return $this->db->query($sql)->row();
     }

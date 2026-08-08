@@ -194,6 +194,12 @@ $check_exp_inc = 0;
         </div>
 
         <div style="text-align: center; margin-top: 20px;">
+            <button type="button" class="btn btn-success js-download-report-pdf"
+                    data-pdf-url="<?php echo htmlspecialchars(site_url(current_lang() . '/report/ledger_income_statement_print/' . $link_cat . '/' . $id)); ?>"
+                    data-pdf-name="Income_Statement.pdf">
+                <i class="fa fa-download"></i> Download PDF
+            </button>
+            &nbsp; &nbsp; &nbsp; &nbsp;
             <button type="button" class="btn btn-primary" id="btnPrintIncomeStatement">
                 <i class="fa fa-print"></i> Print
             </button>

@@ -157,6 +157,9 @@
         
         <!-- Sweet alert -->
         <script src="<?php echo base_url(); ?>media/js/plugins/sweetalert/sweetalert.min.js"></script>
+
+        <!-- Report PDF download (Download PDF buttons) -->
+        <script src="<?php echo base_url(); ?>assets/js/report_pdf_download.js"></script>
         
         <script type="text/javascript" src="<?php echo base_url(); ?>media/js/script/script.js"></script>
         

@@ -252,6 +252,12 @@ $back_url = site_url(current_lang() . '/report_saving/saving_account_report/' . 
             &nbsp;
             <a href="<?php echo $export_url; ?>" class="btn btn-success"><i class="fa fa-file-excel-o"></i> Export to Excel</a>
             &nbsp;
+            <button type="button" class="btn btn-success js-download-report-pdf"
+                    data-pdf-url="<?php echo htmlspecialchars($print_url); ?>"
+                    data-pdf-name="Savings_Account_Statement.pdf">
+                <i class="fa fa-download"></i> Download PDF
+            </button>
+            &nbsp; &nbsp; &nbsp; &nbsp;
             <button type="button" class="btn btn-primary" id="btnPrintSavingStatement"><i class="fa fa-print"></i> Print</button>
             &nbsp;
             <a href="<?php echo $edit_url; ?>" class="btn btn-primary">Edit</a>

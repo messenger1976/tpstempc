@@ -938,6 +938,11 @@ class Report_Saving extends CI_Controller {
         }
 
         $reportinfo = $this->report_model->report_saving($id)->row();
+        if (!$reportinfo) {
+            $this->session->set_flashdata('error', 'Report not found.');
+            redirect(current_lang() . '/report_saving/saving_account_report/' . $link);
+            return;
+        }
         $this->data['reportinfo'] = $reportinfo;
         $this->data['transaction'] = $this->report_model->account_saving_transactions($reportinfo->fromdate, $reportinfo->todate);
         
@@ -957,14 +962,14 @@ class Report_Saving extends CI_Controller {
         $this->data['reportinfo'] = $reportinfo;
         $this->data['transaction'] = $this->report_model->account_saving_transactions($reportinfo->fromdate, $reportinfo->todate);
         
-         $html = $this->load->view('report/saving/print/account_saving_transactions_print', $this->data, true);
-        $this->export_to_pdf($html, 'Saving_transactions', $reportinfo->page);
+        $html = $this->load->view('report/saving/print/account_saving_transactions_print', $this->data, true);
+        $this->export_to_pdf($html, 'Savings_Account_Transactions', $reportinfo->page ? $reportinfo->page : 'A4-L', false);
     }
     
     
     
        function saving_account_transaction_summary_view($link, $id) {
-        $this->data['title'] = lang('saving_account_transactions');
+        $this->data['title'] = lang('saving_account_transactions_summary');
         $this->data['link_cat'] = $link;
         $this->data['id'] = $id;
         if (!is_null($id)) {
@@ -972,15 +977,20 @@ class Report_Saving extends CI_Controller {
         }
 
         $reportinfo = $this->report_model->report_saving($id)->row();
+        if (!$reportinfo) {
+            $this->session->set_flashdata('error', 'Report not found.');
+            redirect(current_lang() . '/report_saving/saving_account_report/' . $link);
+            return;
+        }
         $this->data['reportinfo'] = $reportinfo;
         $this->data['transaction'] = $this->report_model->account_saving_transactions_summary($reportinfo->fromdate, $reportinfo->todate);
-        
+
         $this->data['content'] = 'report/saving/account_saving_transactions_summary';
         $this->load->view('template', $this->data);
     }
-    
+
        function saving_account_transaction_summary_print($link, $id) {
-        $this->data['title'] = lang('saving_account_transactions');
+        $this->data['title'] = lang('saving_account_transactions_summary');
         $this->data['link_cat'] = $link;
         $this->data['id'] = $id;
         if (!is_null($id)) {
@@ -990,10 +1000,9 @@ class Report_Saving extends CI_Controller {
         $reportinfo = $this->report_model->report_saving($id)->row();
         $this->data['reportinfo'] = $reportinfo;
         $this->data['transaction'] = $this->report_model->account_saving_transactions_summary($reportinfo->fromdate, $reportinfo->todate);
-        
-       
-         $html = $this->load->view('report/saving/print/account_saving_transactions_summary_print', $this->data, true);
-        $this->export_to_pdf($html, 'Saving_transactions', $reportinfo->page);
+
+        $html = $this->load->view('report/saving/print/account_saving_transactions_summary_print', $this->data, true);
+        $this->export_to_pdf($html, 'Savings_Account_Transactions_Summary', $reportinfo->page ? $reportinfo->page : 'A4-L', false);
     }
     
     
@@ -1022,7 +1031,8 @@ class Report_Saving extends CI_Controller {
         header('Pragma: no-cache');
         header('Expires: 0');
         $pdf->WriteHTML($html);
-        $pdf->Output($filename . '.pdf', 'I');
+        $output_mode = ($this->input->get('download') === '1') ? 'D' : 'I';
+        $pdf->Output($filename . '.pdf', $output_mode);
     }
 
     /**

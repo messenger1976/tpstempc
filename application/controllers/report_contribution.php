@@ -141,6 +141,11 @@ class Report_Contribution extends CI_Controller {
         }
 
         $reportinfo = $this->report_model->report_contribution($id)->row();
+        if (!$reportinfo) {
+            $this->session->set_flashdata('error', 'Report not found.');
+            redirect(current_lang() . '/report_contribution/contribution_report/' . $link);
+            return;
+        }
         $this->data['reportinfo'] = $reportinfo;
         $this->data['transaction'] = $this->report_model->account_contribution_balance($reportinfo->fromdate, $reportinfo->todate);
 
@@ -161,7 +166,7 @@ class Report_Contribution extends CI_Controller {
         $this->data['transaction'] = $this->report_model->account_contribution_balance($reportinfo->fromdate, $reportinfo->todate);
 
         $html = $this->load->view('report/contribution/print/contribution_list_balance_print', $this->data, true);
-        $this->export_to_pdf($html, 'Contribution_balance', $reportinfo->page);
+        $this->export_to_pdf($html, 'Member_CBU_Balance', $reportinfo->page ? $reportinfo->page : 'A4', false);
     }
 
     function contribution_balance_export($link, $id) {
@@ -217,25 +222,26 @@ class Report_Contribution extends CI_Controller {
         
         // Add company name and report title
         $sheet->setCellValue('A1', company_info()->name);
-        $sheet->mergeCells('A1:D1');
+        $sheet->mergeCells('A1:E1');
         $sheet->getStyle('A1')->getFont()->setBold(true)->setSize(14);
         $sheet->getStyle('A1')->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_CENTER);
         
-        $sheet->setCellValue('A2', 'Member CBU balance');
-        $sheet->mergeCells('A2:D2');
+        $sheet->setCellValue('A2', 'MEMBER CBU BALANCE');
+        $sheet->mergeCells('A2:E2');
         $sheet->getStyle('A2')->getFont()->setBold(true)->setSize(12);
         $sheet->getStyle('A2')->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_CENTER);
         
-        $sheet->setCellValue('A3', 'Member Joined As of ' . format_date($reportinfo->todate, false));
-        $sheet->mergeCells('A3:D3');
+        $sheet->setCellValue('A3', 'As of ' . format_date($reportinfo->todate, false));
+        $sheet->mergeCells('A3:E3');
         $sheet->getStyle('A3')->getFont()->setSize(10);
         $sheet->getStyle('A3')->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_CENTER);
         
         // Set column headers
         $sheet->setCellValue('A5', 'S/No');
         $sheet->setCellValue('B5', 'Member ID');
-        $sheet->setCellValue('C5', 'Name');
-        $sheet->setCellValue('D5', 'Balance');
+        $sheet->setCellValue('C5', 'Member Name');
+        $sheet->setCellValue('D5', 'Date Joined');
+        $sheet->setCellValue('E5', 'CBU Balance');
         
         // Style the header row
         $headerStyle = array(
@@ -257,35 +263,44 @@ class Report_Contribution extends CI_Controller {
             ),
         );
         
-        $sheet->getStyle('A5:D5')->applyFromArray($headerStyle);
+        $sheet->getStyle('A5:E5')->applyFromArray($headerStyle);
         
         // Set column widths
         $sheet->getColumnDimension('A')->setWidth(10);
-        $sheet->getColumnDimension('B')->setWidth(20);
+        $sheet->getColumnDimension('B')->setWidth(18);
         $sheet->getColumnDimension('C')->setWidth(40);
-        $sheet->getColumnDimension('D')->setWidth(20);
+        $sheet->getColumnDimension('D')->setWidth(16);
+        $sheet->getColumnDimension('E')->setWidth(18);
         
         // Populate data
         $row = 6;
         $i = 1;
         $total_balance = 0;
         foreach ($transaction as $value) {
-            $total_balance += $value->balance;
+            $row_balance = floatval($value->balance);
+            $total_balance += $row_balance;
+            $joined = '';
+            if (!empty($value->joiningdate) && $value->joiningdate !== '0000-00-00' && $value->joiningdate !== '0000-00-00 00:00:00') {
+                $joined = format_date(substr($value->joiningdate, 0, 10), false);
+            }
+            $name = trim(preg_replace('/\s+/', ' ', isset($value->name) ? $value->name : ''));
             
             // Write data to cells
             $sheet->setCellValue('A' . $row, $i++);
             $sheet->setCellValue('B' . $row, $value->member_id);
-            $sheet->setCellValue('C' . $row, $value->name);
-            $sheet->setCellValue('D' . $row, number_format($value->balance, 2));
+            $sheet->setCellValue('C' . $row, $name);
+            $sheet->setCellValue('D' . $row, $joined);
+            $sheet->setCellValue('E' . $row, number_format($row_balance, 2));
             
             // Set alignment
-            $sheet->getStyle('A' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_RIGHT);
+            $sheet->getStyle('A' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_CENTER);
             $sheet->getStyle('B' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_LEFT);
             $sheet->getStyle('C' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_LEFT);
-            $sheet->getStyle('D' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_RIGHT);
+            $sheet->getStyle('D' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_CENTER);
+            $sheet->getStyle('E' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_RIGHT);
             
             // Add borders to cells
-            $sheet->getStyle('A' . $row . ':D' . $row)->applyFromArray(array(
+            $sheet->getStyle('A' . $row . ':E' . $row)->applyFromArray(array(
                 'borders' => array(
                     'allborders' => array(
                         'style' => PHPExcel_Style_Border::BORDER_THIN
@@ -300,7 +315,8 @@ class Report_Contribution extends CI_Controller {
         $sheet->setCellValue('A' . $row, '');
         $sheet->setCellValue('B' . $row, '');
         $sheet->setCellValue('C' . $row, '');
-        $sheet->setCellValue('D' . $row, number_format($total_balance, 2));
+        $sheet->setCellValue('D' . $row, '');
+        $sheet->setCellValue('E' . $row, number_format($total_balance, 2));
         
         // Style total row
         $totalStyle = array(
@@ -323,8 +339,8 @@ class Report_Contribution extends CI_Controller {
             ),
         );
         
-        $sheet->getStyle('A' . $row . ':D' . $row)->applyFromArray($totalStyle);
-        $sheet->getStyle('D' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_RIGHT);
+        $sheet->getStyle('A' . $row . ':E' . $row)->applyFromArray($totalStyle);
+        $sheet->getStyle('E' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_RIGHT);
         
         // Set filename
         $filename = 'Member_CBU_Balance_' . date('Y-m-d_His') . '.xls';
@@ -359,12 +375,18 @@ class Report_Contribution extends CI_Controller {
         }
 
         $reportinfo = $this->report_model->report_contribution($id)->row();
+        if (!$reportinfo) {
+            $this->session->set_flashdata('error', 'Report not found.');
+            redirect(current_lang() . '/report_contribution/contribution_report/' . $link);
+            return;
+        }
         $this->data['reportinfo'] = $reportinfo;
         $this->data['transaction'] = $this->report_model->contribution_statement($reportinfo->fromdate, $reportinfo->todate, $reportinfo->description);
 
         $this->data['content'] = 'report/contribution/contribution_statement';
         $this->load->view('template', $this->data);
     }
+
     function contribution_statement_print($link, $id) {
         $this->data['title'] = lang('member_contribution_statement');
         $this->data['link_cat'] = $link;
@@ -377,9 +399,8 @@ class Report_Contribution extends CI_Controller {
         $this->data['reportinfo'] = $reportinfo;
         $this->data['transaction'] = $this->report_model->contribution_statement($reportinfo->fromdate, $reportinfo->todate, $reportinfo->description);
 
-        
         $html = $this->load->view('report/contribution/print/contribution_statement_print', $this->data, true);
-        $this->export_to_pdf($html, 'Contribution_Statement', $reportinfo->page);
+        $this->export_to_pdf($html, 'Member_CBU_Statement', $reportinfo->page ? $reportinfo->page : 'A4', false);
     }
     
     
@@ -395,14 +416,18 @@ class Report_Contribution extends CI_Controller {
         }
 
         $reportinfo = $this->report_model->report_contribution($id)->row();
+        if (!$reportinfo) {
+            $this->session->set_flashdata('error', 'Report not found.');
+            redirect(current_lang() . '/report_contribution/contribution_report/' . $link);
+            return;
+        }
         $this->data['reportinfo'] = $reportinfo;
         $this->data['transaction'] = $this->report_model->contribution_transactions($reportinfo->fromdate, $reportinfo->todate);
-        
+
         $this->data['content'] = 'report/contribution/contribution_transactions';
         $this->load->view('template', $this->data);
-        
     }
-    
+
     function contribution_transaction_print($link, $id) {
         $this->data['title'] = lang('member_contribution_transactions');
         $this->data['link_cat'] = $link;
@@ -414,11 +439,9 @@ class Report_Contribution extends CI_Controller {
         $reportinfo = $this->report_model->report_contribution($id)->row();
         $this->data['reportinfo'] = $reportinfo;
         $this->data['transaction'] = $this->report_model->contribution_transactions($reportinfo->fromdate, $reportinfo->todate);
-        
-       
+
         $html = $this->load->view('report/contribution/print/contribution_transactions_print', $this->data, true);
-        $this->export_to_pdf($html, 'Contribution_Transactions', $reportinfo->page);
-        
+        $this->export_to_pdf($html, 'Member_CBU_Transactions', $reportinfo->page ? $reportinfo->page : 'A4-L', false);
     }
 
     function contribution_transaction_export($link, $id) {
@@ -460,17 +483,17 @@ class Report_Contribution extends CI_Controller {
         $sheet->setTitle('CBU Transactions');
 
         $sheet->setCellValue('A1', company_info()->name);
-        $sheet->mergeCells('A1:G1');
+        $sheet->mergeCells('A1:H1');
         $sheet->getStyle('A1')->getFont()->setBold(true)->setSize(14);
         $sheet->getStyle('A1')->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_CENTER);
 
-        $sheet->setCellValue('A2', 'Member CBU Transactions');
-        $sheet->mergeCells('A2:G2');
+        $sheet->setCellValue('A2', 'MEMBER CBU TRANSACTIONS');
+        $sheet->mergeCells('A2:H2');
         $sheet->getStyle('A2')->getFont()->setBold(true)->setSize(12);
         $sheet->getStyle('A2')->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_CENTER);
 
         $sheet->setCellValue('A3', 'For the period from ' . format_date($reportinfo->fromdate, false) . ' to ' . format_date($reportinfo->todate, false));
-        $sheet->mergeCells('A3:G3');
+        $sheet->mergeCells('A3:H3');
         $sheet->getStyle('A3')->getFont()->setSize(10);
         $sheet->getStyle('A3')->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_CENTER);
 
@@ -478,9 +501,10 @@ class Report_Contribution extends CI_Controller {
         $sheet->setCellValue('B5', 'Date');
         $sheet->setCellValue('C5', 'Member ID');
         $sheet->setCellValue('D5', 'Member Name');
-        $sheet->setCellValue('E5', 'Method');
-        $sheet->setCellValue('F5', 'Debit [DR]');
-        $sheet->setCellValue('G5', 'Credit [CR]');
+        $sheet->setCellValue('E5', 'Particulars');
+        $sheet->setCellValue('F5', 'Method');
+        $sheet->setCellValue('G5', 'Debit');
+        $sheet->setCellValue('H5', 'Credit');
 
         $headerStyle = array(
             'font' => array(
@@ -500,15 +524,16 @@ class Report_Contribution extends CI_Controller {
                 )
             ),
         );
-        $sheet->getStyle('A5:G5')->applyFromArray($headerStyle);
+        $sheet->getStyle('A5:H5')->applyFromArray($headerStyle);
 
         $sheet->getColumnDimension('A')->setWidth(8);
         $sheet->getColumnDimension('B')->setWidth(12);
         $sheet->getColumnDimension('C')->setWidth(18);
-        $sheet->getColumnDimension('D')->setWidth(35);
-        $sheet->getColumnDimension('E')->setWidth(14);
+        $sheet->getColumnDimension('D')->setWidth(32);
+        $sheet->getColumnDimension('E')->setWidth(40);
         $sheet->getColumnDimension('F')->setWidth(14);
         $sheet->getColumnDimension('G')->setWidth(14);
+        $sheet->getColumnDimension('H')->setWidth(14);
 
         $row = 6;
         $i = 1;
@@ -517,27 +542,35 @@ class Report_Contribution extends CI_Controller {
         foreach ($transaction as $value) {
             $dt = explode(' ', $value->createdon);
             $trans_date = isset($dt[0]) ? format_date($dt[0], false) : '';
-            $member_name = $this->member_model->member_name($value->member_id);
+            $member_name = trim(preg_replace('/\s+/', ' ', !empty($value->member_name) ? $value->member_name : ''));
+            $particulars = trim(isset($value->system_comment) ? $value->system_comment : '');
+            if (!empty($value->comment)) {
+                $particulars .= ($particulars !== '' ? ' — ' : '') . $value->comment;
+            }
+            $row_debit = floatval($value->debit);
+            $row_credit = floatval($value->credit);
 
             $sheet->setCellValue('A' . $row, $i++);
             $sheet->setCellValue('B' . $row, $trans_date);
             $sheet->setCellValue('C' . $row, $value->member_id);
             $sheet->setCellValue('D' . $row, $member_name);
-            $sheet->setCellValue('E' . $row, $value->paymethod);
-            $sheet->setCellValue('F' . $row, $value->debit > 0 ? number_format($value->debit, 2) : '');
-            $sheet->setCellValue('G' . $row, $value->credit > 0 ? number_format($value->credit, 2) : '');
+            $sheet->setCellValue('E' . $row, $particulars);
+            $sheet->setCellValue('F' . $row, $value->paymethod);
+            $sheet->setCellValue('G' . $row, $row_debit > 0 ? number_format($row_debit, 2) : '');
+            $sheet->setCellValue('H' . $row, $row_credit > 0 ? number_format($row_credit, 2) : '');
 
-            $total_debit += $value->debit;
-            $total_credit += $value->credit;
+            $total_debit += $row_debit;
+            $total_credit += $row_credit;
 
-            $sheet->getStyle('A' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_RIGHT);
+            $sheet->getStyle('A' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_CENTER);
             $sheet->getStyle('B' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_CENTER);
             $sheet->getStyle('C' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_LEFT);
             $sheet->getStyle('D' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_LEFT);
             $sheet->getStyle('E' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_LEFT);
-            $sheet->getStyle('F' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_RIGHT);
+            $sheet->getStyle('F' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_LEFT);
             $sheet->getStyle('G' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_RIGHT);
-            $sheet->getStyle('A' . $row . ':G' . $row)->applyFromArray(array(
+            $sheet->getStyle('H' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_RIGHT);
+            $sheet->getStyle('A' . $row . ':H' . $row)->applyFromArray(array(
                 'borders' => array(
                     'allborders' => array(
                         'style' => PHPExcel_Style_Border::BORDER_THIN
@@ -552,8 +585,9 @@ class Report_Contribution extends CI_Controller {
         $sheet->setCellValue('C' . $row, '');
         $sheet->setCellValue('D' . $row, '');
         $sheet->setCellValue('E' . $row, '');
-        $sheet->setCellValue('F' . $row, number_format($total_debit, 2));
-        $sheet->setCellValue('G' . $row, number_format($total_credit, 2));
+        $sheet->setCellValue('F' . $row, '');
+        $sheet->setCellValue('G' . $row, number_format($total_debit, 2));
+        $sheet->setCellValue('H' . $row, number_format($total_credit, 2));
         $totalStyle = array(
             'font' => array('bold' => true),
             'borders' => array(
@@ -563,8 +597,8 @@ class Report_Contribution extends CI_Controller {
                 'right' => array('style' => PHPExcel_Style_Border::BORDER_THIN),
             ),
         );
-        $sheet->getStyle('A' . $row . ':G' . $row)->applyFromArray($totalStyle);
-        $sheet->getStyle('F' . $row . ':G' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_RIGHT);
+        $sheet->getStyle('A' . $row . ':H' . $row)->applyFromArray($totalStyle);
+        $sheet->getStyle('G' . $row . ':H' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_RIGHT);
 
         if (ob_get_level()) {
             ob_end_clean();
@@ -592,12 +626,18 @@ class Report_Contribution extends CI_Controller {
         }
 
         $reportinfo = $this->report_model->report_contribution($id)->row();
+        if (!$reportinfo) {
+            $this->session->set_flashdata('error', 'Report not found.');
+            redirect(current_lang() . '/report_contribution/contribution_report/' . $link);
+            return;
+        }
         $this->data['reportinfo'] = $reportinfo;
         $this->data['transaction'] = $this->report_model->contribution_transactions_summary($reportinfo->fromdate, $reportinfo->todate);
-        
+
         $this->data['content'] = 'report/contribution/contribution_transactions_summary';
         $this->load->view('template', $this->data);
     }
+
     function contribution_transaction_summary_print($link, $id) {
         $this->data['title'] = lang('member_contribution_transactions_summary');
         $this->data['link_cat'] = $link;
@@ -609,10 +649,9 @@ class Report_Contribution extends CI_Controller {
         $reportinfo = $this->report_model->report_contribution($id)->row();
         $this->data['reportinfo'] = $reportinfo;
         $this->data['transaction'] = $this->report_model->contribution_transactions_summary($reportinfo->fromdate, $reportinfo->todate);
-        
-       
+
         $html = $this->load->view('report/contribution/print/contribution_transactions_summary_print', $this->data, true);
-        $this->export_to_pdf($html, 'contribution_trans_summary', $reportinfo->page);
+        $this->export_to_pdf($html, 'Member_CBU_Transactions_Summary', $reportinfo->page ? $reportinfo->page : 'A4-L', false);
     }
 
     function contribution_transaction_summary_export($link, $id) {
@@ -658,7 +697,7 @@ class Report_Contribution extends CI_Controller {
         $sheet->getStyle('A1')->getFont()->setBold(true)->setSize(14);
         $sheet->getStyle('A1')->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_CENTER);
 
-        $sheet->setCellValue('A2', 'Member CBU Transactions Summary');
+        $sheet->setCellValue('A2', 'MEMBER CBU TRANSACTIONS SUMMARY');
         $sheet->mergeCells('A2:G2');
         $sheet->getStyle('A2')->getFont()->setBold(true)->setSize(12);
         $sheet->getStyle('A2')->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_CENTER);
@@ -672,8 +711,8 @@ class Report_Contribution extends CI_Controller {
         $sheet->setCellValue('B5', 'Member ID');
         $sheet->setCellValue('C5', 'Member Name');
         $sheet->setCellValue('D5', 'Opening Balance');
-        $sheet->setCellValue('E5', 'Debit [DR]');
-        $sheet->setCellValue('F5', 'Credit [CR]');
+        $sheet->setCellValue('E5', 'Debit');
+        $sheet->setCellValue('F5', 'Credit');
         $sheet->setCellValue('G5', 'Closing Balance');
 
         $headerStyle = array(
@@ -729,7 +768,7 @@ class Report_Contribution extends CI_Controller {
                 $closing_label = number_format((-1 * $close_balance), 2) . ' Dr';
             }
 
-            $member_name = $this->member_model->member_name($value->member_id);
+            $member_name = trim(preg_replace('/\s+/', ' ', !empty($value->member_name) ? $value->member_name : ''));
 
             $sheet->setCellValue('A' . $row, $i++);
             $sheet->setCellValue('B' . $row, $value->member_id);
@@ -797,19 +836,30 @@ class Report_Contribution extends CI_Controller {
             
     
     
-    function export_to_pdf($html, $filename, $page_orientation = null) {
-        //$html = "Tanzania";
+    function export_to_pdf($html, $filename, $page_orientation = null, $with_default_header = true) {
         $this->load->library('pdf1');
-        $pdf = $this->pdf1->load($page_orientation);
-        $header = '<div style="border-bottom:1px solid #000; text-align:center;">
+        if ($page_orientation == NULL) {
+            $page_orientation = 'A4';
+        }
+        if ($with_default_header) {
+            $pdf = $this->pdf1->load($page_orientation);
+            $header = '<div style="border-bottom:1px solid #000; text-align:center;">
                 <table style="display:inline-block;"><tr><td valign="top"><img style="height:50px; display:inline-block;" src="' . base_url() . 'logo/' . company_info()->logo . '"/></td>
                     <td style="text-align:center;"><h2 style="padding: 0px; margin: 0px;font-size:18px; text-align:center;"><strong>' . company_info()->name . '</strong></h2>
                         <h5 style="padding: 0px; margin: 0px; font-size:15px; text-align:center;"><strong> P.O.Box' . strtoupper(company_info()->box) . ' , ' . strtoupper(lang('clientaccount_label_phone')) . ':' . company_info()->mobile . '</strong></h5></td></tr></table> 
                 </div>';
-        $pdf->SetHTMLHeader($header);
+            $pdf->SetHTMLHeader($header);
+        } else {
+            include_once APPPATH . '/third_party/mpdf/mpdf.php';
+            $pdf = new mPDF('', $page_orientation, '', '', 10, 10, 8, 12, 5, 5);
+        }
         $pdf->SetFooter('|{PAGENO}|' . date('d-m-Y H:i:s'));
-        $pdf->WriteHTML($html); // write the HTML into the PDF
-        $pdf->Output($filename, 'I'); // save to file because we can  
+        header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+        header('Pragma: no-cache');
+        header('Expires: 0');
+        $pdf->WriteHTML($html);
+        $output_mode = ($this->input->get('download') === '1') ? 'D' : 'I';
+        $pdf->Output($filename . '.pdf', $output_mode);
     }
 
 }

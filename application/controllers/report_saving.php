@@ -145,8 +145,16 @@ class Report_Saving extends CI_Controller {
         }
 
         $reportinfo = $this->report_model->report_saving($id)->row();
+        if (!$reportinfo) {
+            $this->session->set_flashdata('error', 'Report not found.');
+            redirect(current_lang() . '/report_saving/saving_account_report/' . $link);
+            return;
+        }
         $this->data['reportinfo'] = $reportinfo;
-        $this->data['transaction'] = $this->report_model->account_saving_balance($reportinfo->fromdate, $reportinfo->todate, $reportinfo->account_type);
+        $transaction = $this->report_model->account_saving_balance($reportinfo->fromdate, $reportinfo->todate, $reportinfo->account_type);
+        $this->data['transaction'] = $transaction;
+        $this->data['account_type_names'] = $this->_saving_account_type_name_map($transaction);
+        $this->data['account_type_label'] = $this->_saving_account_type_label($reportinfo);
 
         $this->data['content'] = 'report/saving/account_list_balance';
         $this->load->view('template', $this->data);
@@ -163,10 +171,13 @@ class Report_Saving extends CI_Controller {
 
         $reportinfo = $this->report_model->report_saving($id)->row();
         $this->data['reportinfo'] = $reportinfo;
-        $this->data['transaction'] = $this->report_model->account_saving_balance($reportinfo->fromdate, $reportinfo->todate, $reportinfo->account_type);
+        $transaction = $this->report_model->account_saving_balance($reportinfo->fromdate, $reportinfo->todate, $reportinfo->account_type);
+        $this->data['transaction'] = $transaction;
+        $this->data['account_type_names'] = $this->_saving_account_type_name_map($transaction);
+        $this->data['account_type_label'] = $this->_saving_account_type_label($reportinfo);
 
         $html = $this->load->view('report/saving/print/account_list_balance_print', $this->data, true);
-        $this->export_to_pdf($html, 'Saving_account_list', $reportinfo->page);
+        $this->export_to_pdf($html, 'Savings_Account_List', $reportinfo->page ? $reportinfo->page : 'A4-L', false);
     }
 
     function saving_account_accountlist_export($link, $id) {
@@ -222,17 +233,17 @@ class Report_Saving extends CI_Controller {
         
         // Add company name and report title
         $sheet->setCellValue('A1', company_info()->name);
-        $sheet->mergeCells('A1:H1');
+        $sheet->mergeCells('A1:I1');
         $sheet->getStyle('A1')->getFont()->setBold(true)->setSize(14);
         $sheet->getStyle('A1')->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_CENTER);
         
-        $sheet->setCellValue('A2', 'Saving Account List');
-        $sheet->mergeCells('A2:H2');
+        $sheet->setCellValue('A2', 'Savings Account List');
+        $sheet->mergeCells('A2:I2');
         $sheet->getStyle('A2')->getFont()->setBold(true)->setSize(12);
         $sheet->getStyle('A2')->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_CENTER);
         
-        $sheet->setCellValue('A3', 'Account created from ' . format_date($reportinfo->fromdate, false) . ' to ' . format_date($reportinfo->todate, false));
-        $sheet->mergeCells('A3:H3');
+        $sheet->setCellValue('A3', 'Accounts opened from ' . format_date($reportinfo->fromdate, false) . ' to ' . format_date($reportinfo->todate, false));
+        $sheet->mergeCells('A3:I3');
         $sheet->getStyle('A3')->getFont()->setSize(10);
         $sheet->getStyle('A3')->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_CENTER);
         
@@ -242,8 +253,10 @@ class Report_Saving extends CI_Controller {
         $sheet->setCellValue('C5', 'Member ID');
         $sheet->setCellValue('D5', 'Account Name');
         $sheet->setCellValue('E5', 'Account Type');
-        $sheet->setCellValue('F5', 'Available Balance');
-        $sheet->setCellValue('G5', 'Actual Balance');
+        $sheet->setCellValue('F5', 'Date Opened');
+        $sheet->setCellValue('G5', 'Available Balance');
+        $sheet->setCellValue('H5', 'Maintaining Balance');
+        $sheet->setCellValue('I5', 'Total Balance');
         
         // Style the header row
         $headerStyle = array(
@@ -265,7 +278,7 @@ class Report_Saving extends CI_Controller {
             ),
         );
         
-        $sheet->getStyle('A5:G5')->applyFromArray($headerStyle);
+        $sheet->getStyle('A5:I5')->applyFromArray($headerStyle);
         
         // Set column widths
         $sheet->getColumnDimension('A')->setWidth(10);
@@ -273,19 +286,24 @@ class Report_Saving extends CI_Controller {
         $sheet->getColumnDimension('C')->setWidth(15);
         $sheet->getColumnDimension('D')->setWidth(30);
         $sheet->getColumnDimension('E')->setWidth(20);
-        $sheet->getColumnDimension('F')->setWidth(18);
+        $sheet->getColumnDimension('F')->setWidth(14);
         $sheet->getColumnDimension('G')->setWidth(18);
+        $sheet->getColumnDimension('H')->setWidth(18);
+        $sheet->getColumnDimension('I')->setWidth(18);
         
         // Populate data
         $row = 6;
         $i = 1;
         $balance = 0;
+        $maintaining = 0;
         $actual = 0;
+        $type_map = $this->_saving_account_type_name_map($transaction);
         foreach ($transaction as $value) {
-            $account = $this->finance_model->saving_account_list(null, $value->account_cat)->row();
+            $type_name = isset($type_map[$value->account_cat]) ? $type_map[$value->account_cat] : $value->account_cat;
             $account_name = $this->report_model->saving_account_name($value->RFID, $value->tablename);
             
             $balance += $value->balance;
+            $maintaining += $value->virtual_balance;
             $actual += $value->balance;
             $actual += $value->virtual_balance;
             
@@ -294,9 +312,11 @@ class Report_Saving extends CI_Controller {
             $sheet->setCellValue('B' . $row, !empty($value->old_members_acct) ? $value->old_members_acct : $value->account);
             $sheet->setCellValue('C' . $row, !empty($value->members_member_id) ? $value->members_member_id : $value->member_id);
             $sheet->setCellValue('D' . $row, $account_name);
-            $sheet->setCellValue('E' . $row, $account->name);
-            $sheet->setCellValue('F' . $row, number_format($value->balance, 2));
-            $sheet->setCellValue('G' . $row, number_format(($value->balance + $value->virtual_balance), 2));
+            $sheet->setCellValue('E' . $row, $type_name);
+            $sheet->setCellValue('F' . $row, !empty($value->createdon) ? date('Y-m-d', strtotime($value->createdon)) : '');
+            $sheet->setCellValue('G' . $row, number_format($value->balance, 2));
+            $sheet->setCellValue('H' . $row, number_format($value->virtual_balance, 2));
+            $sheet->setCellValue('I' . $row, number_format(($value->balance + $value->virtual_balance), 2));
             
             // Set alignment
             $sheet->getStyle('A' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_RIGHT);
@@ -304,11 +324,13 @@ class Report_Saving extends CI_Controller {
             $sheet->getStyle('C' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_LEFT);
             $sheet->getStyle('D' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_LEFT);
             $sheet->getStyle('E' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_LEFT);
-            $sheet->getStyle('F' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_RIGHT);
+            $sheet->getStyle('F' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_CENTER);
             $sheet->getStyle('G' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_RIGHT);
+            $sheet->getStyle('H' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_RIGHT);
+            $sheet->getStyle('I' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_RIGHT);
             
             // Add borders to cells
-            $sheet->getStyle('A' . $row . ':G' . $row)->applyFromArray(array(
+            $sheet->getStyle('A' . $row . ':I' . $row)->applyFromArray(array(
                 'borders' => array(
                     'allborders' => array(
                         'style' => PHPExcel_Style_Border::BORDER_THIN
@@ -325,8 +347,10 @@ class Report_Saving extends CI_Controller {
         $sheet->setCellValue('C' . $row, '');
         $sheet->setCellValue('D' . $row, '');
         $sheet->setCellValue('E' . $row, '');
-        $sheet->setCellValue('F' . $row, number_format($balance, 2));
-        $sheet->setCellValue('G' . $row, number_format($actual, 2));
+        $sheet->setCellValue('F' . $row, '');
+        $sheet->setCellValue('G' . $row, number_format($balance, 2));
+        $sheet->setCellValue('H' . $row, number_format($maintaining, 2));
+        $sheet->setCellValue('I' . $row, number_format($actual, 2));
         
         // Style total row
         $totalStyle = array(
@@ -349,12 +373,13 @@ class Report_Saving extends CI_Controller {
             ),
         );
         
-        $sheet->getStyle('A' . $row . ':G' . $row)->applyFromArray($totalStyle);
-        $sheet->getStyle('F' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_RIGHT);
+        $sheet->getStyle('A' . $row . ':I' . $row)->applyFromArray($totalStyle);
         $sheet->getStyle('G' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_RIGHT);
+        $sheet->getStyle('H' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_RIGHT);
+        $sheet->getStyle('I' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_RIGHT);
         
         // Set filename
-        $filename = 'Saving_Account_List_' . date('Y-m-d_His') . '.xls';
+        $filename = 'Savings_Account_List_' . date('Y-m-d_His') . '.xls';
         
         // Clear any remaining output buffers before sending headers
         if (ob_get_level()) {
@@ -387,8 +412,16 @@ class Report_Saving extends CI_Controller {
         }
 
         $reportinfo = $this->report_model->report_saving($id)->row();
+        if (!$reportinfo) {
+            $this->session->set_flashdata('error', 'Report not found.');
+            redirect(current_lang() . '/report_saving/saving_account_report/' . $link);
+            return;
+        }
         $this->data['reportinfo'] = $reportinfo;
-        $this->data['transaction'] = $this->report_model->account_saving_statement($reportinfo->fromdate, $reportinfo->todate, $reportinfo->description);
+        $account = !empty($reportinfo->description) ? $reportinfo->description : '';
+        $this->data['account'] = $account;
+        $this->data['account_info'] = $account !== '' ? $this->finance_model->saving_account_balance($account) : null;
+        $this->data['transaction'] = $this->report_model->account_saving_statement($reportinfo->fromdate, $reportinfo->todate, $account);
 
         $this->data['content'] = 'report/saving/account_saving_statement';
         $this->load->view('template', $this->data);
@@ -412,6 +445,12 @@ class Report_Saving extends CI_Controller {
         $reportinfo = $this->report_model->report_saving($id,$link)->row();
         $this->data['reportinfo'] = $reportinfo;
         $this->data['transaction'] = $this->report_model->account_saving_statement($reportinfo->fromdate, $reportinfo->todate, $account);
+
+        $this->data['embed'] = ($this->input->get('embed') === '1');
+        if (!empty($this->data['embed'])) {
+            $this->load->view('report/saving/account_saving_statement_ledger_embed', $this->data);
+            return;
+        }
 
         $this->data['content'] = 'report/saving/account_saving_statement_ledger';
         $this->load->view('template', $this->data);
@@ -438,7 +477,7 @@ class Report_Saving extends CI_Controller {
         $this->data['transaction'] = $this->report_model->account_saving_statement($reportinfo->fromdate, $reportinfo->todate, $account);
 
         $html = $this->load->view('report/saving/print/account_saving_statement_ledger_print', $this->data, true);
-        $this->export_to_pdf($html, 'Account_Statement', $reportinfo->page);
+        $this->export_to_pdf($html, 'Savings_Account_Ledger', $reportinfo->page ? $reportinfo->page : 'A4-L', false);
     }
     
     function new_saving_account_statement_export($link, $id, $account) {
@@ -668,11 +707,13 @@ class Report_Saving extends CI_Controller {
 
         $reportinfo = $this->report_model->report_saving($id)->row();
         $this->data['reportinfo'] = $reportinfo;
-        $this->data['transaction'] = $this->report_model->account_saving_statement($reportinfo->fromdate, $reportinfo->todate, $reportinfo->description);
+        $account = !empty($reportinfo->description) ? $reportinfo->description : '';
+        $this->data['account'] = $account;
+        $this->data['account_info'] = $account !== '' ? $this->finance_model->saving_account_balance($account) : null;
+        $this->data['transaction'] = $this->report_model->account_saving_statement($reportinfo->fromdate, $reportinfo->todate, $account);
 
-         $html = $this->load->view('report/saving/print/account_saving_statement_print', $this->data, true);
-        $this->export_to_pdf($html, 'Account_Statement', $reportinfo->page);
-        
+        $html = $this->load->view('report/saving/print/account_saving_statement_print', $this->data, true);
+        $this->export_to_pdf($html, 'Savings_Account_Statement', $reportinfo->page ? $reportinfo->page : 'A4-L', false);
     }
     
     function saving_account_statement_export($link, $id) {
@@ -959,19 +1000,56 @@ class Report_Saving extends CI_Controller {
     
     
 
-    function export_to_pdf($html, $filename, $page_orientation = null) {
-        //$html = "Tanzania";
+    function export_to_pdf($html, $filename, $page_orientation = null, $with_default_header = true) {
         $this->load->library('pdf1');
-        $pdf = $this->pdf1->load($page_orientation);
-        $header = '<div style="border-bottom:1px solid #000; text-align:center;">
+        if ($page_orientation == NULL) {
+            $page_orientation = 'A4';
+        }
+        if ($with_default_header) {
+            $pdf = $this->pdf1->load($page_orientation);
+            $header = '<div style="border-bottom:1px solid #000; text-align:center;">
                 <table style="display:inline-block;"><tr><td valign="top"><img style="height:50px; display:inline-block;" src="' . base_url() . 'logo/' . company_info()->logo . '"/></td>
                     <td style="text-align:center;"><h2 style="padding: 0px; margin: 0px;font-size:18px;text-align:center;"><strong>' . company_info()->name . '</strong></h2>
                         <h5 style="padding: 0px; margin: 0px; font-size:15px;text-align:center;"><strong> P.O.Box' . strtoupper(company_info()->box) . ' , ' . strtoupper(lang('clientaccount_label_phone')) . ':' . company_info()->mobile . '</strong></h5></td></tr></table> 
                 </div>';
-        $pdf->SetHTMLHeader($header);
+            $pdf->SetHTMLHeader($header);
+        } else {
+            include_once APPPATH . '/third_party/mpdf/mpdf.php';
+            $pdf = new mPDF('', $page_orientation, '', '', 10, 10, 8, 12, 5, 5);
+        }
         $pdf->SetFooter('|{PAGENO}|' . date('d-m-Y H:i:s'));
-        $pdf->WriteHTML($html); // write the HTML into the PDF
-        $pdf->Output($filename, 'I'); // save to file because we can  
+        header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+        header('Pragma: no-cache');
+        header('Expires: 0');
+        $pdf->WriteHTML($html);
+        $pdf->Output($filename . '.pdf', 'I');
+    }
+
+    /**
+     * Map account_cat codes to savings product names for report rows.
+     */
+    private function _saving_account_type_name_map($transaction) {
+        $map = array();
+        if (empty($transaction) || !is_array($transaction)) {
+            return $map;
+        }
+        foreach ($transaction as $row) {
+            $cat = isset($row->account_cat) ? $row->account_cat : '';
+            if ($cat === '' || isset($map[$cat])) {
+                continue;
+            }
+            $type = $this->finance_model->saving_account_list(null, $cat)->row();
+            $map[$cat] = ($type && !empty($type->name)) ? $type->name : $cat;
+        }
+        return $map;
+    }
+
+    private function _saving_account_type_label($reportinfo) {
+        if (empty($reportinfo) || empty($reportinfo->account_type)) {
+            return 'All Account Types';
+        }
+        $type = $this->finance_model->saving_account_list(null, $reportinfo->account_type)->row();
+        return ($type && !empty($type->name)) ? $type->name : $reportinfo->account_type;
     }
 
     function saving_edit_entry(){

@@ -4,6 +4,12 @@
     <strong>Cash Receipts Journal</strong> lists General Ledger lines posted from
     <strong>Cash Receipt</strong> transactions (journal ID 3), including received-from / payor details with links to the receipt and account ledger.
 </div>
+<?php elseif (isset($link_cat) && (int) $link_cat === 4): ?>
+<div class="alert alert-info" style="margin-bottom: 15px;">
+    <i class="fa fa-info-circle"></i>
+    <strong>Loan Disbursement Journal</strong> lists General Ledger lines posted when loans are disbursed
+    (debit Loans Receivable; credit cash, fees, and related accounts).
+</div>
 <?php elseif (isset($link_cat) && (int) $link_cat === 10): ?>
 <div class="alert alert-info" style="margin-bottom: 15px;">
     <i class="fa fa-info-circle"></i>

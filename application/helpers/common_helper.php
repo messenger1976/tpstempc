@@ -226,6 +226,9 @@ if (!function_exists('journal_display_type')) {
         if (preg_match('/^(receipt\s*money|received\s*money|receive\s*money)$/i', $t)) {
             return 'Cash Receipts';
         }
+        if (preg_match('/^loan\s*receivable$/i', $t)) {
+            return 'Loan Disbursement';
+        }
         return $t;
     }
 }

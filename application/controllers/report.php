@@ -45,11 +45,13 @@ class Report extends CI_Controller {
     function index() {
         // One-time label heal for legacy journal names on Reports home
         if (function_exists('journal_display_type')) {
-            $row = $this->db->query("SELECT id, type FROM journal WHERE id = 3 LIMIT 1")->row();
-            if ($row) {
-                $display = journal_display_type($row->type);
-                if ($display !== $row->type) {
-                    $this->db->update('journal', array('type' => $display), array('id' => 3));
+            foreach (array(3, 4) as $jid) {
+                $row = $this->db->query('SELECT id, type FROM journal WHERE id = ? LIMIT 1', array($jid))->row();
+                if ($row) {
+                    $display = journal_display_type($row->type);
+                    if ($display !== $row->type) {
+                        $this->db->update('journal', array('type' => $display), array('id' => $jid));
+                    }
                 }
             }
         }
@@ -107,11 +109,11 @@ class Report extends CI_Controller {
             return;
         }
 
-        // Persist renamed Cash Receipts label (legacy: Receipt/Received/Receive Money)
-        if ((int) $title->id === 3 && function_exists('journal_display_type')) {
+        // Persist renamed journal labels (legacy Cash Receipts / Loan Disbursement names)
+        if (in_array((int) $title->id, array(3, 4), true) && function_exists('journal_display_type')) {
             $display = journal_display_type($title->type);
             if ($display !== $title->type) {
-                $this->db->update('journal', array('type' => $display), array('id' => 3));
+                $this->db->update('journal', array('type' => $display), array('id' => (int) $title->id));
                 $title->type = $display;
             }
         }
@@ -133,10 +135,10 @@ class Report extends CI_Controller {
             redirect(current_lang() . '/report/index');
             return;
         }
-        if ((int) $title->id === 3 && function_exists('journal_display_type')) {
+        if (in_array((int) $title->id, array(3, 4), true) && function_exists('journal_display_type')) {
             $display = journal_display_type($title->type);
             if ($display !== $title->type) {
-                $this->db->update('journal', array('type' => $display), array('id' => 3));
+                $this->db->update('journal', array('type' => $display), array('id' => (int) $title->id));
                 $title->type = $display;
             }
         }
@@ -559,10 +561,10 @@ class Report extends CI_Controller {
 
         $this->db->where('id', $link);
         $title = $this->db->get('journal')->row();
-        if ($title && (int) $title->id === 3 && function_exists('journal_display_type')) {
+        if ($title && in_array((int) $title->id, array(3, 4), true) && function_exists('journal_display_type')) {
             $display = journal_display_type($title->type);
             if ($display !== $title->type) {
-                $this->db->update('journal', array('type' => $display), array('id' => 3));
+                $this->db->update('journal', array('type' => $display), array('id' => (int) $title->id));
                 $title->type = $display;
             }
         }

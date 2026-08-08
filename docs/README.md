@@ -9,7 +9,7 @@ Canonical location:
 Start at:
 
 - [App docs catalogue](../Company-Knowledge/ESKB/PLATFORM_KNOWLEDGE/07_APP_DOCS_INDEX.md)
-- [User guide](../Company-Knowledge/ESKB/PLATFORM_KNOWLEDGE/08_USER_GUIDES/HOW_TO_USE_THE_SYSTEM.md)
+- [User guide](../Company-Knowledge/ESKB/PLATFORM_KNOWLEDGE/08_USER_GUIDES/USER_DOCUMENTATION.md)
 - [Agent entry](../Company-Knowledge/AGENTS.md)
 
 Excel import templates remain in `../doc/` (not moved).

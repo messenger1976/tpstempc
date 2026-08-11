@@ -513,7 +513,7 @@ class Member_Model extends CI_Model {
 
     /**
      * Active members with physical addresses, grouped for the dashboard OSM map.
-     * Requires member_address_geocode (see install_member_address_geocode.php).
+     * Requires member_address_geocode (see tools/install_member_address_geocode.php).
      *
      * @return array List of location buckets with lat/lng, count, and sample members
      */

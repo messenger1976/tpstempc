@@ -6,8 +6,8 @@
         <thead>
             <tr>
                 <th><?php echo lang('index_action_th'); ?></th>
-                <th><?php echo ($link_cat != 5 ? 'From':'Date'); ?></th>
-                <?php if($link_cat != 5){ ?>
+                <th><?php echo (($link_cat != 5 && $link_cat != 7 && $link_cat != 8) ? 'From':'Date'); ?></th>
+                <?php if($link_cat != 5 && $link_cat != 7 && $link_cat != 8){ ?>
                 <th><?php echo 'Until'; ?></th>
                 <?php } ?>
                 <th><?php echo 'Description'; ?></th>
@@ -32,10 +32,14 @@
                             echo anchor(current_lang() . "/report/ledger_income_statement_view/" . $link_cat . '/' . encode_id($value->id), ' <i class="fa fa-eye"></i> ' . lang('button_view'));
                         }else if ($link_cat == 5) {
                             echo anchor(current_lang() . "/report/ledger_balance_sheet_view/" . $link_cat . '/' . encode_id($value->id), ' <i class="fa fa-eye"></i> ' . lang('button_view'));
+                        }else if ($link_cat == 7) {
+                            echo anchor(current_lang() . "/report/ledger_financial_condition_view/" . $link_cat . '/' . encode_id($value->id), ' <i class="fa fa-eye"></i> ' . lang('button_view'));
+                        }else if ($link_cat == 8) {
+                            echo anchor(current_lang() . "/report/ledger_financial_operations_view/" . $link_cat . '/' . encode_id($value->id), ' <i class="fa fa-eye"></i> ' . lang('button_view'));
                         }
                         ?></td>
                     <td><?php echo format_date($value->fromdate, false); ?></td>
-                    <?php if($link_cat != 5){ ?>
+                    <?php if($link_cat != 5 && $link_cat != 7 && $link_cat != 8){ ?>
                     <td><?php echo format_date($value->todate, false); ?></td>
                     <?php } ?>
                     <td><?php echo $value->description; ?></td>

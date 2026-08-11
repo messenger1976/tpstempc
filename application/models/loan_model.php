@@ -251,9 +251,22 @@ class Loan_Model extends CI_Model {
         return $this->db->query("SELECT * FROM loan_contract WHERE PIN='$pin' AND status=1 ORDER BY applicationdate DESC")->result();
     }
 
-    function loan_wait_disburse() {
+    function loan_wait_disburse($pid = null, $product_id = null) {
         $pin = current_user()->PIN;
-        return $this->db->query("SELECT * FROM loan_contract WHERE PIN='$pin' AND status=4 AND disburse=0 ORDER BY applicationdate DESC")->result();
+        $sql = "SELECT lc.*, lp.name AS loan_product_name
+                FROM loan_contract lc
+                LEFT JOIN loan_product lp ON lp.id = lc.product_type AND lp.PIN = lc.PIN
+                WHERE lc.PIN = " . $this->db->escape($pin) . "
+                  AND lc.status = 4
+                  AND lc.disburse = 0";
+        if (!empty($pid)) {
+            $sql .= " AND lc.PID = " . $this->db->escape($pid);
+        }
+        if (!empty($product_id) && $product_id !== 'all') {
+            $sql .= " AND lc.product_type = " . (int) $product_id;
+        }
+        $sql .= " ORDER BY lc.applicationdate DESC";
+        return $this->db->query($sql)->result();
     }
 
     /**
@@ -1002,6 +1015,166 @@ class Loan_Model extends CI_Model {
         }
 
         return 0;
+    }
+
+    /**
+     * Resolve overdue grace days for a loan product.
+     * Product penalt_grace_days (optional) overrides MAX_NUMBER_DAYS_OVERDUE_PENALT when set (>= 0).
+     *
+     * @param object|null $product loan_product row
+     * @return int
+     */
+    function get_penalt_grace_days($product = null) {
+        $default = defined('MAX_NUMBER_DAYS_OVERDUE_PENALT') ? (int) MAX_NUMBER_DAYS_OVERDUE_PENALT : 0;
+        if (!$product) {
+            return $default;
+        }
+        if (!isset($product->penalt_grace_days) || $product->penalt_grace_days === null || $product->penalt_grace_days === '') {
+            return $default;
+        }
+        if (!is_numeric($product->penalt_grace_days)) {
+            return $default;
+        }
+        $days = (int) $product->penalt_grace_days;
+        return ($days >= 0) ? $days : $default;
+    }
+
+    /**
+     * Calculate what is due as of $paydate for open schedule installments.
+     * Matches loan_repayment_process / loan_repayment_save overdue rules:
+     * grace = product penalt_grace_days if set, else MAX_NUMBER_DAYS_OVERDUE_PENALT; after grace, penalty months apply.
+     *
+     * @param string $LID
+     * @param string $paydate Y-m-d
+     * @return object
+     */
+    function calculate_repayment_due($LID, $paydate) {
+        $loaninfo = $this->loan_info($LID)->row();
+        $empty = (object) array(
+            'items' => array(),
+            'total_installments' => 0,
+            'total_penalty' => 0,
+            'total_due' => 0,
+            'carry_balance' => 0,
+            'net_due' => 0,
+            'minimum_to_apply' => 0,
+            'suggested_amount' => 0,
+            'grace_days' => defined('MAX_NUMBER_DAYS_OVERDUE_PENALT') ? (int) MAX_NUMBER_DAYS_OVERDUE_PENALT : 0,
+            'penalt_percentage' => 0,
+            'penalt_method' => 0,
+            'installment_amount' => 0,
+            'paydate' => $paydate,
+            'has_overdue' => false,
+            'overdue_count' => 0,
+        );
+        if (!$loaninfo || empty($paydate)) {
+            return $empty;
+        }
+
+        $product = $this->setting_model->loanproduct($loaninfo->product_type)->row();
+        $penalt_method = $product ? (int) $product->penalt_method : 0;
+        $penalt_percentage = $product && $product->penalt_percentage !== '' && $product->penalt_percentage !== null
+            ? (float) $product->penalt_percentage : 0;
+        $grace_days = $this->get_penalt_grace_days($product);
+        $installment_amount = round((float) $loaninfo->installment_amount, 2);
+        $carry = round((float) $this->get_previous_remain_balance($LID), 2);
+        $open = $this->open_repayment_installment($LID);
+
+        $items = array();
+        $total_installments = 0;
+        $total_penalty = 0;
+        $has_overdue = false;
+        $overdue_count = 0;
+
+        foreach ($open as $row) {
+            $due_date = $row->repaydate;
+            // Only installments whose due date has arrived as of payment date
+            if (strtotime($due_date) > strtotime($paydate)) {
+                break;
+            }
+
+            $grace_end = date('Y-m-d', strtotime($due_date . ' +' . $grace_days . ' days'));
+            $is_overdue = (strtotime($paydate) > strtotime($grace_end));
+            $penalty = 0;
+            $penalty_months = 0;
+
+            if ($is_overdue) {
+                $d1 = new DateTime($grace_end);
+                $d2 = new DateTime($paydate);
+                $penalty_months = ($d1->diff($d2)->m + ($d1->diff($d2)->y * 12)) + 1;
+                $penalt_unit = 0;
+                if ($penalt_method == 1) {
+                    $penalt_unit = ($penalt_percentage / 100) * (float) $row->principle;
+                } else if ($penalt_method == 2) {
+                    $penalt_unit = ($penalt_percentage / 100) * ((float) $row->principle + (float) $row->interest);
+                }
+                $penalty = round($penalt_unit * $penalty_months, 2);
+                $has_overdue = true;
+                $overdue_count++;
+            }
+
+            $line_total = round($installment_amount + $penalty, 2);
+            $items[] = (object) array(
+                'installment' => (int) $row->installment_number,
+                'due_date' => $due_date,
+                'grace_end' => $grace_end,
+                'status' => $is_overdue ? 'overdue' : 'due',
+                'installment_amount' => $installment_amount,
+                'principle' => round((float) $row->principle, 2),
+                'interest' => round((float) $row->interest, 2),
+                'penalty' => $penalty,
+                'penalty_months' => $penalty_months,
+                'total' => $line_total,
+            );
+            $total_installments = round($total_installments + $installment_amount, 2);
+            $total_penalty = round($total_penalty + $penalty, 2);
+        }
+
+        $total_due = round($total_installments + $total_penalty, 2);
+        $net_due = round(max(0, $total_due - $carry), 2);
+        $minimum_to_apply = 0;
+        if (!empty($items)) {
+            $minimum_to_apply = round(max(0, (float) $items[0]->total - $carry), 2);
+            // If carry alone covers first installment, still need a positive payment to process
+            // when net of all due is > 0; minimum is first line after carry.
+            if ($minimum_to_apply <= 0 && $net_due > 0) {
+                // Carry covers first installment; next cash needed is remaining net due
+                // but applying still requires paying at least the next uncovered portion.
+                $covered = $carry;
+                foreach ($items as $it) {
+                    if ($covered >= $it->total) {
+                        $covered = round($covered - $it->total, 2);
+                        continue;
+                    }
+                    $minimum_to_apply = round($it->total - $covered, 2);
+                    break;
+                }
+                if ($minimum_to_apply <= 0) {
+                    $minimum_to_apply = $net_due;
+                }
+            } else if ($minimum_to_apply <= 0 && $total_due > 0 && $carry >= $total_due) {
+                // Carry already covers everything due — no new cash required to clear due items
+                $minimum_to_apply = 0;
+            }
+        }
+
+        return (object) array(
+            'items' => $items,
+            'total_installments' => $total_installments,
+            'total_penalty' => $total_penalty,
+            'total_due' => $total_due,
+            'carry_balance' => $carry,
+            'net_due' => $net_due,
+            'minimum_to_apply' => $minimum_to_apply,
+            'suggested_amount' => ($net_due > 0 ? $net_due : $installment_amount),
+            'grace_days' => $grace_days,
+            'penalt_percentage' => $penalt_percentage,
+            'penalt_method' => $penalt_method,
+            'installment_amount' => $installment_amount,
+            'paydate' => $paydate,
+            'has_overdue' => $has_overdue,
+            'overdue_count' => $overdue_count,
+        );
     }
 
     function loan_repay_receipt($LID, $amount, $paydate, $receipt_no = null) {

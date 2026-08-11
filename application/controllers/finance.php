@@ -154,14 +154,33 @@ class Finance extends CI_Controller {
 
     function finance_account_list() {
         $this->data['title'] = lang('finance_account_list');
+
+        // Same hierarchical grouping as finance_account_list_print
+        $account_chart_by_type = $this->finance_model->account_chart_by_accounttype();
+
+        uasort($account_chart_by_type, function($a, $b) {
+            $account_a = isset($a['info']->account) ? (int)$a['info']->account : 0;
+            $account_b = isset($b['info']->account) ? (int)$b['info']->account : 0;
+            return $account_a - $account_b;
+        });
+
+        foreach ($account_chart_by_type as $type_id => $type_data) {
+            if (isset($type_data['data']) && is_array($type_data['data'])) {
+                usort($type_data['data'], function($a, $b) {
+                    return (int)$a->account - (int)$b->account;
+                });
+                $account_chart_by_type[$type_id]['data'] = $type_data['data'];
+            }
+        }
+
+        $this->data['account_chart_by_type'] = $account_chart_by_type;
+
         $account_chart = $this->finance_model->account_chart()->result();
-        
-        // Sort by account field (ASC)
         usort($account_chart, function($a, $b) {
             return (int)$a->account - (int)$b->account;
         });
-        
         $this->data['account_chart'] = $account_chart;
+
         $this->data['content'] = 'finance/account_chart_list';
         $this->load->view('template', $this->data);
     }

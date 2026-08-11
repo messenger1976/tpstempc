@@ -355,14 +355,14 @@
                                 <?php if (empty($map_stats['table_ready'])) { ?>
                                     <div class="alert alert-warning" style="margin-bottom: 0;">
                                         Map cache is not installed yet. Run
-                                        <code>php install_member_address_geocode.php</code>
-                                        (or open <code>install_member_address_geocode.php</code> in the browser) to geocode member addresses.
+                                        <code>php tools/install_member_address_geocode.php</code>
+                                        (or open <code>tools/install_member_address_geocode.php</code> in the browser) to geocode member addresses.
                                     </div>
                                 <?php } elseif (empty($map_locations)) { ?>
                                     <div class="alert alert-info" style="margin-bottom: 0;">
                                         No geocoded member addresses to display yet.
                                         <?php if (!empty($map_stats['with_address'])) { ?>
-                                            <?php echo intval($map_stats['with_address']); ?> member(s) have addresses — re-run <code>install_member_address_geocode.php</code> to plot them.
+                                            <?php echo intval($map_stats['with_address']); ?> member(s) have addresses — re-run <code>tools/install_member_address_geocode.php</code> to plot them.
                                         <?php } else { ?>
                                             Add physical addresses in member contact info to see them here.
                                         <?php } ?>

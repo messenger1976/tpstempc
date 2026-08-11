@@ -87,6 +87,9 @@ $lang['loanproduct_security']='Loan Security';
 $lang['loanproduct_add_fail']='Fail to save loan product information';
 $lang['loanproduct_add_success']='Loan Product Information saved successfully';
 $lang['loanproduct_penalt_percentage'] = 'Penalty Percentage (%)';
+$lang['loanproduct_penalt_grace_days'] = 'Siku za Neema baada ya Tarehe';
+$lang['loanproduct_penalt_grace_days_placeholder'] = 'Weka tupu = chaguo-msingi la mfumo (siku %s)';
+$lang['loanproduct_penalt_grace_days_help'] = 'Si lazima. Siku baada ya tarehe ya kikomo kabla adhabu ya kuchelewa kuanza. Acha tupu kutumia chaguo-msingi la mfumo (siku %s).';
 
 $lang['app_name'] = 'COOP';
 

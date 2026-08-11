@@ -134,7 +134,7 @@
                 <?php if (empty($targets)) { ?>
                     <div style="padding:16px; color:#777; font-size:13px;">
                         <?php if (empty($map_stats['table_ready'])) { ?>
-                            Geocode cache not installed. Run <code>install_member_address_geocode.php</code> first.
+                            Geocode cache not installed. Run <code>tools/install_member_address_geocode.php</code> first.
                         <?php } elseif ($filter_mode === 'overdue') { ?>
                             No overdue members with geocoded addresses found.
                         <?php } else { ?>

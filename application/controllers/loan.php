@@ -868,10 +868,56 @@ $pin = current_user()->PIN;
     }
 
     function loan_disbursement() {
-        $this->data['title'] = lang('loan_disburseme_list');
-        $this->data['loan_wait'] = $this->loan_model->loan_wait_disburse();
+        $this->data['title'] = lang('loan_disbursement');
+        $pid = trim((string) $this->input->get('pid'));
+        $product_id = trim((string) $this->input->get('product_id'));
+        if ($product_id === '') {
+            $product_id = 'all';
+        }
+
+        $this->data['selected_pid'] = $pid;
+        $this->data['selected_product_id'] = $product_id;
+        $this->data['selected_member_text'] = '';
+        if ($pid !== '') {
+            $member = $this->member_model->member_basic_info(null, $pid)->row();
+            if ($member) {
+                $this->data['selected_member_text'] = $member->member_id . ' : '
+                    . trim($member->firstname . ' ' . $member->middlename . ' ' . $member->lastname);
+            }
+        }
+
+        $this->data['loan_products'] = $this->setting_model->loanproduct()->result();
+        $this->data['loan_wait'] = $this->loan_model->loan_wait_disburse(
+            $pid !== '' ? $pid : null,
+            $product_id
+        );
         $this->data['content'] = 'loan/loan_wait_disburse';
         $this->load->view('template', $this->data);
+    }
+
+    /**
+     * Select2 AJAX member search for loan disbursement filters.
+     */
+    function search_member_select2() {
+        $term = trim((string) $this->input->get('q'));
+        $limit = 20;
+        $results = array();
+
+        if ($term !== '') {
+            $members = $this->member_model->search_member($term, 1, 1, $limit, 0);
+            if (!empty($members)) {
+                foreach ($members as $member) {
+                    $fullname = trim($member->firstname . ' ' . $member->middlename . ' ' . $member->lastname);
+                    $results[] = array(
+                        'id' => $member->PID,
+                        'text' => $member->member_id . ' : ' . $fullname
+                    );
+                }
+            }
+        }
+
+        header('Content-Type: application/json');
+        echo json_encode(array('results' => $results));
     }
 
     /**
@@ -1497,8 +1543,117 @@ $pin = current_user()->PIN;
             $this->data['payment_method_gl_accounts'][$pm->id] = $this->loan_model->get_credit_account_for_payment_method($pm->id);
         }
 
+        // Amount due as of today (recalculated in the page when repayment date changes)
+        $paydate_default = date('Y-m-d');
+        $this->data['repayment_due'] = $this->loan_model->calculate_repayment_due($LID, $paydate_default);
+        $this->data['repayment_due_url'] = site_url(current_lang() . '/loan/loan_repayment_due_preview/' . $loanid);
+        $this->data['collection_notice_url'] = site_url(current_lang() . '/loan/loan_collection_notice_print/' . $loanid);
+
         $this->data['content'] = 'loan/loan_repayment_entry';
         $this->load->view('template', $this->data);
+    }
+
+    /**
+     * AJAX: recalculate installment + overdue penalty due for a payment date.
+     * GET/POST repaydate (dd-mm-yyyy or Y-m-d).
+     */
+    function loan_repayment_due_preview($loanid) {
+        $this->output->set_content_type('application/json');
+        $LID = decode_id($loanid);
+        $loaninfo = $this->loan_model->loan_info($LID)->row();
+        if (!$loaninfo) {
+            $this->output->set_output(json_encode(array('success' => false, 'warning' => 'Loan not found.')));
+            return;
+        }
+        $pin = current_user()->PIN;
+        if ((string) $loaninfo->PIN !== (string) $pin) {
+            $this->output->set_output(json_encode(array('success' => false, 'warning' => 'Loan not found.')));
+            return;
+        }
+
+        $repaydate_raw = $this->input->get_post('repaydate');
+        if ($repaydate_raw === null || $repaydate_raw === '') {
+            $paydate = date('Y-m-d');
+        } else {
+            $paydate = format_date(trim($repaydate_raw));
+            if (!$paydate || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $paydate)) {
+                $this->output->set_output(json_encode(array('success' => false, 'warning' => lang('loan_schedule_invalid_date'))));
+                return;
+            }
+        }
+
+        $due = $this->loan_model->calculate_repayment_due($LID, $paydate);
+        $this->output->set_output(json_encode(array(
+            'success' => true,
+            'due' => $due,
+            'labels' => array(
+                'installment' => lang('loan_installment'),
+                'due_date' => lang('due_date'),
+                'installment_amount' => lang('loan_installment_amount'),
+                'penalty' => lang('loan_ledger_penalty'),
+                'total' => lang('total'),
+                'status_due' => lang('loan_repay_status_due'),
+                'status_overdue' => lang('loan_repay_status_overdue'),
+                'carry' => lang('loan_repay_carry_balance'),
+                'net_due' => lang('loan_repay_net_due'),
+                'total_due' => lang('loan_repay_total_due'),
+                'no_due' => lang('loan_repay_nothing_due'),
+                'explanation' => lang('loan_repay_due_explanation'),
+            ),
+        )));
+    }
+
+    /**
+     * Printable collection notice: loan info + how total payable is computed as of repaydate.
+     * GET repaydate optional (dd-mm-yyyy or Y-m-d). Opens in new window for print.
+     */
+    function loan_collection_notice_print($loanid) {
+        $LID = decode_id($loanid);
+        $loaninfo = $this->loan_model->loan_info($LID)->row();
+        if (!$loaninfo) {
+            show_404();
+            return;
+        }
+        $pin = current_user()->PIN;
+        if ((string) $loaninfo->PIN !== (string) $pin) {
+            show_404();
+            return;
+        }
+
+        $repaydate_raw = $this->input->get('repaydate');
+        if ($repaydate_raw === null || $repaydate_raw === '') {
+            $paydate = date('Y-m-d');
+        } else {
+            $paydate = format_date(trim($repaydate_raw));
+            if (!$paydate || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $paydate)) {
+                $paydate = date('Y-m-d');
+            }
+        }
+
+        $product = $this->setting_model->loanproduct($loaninfo->product_type)->row();
+        $interval = $this->setting_model->intervalinfo($loaninfo->interval)->row();
+        $member = $this->member_model->member_basic_info(null, $loaninfo->PID)->row();
+        $due = $this->loan_model->calculate_repayment_due($LID, $paydate);
+
+        $disburse = null;
+        if ($this->db->table_exists('loan_contract_disburse')) {
+            $this->db->where('LID', $LID);
+            $this->db->where('PIN', $pin);
+            $this->db->order_by('disbursedate', 'ASC');
+            $this->db->limit(1);
+            $disburse = $this->db->get('loan_contract_disburse')->row();
+        }
+
+        $this->load->view('loan/print/loan_collection_notice_print', array(
+            'loaninfo' => $loaninfo,
+            'product' => $product,
+            'interval' => $interval,
+            'member' => $member,
+            'disburse' => $disburse,
+            'due' => $due,
+            'paydate' => $paydate,
+            'loanid' => $loanid,
+        ));
     }
 
     /**
@@ -1586,12 +1741,25 @@ $pin = current_user()->PIN;
             return;
         }
 
+        $due_preview = $this->loan_model->calculate_repayment_due($LID, $paydate);
+        if (!empty($due_preview->items) && (float) $due_preview->minimum_to_apply > 0
+            && round((float) $amount, 2) + 0.00001 < (float) $due_preview->minimum_to_apply) {
+            $this->session->set_flashdata(
+                'warning',
+                sprintf(lang('loan_repay_amount_insufficient'), number_format((float) $due_preview->minimum_to_apply, 2))
+            );
+            redirect($redirect_back, 'refresh');
+            return;
+        }
+
         $this->db->trans_start();
         $receipt = $this->loan_model->loan_repay_receipt($LID, $amount, $paydate, $receipt_no);
+        $applied_any = false;
         foreach ($open_repayment as $key => $value) {
             $repay_amount_install = $loaninfo->installment_amount;
             if ($amount_tmp >= $repay_amount_install) {
-                $max_date = date("Y-m-d", strtotime(date("Y-m-d", strtotime($value->repaydate)) . " +" . MAX_NUMBER_DAYS_OVERDUE_PENALT . " days"));
+                $grace_days = $this->loan_model->get_penalt_grace_days($product);
+                $max_date = date("Y-m-d", strtotime(date("Y-m-d", strtotime($value->repaydate)) . " +" . $grace_days . " days"));
                 if ($paydate <= $max_date) {
                     $repay_amount_install_to_pay_all_loan = round($value->repayamount + $value->balance, 2);
                     if ($amount_tmp >= $repay_amount_install_to_pay_all_loan) {
@@ -1604,6 +1772,7 @@ $pin = current_user()->PIN;
                             'balance' => 0, 'iliyobaki' => round($amount_tmp, 2), 'createdby' => current_user()->id, 'PIN' => $pin,
                         );
                         $this->loan_model->record_loan_repayment_all($array_data, $value->id, $value->LID, $cash_account);
+                        $applied_any = true;
                         break;
                     } else {
                         $amount_tmp -= $repay_amount_install;
@@ -1614,6 +1783,7 @@ $pin = current_user()->PIN;
                             'balance' => $value->balance, 'iliyobaki' => round($amount_tmp, 2), 'createdby' => current_user()->id, 'PIN' => $pin,
                         );
                         $this->loan_model->record_loan_repayment($array_data, $value->id, $cash_account);
+                        $applied_any = true;
                     }
                 } else {
                     $d1 = new DateTime($max_date);
@@ -1627,9 +1797,10 @@ $pin = current_user()->PIN;
                     if ($penalt_method == 1) $penalt = (($penalt_percentage / 100) * $principle);
                     else if ($penalt_method == 2) $penalt = (($penalt_percentage / 100) * ($principle + $interest_val));
                     $penalt_avail = round($penalt, 2);
-                    $test_remain = ($repay_amount_install + ($penalt_avail * $number_months));
+                    $penalt_total = round($penalt_avail * $number_months, 2);
+                    $test_remain = round($repay_amount_install + $penalt_total, 2);
                     if ($amount_tmp >= $test_remain) {
-                        $repay_amount_install_to_pay_all_loan = round($value->repayamount + $value->balance + ($penalt_avail * $number_months), 2);
+                        $repay_amount_install_to_pay_all_loan = round($value->repayamount + $value->balance + $penalt_total, 2);
                         if ($amount_tmp >= $repay_amount_install_to_pay_all_loan) {
                             $new_principle = round($value->repayamount + $value->balance - $value->interest, 2);
                             $amount_tmp -= $repay_amount_install_to_pay_all_loan;
@@ -1637,33 +1808,45 @@ $pin = current_user()->PIN;
                                 'LID' => $LID, 'receipt' => $receipt, 'installment' => $value->installment_number,
                                 'amount' => $repay_amount_install_to_pay_all_loan, 'paydate' => $paydate,
                                 'interest' => $value->interest, 'principle' => $new_principle, 'balance' => 0, 'duedate' => $value->repaydate,
-                                'iliyobaki' => round($amount_tmp, 2), 'penalt' => ($penalt_avail * $number_months), 'penalty_months' => $number_months,
+                                'iliyobaki' => round($amount_tmp, 2), 'penalt' => $penalt_total, 'penalty_months' => $number_months,
                                 'createdby' => current_user()->id, 'PIN' => $pin,
                             );
                             $this->loan_model->record_loan_repayment_all($array_data, $value->id, $value->LID, $cash_account);
+                            $applied_any = true;
                             break;
                         } else {
-                            $amount_tmp -= $repay_amount_install;
+                            $amount_tmp -= $test_remain;
                             $array_data = array(
                                 'LID' => $LID, 'receipt' => $receipt, 'installment' => $value->installment_number,
                                 'amount' => $repay_amount_install, 'paydate' => $paydate,
                                 'interest' => $value->interest, 'principle' => $value->principle, 'balance' => $value->balance, 'duedate' => $value->repaydate,
-                                'iliyobaki' => round($amount_tmp, 2), 'penalt' => ($penalt_avail * $number_months), 'penalty_months' => $number_months,
+                                'iliyobaki' => round($amount_tmp, 2), 'penalt' => $penalt_total, 'penalty_months' => $number_months,
                                 'createdby' => current_user()->id, 'PIN' => $pin,
                             );
                             $this->loan_model->record_loan_repayment($array_data, $value->id, $cash_account);
+                            $applied_any = true;
                         }
                     } else {
-                        $this->loan_model->add_remain_balance($LID, round($amount_tmp, 2));
                         break;
                     }
                 }
             } else {
-                if ($amount_tmp > 0) {
-                    $this->loan_model->add_remain_balance($LID, round($amount_tmp, 2));
-                }
                 break;
             }
+        }
+        if ($amount_tmp > 0) {
+            $this->loan_model->add_remain_balance($LID, round($amount_tmp, 2));
+        } else {
+            $this->loan_model->add_remain_balance($LID, 0);
+        }
+        if (!$applied_any) {
+            $this->db->trans_rollback();
+            $this->session->set_flashdata(
+                'warning',
+                sprintf(lang('loan_repay_amount_insufficient'), number_format((float) $due_preview->minimum_to_apply, 2))
+            );
+            redirect($redirect_back, 'refresh');
+            return;
         }
         $open_repayment_check = $this->loan_model->open_repayment_installment($LID);
         if (count($open_repayment_check) < 1) {
@@ -1685,7 +1868,10 @@ $pin = current_user()->PIN;
         }
         $this->load->model('cash_receipt_model');
         $data['loan_LID'] = $loaninfo->LID;
+        $data['loanid'] = $loanid;
         $data['next_receipt_no'] = $this->cash_receipt_model->get_next_shared_receipt_no();
+        $data['repayment_due'] = $this->loan_model->calculate_repayment_due($loaninfo->LID, date('Y-m-d'));
+        $data['repayment_due_url'] = site_url(current_lang() . '/loan/loan_repayment_due_preview/' . $loanid);
         $this->load->view('loan/loan_repayment_form_popup', $data);
     }
 
@@ -1755,12 +1941,24 @@ $pin = current_user()->PIN;
             return;
         }
 
+        $due_preview = $this->loan_model->calculate_repayment_due($LID, $paydate);
+        if (!empty($due_preview->items) && (float) $due_preview->minimum_to_apply > 0
+            && round((float) $amount, 2) + 0.00001 < (float) $due_preview->minimum_to_apply) {
+            $this->output->set_output(json_encode(array(
+                'success' => false,
+                'warning' => sprintf(lang('loan_repay_amount_insufficient'), number_format((float) $due_preview->minimum_to_apply, 2)),
+            )));
+            return;
+        }
+
         $this->db->trans_start();
         $receipt = $this->loan_model->loan_repay_receipt($LID, $amount, $paydate, $receipt_no);
+        $applied_any = false;
         foreach ($open_repayment as $key => $value) {
             $repay_amount_install = $loaninfo->installment_amount;
             if ($amount_tmp >= $repay_amount_install) {
-                $max_date = date("Y-m-d", strtotime(date("Y-m-d", strtotime($value->repaydate)) . " +" . MAX_NUMBER_DAYS_OVERDUE_PENALT . " days"));
+                $grace_days = $this->loan_model->get_penalt_grace_days($product);
+                $max_date = date("Y-m-d", strtotime(date("Y-m-d", strtotime($value->repaydate)) . " +" . $grace_days . " days"));
                 if ($paydate <= $max_date) {
                     $repay_amount_install_to_pay_all_loan = round($value->repayamount + $value->balance, 2);
                     if ($amount_tmp >= $repay_amount_install_to_pay_all_loan) {
@@ -1773,6 +1971,7 @@ $pin = current_user()->PIN;
                             'balance' => 0, 'iliyobaki' => round($amount_tmp, 2), 'createdby' => current_user()->id, 'PIN' => $pin,
                         );
                         $this->loan_model->record_loan_repayment_all($array_data, $value->id, $value->LID);
+                        $applied_any = true;
                         break;
                     } else {
                         $amount_tmp -= $repay_amount_install;
@@ -1783,6 +1982,7 @@ $pin = current_user()->PIN;
                             'balance' => $value->balance, 'iliyobaki' => round($amount_tmp, 2), 'createdby' => current_user()->id, 'PIN' => $pin,
                         );
                         $this->loan_model->record_loan_repayment($array_data, $value->id);
+                        $applied_any = true;
                     }
                 } else {
                     $d1 = new DateTime($max_date);
@@ -1796,9 +1996,10 @@ $pin = current_user()->PIN;
                     if ($penalt_method == 1) $penalt = (($penalt_percentage / 100) * $principle);
                     else if ($penalt_method == 2) $penalt = (($penalt_percentage / 100) * ($principle + $interest_val));
                     $penalt_avail = round($penalt, 2);
-                    $test_remain = ($repay_amount_install + ($penalt_avail * $number_months));
+                    $penalt_total = round($penalt_avail * $number_months, 2);
+                    $test_remain = round($repay_amount_install + $penalt_total, 2);
                     if ($amount_tmp >= $test_remain) {
-                        $repay_amount_install_to_pay_all_loan = round($value->repayamount + $value->balance + ($penalt_avail * $number_months), 2);
+                        $repay_amount_install_to_pay_all_loan = round($value->repayamount + $value->balance + $penalt_total, 2);
                         if ($amount_tmp >= $repay_amount_install_to_pay_all_loan) {
                             $new_principle = round($value->repayamount + $value->balance - $value->interest, 2);
                             $amount_tmp -= $repay_amount_install_to_pay_all_loan;
@@ -1806,33 +2007,44 @@ $pin = current_user()->PIN;
                                 'LID' => $LID, 'receipt' => $receipt, 'installment' => $value->installment_number,
                                 'amount' => $repay_amount_install_to_pay_all_loan, 'paydate' => $paydate,
                                 'interest' => $value->interest, 'principle' => $new_principle, 'balance' => 0, 'duedate' => $value->repaydate,
-                                'iliyobaki' => round($amount_tmp, 2), 'penalt' => ($penalt_avail * $number_months), 'penalty_months' => $number_months,
+                                'iliyobaki' => round($amount_tmp, 2), 'penalt' => $penalt_total, 'penalty_months' => $number_months,
                                 'createdby' => current_user()->id, 'PIN' => $pin,
                             );
                             $this->loan_model->record_loan_repayment_all($array_data, $value->id, $value->LID);
+                            $applied_any = true;
                             break;
                         } else {
-                            $amount_tmp -= $repay_amount_install;
+                            $amount_tmp -= $test_remain;
                             $array_data = array(
                                 'LID' => $LID, 'receipt' => $receipt, 'installment' => $value->installment_number,
                                 'amount' => $repay_amount_install, 'paydate' => $paydate,
                                 'interest' => $value->interest, 'principle' => $value->principle, 'balance' => $value->balance, 'duedate' => $value->repaydate,
-                                'iliyobaki' => round($amount_tmp, 2), 'penalt' => ($penalt_avail * $number_months), 'penalty_months' => $number_months,
+                                'iliyobaki' => round($amount_tmp, 2), 'penalt' => $penalt_total, 'penalty_months' => $number_months,
                                 'createdby' => current_user()->id, 'PIN' => $pin,
                             );
                             $this->loan_model->record_loan_repayment($array_data, $value->id);
+                            $applied_any = true;
                         }
                     } else {
-                        $this->loan_model->add_remain_balance($LID, round($amount_tmp, 2));
                         break;
                     }
                 }
             } else {
-                if ($amount_tmp > 0) {
-                    $this->loan_model->add_remain_balance($LID, round($amount_tmp, 2));
-                }
                 break;
             }
+        }
+        if ($amount_tmp > 0) {
+            $this->loan_model->add_remain_balance($LID, round($amount_tmp, 2));
+        } else {
+            $this->loan_model->add_remain_balance($LID, 0);
+        }
+        if (!$applied_any) {
+            $this->db->trans_rollback();
+            $this->output->set_output(json_encode(array(
+                'success' => false,
+                'warning' => sprintf(lang('loan_repay_amount_insufficient'), number_format((float) $due_preview->minimum_to_apply, 2)),
+            )));
+            return;
         }
         $open_repayment_check = $this->loan_model->open_repayment_installment($LID);
         if (count($open_repayment_check) < 1) {
@@ -1957,16 +2169,15 @@ $pin = current_user()->PIN;
     }
 
     /**
-     * Print loan disbursement voucher (for cashier release).
-     * Shows latest disbursement header + accounting entries.
+     * Load loan disbursement voucher data (latest header + accounting lines).
+     * @return array|null
      */
-    function loan_disbursement_print($loanid) {
+    private function _loan_disbursement_print_data($loanid) {
         $pin = current_user()->PIN;
         $LID = decode_id($loanid);
         $loaninfo = $this->loan_model->loan_info($LID)->row();
         if (!$loaninfo || (string) $loaninfo->PIN !== (string) $pin) {
-            show_404();
-            return;
+            return null;
         }
 
         // Latest disbursement header for this loan
@@ -1976,7 +2187,7 @@ $pin = current_user()->PIN;
         $this->db->limit(1);
         $disburse = $this->db->get('loan_contract_disburse')->row();
         if (!$disburse) {
-            return show_error('Loan disbursement not found.', 404);
+            return false;
         }
 
         // Prefer saved editable lines, otherwise fall back to GL lines
@@ -2025,14 +2236,48 @@ $pin = current_user()->PIN;
             }
         }
 
-        $data = array(
+        return array(
             'loanid' => $loanid,
             'loaninfo' => $loaninfo,
             'disburse' => $disburse,
             'line_items' => $line_items,
             'ledger_entry_id' => $ledger_entry_id,
         );
+    }
+
+    /**
+     * Print loan disbursement voucher (HTML, for cashier release).
+     * Shows latest disbursement header + accounting entries.
+     */
+    function loan_disbursement_print($loanid) {
+        $data = $this->_loan_disbursement_print_data($loanid);
+        if ($data === null) {
+            show_404();
+            return;
+        }
+        if ($data === false) {
+            return show_error('Loan disbursement not found.', 404);
+        }
         $this->load->view('loan/print/loan_disbursement_print', $data);
+    }
+
+    /**
+     * Stream loan disbursement voucher as PDF (for modal / PDF.js viewer).
+     */
+    function print_loan_disbursement($loanid) {
+        $data = $this->_loan_disbursement_print_data($loanid);
+        if ($data === null) {
+            show_404();
+            return;
+        }
+        if ($data === false) {
+            return show_error('Loan disbursement not found.', 404);
+        }
+        $loaninfo = $data['loaninfo'];
+        $disburse = $data['disburse'];
+        $line_items = $data['line_items'];
+        $ledger_entry_id = $data['ledger_entry_id'];
+        include 'pdf/loan_disbursement.php';
     }
 
     function print_repayment_schedule($loanid) {

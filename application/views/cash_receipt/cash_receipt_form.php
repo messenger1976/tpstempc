@@ -1,10 +1,14 @@
 <link href="<?php echo base_url(); ?>assets/css/plugins/datapicker/datepicker3.css?v=20260801" rel="stylesheet">
 <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-datepicker/1.9.0/css/bootstrap-datepicker.min.css" rel="stylesheet" crossorigin="anonymous" referrerpolicy="no-referrer">
+<link href="<?php echo base_url(); ?>assets/css/plugins/select2/select2.min.css" rel="stylesheet">
 <style>
 .datepicker-dropdown,.datepicker{z-index:9999!important;width:auto;min-width:0;}
 .datepicker-dropdown.dropdown-menu{background:#fff;border:1px solid #e7eaec;box-shadow:0 2px 8px rgba(0,0,0,0.12);padding:8px;width:auto;min-width:220px;max-width:280px;}
 .datepicker table{width:auto;margin:0;table-layout:fixed;}
 .datepicker td,.datepicker th{text-align:center;width:auto;}
+.select2-container--default .select2-results__option[aria-disabled=true]{color:#222;cursor:default;}
+.select2-container--default .select2-results__option .coa-bold{font-weight:bold;color:#111;}
+.select2-container{width:100%!important;}
 </style>
 
 <?php echo form_open_multipart(current_lang() . "/cash_receipt/cash_receipt_create/", 'class="form-horizontal" id="cashReceiptForm"'); ?>
@@ -179,13 +183,7 @@ if (isset($message) && !empty($message)) {
                                     <td>
                                         <select class="form-control account-select" name="account[]">
                                             <option value=""><?php echo lang('select_default_text'); ?></option>
-                                            <?php foreach ($account_list as $key1 => $value1) { ?>
-                                                <optgroup label="<?php echo htmlspecialchars($value1['info']->account . ' - ' . $value1['info']->name); ?>">
-                                                    <?php foreach ($value1['data'] as $key => $value) { ?>
-                                                        <option value="<?php echo $value->account; ?>"><?php echo htmlspecialchars($value->account . ' - ' . $value->name); ?></option>
-                                                    <?php } ?>
-                                                </optgroup>
-                                            <?php } ?>
+                                            <?php $this->load->view('finance/partials/coa_select_options', array('account_list' => $account_list, 'selected_account' => '')); ?>
                                         </select>
                                     </td>
                                     <td>
@@ -280,6 +278,7 @@ if (isset($message) && !empty($message)) {
     </div>
 </div>
 
+<script src="<?php echo base_url(); ?>assets/js/plugins/select2/select2.full.min.js"></script>
 <script>
 (function(){
     function loadScript(src, cb, fallback){
@@ -292,6 +291,58 @@ if (isset($message) && !empty($message)) {
         if(!window.jQuery){ setTimeout(initOnceReady, 50); return; }
         var $ = window.jQuery;
         function boot(){
+            function formatCoaOption(data) {
+                if (!data.element) {
+                    return data.text;
+                }
+                var $opt = $(data.element);
+                var isParent = $opt.data('is-parent') == 1 || $opt.hasClass('coa-parent-account');
+                var isHeader = $opt.data('coa-header') == 1;
+                if (isParent || isHeader) {
+                    return $('<span class="coa-bold"></span>').text(data.text);
+                }
+                return data.text;
+            }
+
+            function initAccountSelect($el) {
+                if (!$el || !$el.length || !$.fn.select2) {
+                    return;
+                }
+                if ($el.hasClass('select2-hidden-accessible')) {
+                    $el.select2('destroy');
+                }
+                $el.select2({
+                    width: '100%',
+                    templateResult: formatCoaOption,
+                    templateSelection: function(data) { return data.text; }
+                });
+            }
+
+            function destroyAccountSelect($el) {
+                if ($el && $el.length && $el.hasClass('select2-hidden-accessible')) {
+                    $el.select2('destroy');
+                }
+            }
+
+            function cloneLineItem(prefillAccount, prefillDescription) {
+                var $first = $('.line-item:first');
+                destroyAccountSelect($first.find('.account-select'));
+                var newRow = $first.clone();
+                newRow.find('.select2-container').remove();
+                newRow.find('input').val('');
+                newRow.find('select').val('');
+                if (prefillAccount) {
+                    newRow.find('.account-select').val(prefillAccount);
+                }
+                if (prefillDescription) {
+                    newRow.find('input[name="line_description[]"]').val(prefillDescription);
+                }
+                $('#lineItemsTable tbody').append(newRow);
+                initAccountSelect($first.find('.account-select'));
+                initAccountSelect(newRow.find('.account-select'));
+                return newRow;
+            }
+
             // Initialize date picker (ensure plugin loaded)
             function ensureBootstrapDP(cb){
                 function wrapBootstrapDP(){
@@ -331,6 +382,7 @@ if (isset($message) && !empty($message)) {
             ensureBootstrapDP(initPicker);
 
             updateRemoveButtons();
+            $('.account-select').each(function(){ initAccountSelect($(this)); });
 
             // Show/hide cheque details based on payment method
             $('#payment_method').on('change', function(){
@@ -343,9 +395,7 @@ if (isset($message) && !empty($message)) {
 
             // Add line item
             $('#addLineItem').on('click', function(){
-                var newRow = $('.line-item:first').clone();
-                newRow.find('input, select').val('');
-                $('#lineItemsTable tbody').append(newRow);
+                cloneLineItem();
                 updateRemoveButtons();
                 calculateTotals();
             });
@@ -353,7 +403,9 @@ if (isset($message) && !empty($message)) {
             // Remove line item (all rows deletable; keep at least one)
             $(document).on('click', '.remove-line', function(){
                 if ($('.line-item').length > 1) {
-                    $(this).closest('tr').remove();
+                    var $row = $(this).closest('tr');
+                    destroyAccountSelect($row.find('.account-select'));
+                    $row.remove();
                     updateRemoveButtons();
                     calculateTotals();
                 }
@@ -521,18 +573,7 @@ if (isset($message) && !empty($message)) {
                             
                             if(!arExists){
                                 // Add new line item with AR account
-                                var newRow = $('.line-item:first').clone();
-                                newRow.find('input, select').val('');
-                                
-                                // Set AR account
-                                newRow.find('.account-select').val(response.account);
-                                
-                                // Set description with member name
-                                var description = 'AR - ' + memberName;
-                                newRow.find('input[name="line_description[]"]').val(description);
-                                
-                                // Add to table
-                                $('#lineItemsTable tbody').append(newRow);
+                                cloneLineItem(response.account, 'AR - ' + memberName);
                                 updateRemoveButtons();
                                 calculateTotals();
                                 

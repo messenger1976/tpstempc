@@ -278,8 +278,24 @@ $this->db->where('PIN',  current_user()->PIN);
         return $this->db->get(' loan_penalt_method');
     }
 
+    /**
+     * Ensure optional loan_product.penalt_grace_days exists (NULL = use system default).
+     */
+    function ensure_loan_product_penalt_grace_days_column() {
+        if (!$this->db->table_exists('loan_product')) {
+            return false;
+        }
+        if ($this->db->query("SHOW COLUMNS FROM loan_product LIKE 'penalt_grace_days'")->row()) {
+            return true;
+        }
+        return (bool) $this->db->query(
+            "ALTER TABLE loan_product ADD COLUMN penalt_grace_days INT NULL DEFAULT NULL COMMENT 'Optional overdue grace days after due date; NULL = system default'"
+        );
+    }
+
     
     function addloan_product($data, $id = null) {
+        $this->ensure_loan_product_penalt_grace_days_column();
         if (!is_null($id)) {
             return $this->db->update('loan_product', $data, array('id' => $id));
         } else {
@@ -289,6 +305,7 @@ $this->db->where('PIN',  current_user()->PIN);
     
     
     function loanproduct($id=null){
+        $this->ensure_loan_product_penalt_grace_days_column();
          $this->db->where('PIN',  current_user()->PIN);
         if(!is_null($id)){
             $this->db->where('id',$id);

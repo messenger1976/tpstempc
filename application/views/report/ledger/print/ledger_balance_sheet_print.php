@@ -1,179 +1,154 @@
+<?php
+if (!function_exists('bs_format_amount')) {
+    function bs_format_amount($amount, $is_less = false) {
+        if ($amount === null) {
+            return '';
+        }
+        $v = floatval($amount);
+        if (abs($v) < 0.005) {
+            return '-';
+        }
+        if ($is_less && $v > 0) {
+            $v = -$v;
+        }
+        if ($v < 0) {
+            return '(' . number_format(abs($v), 2) . ')';
+        }
+        return number_format($v, 2);
+    }
+}
 
-<div class="row">
-    <div class="col-lg-12">
-        <div style=" padding: 0px; margin: auto;">
-            <div style="text-align: center;">
-                <h3 style="margin: 0px; padding: 0px;"><strong>Balance Sheet</strong></h3>
-                <h4 style="margin: 0px; padding: 0px;"><strong><?php echo date('F d, Y', strtotime($reportinfo->fromdate)); ?></strong></h4>
-            </div>
-            
-             <style type="text/css">
-                    table.table tbody tr td{
-                        border: 0px;
-                        font-size: 13px;
-                    }
-                    table tr td{
-                        padding-top: 5px;
-                         font-size: 13px;
-                    }
-                </style>
-                 
-                 <br/>
-                <table style="width: 100%; table-layout: fixed;" >
-                    <tr>
-                        <td style="width: 50%; padding-right: 20px; vertical-align: top;">
-                            ASSETS<hr/>
-                             <table  style=" margin-left: 20px;">
-                                 <?php
-                                $assets = $this->report_model->get_balance_sheet_data($reportinfo->fromdate, 10000);
-                                $total_asset = 0;
-                                foreach ($assets as $key => $value) {
-                                    $diff = $value->debit - $value->credit;
-                                    $diff_sset = 0;
-                                    if ($diff < 0) {
-                                        $diff_sset = '(' . number_format((0 - $diff), 2) . ')';
-                                        $total_asset -= (0 - $diff);
-                                    } else {
-                                        $diff_sset = number_format($diff, 2);
-                                        $total_asset += $diff;
-                                    }
-                                    ?>
-                                    <tr>
-                                        <td style="width: 230px;"><?php echo $value->name; ?></td>
-                                        <td style=" width: 120px; text-align: right;"><?php echo $diff_sset; ?></td>
-                                    </tr>
-                                <?php }
-                                  $total_asset_label=0;
-                                if($total_asset < 0){
-                                   $total_asset_label =  '(' . number_format((0 - $total_asset), 2) . ')';
-                                }else{
-                                   $total_asset_label = number_format($total_asset,2); 
-                                }
-                                ?>
-                                <tr>
-                                    <td style="width: 230px; padding-left: 20px;"><?php echo 'Total Assets'; ?></td>
-                                    <td style="width: 120px; text-align: right; border-top:  1px solid #000; border-bottom: 1px solid #000;"><?php echo $total_asset_label; ?></td>
-                                </tr>
+$company = company_info();
+$as_of = !empty($reportinfo->fromdate) ? strtoupper(date('F d, Y', strtotime($reportinfo->fromdate))) : '';
+$bs_rows = isset($bs_data['rows']) ? $bs_data['rows'] : array();
+$indent_px = array(0 => 0, 1 => 14, 2 => 28, 3 => 42, 4 => 56);
 
-                                
-                             </table>
-                            
-                        </td>
-                        <td style="width: 50%; padding-left:  20px; vertical-align: top;">
-                            LIABILITIES<hr/>
-                          <table style=" margin-left: 20px;">
-                                <?php
-                                $liabilities = $this->report_model->get_balance_sheet_data($reportinfo->fromdate, 20000);
-                                $total_liabilities = 0;
+// mPDF prefers a local filesystem path for images (HTTP URLs often render as broken)
+// Also set explicit width+height — mPDF ignores width:auto and can squash logos in narrow cells
+$logo_src = '';
+$logo_w = 55;
+$logo_h = 55;
+if (!empty($company->logo)) {
+    $logo_file = FCPATH . 'logo' . DIRECTORY_SEPARATOR . $company->logo;
+    if (is_file($logo_file)) {
+        $logo_src = str_replace('\\', '/', $logo_file);
+        $size = @getimagesize($logo_file);
+        if ($size && !empty($size[0]) && !empty($size[1])) {
+            $max = 55;
+            if ($size[0] >= $size[1]) {
+                $logo_w = $max;
+                $logo_h = max(1, (int) round($max * ($size[1] / $size[0])));
+            } else {
+                $logo_h = $max;
+                $logo_w = max(1, (int) round($max * ($size[0] / $size[1])));
+            }
+        }
+    } else {
+        $logo_src = base_url() . 'logo/' . $company->logo;
+    }
+}
+?>
+<div style="padding: 0; margin: 0;">
+    <table style="width:100%; margin:0 0 6px 0; border-collapse:collapse;">
+        <tr>
+            <td style="width:<?php echo ($logo_w + 10); ?>px; vertical-align:middle; padding:0; text-align:left;">
+                <?php if ($logo_src !== '') { ?>
+                    <img src="<?php echo $logo_src; ?>" width="<?php echo (int) $logo_w; ?>" height="<?php echo (int) $logo_h; ?>" alt="logo"/>
+                <?php } ?>
+            </td>
+            <td style="text-align:center; vertical-align:middle; padding:0 6px;">
+                <div style="font-weight:bold; font-size:13px; text-transform:uppercase; line-height:1.25;">
+                    <?php echo htmlspecialchars($company->name); ?>
+                </div>
+                <div style="font-size:11px; line-height:1.2;">
+                    <?php echo htmlspecialchars($company->address ? $company->address : $company->box); ?>
+                </div>
+                <div style="font-weight:bold; font-size:14px; margin-top:4px; line-height:1.2;">BALANCE SHEET</div>
+                <div style="font-size:10px; font-style:italic; line-height:1.2;">Statement of Financial Condition</div>
+                <div style="font-size:11px; line-height:1.2;">As of <?php echo $as_of; ?></div>
+            </td>
+            <td style="width:80px; text-align:right; vertical-align:bottom; font-weight:bold; font-size:11px; padding:0;">
+                LENDING
+            </td>
+        </tr>
+    </table>
 
-                                foreach ($liabilities as $key => $value) {
-                                    $diff = $value->credit - $value->debit;
-                                    $diff_sset = 0;
-                                    if ($diff < 0) {
-                                        $diff_sset = '(' . number_format((0 - $diff), 2) . ')';
-                                        $total_liabilities -= (0 - $diff);
-                                    } else {
-                                        $diff_sset = number_format($diff, 2);
-                                        $total_liabilities += $diff;
-                                    }
-                                    ?>
-                                    <tr>
-                                        <td style="width: 230px;"><?php echo $value->name; ?></td>
-                                        <td style=" width: 120px;text-align: right;"><?php echo $diff_sset; ?></td>
-                                    </tr>
-                                <?php }
-                                
-                                $total_liabilit_label=0;
-                                if($total_liabilities < 0){
-                                   $total_liabilit_label =  '(' . number_format((0 - $total_liabilities), 2) . ')';
-                                }else{
-                                   $total_liabilit_label = number_format($total_liabilities,2); 
-                                }
-                                ?>
-                                <tr>
-                                    <td style="width: 230px; padding-left: 20px;"><?php echo 'Total Liabilities'; ?></td>
-                                    <td style="width: 120px;text-align: right; border-top:  1px solid #000; border-bottom: 1px solid #000;"><?php echo $total_liabilit_label; ?></td>
-                                </tr>
-                            </table>
-                            
-                            <br/>
-                            <br/>
+    <table style="width:100%; border-collapse:collapse; font-size:11px;">
+        <tbody>
+        <?php foreach ($bs_rows as $row) {
+            $type = $row['type'];
+            if ($type === 'spacer') {
+                echo '<tr><td colspan="2" style="height:10px;"></td></tr>';
+                continue;
+            }
+            $indent = isset($indent_px[$row['indent']]) ? $indent_px[$row['indent']] : ($row['indent'] * 14);
+            $has_amount = array_key_exists('amount', $row) && $row['amount'] !== null;
+            $show = !empty($row['always_show']) || $type === 'section' || $type === 'group' || $type === 'subtotal' || $type === 'total'
+                || ($has_amount && abs(floatval($row['amount'])) >= 0.005);
+            if (!$show) {
+                continue;
+            }
+            $label_style = 'padding:1px 2px 1px ' . $indent . 'px;';
+            if (!empty($row['bold'])) {
+                $label_style .= 'font-weight:bold;';
+            }
+            if (!empty($row['italic'])) {
+                $label_style .= 'font-style:italic;';
+            }
+            if ($type === 'section') {
+                $label_style .= 'text-transform:uppercase; padding-top:6px;';
+            }
+            $amt_style = 'text-align:right; white-space:nowrap; padding:1px 2px; width:120px;';
+            if (!empty($row['bold'])) {
+                $amt_style .= 'font-weight:bold;';
+            }
+            if (!empty($row['italic'])) {
+                $amt_style .= 'font-style:italic;';
+            }
+            if (!empty($row['line'])) {
+                $amt_style .= 'border-top:1px solid #000;';
+            }
+            $amount_html = '';
+            if ($has_amount) {
+                $formatted = bs_format_amount($row['amount'], !empty($row['is_less']));
+                if (!empty($row['peso']) && $formatted !== '-') {
+                    $amount_html = 'P ' . $formatted;
+                } else {
+                    $amount_html = $formatted;
+                }
+                if (!empty($row['line']) && $row['line'] === 'double') {
+                    $amount_html = '<div style="border-bottom:3px double #000;">' . $amount_html . '</div>';
+                }
+            }
+            ?>
+            <tr>
+                <td style="<?php echo $label_style; ?>"><?php echo htmlspecialchars($row['label']); ?></td>
+                <td style="<?php echo $amt_style; ?>"><?php echo $amount_html; ?></td>
+            </tr>
+        <?php } ?>
+        </tbody>
+    </table>
 
-                            STOCKHOLDERS' EQUITY<hr/>
-                           <table style="margin-left: 20px;">
-                                <?php
-                                $equaty = $this->report_model->get_balance_sheet_data($reportinfo->fromdate, 30000);
-                                $total_equaty = 0;
-
-                                foreach ($equaty as $key => $value) {
-                                    $diff = $value->credit - $value->debit;
-                                    $diff_sset = 0;
-                                    if ($diff < 0) {
-                                        $diff_sset = '(' . number_format((0 - $diff), 2) . ')';
-                                        $total_equaty -= (0 - $diff);
-                                    } else {
-                                        $diff_sset = number_format($diff, 2);
-                                        $total_equaty += $diff;
-                                    }
-                                    ?>
-                                    <tr>
-                                        <td style="width: 230px;"><?php echo $value->name; ?></td>
-                                        <td style="width: 120px; text-align: right;"><?php echo $diff_sset; ?></td>
-                                    </tr>
-                                <?php }
-                                
-                                  $total_equity_label=0;
-                                if($total_equaty < 0){
-                                   $total_equity_label =  '(' . number_format((0 - $total_equaty), 2) . ')';
-                                }else{
-                                   $total_equity_label = number_format($total_equaty,2); 
-                                }
-                                ?>
-                                <tr>
-                                    <td style="width: 230px; padding-left: 20px;"><?php echo 'Total stockholders\' equity'; ?></td>
-                                    <td style="text-align: right; width: 120px; border-top:  1px solid #000; border-bottom: 1px solid #000;"><?php echo $total_equity_label; ?></td>
-                                </tr>
-                            </table>
-                           
-                            
-                        </td>
-                    </tr>
-                    
-                      <tr>
-                        <td>
-                            <br/>
-                            <table style=" margin-left: 20px; padding-top: 10px; border-bottom: 1px solid  #000;">
-                             <tr>
-                                    <td style="width: 230px; padding-left: 20px;"><?php echo 'Total Assets'; ?></td>
-                                    <td style="text-align: right; width: 120px;  border-bottom: 1px solid #000;"><?php echo $total_asset_label; ?></td>
-                                </tr>
-                            </table>
-                        </td>
-                        <td>
-                            <br/>
-                             <table style=" margin-left: 20px; padding-top: 10px; border-bottom: 1px solid  #000;">
-                                 <?php
-                                 $tmp = $total_liabilities + $total_equaty;
-                                 $tmp_label = 0;
-                                 if($tmp < 0){
-                                     $tmp_label =  '(' . number_format((0 - $tmp), 2) . ')';
-                                 }else{
-                                    $tmp_label = number_format($tmp,2); 
-                                 }
-                                 ?>
-                             <tr>
-                                    <td style="width: 240px; padding-left: 20px;"><?php echo 'Total Liabilities & stockholders\'s equity'; ?></td>
-                                    <td style="text-align: right;  width: 120px; border-bottom: 1px solid #000;"> <?php echo $tmp_label; ?></td>
-                                </tr>
-                            </table>
-                            
-                        </td>
-                    </tr> 
-                   
-                    
-                </table>
-
-
-        </div>
-    </div>
+    <table style="width:100%; margin-top:36px; font-size:11px;">
+        <tr>
+            <td style="width:33%; vertical-align:top; text-align:center;">
+                Certified Correct:<br/>
+                <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;"><tr><td height="95" style="height:95px; font-size:1px; line-height:95px;">&nbsp;</td></tr></table>
+                <span style="font-weight:bold; text-decoration:underline;">ANTONINA P. PATUNGAN</span><br/>
+                Bookkeeper
+            </td>
+            <td style="width:33%; vertical-align:top; text-align:center;">
+                Checked by:<br/>
+                <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;"><tr><td height="95" style="height:95px; font-size:1px; line-height:95px;">&nbsp;</td></tr></table>
+                <span style="font-weight:bold; text-decoration:underline;">ANA MARIE F. VALMORIA</span><br/>
+                AICOM
+            </td>
+            <td style="width:33%; vertical-align:top; text-align:center;">
+                Noted by:<br/>
+                <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;"><tr><td height="95" style="height:95px; font-size:1px; line-height:95px;">&nbsp;</td></tr></table>
+                <span style="font-weight:bold; text-decoration:underline;">REMEDIOS T. AUXTERO</span><br/>
+                Manager
+            </td>
+        </tr>
+    </table>
 </div>

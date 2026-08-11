@@ -42,6 +42,8 @@
                     <a href="<?php echo site_url(current_lang().'/report/general_leger_transaction/3'); ?>">Trial Balance</a>
                     <a href="<?php echo site_url(current_lang().'/report/general_leger_transaction/2'); ?>">General Ledger Summary</a>
                     <a href="<?php echo site_url(current_lang().'/report/general_leger_transaction/1'); ?>">General Ledger Transactions</a>
+                    <a href="<?php echo site_url(current_lang().'/report/general_leger_transaction/7'); ?>">Consolidated Statement Of Financial Condition</a>
+                    <a href="<?php echo site_url(current_lang().'/report/general_leger_transaction/8'); ?>">Comparative Statement of Financial Operations - Lending</a>
                     <?php if (function_exists('has_role') && has_role(6, 'View_AR')) { ?>
                     <a href="<?php echo site_url(current_lang().'/ar/ar_balances'); ?>">AR Balances</a>
                     <a href="<?php echo site_url(current_lang().'/ar/ar_ledger'); ?>">AR Ledger</a>
@@ -147,7 +149,7 @@
                 <?php $journal = $this->db->get('journal')->result(); ?>
                 <div class="inside_content">
                     <?php foreach ($journal as $key => $value) { ?>
-                        <a href="<?php echo site_url(current_lang().'/report/journal_entry/'.$value->id); ?>"><?php echo $value->type; ?></a>
+                        <a href="<?php echo site_url(current_lang().'/report/journal_entry/'.$value->id); ?>"><?php echo htmlspecialchars(function_exists('journal_display_type') ? journal_display_type($value->type) : $value->type); ?></a>
                   <?php  } ?>
                 </div>
             </div>

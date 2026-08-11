@@ -429,7 +429,7 @@ class Report_Member extends CI_Controller {
                 </div>';
         $pdf->SetHTMLHeader($header, 'E', true);
         $pdf->SetHTMLHeader($header, 'O', true);
-        $pdf->SetFooter('SACCO PLUS' . '|{PAGENO}|' . date('d-m-Y H:i:s'));
+        $pdf->SetFooter('|{PAGENO}|' . date('d-m-Y H:i:s'));
         $pdf->WriteHTML($html);
         $pdf->Output($filename, 'I');
         exit;

@@ -103,6 +103,28 @@ $lang['loan_repay_btn'] = 'Process Payment';
 $lang['loan_for_how_long'] = 'Payment for how many Installment ?';
 $lang['loan_amount_required'] = 'Amount required is  %s';
 $lang['loan_max_reached'] = 'Loan balance is 0';
+$lang['loan_repay_due_title'] = 'Kiasi Kinachotakiwa (kwa tarehe ya malipo)';
+$lang['loan_repay_status_due'] = 'Inadaiwa';
+$lang['loan_repay_status_overdue'] = 'Imechelewa';
+$lang['loan_repay_carry_balance'] = 'Salio lililohifadhiwa (carry)';
+$lang['loan_repay_total_due'] = 'Jumla inayodaiwa';
+$lang['loan_repay_net_due'] = 'Kiasi cha kukusanya';
+$lang['loan_repay_nothing_due'] = 'Hakuna kikomo kinachodaiwa katika tarehe hii bado. Unaweza bado kulipa mapema kwa kiasi cha kawaida cha kikomo.';
+$lang['loan_repay_due_explanation'] = 'Vikomo vilivyopita muda wa neema (%s siku baada ya tarehe ya kulipa) vina adhabu ya %s%% kwa kila mwezi uliochelewa (kulingana na bidhaa ya mkopo). Ikiwa vikomo viwili vilikosa, kiasi cha vikomo na adhabu zake vinaongezwa hapa chini. Weka angalau kiasi cha kukusanya ili malipo yaonekane kwenye orodha ya mkopo.';
+$lang['loan_repay_amount_insufficient'] = 'Kiasi hakitoshi kutumia malipo haya. Kiwango cha chini kinachohitajika ni %s (kikomo pamoja na adhabu yoyote ya kuchelewa, baada ya carry).';
+$lang['loan_repay_use_suggested'] = 'Tumia kiasi kilichopendekezwa';
+$lang['loan_repay_penalty_months'] = 'Miezi ya adhabu';
+$lang['loan_repay_suggested'] = 'Malipo yaliyopendekezwa';
+$lang['loan_collection_notice'] = 'Notisi ya Ukusanyaji wa Mkopo';
+$lang['loan_collection_notice_print'] = 'Chapisha Notisi ya Ukusanyaji';
+$lang['loan_collection_notice_as_of'] = 'Kiasi kinachodaiwa kufikia';
+$lang['loan_collection_notice_printed'] = 'Imechapishwa';
+$lang['loan_collection_notice_computation'] = 'Jinsi jumla inayolipwa inavyokokotolewa';
+$lang['loan_collection_notice_total_payable'] = 'Jumla inayolipwa';
+$lang['loan_collection_notice_formula'] = 'Jumla inayolipwa = kiasi cha vikomo vinavyodaiwa + adhabu za kuchelewa − salio lililohifadhiwa (carry). Vikomo ambavyo bado havijafika muda wake havijajumuishwa.';
+$lang['loan_collection_notice_collector'] = 'Imekusanywa / Imetayarishwa na';
+$lang['loan_collection_notice_member_ack'] = 'Uthibitisho wa mwanachama';
+$lang['loan_collection_notice_footer'] = 'Notisi hii ni kwa rejea ya ukusanyaji. Malipo yanawekwa tu baada ya kurekodiwa katika Malipo ya Mkopo.';
 
 
 $lang['loan_view_repayment_schedule'] = 'Loan Repayment Schedule';

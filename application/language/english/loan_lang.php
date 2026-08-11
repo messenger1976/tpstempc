@@ -129,6 +129,28 @@ $lang['loan_repay_btn'] = 'Process Payment';
 $lang['loan_for_how_long'] = 'Payment for how many Installment ?';
 $lang['loan_amount_required'] = 'Amount required is  %s';
 $lang['loan_max_reached'] = 'Loan balance is 0';
+$lang['loan_repay_due_title'] = 'Amount Due (as of repayment date)';
+$lang['loan_repay_status_due'] = 'Due';
+$lang['loan_repay_status_overdue'] = 'Overdue';
+$lang['loan_repay_carry_balance'] = 'Amount already on account (carry)';
+$lang['loan_repay_total_due'] = 'Total due';
+$lang['loan_repay_net_due'] = 'Net amount to collect';
+$lang['loan_repay_nothing_due'] = 'No installment is due on this date yet. You may still pay in advance using the regular installment amount.';
+$lang['loan_repay_due_explanation'] = 'Installments past the grace period (%s days after due date) include a penalty of %s%% per overdue month (based on the loan product). If two installments were missed, both installment amounts and their penalties are added below. Enter at least the net amount to collect so the payment posts to the loan ledger.';
+$lang['loan_repay_amount_insufficient'] = 'Amount is not enough to apply this payment. Minimum required is %s (installment plus any overdue penalty, after carry).';
+$lang['loan_repay_use_suggested'] = 'Use suggested amount';
+$lang['loan_repay_penalty_months'] = 'Penalty months';
+$lang['loan_repay_suggested'] = 'Suggested payment';
+$lang['loan_collection_notice'] = 'Loan Collection Notice';
+$lang['loan_collection_notice_print'] = 'Print Collection Notice';
+$lang['loan_collection_notice_as_of'] = 'Amount due as of';
+$lang['loan_collection_notice_printed'] = 'Printed on';
+$lang['loan_collection_notice_computation'] = 'How total payable is computed';
+$lang['loan_collection_notice_total_payable'] = 'Total amount payable';
+$lang['loan_collection_notice_formula'] = 'Total payable = installment amounts due + overdue penalties − amount already on account (carry). Installments not yet due are not included.';
+$lang['loan_collection_notice_collector'] = 'Collected / Prepared by';
+$lang['loan_collection_notice_member_ack'] = 'Member acknowledgement';
+$lang['loan_collection_notice_footer'] = 'This notice is for collection reference. Payment is posted only after it is recorded in Loan Repayment.';
 
 
 $lang['loan_view_repayment_schedule'] = 'Loan Repayment Schedule';

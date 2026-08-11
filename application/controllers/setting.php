@@ -790,8 +790,18 @@ class Setting extends CI_Controller {
         $this->form_validation->set_rules('loan_interest_account', lang('loanproduct_account_interest'), 'required');
         $this->form_validation->set_rules('loan_penalt_account', lang('loanproduct_account_penalt'), 'required');
         $this->form_validation->set_rules('penalt_percentage', lang('loanproduct_penalt_percentage'), 'required|numeric');
+        // Optional: blank = system default; when filled must be integer >= 0
+        $grace_check = trim((string) $this->input->post('penalt_grace_days'));
+        if ($grace_check !== '') {
+            $this->form_validation->set_rules('penalt_grace_days', lang('loanproduct_penalt_grace_days'), 'integer|greater_than[-1]');
+        }
 
         if ($this->form_validation->run() == TRUE) {
+            $grace_raw = trim((string) $this->input->post('penalt_grace_days'));
+            $penalt_grace_days = ($grace_raw === '') ? null : (int) $grace_raw;
+            if ($penalt_grace_days !== null && $penalt_grace_days < 0) {
+                $penalt_grace_days = null;
+            }
             $productinfo = array(
                 'name' => trim($this->input->post('name')),
                 'description' => trim($this->input->post('description')),
@@ -808,6 +818,7 @@ class Setting extends CI_Controller {
                 'loan_interest_account' => trim($this->input->post('loan_interest_account')),
                 'loan_penalt_account' => trim($this->input->post('loan_penalt_account')),
                 'penalt_percentage' => trim($this->input->post('penalt_percentage')),
+                'penalt_grace_days' => $penalt_grace_days,
                 'PIN' => current_user()->PIN
             );
 

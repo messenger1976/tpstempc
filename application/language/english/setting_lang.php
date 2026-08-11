@@ -96,6 +96,9 @@ $lang['loanproduct_security']='Loan Security';
 $lang['loanproduct_add_fail']='Fail to save loan product information';
 $lang['loanproduct_add_success']='Loan Product Information saved successfully';
 $lang['loanproduct_penalt_percentage'] = 'Penalty Percentage (%)';
+$lang['loanproduct_penalt_grace_days'] = 'Overdue Grace Days';
+$lang['loanproduct_penalt_grace_days_placeholder'] = 'Blank = system default (%s days)';
+$lang['loanproduct_penalt_grace_days_help'] = 'Optional. Days after the installment due date before overdue penalty starts. Leave blank to use the system default (%s days).';
 
 // Payment Method
 $lang['payment_method_list'] = 'Payment Method List';

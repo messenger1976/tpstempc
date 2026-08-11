@@ -82,6 +82,22 @@ if (isset($message) && !empty($message)) {
         <?php echo form_error('penalt_percentage'); ?>
     </div>
 </div>
+<div class="form-group"><label class="col-lg-3 control-label"><?php echo lang('loanproduct_penalt_grace_days'); ?>  :</label>
+    <div class="col-lg-6">
+        <?php
+        $grace_val = '';
+        if (isset($product) && isset($product->penalt_grace_days) && $product->penalt_grace_days !== null && $product->penalt_grace_days !== '') {
+            $grace_val = $product->penalt_grace_days;
+        } else {
+            $grace_val = set_value('penalt_grace_days');
+        }
+        $system_grace = defined('MAX_NUMBER_DAYS_OVERDUE_PENALT') ? (int) MAX_NUMBER_DAYS_OVERDUE_PENALT : 3;
+        ?>
+        <input type="number" min="0" step="1" name="penalt_grace_days" value="<?php echo htmlspecialchars($grace_val); ?>" class="form-control" placeholder="<?php echo htmlspecialchars(sprintf(lang('loanproduct_penalt_grace_days_placeholder'), $system_grace)); ?>"/>
+        <span class="help-block"><?php echo sprintf(lang('loanproduct_penalt_grace_days_help'), $system_grace); ?></span>
+        <?php echo form_error('penalt_grace_days'); ?>
+    </div>
+</div>
 
 <div class="form-group"><label class="col-lg-3 control-label"><?php echo lang('loanproduct_maxmum_time'); ?>  : <span class="required">*</span></label>
     <div class="col-lg-6">

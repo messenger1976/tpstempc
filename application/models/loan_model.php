@@ -251,9 +251,22 @@ class Loan_Model extends CI_Model {
         return $this->db->query("SELECT * FROM loan_contract WHERE PIN='$pin' AND status=1 ORDER BY applicationdate DESC")->result();
     }
 
-    function loan_wait_disburse() {
+    function loan_wait_disburse($pid = null, $product_id = null) {
         $pin = current_user()->PIN;
-        return $this->db->query("SELECT * FROM loan_contract WHERE PIN='$pin' AND status=4 AND disburse=0 ORDER BY applicationdate DESC")->result();
+        $sql = "SELECT lc.*, lp.name AS loan_product_name
+                FROM loan_contract lc
+                LEFT JOIN loan_product lp ON lp.id = lc.product_type AND lp.PIN = lc.PIN
+                WHERE lc.PIN = " . $this->db->escape($pin) . "
+                  AND lc.status = 4
+                  AND lc.disburse = 0";
+        if (!empty($pid)) {
+            $sql .= " AND lc.PID = " . $this->db->escape($pid);
+        }
+        if (!empty($product_id) && $product_id !== 'all') {
+            $sql .= " AND lc.product_type = " . (int) $product_id;
+        }
+        $sql .= " ORDER BY lc.applicationdate DESC";
+        return $this->db->query($sql)->result();
     }
 
     /**

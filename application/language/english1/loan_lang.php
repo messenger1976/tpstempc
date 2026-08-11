@@ -9,6 +9,9 @@
 $lang['loan_create_new'] = 'Create New Loan';
 $lang['loan_basic_info'] = 'Loan Basic Informations';
 $lang['loan_product'] = 'Loan Product';
+$lang['loan_search_name'] = 'Search Name';
+$lang['loan_products'] = 'Loan Products';
+$lang['loan_products_all'] = 'All Loan Products';
 $lang['loan_applicationdate'] = 'Application Date';
 $lang['loan_applied_amount'] = 'Base Amount';
 $lang['loan_installment'] = 'Installment No.';

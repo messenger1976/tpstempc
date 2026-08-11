@@ -868,10 +868,56 @@ $pin = current_user()->PIN;
     }
 
     function loan_disbursement() {
-        $this->data['title'] = lang('loan_disburseme_list');
-        $this->data['loan_wait'] = $this->loan_model->loan_wait_disburse();
+        $this->data['title'] = lang('loan_disbursement');
+        $pid = trim((string) $this->input->get('pid'));
+        $product_id = trim((string) $this->input->get('product_id'));
+        if ($product_id === '') {
+            $product_id = 'all';
+        }
+
+        $this->data['selected_pid'] = $pid;
+        $this->data['selected_product_id'] = $product_id;
+        $this->data['selected_member_text'] = '';
+        if ($pid !== '') {
+            $member = $this->member_model->member_basic_info(null, $pid)->row();
+            if ($member) {
+                $this->data['selected_member_text'] = $member->member_id . ' : '
+                    . trim($member->firstname . ' ' . $member->middlename . ' ' . $member->lastname);
+            }
+        }
+
+        $this->data['loan_products'] = $this->setting_model->loanproduct()->result();
+        $this->data['loan_wait'] = $this->loan_model->loan_wait_disburse(
+            $pid !== '' ? $pid : null,
+            $product_id
+        );
         $this->data['content'] = 'loan/loan_wait_disburse';
         $this->load->view('template', $this->data);
+    }
+
+    /**
+     * Select2 AJAX member search for loan disbursement filters.
+     */
+    function search_member_select2() {
+        $term = trim((string) $this->input->get('q'));
+        $limit = 20;
+        $results = array();
+
+        if ($term !== '') {
+            $members = $this->member_model->search_member($term, 1, 1, $limit, 0);
+            if (!empty($members)) {
+                foreach ($members as $member) {
+                    $fullname = trim($member->firstname . ' ' . $member->middlename . ' ' . $member->lastname);
+                    $results[] = array(
+                        'id' => $member->PID,
+                        'text' => $member->member_id . ' : ' . $fullname
+                    );
+                }
+            }
+        }
+
+        header('Content-Type: application/json');
+        echo json_encode(array('results' => $results));
     }
 
     /**

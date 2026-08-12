@@ -61,7 +61,7 @@ class Loan_Model extends CI_Model {
     function loan_declaration($data) {
         $pin = current_user()->PIN;
         $check = $this->db->get_where('loan_contract_declaration', array('LID' => $data['LID'], 'PIN' => $pin))->row();
-        if (count($check) == 1) {
+        if ($check) {
             return $this->db->update('loan_contract_declaration', $data, array('LID' => $data['LID'], 'PIN' => $pin));
         } else {
             return $this->db->insert('loan_contract_declaration', $data);
@@ -128,6 +128,95 @@ class Loan_Model extends CI_Model {
         }
 
         return $this->db->get('loan_contract');
+    }
+
+    function list_member_loans($pid) {
+        $pin = current_user()->PIN;
+        if ($pid === null || $pid === '') {
+            return array();
+        }
+
+        $this->db->select('lc.LID, lc.basic_amount, lc.total_loan, lc.status, lc.disburse, lc.product_type, lc.applicationdate, ls.name as status_name, lp.name as product_name', FALSE);
+        $this->db->select('0 as is_beginning_balance, 0 as penalty, 0 as past_due_interest', FALSE);
+        $this->db->select('(SELECT MAX(e.createdon) FROM loan_contract_evaluation e WHERE e.LID = lc.LID AND e.PIN = lc.PIN) AS evaluation_date', FALSE);
+        $this->db->select('(SELECT MAX(a.createdon) FROM loan_contract_approve a WHERE a.LID = lc.LID AND a.PIN = lc.PIN) AS approval_date', FALSE);
+        $this->db->select('(SELECT MAX(d.disbursedate) FROM loan_contract_disburse d WHERE d.LID = lc.LID AND d.PIN = lc.PIN) AS disbursement_date', FALSE);
+        $this->db->select('(SELECT MAX(r.paydate) FROM loan_contract_repayment r WHERE r.LID = lc.LID AND r.PIN = lc.PIN) AS last_repay_date', FALSE);
+        $this->db->from('loan_contract lc');
+        $this->db->join('loan_status ls', 'ls.code = lc.status', 'left');
+        $this->db->join('loan_product lp', 'lp.id = lc.product_type AND lp.PIN = lc.PIN', 'left');
+        $this->db->where('lc.PIN', $pin);
+        $this->db->where('lc.PID', $pid);
+        $this->db->order_by('lc.applicationdate', 'DESC');
+        $contracts = $this->db->get()->result();
+
+        $sql_bb = "SELECT
+                COALESCE(lbb.loan_id, CONCAT('BB-', lbb.id)) AS LID,
+                COALESCE(lbb.loan_amount, lbb.principal_balance) AS basic_amount,
+                lbb.total_balance AS total_loan,
+                'bb' AS status,
+                0 AS disburse,
+                lbb.loan_product_id AS product_type,
+                lbb.disbursement_date AS applicationdate,
+                'Beginning Balance' AS status_name,
+                lp.name AS product_name,
+                1 AS is_beginning_balance,
+                COALESCE(lbb.penalty_balance, 0) AS penalty,
+                COALESCE(lbb.interest_balance, 0) AS past_due_interest,
+                NULL AS evaluation_date,
+                NULL AS approval_date,
+                lbb.disbursement_date AS disbursement_date,
+                NULL AS last_repay_date
+            FROM loan_beginning_balances lbb
+            INNER JOIN members m ON m.member_id = lbb.member_id AND m.PIN = lbb.PIN
+            LEFT JOIN loan_product lp ON lp.id = lbb.loan_product_id AND lp.PIN = lbb.PIN
+            WHERE lbb.PIN = ? AND m.PID = ?
+              AND (lbb.loan_id IS NULL OR lbb.loan_id NOT IN (SELECT LID FROM loan_contract WHERE PIN = ?))
+            ORDER BY lbb.disbursement_date DESC";
+        $beginning = $this->db->query($sql_bb, array($pin, $pid, $pin))->result();
+
+        return array_merge($contracts, $beginning);
+    }
+
+    function member_loan_status_date($row) {
+        $status = isset($row->status) ? (string) $row->status : '';
+        $disburse = isset($row->disburse) && ((string) $row->disburse === '1' || $row->disburse === 1);
+        $is_bb = !empty($row->is_beginning_balance);
+        $application = isset($row->applicationdate) ? $row->applicationdate : '';
+        $evaluation = isset($row->evaluation_date) ? $row->evaluation_date : '';
+        $approval = isset($row->approval_date) ? $row->approval_date : '';
+        $disbursement = isset($row->disbursement_date) ? $row->disbursement_date : '';
+        $closed = isset($row->last_repay_date) ? $row->last_repay_date : '';
+
+        if ($is_bb) {
+            return array('label' => lang('loan_disburse_date'), 'date' => $disbursement ? $disbursement : $application);
+        }
+        if ($status === '5') {
+            $date = $closed ? $closed : ($disbursement ? $disbursement : $approval);
+            return array('label' => 'Closed Date', 'date' => $date);
+        }
+        if ($disburse || $status === '9') {
+            return array('label' => lang('loan_disburse_date'), 'date' => $disbursement ? $disbursement : $application);
+        }
+        if ($status === '6') {
+            if ($disbursement) {
+                return array('label' => lang('loan_disburse_date'), 'date' => $disbursement);
+            }
+            return array('label' => 'Accepted Date', 'date' => $approval ? $approval : $application);
+        }
+        if ($status === '4') {
+            return array('label' => 'Accepted Date', 'date' => $approval ? $approval : $application);
+        }
+        if ($status === '8') {
+            return array('label' => 'Rejected Date', 'date' => $approval ? $approval : $evaluation);
+        }
+        if ($status === '1') {
+            return array('label' => 'Evaluation Date', 'date' => $evaluation ? $evaluation : $application);
+        }
+        if ($status === '7' || $status === '2') {
+            return array('label' => 'Rejected Date', 'date' => $evaluation ? $evaluation : ($approval ? $approval : $application));
+        }
+        return array('label' => lang('loan_applicationdate'), 'date' => $application);
     }
 
     function edit_loan_info($data, $loanid) {
@@ -241,21 +330,117 @@ class Loan_Model extends CI_Model {
         return FALSE;
     }
 
-    function loan_wait_evaluation() {
+    function loan_wait_evaluation($key = null, $limit = null, $start = 0) {
         $pin = current_user()->PIN;
-        return $this->db->query("SELECT * FROM loan_contract WHERE PIN='$pin' AND (status=0 OR status=3) ORDER BY applicationdate DESC")->result();
-    }
-
-    function loan_wait_approval() {
-        $pin = current_user()->PIN;
-        return $this->db->query("SELECT * FROM loan_contract WHERE PIN='$pin' AND status=1 ORDER BY applicationdate DESC")->result();
-    }
-
-    function loan_wait_disburse($pid = null, $product_id = null) {
-        $pin = current_user()->PIN;
-        $sql = "SELECT lc.*, lp.name AS loan_product_name
+        $sql = "SELECT lc.*, lp.name AS product_name, ls.name AS status_name,
+                       m.member_id, m.firstname, m.middlename, m.lastname
                 FROM loan_contract lc
+                INNER JOIN members m ON m.PID = lc.PID AND m.PIN = lc.PIN
                 LEFT JOIN loan_product lp ON lp.id = lc.product_type AND lp.PIN = lc.PIN
+                LEFT JOIN loan_status ls ON ls.code = lc.status
+                WHERE lc.PIN = " . $this->db->escape($pin) . "
+                  AND (lc.status = 0 OR lc.status = 3)";
+        if (!is_null($key) && $key !== '') {
+            $like = $this->db->escape('%' . $key . '%');
+            $sql .= " AND (lc.LID LIKE $like OR m.member_id LIKE $like OR m.firstname LIKE $like
+                      OR m.middlename LIKE $like OR m.lastname LIKE $like
+                      OR CONCAT(m.firstname, ' ', m.lastname) LIKE $like
+                      OR CONCAT(m.firstname, ' ', m.middlename, ' ', m.lastname) LIKE $like)";
+        }
+        $sql .= " ORDER BY lc.applicationdate DESC";
+        if (!is_null($limit)) {
+            $sql .= " LIMIT " . (int) $limit . " OFFSET " . (int) $start;
+        }
+        return $this->db->query($sql)->result();
+    }
+
+    function count_loan_wait_evaluation($key = null) {
+        $pin = current_user()->PIN;
+        $sql = "SELECT COUNT(lc.LID) AS total
+                FROM loan_contract lc
+                INNER JOIN members m ON m.PID = lc.PID AND m.PIN = lc.PIN
+                WHERE lc.PIN = " . $this->db->escape($pin) . "
+                  AND (lc.status = 0 OR lc.status = 3)";
+        if (!is_null($key) && $key !== '') {
+            $like = $this->db->escape('%' . $key . '%');
+            $sql .= " AND (lc.LID LIKE $like OR m.member_id LIKE $like OR m.firstname LIKE $like
+                      OR m.middlename LIKE $like OR m.lastname LIKE $like
+                      OR CONCAT(m.firstname, ' ', m.lastname) LIKE $like
+                      OR CONCAT(m.firstname, ' ', m.middlename, ' ', m.lastname) LIKE $like)";
+        }
+        $row = $this->db->query($sql)->row();
+        return $row ? (int) $row->total : 0;
+    }
+
+    function loan_wait_approval($key = null, $date_from = null, $date_to = null, $product_id = null, $limit = null, $start = 0) {
+        $pin = current_user()->PIN;
+        $sql = "SELECT lc.*, lp.name AS product_name, ls.name AS status_name,
+                       m.member_id, m.firstname, m.middlename, m.lastname
+                FROM loan_contract lc
+                INNER JOIN members m ON m.PID = lc.PID AND m.PIN = lc.PIN
+                LEFT JOIN loan_product lp ON lp.id = lc.product_type AND lp.PIN = lc.PIN
+                LEFT JOIN loan_status ls ON ls.code = lc.status
+                WHERE lc.PIN = " . $this->db->escape($pin) . "
+                  AND lc.status = 1";
+        if (!is_null($key) && $key !== '') {
+            $like = $this->db->escape('%' . $key . '%');
+            $sql .= " AND (lc.LID LIKE $like OR m.member_id LIKE $like OR m.firstname LIKE $like
+                      OR m.middlename LIKE $like OR m.lastname LIKE $like
+                      OR CONCAT(m.firstname, ' ', m.lastname) LIKE $like
+                      OR CONCAT(m.firstname, ' ', m.middlename, ' ', m.lastname) LIKE $like)";
+        }
+        if (!empty($date_from)) {
+            $sql .= " AND DATE(lc.applicationdate) >= " . $this->db->escape($date_from);
+        }
+        if (!empty($date_to)) {
+            $sql .= " AND DATE(lc.applicationdate) <= " . $this->db->escape($date_to);
+        }
+        if (!empty($product_id) && $product_id !== 'all') {
+            $sql .= " AND lc.product_type = " . (int) $product_id;
+        }
+        $sql .= " ORDER BY lc.applicationdate DESC";
+        if (!is_null($limit)) {
+            $sql .= " LIMIT " . (int) $limit . " OFFSET " . (int) $start;
+        }
+        return $this->db->query($sql)->result();
+    }
+
+    function count_loan_wait_approval($key = null, $date_from = null, $date_to = null, $product_id = null) {
+        $pin = current_user()->PIN;
+        $sql = "SELECT COUNT(lc.LID) AS total
+                FROM loan_contract lc
+                INNER JOIN members m ON m.PID = lc.PID AND m.PIN = lc.PIN
+                WHERE lc.PIN = " . $this->db->escape($pin) . "
+                  AND lc.status = 1";
+        if (!is_null($key) && $key !== '') {
+            $like = $this->db->escape('%' . $key . '%');
+            $sql .= " AND (lc.LID LIKE $like OR m.member_id LIKE $like OR m.firstname LIKE $like
+                      OR m.middlename LIKE $like OR m.lastname LIKE $like
+                      OR CONCAT(m.firstname, ' ', m.lastname) LIKE $like
+                      OR CONCAT(m.firstname, ' ', m.middlename, ' ', m.lastname) LIKE $like)";
+        }
+        if (!empty($date_from)) {
+            $sql .= " AND DATE(lc.applicationdate) >= " . $this->db->escape($date_from);
+        }
+        if (!empty($date_to)) {
+            $sql .= " AND DATE(lc.applicationdate) <= " . $this->db->escape($date_to);
+        }
+        if (!empty($product_id) && $product_id !== 'all') {
+            $sql .= " AND lc.product_type = " . (int) $product_id;
+        }
+        $row = $this->db->query($sql)->row();
+        return $row ? (int) $row->total : 0;
+    }
+
+    function loan_wait_disburse($pid = null, $product_id = null, $date_from = null, $date_to = null, $limit = null, $start = 0) {
+        $pin = current_user()->PIN;
+        $sql = "SELECT lc.*, lp.name AS loan_product_name, lp.name AS product_name,
+                       ls.name AS status_name,
+                       m.member_id, m.firstname, m.middlename, m.lastname
+                FROM loan_contract lc
+                LEFT JOIN members m ON m.PID = lc.PID AND m.PIN = lc.PIN
+                LEFT JOIN loan_product lp ON lp.id = lc.product_type AND lp.PIN = lc.PIN
+                LEFT JOIN loan_status ls ON ls.code = lc.status
                 WHERE lc.PIN = " . $this->db->escape($pin) . "
                   AND lc.status = 4
                   AND lc.disburse = 0";
@@ -265,8 +450,40 @@ class Loan_Model extends CI_Model {
         if (!empty($product_id) && $product_id !== 'all') {
             $sql .= " AND lc.product_type = " . (int) $product_id;
         }
+        if (!empty($date_from)) {
+            $sql .= " AND DATE(lc.applicationdate) >= " . $this->db->escape($date_from);
+        }
+        if (!empty($date_to)) {
+            $sql .= " AND DATE(lc.applicationdate) <= " . $this->db->escape($date_to);
+        }
         $sql .= " ORDER BY lc.applicationdate DESC";
+        if (!is_null($limit)) {
+            $sql .= " LIMIT " . (int) $limit . " OFFSET " . (int) $start;
+        }
         return $this->db->query($sql)->result();
+    }
+
+    function count_loan_wait_disburse($pid = null, $product_id = null, $date_from = null, $date_to = null) {
+        $pin = current_user()->PIN;
+        $sql = "SELECT COUNT(lc.LID) AS total
+                FROM loan_contract lc
+                WHERE lc.PIN = " . $this->db->escape($pin) . "
+                  AND lc.status = 4
+                  AND lc.disburse = 0";
+        if (!empty($pid)) {
+            $sql .= " AND lc.PID = " . $this->db->escape($pid);
+        }
+        if (!empty($product_id) && $product_id !== 'all') {
+            $sql .= " AND lc.product_type = " . (int) $product_id;
+        }
+        if (!empty($date_from)) {
+            $sql .= " AND DATE(lc.applicationdate) >= " . $this->db->escape($date_from);
+        }
+        if (!empty($date_to)) {
+            $sql .= " AND DATE(lc.applicationdate) <= " . $this->db->escape($date_to);
+        }
+        $row = $this->db->query($sql)->row();
+        return $row ? (int) $row->total : 0;
     }
 
     /**
@@ -823,7 +1040,7 @@ class Loan_Model extends CI_Model {
     /**
      * Count released loans (status=4, disburse=1) that still have outstanding balance (open installments).
      */
-    function count_loan_repayment_list_released_with_balance($key = null) {
+    function count_loan_repayment_list_released_with_balance($key = null, $date_from = null, $date_to = null, $product_id = null) {
         $pin = current_user()->PIN;
         $sql = "SELECT COUNT(DISTINCT lc.LID) AS cnt FROM loan_contract lc
                 INNER JOIN members m ON m.PID = lc.PID
@@ -831,7 +1048,16 @@ class Loan_Model extends CI_Model {
                 WHERE lc.PIN = " . (int)$pin . " AND lc.status = 4 AND lc.disburse = 1";
         if (!is_null($key) && trim($key) !== '') {
             $key_esc = $this->db->escape_like_str($key);
-            $sql .= " AND (lc.LID LIKE " . $this->db->escape($key_esc . '%') . " OR lc.member_id LIKE " . $this->db->escape($key_esc . '%') . " OR m.firstname LIKE " . $this->db->escape('%' . $key_esc . '%') . " OR m.lastname LIKE " . $this->db->escape('%' . $key_esc . '%') . ")";
+            $sql .= " AND (lc.LID LIKE " . $this->db->escape($key_esc . '%') . " OR lc.member_id LIKE " . $this->db->escape($key_esc . '%') . " OR m.member_id LIKE " . $this->db->escape($key_esc . '%') . " OR m.firstname LIKE " . $this->db->escape('%' . $key_esc . '%') . " OR m.middlename LIKE " . $this->db->escape('%' . $key_esc . '%') . " OR m.lastname LIKE " . $this->db->escape('%' . $key_esc . '%') . " OR CONCAT(m.firstname, ' ', m.lastname) LIKE " . $this->db->escape('%' . $key_esc . '%') . " OR CONCAT(m.firstname, ' ', m.middlename, ' ', m.lastname) LIKE " . $this->db->escape('%' . $key_esc . '%') . ")";
+        }
+        if (!empty($date_from)) {
+            $sql .= " AND DATE(lc.applicationdate) >= " . $this->db->escape($date_from);
+        }
+        if (!empty($date_to)) {
+            $sql .= " AND DATE(lc.applicationdate) <= " . $this->db->escape($date_to);
+        }
+        if (!empty($product_id) && $product_id !== 'all') {
+            $sql .= " AND lc.product_type = " . (int) $product_id;
         }
         $row = $this->db->query($sql)->row();
         return $row ? (int)$row->cnt : 0;
@@ -840,18 +1066,32 @@ class Loan_Model extends CI_Model {
     /**
      * Get released loans (status=4, disburse=1) that still have outstanding balance, for repayment list page (pagination).
      */
-    function loan_repayment_list_released_with_balance($key, $limit, $start) {
+    function loan_repayment_list_released_with_balance($key = null, $limit = null, $start = 0, $date_from = null, $date_to = null, $product_id = null) {
         $pin = current_user()->PIN;
-        $sql = "SELECT lc.*, m.firstname, m.middlename, m.lastname
+        $sql = "SELECT lc.*, m.member_id, m.firstname, m.middlename, m.lastname,
+                       lp.name AS product_name
                 FROM loan_contract lc
                 INNER JOIN members m ON m.PID = lc.PID
+                LEFT JOIN loan_product lp ON lp.id = lc.product_type AND lp.PIN = lc.PIN
                 INNER JOIN loan_contract_repayment_schedule rs ON rs.LID = lc.LID AND rs.status = 0 AND rs.PIN = " . (int)$pin . "
                 WHERE lc.PIN = " . (int)$pin . " AND lc.status = 4 AND lc.disburse = 1";
         if (!is_null($key) && trim($key) !== '') {
             $key_esc = $this->db->escape_like_str($key);
-            $sql .= " AND (lc.LID LIKE " . $this->db->escape($key_esc . '%') . " OR lc.member_id LIKE " . $this->db->escape($key_esc . '%') . " OR m.firstname LIKE " . $this->db->escape('%' . $key_esc . '%') . " OR m.lastname LIKE " . $this->db->escape('%' . $key_esc . '%') . ")";
+            $sql .= " AND (lc.LID LIKE " . $this->db->escape($key_esc . '%') . " OR lc.member_id LIKE " . $this->db->escape($key_esc . '%') . " OR m.member_id LIKE " . $this->db->escape($key_esc . '%') . " OR m.firstname LIKE " . $this->db->escape('%' . $key_esc . '%') . " OR m.middlename LIKE " . $this->db->escape('%' . $key_esc . '%') . " OR m.lastname LIKE " . $this->db->escape('%' . $key_esc . '%') . " OR CONCAT(m.firstname, ' ', m.lastname) LIKE " . $this->db->escape('%' . $key_esc . '%') . " OR CONCAT(m.firstname, ' ', m.middlename, ' ', m.lastname) LIKE " . $this->db->escape('%' . $key_esc . '%') . ")";
         }
-        $sql .= " GROUP BY lc.LID ORDER BY lc.applicationdate ASC LIMIT " . (int)$limit . " OFFSET " . (int)$start;
+        if (!empty($date_from)) {
+            $sql .= " AND DATE(lc.applicationdate) >= " . $this->db->escape($date_from);
+        }
+        if (!empty($date_to)) {
+            $sql .= " AND DATE(lc.applicationdate) <= " . $this->db->escape($date_to);
+        }
+        if (!empty($product_id) && $product_id !== 'all') {
+            $sql .= " AND lc.product_type = " . (int) $product_id;
+        }
+        $sql .= " GROUP BY lc.LID ORDER BY lc.applicationdate DESC";
+        if (!is_null($limit)) {
+            $sql .= " LIMIT " . (int)$limit . " OFFSET " . (int)$start;
+        }
         return $this->db->query($sql)->result();
     }
 

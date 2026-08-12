@@ -349,6 +349,22 @@ if (!function_exists('company_info')) {
 
 }
 
+if (!function_exists('member_avatar_url')) {
+
+    function member_avatar_url($photo = '', $gender = '') {
+        $photo = trim((string) $photo);
+        $is_placeholder = ($photo === '' || $photo === '0' || strtolower($photo) === 'avatar.gif');
+        $g = strtoupper(trim((string) $gender));
+        $is_male = ($g !== '' && substr($g, 0, 1) === 'M' && strpos($g, 'FEMALE') !== 0);
+        $default = base_url() . 'media/img/avatars/' . ($is_male ? 'male.svg' : 'female.svg');
+        if ($is_placeholder) {
+            return $default;
+        }
+        return base_url() . 'uploads/memberphoto/' . $photo;
+    }
+
+}
+
 if (!function_exists('company_info_detail')) {
 
     function company_info_detail() {

@@ -42,7 +42,25 @@ $lang['loan_supporting_document_view'] = "Download";
 
 //guarantor
 $lang['loan_quarantor_name'] = 'Guarantor Name';
+$lang['loan_quarantor_name_placeholder'] = 'Search by Member ID or Name...';
 $lang['loan_quarantor_relationship'] = 'Relationship';
+$lang['loan_quarantor_relationship_other'] = 'Specify relationship';
+$lang['loan_quarantor_relationship_options'] = array(
+    'Spouse' => 'Spouse',
+    'Father' => 'Father',
+    'Mother' => 'Mother',
+    'Son' => 'Son',
+    'Daughter' => 'Daughter',
+    'Brother' => 'Brother',
+    'Sister' => 'Sister',
+    'Uncle' => 'Uncle',
+    'Aunt' => 'Aunt',
+    'Cousin' => 'Cousin',
+    'Friend' => 'Friend',
+    'Colleague' => 'Colleague',
+    'Relative' => 'Relative',
+    'Others' => 'Others',
+);
 $lang['loan_quarantor_asset'] = 'Declared assets';
 $lang['loan_quarantor_declaration'] = 'Guarantor declaration';
 $lang['loan_quarantor_attachment'] = 'Attachment';
@@ -78,6 +96,7 @@ $lang['loan_evaluated_test'] = 'Save Information';
 $lang['loan_evaluation_error'] = 'Some error exist in submited data, Scroll down to see more details';
 
 $lang['loan_approval_link'] = 'Approve';
+$lang['loan_approval_list'] = 'Loan Approval';
 $lang['loan_approval_inaction'] = 'Approve Loan';
 $lang['loan_approval_comment'] = 'Approve Comment';
 

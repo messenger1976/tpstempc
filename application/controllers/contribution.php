@@ -89,11 +89,27 @@ class Contribution extends CI_Controller {
 
         $key = null;
         if ($this->input->post('key') && $this->input->post('key') != '') {
-            $explode = explode('-', $this->input->post('key'));
-            $key = $explode[0];
+            $raw_key = trim($this->input->post('key'));
+            if (strpos($raw_key, ' - ') !== false) {
+                $explode = explode(' - ', $raw_key);
+                $key = trim($explode[0]);
+            } else {
+                $explode = explode('-', $raw_key);
+                $key = trim($explode[0]);
+            }
         } else if ($this->input->get('key')) {
-            $key = $this->input->get('key');
+            $raw_key = trim($this->input->get('key'));
+            if (strpos($raw_key, ' - ') !== false) {
+                $explode = explode(' - ', $raw_key);
+                $key = trim($explode[0]);
+            } else if (strpos($raw_key, '==>') !== false) {
+                $explode = explode('-', $raw_key);
+                $key = trim($explode[0]);
+            } else {
+                $key = $raw_key;
+            }
         }
+        $this->data['key'] = $key;
 
         $status = null;
         if ($this->input->post('status') !== FALSE) {
@@ -107,6 +123,7 @@ class Contribution extends CI_Controller {
                 $status = $get_status;
             }
         }
+        $this->data['status'] = $status;
 
         $query_params = array();
         if (!is_null($key) && $key != '') {
@@ -127,30 +144,41 @@ class Contribution extends CI_Controller {
         $config["total_rows"] = $this->contribution_model->count_contribution_setting($key, $status);
         $config["uri_segment"] = 4;
 
-        $config['full_tag_open'] = '<div class="pagination" style="background-color:#fff; margin-left:0px;">';
+        $config['full_tag_open'] = '<div class="pagination member-pagination">';
         $config['full_tag_close'] = '</div>';
 
         $config['num_tag_open'] = '<div class="link-pagination">';
         $config['num_tag_close'] = '</div>';
 
-        $config['prev_tag_open'] = '<div class="link-pagination">';
+        $config['prev_tag_open'] = '<div class="link-pagination nav-btn">';
         $config['prev_tag_close'] = '</div>';
 
-        $config['next_tag_open'] = '<div class="link-pagination">';
+        $config['next_tag_open'] = '<div class="link-pagination nav-btn">';
         $config['next_tag_close'] = '</div>';
 
-        $config['next_link'] = 'Next';
-        $config['prev_link'] = 'Previous';
+        $config['last_tag_open'] = '<div class="link-pagination nav-btn">';
+        $config['last_tag_close'] = '</div>';
+
+        $config['first_tag_open'] = '<div class="link-pagination nav-btn">';
+        $config['first_tag_close'] = '</div>';
+
+        $config['first_link'] = '&laquo;';
+        $config['last_link'] = '&raquo;';
+        $config['next_link'] = 'Next &rsaquo;';
+        $config['prev_link'] = '&lsaquo; Prev';
         $config['cur_tag_open'] = '<div class="link-pagination current">';
         $config['cur_tag_close'] = '</div>';
 
 
-        $config["num_links"] = 10;
+        $config["num_links"] = 5;
 
 
         $this->pagination->initialize($config);
         $page = ($this->uri->segment(4) ? $this->uri->segment(4) : 0);
         $this->data['links'] = $this->pagination->create_links();
+        $this->data['total_rows'] = $config["total_rows"];
+        $this->data['page_start'] = $page;
+        $this->data['per_page'] = $config["per_page"];
 
         $this->data['contribution_setting'] = $this->contribution_model->search_contribution_setting($key, $config["per_page"], $page, $status);
 
@@ -178,11 +206,27 @@ class Contribution extends CI_Controller {
 
         $key = null;
         if ($this->input->post('key') && $this->input->post('key') != '') {
-            $explode = explode('-', $this->input->post('key'));
-            $key = trim($explode[0]);
+            $raw_key = trim($this->input->post('key'));
+            if (strpos($raw_key, ' - ') !== false) {
+                $explode = explode(' - ', $raw_key);
+                $key = trim($explode[0]);
+            } else {
+                $explode = explode('-', $raw_key);
+                $key = trim($explode[0]);
+            }
         } else if ($this->input->get('key')) {
-            $key = $this->input->get('key');
+            $raw_key = trim($this->input->get('key'));
+            if (strpos($raw_key, ' - ') !== false) {
+                $explode = explode(' - ', $raw_key);
+                $key = trim($explode[0]);
+            } else if (strpos($raw_key, '==>') !== false) {
+                $explode = explode('-', $raw_key);
+                $key = trim($explode[0]);
+            } else {
+                $key = $raw_key;
+            }
         }
+        $this->data['key'] = $key;
 
         $status = null;
         if ($this->input->post('status') !== FALSE) {
@@ -196,6 +240,7 @@ class Contribution extends CI_Controller {
                 $status = $get_status;
             }
         }
+        $this->data['status'] = $status;
 
         $query_params = array();
         if (!is_null($key) && $key != '') {
@@ -215,23 +260,32 @@ class Contribution extends CI_Controller {
         $config["total_rows"] = $this->contribution_model->count_masterfile_list($key, $status);
         $config["uri_segment"] = 4;
 
-        $config['full_tag_open'] = '<div class="pagination" style="background-color:#fff; margin-left:0px;">';
+        $config['full_tag_open'] = '<div class="pagination member-pagination">';
         $config['full_tag_close'] = '</div>';
         $config['num_tag_open'] = '<div class="link-pagination">';
         $config['num_tag_close'] = '</div>';
-        $config['prev_tag_open'] = '<div class="link-pagination">';
+        $config['prev_tag_open'] = '<div class="link-pagination nav-btn">';
         $config['prev_tag_close'] = '</div>';
-        $config['next_tag_open'] = '<div class="link-pagination">';
+        $config['next_tag_open'] = '<div class="link-pagination nav-btn">';
         $config['next_tag_close'] = '</div>';
-        $config['next_link'] = 'Next';
-        $config['prev_link'] = 'Previous';
+        $config['last_tag_open'] = '<div class="link-pagination nav-btn">';
+        $config['last_tag_close'] = '</div>';
+        $config['first_tag_open'] = '<div class="link-pagination nav-btn">';
+        $config['first_tag_close'] = '</div>';
+        $config['first_link'] = '&laquo;';
+        $config['last_link'] = '&raquo;';
+        $config['next_link'] = 'Next &rsaquo;';
+        $config['prev_link'] = '&lsaquo; Prev';
         $config['cur_tag_open'] = '<div class="link-pagination current">';
         $config['cur_tag_close'] = '</div>';
-        $config["num_links"] = 10;
+        $config["num_links"] = 5;
 
         $this->pagination->initialize($config);
         $page = ($this->uri->segment(4) ? $this->uri->segment(4) : 0);
         $this->data['links'] = $this->pagination->create_links();
+        $this->data['total_rows'] = $config["total_rows"];
+        $this->data['page_start'] = $page;
+        $this->data['per_page'] = $config["per_page"];
         $this->data['masterfile_list'] = $this->contribution_model->search_masterfile_list($key, $config["per_page"], $page, $status);
 
         $this->data['content'] = 'contribution/masterfile_list';
@@ -536,6 +590,16 @@ class Contribution extends CI_Controller {
         $this->load->library('pagination');
         $this->data['title'] = lang('saving_transaction_search');
 
+        if (isset($_GET['reset']) && $_GET['reset'] == '1') {
+            $this->session->unset_userdata('contribution_transaction_key');
+            $this->session->unset_userdata('contribution_transaction_from');
+            $this->session->unset_userdata('contribution_transaction_upto');
+            $this->session->unset_userdata('contribution_transaction_source');
+            $this->session->unset_userdata('contribution_transaction_posted');
+            redirect(current_lang() . '/contribution/contribution_transaction', 'refresh');
+            return;
+        }
+
         if (isset($_GET['row_per_pg'])) {
             $this->session->set_userdata('PER_PAGE', $_GET['row_per_pg']);
         } else if (!$this->session->userdata('PER_PAGE')) {
@@ -548,13 +612,24 @@ class Contribution extends CI_Controller {
         $key1 = null;
         $from = null;
         $to = null;
+
+        $extract_search_key = function ($raw) {
+            $raw = trim((string) $raw);
+            if ($raw === '') {
+                return '';
+            }
+            if (strpos($raw, ' - ') !== false) {
+                $parts = explode(' - ', $raw);
+                return trim($parts[0]);
+            }
+            return $raw;
+        };
         
         // Handle POST submission - save to session or clear if empty
         if (isset($_POST['key'])) {
             if ($_POST['key'] != '') {
                 $key = $_POST['key'];
-                $expl = explode('-', $key);
-                $key1 = trim($expl[0]);
+                $key1 = $extract_search_key($key);
                 $this->session->set_userdata('contribution_transaction_key', $key);
             } else {
                 // Clear session if empty value submitted
@@ -564,8 +639,7 @@ class Contribution extends CI_Controller {
             // GET parameter takes priority - use it even if empty
             if ($_GET['key'] != '') {
                 $key = $_GET['key'];
-                $expl = explode('-', $key);
-                $key1 = trim($expl[0]);
+                $key1 = $extract_search_key($key);
                 $this->session->set_userdata('contribution_transaction_key', $key);
             } else {
                 // Clear session if GET is empty
@@ -574,8 +648,7 @@ class Contribution extends CI_Controller {
         } else if ($this->session->userdata('contribution_transaction_key')) {
             // Use session value if no GET/POST
             $key = $this->session->userdata('contribution_transaction_key');
-            $expl = explode('-', $key);
-            $key1 = trim($expl[0]);
+            $key1 = $extract_search_key($key);
         }
 
         // If Member ID is provided, ignore date filters
@@ -713,36 +786,48 @@ class Contribution extends CI_Controller {
         if (count($suffix_array) > 0) {
             $query_string = http_build_query($suffix_array, '', '&');
             $config['suffix'] = '?' . $query_string;
+            $config['first_url'] = site_url(current_lang() . '/contribution/contribution_transaction') . '?' . $query_string;
         }
 
         $config["base_url"] = site_url(current_lang() . '/contribution/contribution_transaction');
         $config["total_rows"] = $this->contribution_model->count_transaction($key1, $from, $upto, $source, $posted);
         $config["uri_segment"] = 4;
 
-        $config['full_tag_open'] = '<div class="pagination" style="background-color:#fff; margin-left:0px;">';
+        $config['full_tag_open'] = '<div class="pagination member-pagination">';
         $config['full_tag_close'] = '</div>';
 
         $config['num_tag_open'] = '<div class="link-pagination">';
         $config['num_tag_close'] = '</div>';
 
-        $config['prev_tag_open'] = '<div class="link-pagination">';
+        $config['prev_tag_open'] = '<div class="link-pagination nav-btn">';
         $config['prev_tag_close'] = '</div>';
 
-        $config['next_tag_open'] = '<div class="link-pagination">';
+        $config['next_tag_open'] = '<div class="link-pagination nav-btn">';
         $config['next_tag_close'] = '</div>';
 
-        $config['next_link'] = 'Next';
-        $config['prev_link'] = 'Previous';
+        $config['last_tag_open'] = '<div class="link-pagination nav-btn">';
+        $config['last_tag_close'] = '</div>';
+
+        $config['first_tag_open'] = '<div class="link-pagination nav-btn">';
+        $config['first_tag_close'] = '</div>';
+
+        $config['first_link'] = '&laquo;';
+        $config['last_link'] = '&raquo;';
+        $config['next_link'] = 'Next &rsaquo;';
+        $config['prev_link'] = '&lsaquo; Prev';
         $config['cur_tag_open'] = '<div class="link-pagination current">';
         $config['cur_tag_close'] = '</div>';
 
 
-        $config["num_links"] = 10;
+        $config["num_links"] = 5;
 
 
         $this->pagination->initialize($config);
         $page = ($this->uri->segment(4) ? $this->uri->segment(4) : 0);
         $this->data['links'] = $this->pagination->create_links();
+        $this->data['total_rows'] = $config["total_rows"];
+        $this->data['page_start'] = $page;
+        $this->data['per_page'] = $config["per_page"];
 
         // Pass key1 (can be null if empty) and date filters
         $transactions = $this->contribution_model->search_transaction($key1, $from, $upto, $config["per_page"], $page, $source, $posted);

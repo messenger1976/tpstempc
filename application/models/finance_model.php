@@ -4284,6 +4284,24 @@ $pin=current_user()->PIN;
         return $this->db->get()->row();
     }
 
+    function list_member_saving_accounts($pid, $member_id = null) {
+        $pin = current_user()->PIN;
+        if ($pid === null || $pid === '') {
+            return array();
+        }
+
+        $this->db->select("ma.id, ma.account, ma.old_members_acct, ma.balance, ma.virtual_balance, ma.status, ma.account_cat, COALESCE(NULLIF(sat.name, ''), sat.description) as account_type_name", FALSE);
+        $this->db->from('members_account ma');
+        $this->db->join('saving_account_type sat', 'ma.account_cat = sat.account', 'left');
+        $this->db->where('ma.PIN', $pin);
+        $this->db->where('ma.RFID', $pid);
+        if ($member_id !== null && $member_id !== '') {
+            $this->db->where('ma.member_id', $member_id);
+        }
+        $this->db->order_by('ma.account', 'ASC');
+        return $this->db->get()->result();
+    }
+
     function update_saving_account($data, $id) {
         $pin = current_user()->PIN;
         $this->db->where('id', $id);

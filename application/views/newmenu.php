@@ -3,16 +3,22 @@ $active = ($this->uri->segment(2)) ? $this->uri->segment(2) : 'X';
 $activefunction = ($this->uri->segment(3)) ? $this->uri->segment(3) : 'X';
 $company_info = function_exists('company_info') ? company_info() : null;
 $company_logo = ($company_info && isset($company_info->logo) && $company_info->logo !== '') ? $company_info->logo : 'logo.png';
+$company_detail = function_exists('company_info_detail') ? company_info_detail() : null;
+$company_brand = ($company_detail && isset($company_detail->name) && $company_detail->name !== '')
+    ? $company_detail->name
+    : (($company_info && isset($company_info->name) && $company_info->name !== '') ? $company_info->name : lang('app_name'));
 $current_user_data = function_exists('current_user') ? current_user() : null;
 $current_member_id = ($current_user_data && isset($current_user_data->member_id)) ? $current_user_data->member_id : '';
 ?>
 <div class="sidebar-collapse">
     <ul class="nav metismenu" id="side-menu">
         <li class="nav-header">
-            <div class="dropdown profile-element"> <span>
-                <img alt="image" style="width: 130px;" src="<?php echo base_url() ?>logo/<?php echo $company_logo; ?>" />
-                        </span>
-                
+            <div class="dropdown profile-element">
+                <span>
+                    <img alt="<?php echo htmlspecialchars($company_brand, ENT_QUOTES, 'UTF-8'); ?>" src="<?php echo base_url(); ?>logo/<?php echo htmlspecialchars($company_logo, ENT_QUOTES, 'UTF-8'); ?>" />
+                </span>
+                <span class="brand-name"><?php echo htmlspecialchars($company_brand, ENT_QUOTES, 'UTF-8'); ?></span>
+                <span class="brand-tag">Cooperative Portal</span>
             </div>
             <div class="logo-element">
                 <?php echo lang('app_name'); ?>

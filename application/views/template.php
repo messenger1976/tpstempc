@@ -22,6 +22,7 @@
         <link href="<?php echo base_url() ?>media/css/googleapis.css" rel="stylesheet">
         <link href="<?php echo base_url(); ?>media/css/style1.css" rel="stylesheet">
         <link href="<?php echo base_url(); ?>media/css/style.css" rel="stylesheet">
+        <link href="<?php echo base_url(); ?>media/css/app-shell.css?v=20260813" rel="stylesheet">
  
         <!-- Sweet Alert -->
         <link href="<?php echo base_url(); ?>media/css/plugins/sweetalert/sweetalert.css" rel="stylesheet">

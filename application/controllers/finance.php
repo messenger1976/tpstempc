@@ -890,6 +890,14 @@ class Finance extends CI_Controller {
         if ($source_filter === '') {
             $source_filter = 'all';
         }
+        $date_from = trim((string) $this->input->post('date_from'));
+        $date_to = trim((string) $this->input->post('date_to'));
+        if ($date_from !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $date_from)) {
+            $date_from = '';
+        }
+        if ($date_to !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $date_to)) {
+            $date_to = '';
+        }
         $order_column_index = 3;
         $order_dir = 'desc';
         $order = $this->input->post('order');
@@ -905,7 +913,9 @@ class Finance extends CI_Controller {
                 $search,
                 $order_column_index,
                 $order_dir,
-                $source_filter
+                $source_filter,
+                $date_from,
+                $date_to
             );
 
             $data = array();
@@ -963,10 +973,11 @@ class Finance extends CI_Controller {
             : '&mdash;';
 
         $status_html = $balanced
-            ? '<span class="label label-success">Balanced</span>'
-            : '<span class="label label-danger">Unbalanced</span>';
+            ? '<span class="status-pill balanced">Balanced</span>'
+            : '<span class="status-pill unbalanced">Unbalanced</span>';
 
-        $actions = '<a href="' . site_url($view_url) . '" class="btn btn-info btn-xs" title="View Details">'
+        $actions = '<div class="action-btns">'
+            . '<a href="' . site_url($view_url) . '" class="btn btn-info btn-xs" title="View Details">'
             . '<i class="fa fa-eye"></i> View</a>';
 
         if ($is_general && $balanced) {
@@ -985,13 +996,14 @@ class Finance extends CI_Controller {
                 . ' class="btn btn-success btn-xs" title="Post to GL">'
                 . '<i class="fa fa-book"></i> Post to GL</a>';
         } elseif ($is_receipt_disburse && $is_posted) {
-            $actions .= ' <span class="label label-default">Posted to GL</span>';
+            $actions .= ' <span class="status-pill source">Posted to GL</span>';
         }
+        $actions .= '</div>';
 
         return array(
             $checkbox,
             (int) $entry->entryid,
-            '<span class="label label-default">' . htmlspecialchars($source_label, ENT_QUOTES, 'UTF-8') . '</span>',
+            '<span class="status-pill source">' . htmlspecialchars($source_label, ENT_QUOTES, 'UTF-8') . '</span>',
             date('M d, Y', strtotime($entry->entrydate)),
             htmlspecialchars($entry->description, ENT_QUOTES, 'UTF-8'),
             htmlspecialchars($entry->created_by_name, ENT_QUOTES, 'UTF-8'),

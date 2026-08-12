@@ -1955,7 +1955,7 @@ class Finance_Model extends CI_Model {
      * @param string $source_filter all|general_journal|cash_receipt|cash_disbursement
      * @return array draw, recordsTotal, recordsFiltered, data rows, grand totals
      */
-    function get_unposted_journal_review_datatable($start, $length, $search, $order_column_index, $order_dir, $source_filter = 'all') {
+    function get_unposted_journal_review_datatable($start, $length, $search, $order_column_index, $order_dir, $source_filter = 'all', $date_from = '', $date_to = '') {
         $pin = current_user()->PIN;
         $has_pin_col = $this->db->query("SHOW COLUMNS FROM general_journal LIKE 'PIN'")->row();
         $gj_pin_cond = $has_pin_col ? ' AND gj.PIN = gje.PIN' : '';
@@ -1964,6 +1964,15 @@ class Finance_Model extends CI_Model {
         $source_filter = strtolower(trim((string) $source_filter));
         if ($source_filter === '' || $source_filter === 'all' || !in_array($source_filter, $allowed_sources, true)) {
             $source_filter = 'all';
+        }
+
+        $date_from = trim((string) $date_from);
+        $date_to = trim((string) $date_to);
+        if ($date_from !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $date_from)) {
+            $date_from = '';
+        }
+        if ($date_to !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $date_to)) {
+            $date_to = '';
         }
 
         $union_parts = array();
@@ -2073,11 +2082,11 @@ class Finance_Model extends CI_Model {
 
         $union_sql = '(' . implode(') UNION ALL (', $union_parts) . ')';
 
-        $search_sql = '';
-        $search_bind = array();
+        $filter_sql = '';
+        $filter_bind = array();
         if ($search !== '') {
             $like = '%' . $this->db->escape_like_str($search) . '%';
-            $search_sql = " AND (
+            $filter_sql .= " AND (
                 CAST(entryid AS CHAR) LIKE ?
                 OR description LIKE ?
                 OR entry_source LIKE ?
@@ -2085,7 +2094,15 @@ class Finance_Model extends CI_Model {
                 OR DATE_FORMAT(entrydate, '%Y-%m-%d') LIKE ?
                 OR createdby IN (SELECT id FROM users WHERE username LIKE ?)
             )";
-            $search_bind = array($like, $like, $like, $like, $like, $like);
+            $filter_bind = array_merge($filter_bind, array($like, $like, $like, $like, $like, $like));
+        }
+        if ($date_from !== '') {
+            $filter_sql .= ' AND DATE(entrydate) >= ?';
+            $filter_bind[] = $date_from;
+        }
+        if ($date_to !== '') {
+            $filter_sql .= ' AND DATE(entrydate) <= ?';
+            $filter_bind[] = $date_to;
         }
 
         $order_map = array(
@@ -2116,8 +2133,8 @@ class Finance_Model extends CI_Model {
         $records_total = $count_total_row ? (int) $count_total_row->cnt : 0;
 
         $count_filtered_q = $this->db->query(
-            "SELECT COUNT(*) AS cnt FROM ({$union_sql}) AS u WHERE 1 = 1{$search_sql}",
-            array_merge($bind, $search_bind)
+            "SELECT COUNT(*) AS cnt FROM ({$union_sql}) AS u WHERE 1 = 1{$filter_sql}",
+            array_merge($bind, $filter_bind)
         );
         if ($count_filtered_q === false) {
             $err = method_exists($this->db, 'error') ? $this->db->error() : array();
@@ -2129,8 +2146,8 @@ class Finance_Model extends CI_Model {
 
         $totals_q = $this->db->query(
             "SELECT COALESCE(SUM(total_debit), 0) AS grand_total_debit, COALESCE(SUM(total_credit), 0) AS grand_total_credit
-             FROM ({$union_sql}) AS u WHERE 1 = 1{$search_sql}",
-            array_merge($bind, $search_bind)
+             FROM ({$union_sql}) AS u WHERE 1 = 1{$filter_sql}",
+            array_merge($bind, $filter_bind)
         );
         $totals_row = ($totals_q !== false) ? $totals_q->row() : null;
         $grand_total_debit = $totals_row ? floatval($totals_row->grand_total_debit) : 0.0;
@@ -2145,10 +2162,10 @@ class Finance_Model extends CI_Model {
             $length = 25;
         }
 
-        $data_sql = "SELECT * FROM ({$union_sql}) AS u WHERE 1 = 1{$search_sql}
+        $data_sql = "SELECT * FROM ({$union_sql}) AS u WHERE 1 = 1{$filter_sql}
             ORDER BY {$order_col} {$order_dir}, entryid DESC
             LIMIT {$length} OFFSET {$start}";
-        $data_q = $this->db->query($data_sql, array_merge($bind, $search_bind));
+        $data_q = $this->db->query($data_sql, array_merge($bind, $filter_bind));
         if ($data_q === false) {
             $err = method_exists($this->db, 'error') ? $this->db->error() : array();
             log_message('error', 'get_unposted_journal_review_datatable data query failed: ' . $this->db->last_query() . ' | ' . json_encode($err));

@@ -1,149 +1,330 @@
+<?php $this->load->view('loan/list_page_styles'); ?>
 <link href="<?php echo base_url(); ?>assets/css/plugins/dataTables/datatables.min.css" rel="stylesheet">
 
 <?php
-if (isset($message) && !empty($message)) {
-    echo '<div class="label label-info displaymessage">' . $message . '</div>';
-} else if ($this->session->flashdata('message') != '') {
-    echo '<div class="label label-info displaymessage">' . $this->session->flashdata('message') . '</div>';
-} else if (isset($warning) && !empty($warning)) {
-    echo '<div class="label label-danger displaymessage">' . $warning . '</div>';
-} else if ($this->session->flashdata('warning') != '') {
-    echo '<div class="label label-danger displaymessage">' . $this->session->flashdata('warning') . '</div>';
-}
-
-$posted_by_source = isset($posted_by_source) ? $posted_by_source : array('all' => array(), 'general_journal' => array(), 'cash_receipt' => array(), 'cash_disbursement' => array());
+$posted_by_source = isset($posted_by_source) ? $posted_by_source : array(
+    'all' => array(),
+    'general_journal' => array(),
+    'cash_receipt' => array(),
+    'cash_disbursement' => array(),
+);
 $posted_tab = isset($posted_tab) ? $posted_tab : 'all';
+$posted_date_from = isset($posted_date_from) ? $posted_date_from : '';
+$posted_date_to = isset($posted_date_to) ? $posted_date_to : '';
 $tab_defs = array(
-    'all' => array('label' => 'All', 'count' => count($posted_by_source['all'])),
-    'general_journal' => array('label' => function_exists('journal_source_label') ? journal_source_label('general_journal') : 'Journal Entry', 'count' => count($posted_by_source['general_journal'])),
-    'cash_receipt' => array('label' => function_exists('journal_source_label') ? journal_source_label('cash_receipt') : 'Cash Receipt', 'count' => count($posted_by_source['cash_receipt'])),
-    'cash_disbursement' => array('label' => function_exists('journal_source_label') ? journal_source_label('cash_disbursement') : 'Cash Disbursement', 'count' => count($posted_by_source['cash_disbursement'])),
+    'all' => array(
+        'label' => 'All',
+        'count' => count($posted_by_source['all']),
+    ),
+    'general_journal' => array(
+        'label' => function_exists('journal_source_label') ? journal_source_label('general_journal') : 'Journal Entry',
+        'count' => count($posted_by_source['general_journal']),
+    ),
+    'cash_receipt' => array(
+        'label' => function_exists('journal_source_label') ? journal_source_label('cash_receipt') : 'Cash Receipt',
+        'count' => count($posted_by_source['cash_receipt']),
+    ),
+    'cash_disbursement' => array(
+        'label' => function_exists('journal_source_label') ? journal_source_label('cash_disbursement') : 'Cash Disbursement',
+        'count' => count($posted_by_source['cash_disbursement']),
+    ),
 );
 if (!isset($tab_defs[$posted_tab])) {
     $posted_tab = 'all';
 }
+$list_url = site_url(current_lang() . '/finance/void_transactions');
 ?>
 
-<div class="wrapper wrapper-content animated fadeInRight">
-    <div class="row">
-        <div class="col-lg-12">
-            <div class="ibox float-e-margins">
-                <div class="ibox-title">
-                    <h5><i class="fa fa-undo"></i> <?php echo lang('void_transactions'); ?></h5>
+<style type="text/css">
+.vt-page .info-banner {
+    background: #fff8e6;
+    border: 1px solid #f0e0b2;
+    border-radius: 8px;
+    padding: 12px 14px;
+    margin-bottom: 16px;
+    font-size: 13px;
+    color: #2f4050;
+    line-height: 1.45;
+}
+.vt-page .filter-field.date-field { flex: 0 1 180px; min-width: 150px; }
+.vt-page .source-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 0 0 16px;
+    padding: 0;
+    list-style: none;
+}
+.vt-page .source-tabs > li > a {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 14px;
+    border-radius: 20px;
+    border: 1px solid #e7eaec;
+    background: #fff;
+    color: #676a6c;
+    font-size: 13px;
+    font-weight: 600;
+    text-decoration: none;
+}
+.vt-page .source-tabs > li.active > a,
+.vt-page .source-tabs > li > a:hover {
+    background: #e8f8f5;
+    border-color: #1ab394;
+    color: #1ab394;
+}
+.vt-page .source-tabs .count-badge {
+    display: inline-block;
+    min-width: 22px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    background: #eef1f2;
+    color: #676a6c;
+    font-size: 11px;
+    font-weight: 700;
+}
+.vt-page .source-tabs > li.active .count-badge {
+    background: #1ab394;
+    color: #fff;
+}
+.vt-page .status-pill {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 700;
+}
+.vt-page .status-pill.source {
+    background: #eef3fb;
+    color: #3c6eae;
+}
+.vt-page .tab-content-wrap {
+    border: 1px solid #e7eaec;
+    border-radius: 8px;
+    padding: 14px;
+    background: #fff;
+}
+.vt-page .batch-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: center;
+    margin-top: 16px;
+    padding-top: 14px;
+    border-top: 1px solid #eef1f2;
+}
+.vt-page #voidSelectedCount {
+    color: #888;
+    font-size: 13px;
+    font-weight: 600;
+}
+.vt-page .dataTables_wrapper .dataTables_filter input,
+.vt-page .dataTables_wrapper .dataTables_length select {
+    border: 1px solid #e5e6e7;
+    border-radius: 6px;
+    height: 32px;
+    padding: 4px 8px;
+}
+.vt-page .dataTables_wrapper .dataTables_paginate .paginate_button.current {
+    background: #1ab394 !important;
+    border-color: #1ab394 !important;
+    color: #fff !important;
+}
+.vt-page .amount-cell {
+    text-align: right;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+.vt-page .btn-primary {
+    background: #1ab394;
+    border-color: #1ab394;
+}
+.vt-page .btn {
+    border-radius: 6px;
+    font-weight: 600;
+}
+.vt-page .action-btns {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+.vt-page .empty-note {
+    color: #999;
+    font-size: 13px;
+    padding: 18px 0;
+    text-align: center;
+}
+</style>
+
+<div class="col-lg-12 member-list-page vt-page">
+    <?php
+    if (isset($message) && !empty($message)) {
+        echo '<div class="member-alert success displaymessage">' . $message . '</div>';
+    } else if ($this->session->flashdata('message') != '') {
+        echo '<div class="member-alert success displaymessage">' . $this->session->flashdata('message') . '</div>';
+    } else if (isset($warning) && !empty($warning)) {
+        echo '<div class="member-alert danger displaymessage">' . $warning . '</div>';
+    } else if ($this->session->flashdata('warning') != '') {
+        echo '<div class="member-alert danger displaymessage">' . $this->session->flashdata('warning') . '</div>';
+    }
+    ?>
+
+    <div class="info-banner">
+        <i class="fa fa-info-circle"></i>
+        These entries are already posted. Void creates a reversing journal (debits/credits swapped) and posts it to GL.
+        Original GL lines are kept for audit.
+    </div>
+
+    <div class="member-filter-panel">
+        <div class="panel-head">
+            <div class="panel-head-left">
+                <i class="fa fa-search icon-badge"></i>
+                <h4><?php echo lang('void_transactions'); ?></h4>
+            </div>
+        </div>
+        <div class="panel-body">
+            <form method="get" action="<?php echo $list_url; ?>" class="form-horizontal" id="postedFilterForm">
+                <input type="hidden" name="posted_tab" id="posted_tab_input" value="<?php echo htmlspecialchars($posted_tab, ENT_QUOTES, 'UTF-8'); ?>"/>
+                <div class="filter-row">
+                    <div class="filter-field date-field">
+                        <label for="posted_date_from">From Date</label>
+                        <input type="date" class="form-control" id="posted_date_from" name="posted_date_from" value="<?php echo htmlspecialchars($posted_date_from, ENT_QUOTES, 'UTF-8'); ?>"/>
+                    </div>
+                    <div class="filter-field date-field">
+                        <label for="posted_date_to">To Date</label>
+                        <input type="date" class="form-control" id="posted_date_to" name="posted_date_to" value="<?php echo htmlspecialchars($posted_date_to, ENT_QUOTES, 'UTF-8'); ?>"/>
+                    </div>
+                    <div class="filter-actions">
+                        <a href="<?php echo $list_url; ?>" class="btn btn-default btn-clear-filter">
+                            <i class="fa fa-undo"></i> Clear
+                        </a>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fa fa-search"></i> Search Posted Entry
+                        </button>
+                    </div>
                 </div>
-                <div class="ibox-content">
-                    <h4><i class="fa fa-check-circle"></i> Posted General Ledger Listing</h4>
-                    <p class="text-muted">These entries are already posted. Void creates a reversing journal (debits/credits swapped) and posts it to GL. Original GL lines are kept for audit.</p>
+            </form>
+        </div>
+    </div>
 
-                    <form method="get" action="<?php echo site_url(current_lang() . '/finance/void_transactions'); ?>" class="form-inline" style="margin-bottom: 15px;" id="postedFilterForm">
-                        <input type="hidden" name="posted_tab" id="posted_tab_input" value="<?php echo htmlspecialchars($posted_tab); ?>"/>
-                        <div class="form-group" style="margin-right: 10px;">
-                            <label for="posted_date_from" style="display:block;">Date From</label>
-                            <input type="date" class="form-control" id="posted_date_from" name="posted_date_from" value="<?php echo isset($posted_date_from) ? htmlspecialchars($posted_date_from) : ''; ?>"/>
-                        </div>
-                        <div class="form-group" style="margin-right: 10px;">
-                            <label for="posted_date_to" style="display:block;">Date To</label>
-                            <input type="date" class="form-control" id="posted_date_to" name="posted_date_to" value="<?php echo isset($posted_date_to) ? htmlspecialchars($posted_date_to) : ''; ?>"/>
-                        </div>
-                        <div class="form-group" style="margin-top: 20px;">
-                            <button type="submit" class="btn btn-success"><i class="fa fa-search"></i> Search Posted Entry</button>
-                            <a href="<?php echo site_url(current_lang() . '/finance/void_transactions'); ?>" class="btn btn-default">Clear</a>
-                        </div>
-                    </form>
+    <div class="member-table-panel">
+        <div class="panel-head">
+            <div class="panel-head-left">
+                <i class="fa fa-undo icon-badge"></i>
+                <h4>Posted General Ledger Listing</h4>
+            </div>
+            <div class="result-meta">
+                Showing <strong><?php echo number_format((int) $tab_defs[$posted_tab]['count']); ?></strong>
+                in current tab
+            </div>
+        </div>
+        <div class="panel-body">
+            <form method="post" action="<?php echo site_url(current_lang() . '/finance/void_gl_posting_batch'); ?>" id="voidGlForm" onsubmit="return confirm('Void selected entries with reversing journals?\n\nThis will create and post reversing entries to GL. Original postings remain for audit.');">
+                <ul class="source-tabs" role="tablist" id="postedSourceTabs">
+                    <?php foreach ($tab_defs as $tab_key => $tab_info) { ?>
+                        <li role="presentation" class="<?php echo ($posted_tab === $tab_key) ? 'active' : ''; ?>">
+                            <a href="#posted-tab-<?php echo htmlspecialchars($tab_key, ENT_QUOTES, 'UTF-8'); ?>"
+                               aria-controls="posted-tab-<?php echo htmlspecialchars($tab_key, ENT_QUOTES, 'UTF-8'); ?>"
+                               role="tab"
+                               data-toggle="tab"
+                               data-posted-tab="<?php echo htmlspecialchars($tab_key, ENT_QUOTES, 'UTF-8'); ?>">
+                                <?php echo htmlspecialchars($tab_info['label'], ENT_QUOTES, 'UTF-8'); ?>
+                                <span class="count-badge"><?php echo (int) $tab_info['count']; ?></span>
+                            </a>
+                        </li>
+                    <?php } ?>
+                </ul>
 
-                    <form method="post" action="<?php echo site_url(current_lang() . '/finance/void_gl_posting_batch'); ?>" id="voidGlForm" onsubmit="return confirm('Void selected entries with reversing journals?\n\nThis will create and post reversing entries to GL. Original postings remain for audit.');">
-                        <ul class="nav nav-tabs" role="tablist" id="postedSourceTabs" style="margin-bottom: 0;">
-                            <?php foreach ($tab_defs as $tab_key => $tab_info): ?>
-                                <li role="presentation" class="<?php echo ($posted_tab === $tab_key) ? 'active' : ''; ?>">
-                                    <a href="#posted-tab-<?php echo htmlspecialchars($tab_key); ?>" aria-controls="posted-tab-<?php echo htmlspecialchars($tab_key); ?>" role="tab" data-toggle="tab" data-posted-tab="<?php echo htmlspecialchars($tab_key); ?>">
-                                        <?php echo htmlspecialchars($tab_info['label']); ?>
-                                        <span class="badge"><?php echo (int) $tab_info['count']; ?></span>
-                                    </a>
-                                </li>
-                            <?php endforeach; ?>
-                        </ul>
-
-                        <div class="tab-content" style="border: 1px solid #ddd; border-top: 0; padding: 15px;">
-                            <?php foreach ($tab_defs as $tab_key => $tab_info):
-                                $tab_entries = isset($posted_by_source[$tab_key]) ? $posted_by_source[$tab_key] : array();
-                                $table_id = 'postedEntriesTable_' . $tab_key;
-                            ?>
-                            <div role="tabpanel" class="tab-pane <?php echo ($posted_tab === $tab_key) ? 'active' : ''; ?>" id="posted-tab-<?php echo htmlspecialchars($tab_key); ?>">
-                                <div class="table-responsive">
-                                    <table class="table table-striped table-bordered table-hover posted-entries-table" id="<?php echo htmlspecialchars($table_id); ?>" style="width:100%;" data-posted-tab="<?php echo htmlspecialchars($tab_key); ?>">
-                                        <thead>
-                                            <tr>
-                                                <th style="width: 32px;">
-                                                    <input type="checkbox" class="select-all-posted" title="Select all on this page"/>
-                                                </th>
-                                                <th>Entry ID</th>
-                                                <th>Source</th>
-                                                <th>Date</th>
-                                                <th>Description</th>
-                                                <th>Created By</th>
-                                                <th>Line Items</th>
-                                                <th style="text-align: right;">Total Debit</th>
-                                                <th style="text-align: right;">Total Credit</th>
-                                                <th>Actions</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            <?php foreach ($tab_entries as $entry):
-                                                $entry_source = isset($entry->entry_source) ? $entry->entry_source : 'general_journal';
-                                                $is_general = ($entry_source === 'general_journal');
-                                                $view_url = current_lang() . '/finance/journal_entry_view/' . encode_id($entry->entryid);
-                                                if ($entry_source === 'cash_disbursement' && isset($entry->reference_id)) {
-                                                    $view_url = current_lang() . '/cash_disbursement/cash_disbursement_view/' . encode_id($entry->reference_id);
-                                                } elseif ($entry_source === 'cash_receipt' && isset($entry->reference_id)) {
-                                                    $view_url = current_lang() . '/cash_receipt/cash_receipt_view/' . encode_id($entry->reference_id);
-                                                }
-                                                $source_label = function_exists('journal_source_label') ? journal_source_label($entry_source) : $entry_source;
-                                                $entry_debit = isset($entry->total_debit) ? floatval($entry->total_debit) : 0;
-                                                $entry_credit = isset($entry->total_credit) ? floatval($entry->total_credit) : 0;
-                                                $void_value = $entry_source . '::' . encode_id($entry->entryid);
+                <div class="tab-content tab-content-wrap">
+                    <?php foreach ($tab_defs as $tab_key => $tab_info) {
+                        $tab_entries = isset($posted_by_source[$tab_key]) ? $posted_by_source[$tab_key] : array();
+                        $table_id = 'postedEntriesTable_' . $tab_key;
+                        ?>
+                        <div role="tabpanel" class="tab-pane <?php echo ($posted_tab === $tab_key) ? 'active' : ''; ?>" id="posted-tab-<?php echo htmlspecialchars($tab_key, ENT_QUOTES, 'UTF-8'); ?>">
+                            <div class="table-responsive">
+                                <table class="table table-striped member-table posted-entries-table" id="<?php echo htmlspecialchars($table_id, ENT_QUOTES, 'UTF-8'); ?>" style="width:100%;" data-posted-tab="<?php echo htmlspecialchars($tab_key, ENT_QUOTES, 'UTF-8'); ?>">
+                                    <thead>
+                                        <tr>
+                                            <th style="width: 32px;">
+                                                <input type="checkbox" class="select-all-posted" title="Select all on this page"/>
+                                            </th>
+                                            <th>Entry ID</th>
+                                            <th>Source</th>
+                                            <th>Date</th>
+                                            <th>Description</th>
+                                            <th>Created By</th>
+                                            <th>Line Items</th>
+                                            <th style="text-align: right;">Total Debit</th>
+                                            <th style="text-align: right;">Total Credit</th>
+                                            <th>Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <?php foreach ($tab_entries as $entry) {
+                                            $entry_source = isset($entry->entry_source) ? $entry->entry_source : 'general_journal';
+                                            $is_general = ($entry_source === 'general_journal');
+                                            $view_url = current_lang() . '/finance/journal_entry_view/' . encode_id($entry->entryid);
+                                            if ($entry_source === 'cash_disbursement' && isset($entry->reference_id)) {
+                                                $view_url = current_lang() . '/cash_disbursement/cash_disbursement_view/' . encode_id($entry->reference_id);
+                                            } else if ($entry_source === 'cash_receipt' && isset($entry->reference_id)) {
+                                                $view_url = current_lang() . '/cash_receipt/cash_receipt_view/' . encode_id($entry->reference_id);
+                                            }
+                                            $source_label = function_exists('journal_source_label') ? journal_source_label($entry_source) : $entry_source;
+                                            $entry_debit = isset($entry->total_debit) ? (float) $entry->total_debit : 0;
+                                            $entry_credit = isset($entry->total_credit) ? (float) $entry->total_credit : 0;
+                                            $void_value = $entry_source . '::' . encode_id($entry->entryid);
                                             ?>
-                                                <tr>
-                                                    <td>
-                                                        <input type="checkbox" name="void_ids[]" value="<?php echo htmlspecialchars($void_value); ?>" class="void-checkbox"/>
-                                                    </td>
-                                                    <td><?php echo $entry->entryid; ?></td>
-                                                    <td><span class="label label-default"><?php echo htmlspecialchars($source_label); ?></span></td>
-                                                    <td data-order="<?php echo htmlspecialchars($entry->entrydate); ?>"><?php echo date('M d, Y', strtotime($entry->entrydate)); ?></td>
-                                                    <td><?php echo htmlspecialchars($entry->description); ?></td>
-                                                    <td><?php echo htmlspecialchars($entry->created_by_name); ?></td>
-                                                    <td style="text-align: center;"><?php echo isset($entry->line_count) ? $entry->line_count : 0; ?></td>
-                                                    <td style="text-align: right;"><?php echo number_format($entry_debit, 2); ?></td>
-                                                    <td style="text-align: right;"><?php echo number_format($entry_credit, 2); ?></td>
-                                                    <td>
-                                                        <a href="<?php echo site_url($view_url); ?>" class="btn btn-info btn-xs" title="View"><i class="fa fa-eye"></i> View</a>
-                                                        <?php if ($is_general): ?>
+                                            <tr>
+                                                <td>
+                                                    <input type="checkbox" name="void_ids[]" value="<?php echo htmlspecialchars($void_value, ENT_QUOTES, 'UTF-8'); ?>" class="void-checkbox"/>
+                                                </td>
+                                                <td><span class="member-id-chip"><?php echo (int) $entry->entryid; ?></span></td>
+                                                <td><span class="status-pill source"><?php echo htmlspecialchars($source_label, ENT_QUOTES, 'UTF-8'); ?></span></td>
+                                                <td data-order="<?php echo htmlspecialchars($entry->entrydate, ENT_QUOTES, 'UTF-8'); ?>">
+                                                    <?php echo htmlspecialchars(date('M d, Y', strtotime($entry->entrydate)), ENT_QUOTES, 'UTF-8'); ?>
+                                                </td>
+                                                <td><?php echo htmlspecialchars($entry->description, ENT_QUOTES, 'UTF-8'); ?></td>
+                                                <td><?php echo htmlspecialchars($entry->created_by_name, ENT_QUOTES, 'UTF-8'); ?></td>
+                                                <td style="text-align: center;"><?php echo isset($entry->line_count) ? (int) $entry->line_count : 0; ?></td>
+                                                <td class="amount-cell"><?php echo number_format($entry_debit, 2); ?></td>
+                                                <td class="amount-cell"><?php echo number_format($entry_credit, 2); ?></td>
+                                                <td>
+                                                    <div class="action-btns">
+                                                        <a href="<?php echo site_url($view_url); ?>" class="btn btn-info btn-xs" title="View">
+                                                            <i class="fa fa-eye"></i> View
+                                                        </a>
+                                                        <?php if ($is_general) { ?>
                                                             <a href="<?php echo site_url(current_lang() . '/finance/void_gl_posting_general/' . encode_id($entry->entryid)); ?>"
                                                                onclick="return confirm('Void with reversing entry?\n\nCreates a reversing JE, posts it to GL, and reverses CBU links if any. Original GL is kept.');"
-                                                               class="btn btn-warning btn-xs" title="Void with Reversing Entry"><i class="fa fa-undo"></i> Void</a>
-                                                        <?php else: ?>
+                                                               class="btn btn-warning btn-xs" title="Void with Reversing Entry">
+                                                                <i class="fa fa-undo"></i> Void
+                                                            </a>
+                                                        <?php } else { ?>
                                                             <a href="<?php echo site_url(current_lang() . '/finance/void_gl_posting_journal_entry/' . encode_id($entry->entryid)); ?>"
                                                                onclick="return confirm('Void with reversing entry?\n\nCreates a reversing JE and posts it to GL. Original GL is kept for audit.');"
-                                                               class="btn btn-warning btn-xs" title="Void with Reversing Entry"><i class="fa fa-undo"></i> Void</a>
-                                                        <?php endif; ?>
-                                                    </td>
-                                                </tr>
-                                            <?php endforeach; ?>
-                                        </tbody>
-                                    </table>
-                                </div>
+                                                               class="btn btn-warning btn-xs" title="Void with Reversing Entry">
+                                                                <i class="fa fa-undo"></i> Void
+                                                            </a>
+                                                        <?php } ?>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        <?php } ?>
+                                    </tbody>
+                                </table>
                             </div>
-                            <?php endforeach; ?>
                         </div>
-
-                        <div style="margin-top: 15px;">
-                            <button type="submit" class="btn btn-warning" id="voidGlBatchBtn" disabled>
-                                <i class="fa fa-undo"></i> Void with Reversing Entry (Selected)
-                            </button>
-                            <span id="voidSelectedCount" class="text-muted" style="margin-left: 10px;"></span>
-                        </div>
-                    </form>
+                    <?php } ?>
                 </div>
-            </div>
+
+                <div class="batch-bar">
+                    <button type="submit" class="btn btn-warning" id="voidGlBatchBtn" disabled>
+                        <i class="fa fa-undo"></i> Void with Reversing Entry (Selected)
+                    </button>
+                    <span id="voidSelectedCount"></span>
+                </div>
+            </form>
         </div>
     </div>
 </div>
@@ -238,7 +419,7 @@ if (!isset($tab_defs[$posted_tab])) {
                 order: [[3, 'desc']],
                 columnDefs: [
                     { orderable: false, searchable: false, targets: [0, 9] },
-                    { className: 'text-right', targets: [7, 8] },
+                    { className: 'text-right amount-cell', targets: [7, 8] },
                     { className: 'text-center', targets: [6] }
                 ],
                 dom: 'lfrtip',

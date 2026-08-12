@@ -10,6 +10,19 @@ class Cash_disbursement_model extends CI_Model {
         parent::__construct();
     }
 
+    function ensure_loan_release_columns() {
+        if ($this->db->table_exists('cash_disbursements')) {
+            $columns = array(
+                'loan_release_lid' => "VARCHAR(50) NULL DEFAULT NULL",
+            );
+            foreach ($columns as $col => $definition) {
+                if (!$this->db->query("SHOW COLUMNS FROM cash_disbursements LIKE '" . $this->db->escape_str($col) . "'")->row()) {
+                    $this->db->query("ALTER TABLE cash_disbursements ADD COLUMN `$col` $definition");
+                }
+            }
+        }
+    }
+
     /**
      * Get all cash disbursements
      */
@@ -116,6 +129,7 @@ class Cash_disbursement_model extends CI_Model {
      * Create new cash disbursement
      */
     function create_cash_disbursement($disburse_data, $line_items) {
+        $this->ensure_loan_release_columns();
         // Start transaction
         $this->db->trans_start();
         
@@ -153,6 +167,11 @@ class Cash_disbursement_model extends CI_Model {
                 $this->db->insert('cash_disbursement_items', $row);
             }
         }
+
+        if (!empty($disburse_data['loan_release_lid'])) {
+            $this->load->model('loan_model');
+            $this->loan_model->link_pending_release_to_cash_disbursement($disburse_data['loan_release_lid'], $disburse_id);
+        }
         
         // Create journal entry only when not cancelled (cancelled disbursements are document references only, no GL)
         if (empty($disburse_data['cancelled'])) {
@@ -176,6 +195,7 @@ class Cash_disbursement_model extends CI_Model {
     function update_cash_disbursement($id, $disburse_data, $line_items) {
         $id = (int) $id;
         $pin = current_user()->PIN;
+        $this->ensure_loan_release_columns();
         if ($id <= 0) {
             return false;
         }
@@ -196,7 +216,7 @@ class Cash_disbursement_model extends CI_Model {
         }
 
         // Update remaining disbursement header fields (payment_method already done above)
-        $allowed = array('disburse_no', 'disburse_date', 'paid_to', 'cheque_no', 'bank_name', 'description', 'total_amount', 'cancelled', 'updated_at');
+        $allowed = array('disburse_no', 'disburse_date', 'paid_to', 'cheque_no', 'bank_name', 'description', 'total_amount', 'cancelled', 'updated_at', 'loan_release_lid');
         $set_parts = array();
         $params = array();
         foreach ($allowed as $col) {
@@ -259,12 +279,15 @@ class Cash_disbursement_model extends CI_Model {
     function delete_cash_disbursement($id) {
         $id = (int) $id;
         $pin = current_user()->PIN;
+        $this->ensure_loan_release_columns();
         if ($id <= 0) {
             return false;
         }
 
         // Start transaction
         $this->db->trans_start();
+
+        $disburse = $this->get_cash_disbursement($id);
 
         // Delete linked journal entry and its items first (may block FK or leave orphans)
         $this->_delete_journal_entries_for_disbursement($id);
@@ -274,6 +297,11 @@ class Cash_disbursement_model extends CI_Model {
 
         // Delete disbursement header (direct query so builder state from earlier deletes cannot affect it)
         $this->db->query('DELETE FROM cash_disbursements WHERE id = ? AND PIN = ?', array($id, $pin));
+
+        if ($disburse && !empty($disburse->loan_release_lid)) {
+            $this->load->model('loan_model');
+            $this->loan_model->unlink_pending_release_cash_disbursement($id);
+        }
 
         // Complete transaction
         $this->db->trans_complete();
@@ -336,6 +364,7 @@ class Cash_disbursement_model extends CI_Model {
      * Used to check if disbursement has been posted to GL.
      */
     function get_journal_entry_id_for_disbursement($disburse_id) {
+        $this->ensure_loan_release_columns();
         $pin = current_user()->PIN;
         $disburse_id = (int) $disburse_id;
         $has_ref_type = $this->db->query("SHOW COLUMNS FROM journal_entry LIKE 'reference_type'")->row();
@@ -382,6 +411,11 @@ class Cash_disbursement_model extends CI_Model {
         }
         $this->load->model('finance_model');
         return $this->finance_model->is_journal_entry_posted_to_gl($journal_id);
+    }
+
+    function has_linked_loan_release($disburse_id) {
+        $disburse = $this->get_cash_disbursement($disburse_id);
+        return ($disburse && !empty($disburse->loan_release_lid));
     }
 
     /**
@@ -476,7 +510,27 @@ class Cash_disbursement_model extends CI_Model {
         }
         
         $this->db->insert('journal_entry', $journal_data);
-        $journal_id = $this->db->insert_id();
+        // Do not trust insert_id() here: activity_logs (and other inserts) can
+        // pollute mysqli insert_id and orphan journal_entry_items under the wrong id.
+        $journal_id = 0;
+        if (!empty($journal_data['reference_type']) && isset($journal_data['reference_id'])) {
+            $found = $this->db->query(
+                'SELECT id FROM journal_entry WHERE reference_type = ? AND reference_id = ? AND PIN = ? ORDER BY id DESC LIMIT 1',
+                array($journal_data['reference_type'], $journal_data['reference_id'], current_user()->PIN)
+            )->row();
+            if ($found) {
+                $journal_id = (int) $found->id;
+            }
+        }
+        if (!$journal_id) {
+            $found = $this->db->query(
+                'SELECT id FROM journal_entry WHERE description = ? AND PIN = ? ORDER BY id DESC LIMIT 1',
+                array($journal_data['description'], current_user()->PIN)
+            )->row();
+            if ($found) {
+                $journal_id = (int) $found->id;
+            }
+        }
         if (!$journal_id) {
             log_message('error', 'Failed to create journal_entry header for disbursement: ' . $disburse_id);
             return false;
@@ -506,6 +560,79 @@ class Cash_disbursement_model extends CI_Model {
         }
         
         log_message('debug', 'Journal entry created for disbursement ID: ' . $disburse_id . ', journal_id: ' . $journal_id);
+        return true;
+    }
+
+    /**
+     * If the journal header exists but has no line items (common when insert_id
+     * was polluted by activity_logs), rebuild items from the cash disbursement.
+     */
+    function repair_missing_journal_entry_items($disburse_id) {
+        $disburse_id = (int) $disburse_id;
+        if ($disburse_id <= 0) {
+            return false;
+        }
+        if ($this->is_disbursement_posted_to_gl($disburse_id)) {
+            return false;
+        }
+        $journal_id = $this->get_journal_entry_id_for_disbursement($disburse_id);
+        if (!$journal_id) {
+            $disburse = $this->get_cash_disbursement($disburse_id);
+            if (!$disburse || !empty($disburse->cancelled)) {
+                return false;
+            }
+            $lines = array();
+            foreach ($this->get_disburse_items($disburse_id) as $item) {
+                $lines[] = array(
+                    'account' => $item->account,
+                    'debit' => isset($item->debit) ? floatval($item->debit) : 0,
+                    'credit' => isset($item->credit) ? floatval($item->credit) : 0,
+                    'description' => isset($item->description) ? $item->description : '',
+                );
+            }
+            if (empty($lines)) {
+                return false;
+            }
+            return $this->create_journal_entry($disburse_id, (array) $disburse, $lines);
+        }
+
+        $pin = current_user()->PIN;
+        $count = $this->db->query(
+            'SELECT COUNT(*) AS c FROM journal_entry_items WHERE journal_id = ? AND PIN = ?',
+            array($journal_id, $pin)
+        )->row();
+        if ($count && intval($count->c) > 0) {
+            return true;
+        }
+
+        $items = $this->get_disburse_items($disburse_id);
+        if (empty($items)) {
+            return false;
+        }
+        $has_desc = $this->db->query("SHOW COLUMNS FROM journal_entry_items LIKE 'description'")->row();
+        $has_ref = $this->db->query("SHOW COLUMNS FROM journal_entry_items LIKE 'reference_type'")->row();
+        foreach ($items as $item) {
+            $debit = isset($item->debit) ? floatval($item->debit) : 0;
+            $credit = isset($item->credit) ? floatval($item->credit) : 0;
+            if (empty($item->account) || ($debit <= 0 && $credit <= 0)) {
+                continue;
+            }
+            $row = array(
+                'journal_id' => $journal_id,
+                'account' => $item->account,
+                'debit' => $debit,
+                'credit' => $credit,
+                'PIN' => $pin,
+            );
+            if ($has_desc) {
+                $row['description'] = isset($item->description) ? $item->description : '';
+            }
+            if ($has_ref) {
+                $row['reference_type'] = 'cash_disbursement';
+            }
+            $this->db->insert('journal_entry_items', $row);
+        }
+        log_message('error', 'repair_missing_journal_entry_items: rebuilt items for journal_entry ' . $journal_id . ' (cash_disbursement ' . $disburse_id . ')');
         return true;
     }
 

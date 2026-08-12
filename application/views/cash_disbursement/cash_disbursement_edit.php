@@ -22,6 +22,7 @@ if (isset($message) && !empty($message)) {
 ?>
 
 <input type="hidden" name="id" value="<?php echo $disburse->id; ?>"/>
+<input type="hidden" name="loan_release_lid" id="loan_release_lid" value="<?php echo !empty($selected_release_lid) ? htmlspecialchars($selected_release_lid) : ''; ?>"/>
 
 <div class="wrapper wrapper-content animated fadeInRight">
     <div class="row">
@@ -66,6 +67,17 @@ if (isset($message) && !empty($message)) {
                             </div>
                         </div>
                     </div>
+
+                    <?php if (!empty($selected_release_lid)): ?>
+                    <div class="row">
+                        <div class="col-md-12">
+                            <div class="alert alert-info">
+                                <strong><?php echo lang('loan_release_loan'); ?>:</strong>
+                                <?php echo htmlspecialchars($selected_release_lid); ?>
+                            </div>
+                        </div>
+                    </div>
+                    <?php endif; ?>
 
                     <div class="row">
                         <div class="col-md-6">

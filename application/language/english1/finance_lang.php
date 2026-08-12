@@ -70,5 +70,7 @@ $lang['journalentry_total'] ='Total';
 $lang['journalentry_tax'] ='Tax';
 $lang['add_row'] ='Add Row';
 $lang['record_addbtn'] ='Record Journal';
+$lang['cash_disbursement_release_not_found'] = 'No pending loan release found for the selected member.';
+$lang['loan_release_loan'] = 'Loan Release';
 
 ?>

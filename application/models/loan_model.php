@@ -161,6 +161,10 @@ class Loan_Model extends CI_Model {
                 'Beginning Balance' AS status_name,
                 lp.name AS product_name,
                 1 AS is_beginning_balance,
+                lbb.id AS bb_id,
+                lbb.posted AS bb_posted,
+                lbb.fiscal_year_id AS bb_fiscal_year_id,
+                lbb.member_id AS member_id,
                 COALESCE(lbb.penalty_balance, 0) AS penalty,
                 COALESCE(lbb.interest_balance, 0) AS past_due_interest,
                 NULL AS evaluation_date,
@@ -433,6 +437,7 @@ class Loan_Model extends CI_Model {
     }
 
     function loan_wait_disburse($pid = null, $product_id = null, $date_from = null, $date_to = null, $limit = null, $start = 0) {
+        $this->ensure_release_workflow_columns();
         $pin = current_user()->PIN;
         $sql = "SELECT lc.*, lp.name AS loan_product_name, lp.name AS product_name,
                        ls.name AS status_name,
@@ -443,7 +448,17 @@ class Loan_Model extends CI_Model {
                 LEFT JOIN loan_status ls ON ls.code = lc.status
                 WHERE lc.PIN = " . $this->db->escape($pin) . "
                   AND lc.status = 4
-                  AND lc.disburse = 0";
+                  AND lc.disburse = 0
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM loan_contract_disburse lcd
+                      WHERE lcd.LID = lc.LID
+                        AND lcd.PIN = lc.PIN
+                        AND (
+                            (lcd.release_status = 'pending')
+                            OR (lcd.release_status = 'draft')
+                        )
+                  )";
         if (!empty($pid)) {
             $sql .= " AND lc.PID = " . $this->db->escape($pid);
         }
@@ -464,12 +479,23 @@ class Loan_Model extends CI_Model {
     }
 
     function count_loan_wait_disburse($pid = null, $product_id = null, $date_from = null, $date_to = null) {
+        $this->ensure_release_workflow_columns();
         $pin = current_user()->PIN;
         $sql = "SELECT COUNT(lc.LID) AS total
                 FROM loan_contract lc
                 WHERE lc.PIN = " . $this->db->escape($pin) . "
                   AND lc.status = 4
-                  AND lc.disburse = 0";
+                  AND lc.disburse = 0
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM loan_contract_disburse lcd
+                      WHERE lcd.LID = lc.LID
+                        AND lcd.PIN = lc.PIN
+                        AND (
+                            (lcd.release_status = 'pending')
+                            OR (lcd.release_status = 'draft')
+                        )
+                  )";
         if (!empty($pid)) {
             $sql .= " AND lc.PID = " . $this->db->escape($pid);
         }
@@ -604,6 +630,264 @@ class Loan_Model extends CI_Model {
         return true;
     }
 
+    function ensure_release_workflow_columns() {
+        if ($this->db->table_exists('loan_contract_disburse')) {
+            $columns = array(
+                'release_status' => "VARCHAR(20) NULL DEFAULT NULL",
+                'cash_disbursement_id' => "INT NULL DEFAULT NULL",
+                'payout_journal_entry_id' => "INT NULL DEFAULT NULL",
+                'offset_loan_ids' => "TEXT NULL DEFAULT NULL",
+                'payout_completed_at' => "DATETIME NULL DEFAULT NULL",
+            );
+            foreach ($columns as $col => $definition) {
+                if (!$this->db->query("SHOW COLUMNS FROM loan_contract_disburse LIKE '" . $this->db->escape_str($col) . "'")->row()) {
+                    $this->db->query("ALTER TABLE loan_contract_disburse ADD COLUMN `$col` $definition");
+                }
+            }
+        }
+    }
+
+    function get_pending_release($LID, $pin = null) {
+        $pin = $pin ? $pin : current_user()->PIN;
+        $this->ensure_release_workflow_columns();
+        $this->db->where('LID', $LID);
+        $this->db->where('PIN', $pin);
+        $this->db->group_start();
+        $this->db->where('release_status', 'pending');
+        $this->db->or_where('release_status', 'draft');
+        $this->db->group_end();
+        $this->db->order_by('disbursedate', 'DESC');
+        $this->db->limit(1);
+        return $this->db->get('loan_contract_disburse')->row();
+    }
+
+    function save_pending_release($LID, $row_data, $line_items) {
+        $pin = current_user()->PIN;
+        $this->ensure_release_workflow_columns();
+        $existing = $this->get_pending_release($LID, $pin);
+        if ($existing) {
+            $this->db->where('LID', $LID);
+            $this->db->where('PIN', $pin);
+            $this->db->where_in('release_status', array('pending', 'draft'));
+            $this->db->delete('loan_contract_disburse');
+        }
+        $row_data['release_status'] = 'pending';
+        $row_data['cash_disbursement_id'] = null;
+        $row_data['payout_journal_entry_id'] = null;
+        $row_data['payout_completed_at'] = null;
+        $this->db->insert('loan_contract_disburse', $row_data);
+        $this->save_disbursement_gl_items($LID, $pin, $line_items);
+        return $this->db->affected_rows() >= 0;
+    }
+
+    function link_pending_release_to_cash_disbursement($LID, $cash_disbursement_id) {
+        $pin = current_user()->PIN;
+        $this->ensure_release_workflow_columns();
+        $this->db->where('LID', $LID)
+            ->where('PIN', $pin)
+            ->where_in('release_status', array('pending', 'draft'))
+            ->update('loan_contract_disburse', array(
+                'release_status' => 'draft',
+                'cash_disbursement_id' => (int) $cash_disbursement_id,
+            ));
+        return $this->db->affected_rows() >= 0;
+    }
+
+    function unlink_pending_release_cash_disbursement($cash_disbursement_id) {
+        $pin = current_user()->PIN;
+        $this->ensure_release_workflow_columns();
+        $this->db->where('PIN', $pin)
+            ->where('cash_disbursement_id', (int) $cash_disbursement_id)
+            ->where('release_status', 'draft')
+            ->update('loan_contract_disburse', array(
+                'release_status' => 'pending',
+                'cash_disbursement_id' => null,
+            ));
+        return $this->db->affected_rows() >= 0;
+    }
+
+    function get_member_pending_releases($pid) {
+        $pin = current_user()->PIN;
+        $this->ensure_release_workflow_columns();
+        if ($pid === null || $pid === '') {
+            return array();
+        }
+        $sql = "SELECT lcd.LID, lcd.disbursedate, lcd.comment, lcd.disburse_no, lcd.payment_method,
+                       lcd.release_status, lcd.cash_disbursement_id,
+                       lcd.offset_loan_ids,
+                       lc.basic_amount, lc.member_id, lc.product_type, lc.installment_amount,
+                       lp.name AS product_name,
+                       m.firstname, m.middlename, m.lastname
+                FROM loan_contract_disburse lcd
+                INNER JOIN loan_contract lc ON lc.LID = lcd.LID AND lc.PIN = lcd.PIN
+                LEFT JOIN loan_product lp ON lp.id = lc.product_type AND lp.PIN = lc.PIN
+                LEFT JOIN members m ON m.PID = lc.PID AND m.PIN = lc.PIN
+                WHERE lcd.PIN = ?
+                  AND lc.PID = ?
+                  AND lcd.release_status IN ('pending', 'draft')
+                ORDER BY lcd.disbursedate DESC, lcd.LID DESC";
+        $rows = $this->db->query($sql, array($pin, $pid))->result();
+        foreach ($rows as $row) {
+            $line_items = $this->get_disbursement_gl_items($row->LID, $pin);
+            $total_credit = 0.0;
+            $net_cash = 0.0;
+            $offset_total = 0.0;
+            $offset_ids = array();
+            $row->line_items = $line_items;
+            foreach ($line_items as $item) {
+                $credit = isset($item['credit']) ? floatval($item['credit']) : 0;
+                $account = isset($item['account']) ? (string) $item['account'] : '';
+                if ($credit > 0.009) {
+                    $total_credit += $credit;
+                    if ($account === '21110' || $account === '30130') {
+                        // deduction only
+                    }
+                }
+            }
+            if (!empty($row->offset_loan_ids)) {
+                $decoded = json_decode($row->offset_loan_ids, true);
+                if (is_array($decoded)) {
+                    $offset_ids = $decoded;
+                }
+            }
+            foreach ($offset_ids as $old_lid) {
+                $bd = $this->get_loan_outstanding_for_offset($old_lid);
+                if ($bd && !empty($bd['total'])) {
+                    $offset_total += floatval($bd['total']);
+                }
+            }
+            $net_cash = max(0, floatval($row->basic_amount) - $offset_total);
+            foreach ($line_items as $item) {
+                $credit = isset($item['credit']) ? floatval($item['credit']) : 0;
+                $account = isset($item['account']) ? (string) $item['account'] : '';
+                if ($credit > 0.009 && $account !== '21110' && $account !== '30130' && !in_array($account, $offset_ids, true)) {
+                    $net_cash = $credit;
+                }
+            }
+            $row->offset_total = round($offset_total, 2);
+            $row->net_cash = round($net_cash, 2);
+        }
+        return $rows;
+    }
+
+    function finalize_release_payout_by_cash_disbursement($cash_disbursement_id, $journal_entry_id = null, $entry_date = null) {
+        $pin = current_user()->PIN;
+        $this->ensure_release_workflow_columns();
+        $this->load->model('setting_model');
+        $this->load->model('cash_disbursement_model');
+        $this->load->library('loanbase');
+        $release = $this->db->where('PIN', $pin)
+            ->where('cash_disbursement_id', (int) $cash_disbursement_id)
+            ->where('release_status', 'draft')
+            ->get('loan_contract_disburse')
+            ->row();
+        if (!$release) {
+            // Not a linked loan-release payout (or already finalized).
+            return array('success' => true);
+        }
+
+        $LID = $release->LID;
+        $loaninfo = $this->loan_info($LID)->row();
+        if (!$loaninfo || (string) $loaninfo->PIN !== (string) $pin) {
+            return array('success' => false, 'message' => 'Linked loan release not found for payout finalization.');
+        }
+        $line_items = $this->get_disbursement_gl_items($LID, $pin);
+        if (empty($line_items)) {
+            // Fallback to the cash disbursement journal lines used for GL posting.
+            $cd_items = $this->cash_disbursement_model->get_disburse_items((int) $cash_disbursement_id);
+            foreach ($cd_items as $it) {
+                $debit = isset($it->debit) ? floatval($it->debit) : (isset($it->amount) ? floatval($it->amount) : 0);
+                $credit = isset($it->credit) ? floatval($it->credit) : 0;
+                if (empty($it->account) || ($debit <= 0 && $credit <= 0)) {
+                    continue;
+                }
+                $line_items[] = array(
+                    'account' => $it->account,
+                    'debit' => $debit,
+                    'credit' => $credit,
+                    'description' => isset($it->description) ? $it->description : '',
+                );
+            }
+        }
+        if (empty($line_items)) {
+            return array('success' => false, 'message' => 'No accounting lines found to finalize the linked loan release.');
+        }
+
+        $pay_date = !empty($entry_date) ? $entry_date : $release->disbursedate;
+        $payment_method = !empty($release->payment_method) ? $release->payment_method : 'Cash';
+
+        $offset_ids = array();
+        if (!empty($release->offset_loan_ids)) {
+            $decoded = json_decode($release->offset_loan_ids, true);
+            if (is_array($decoded)) {
+                $offset_ids = $decoded;
+            }
+        }
+        foreach ($offset_ids as $old_lid) {
+            $settle = $this->settle_loan_by_offset($old_lid, $LID, $pay_date);
+            if (empty($settle['success'])) {
+                return array(
+                    'success' => false,
+                    'message' => !empty($settle['message']) ? $settle['message'] : ('Failed to settle offset loan ' . $old_lid),
+                );
+            }
+        }
+
+        $subledger = $this->post_disbursement_deduction_subledgers($LID, $loaninfo, $line_items, $pay_date, $payment_method);
+        if (empty($subledger['success'])) {
+            $detail = !empty($subledger['message'])
+                ? $subledger['message']
+                : 'Failed to post Savings/Share deduction sub-ledgers for the loan release.';
+            return array(
+                'success' => false,
+                'message' => $detail,
+            );
+        }
+
+        $schedule_exists = $this->db->where('LID', $LID)->where('PIN', $pin)->count_all_results('loan_contract_repayment_schedule');
+        if (!$schedule_exists) {
+            $product = $this->setting_model->loanproduct($loaninfo->product_type)->row();
+            if (!$product) {
+                return array('success' => false, 'message' => 'Loan product not found. Cannot create repayment schedule.');
+            }
+            $interest_method = (isset($product->interest_method) && ($product->interest_method == 1 || $product->interest_method == 2)) ? (int) $product->interest_method : 1;
+            $interval = isset($product->interval) ? (int) $product->interval : 1;
+            $schedule = $this->loanbase->create_repayment_schedule(
+                $loaninfo->installment_amount,
+                $loaninfo->rate,
+                $loaninfo->number_istallment,
+                $pay_date,
+                $loaninfo->basic_amount,
+                $LID,
+                $interest_method,
+                $interval
+            );
+            if (!empty($schedule)) {
+                foreach ($schedule as $sk => $srow) {
+                    if (!isset($schedule[$sk]['status'])) {
+                        $schedule[$sk]['status'] = 0;
+                    }
+                    if (!isset($schedule[$sk]['sms_sent'])) {
+                        $schedule[$sk]['sms_sent'] = 0;
+                    }
+                }
+                $this->db->insert_batch('loan_contract_repayment_schedule', $schedule);
+            }
+        }
+
+        $this->db->where('LID', $LID)->where('PIN', $pin)->update('loan_contract', array('disburse' => 1));
+        $this->db->where('LID', $LID)
+            ->where('PIN', $pin)
+            ->where('cash_disbursement_id', (int) $cash_disbursement_id)
+            ->where('release_status', 'draft')
+            ->update('loan_contract_disburse', array(
+                'release_status' => 'paid',
+                'payout_journal_entry_id' => $journal_entry_id ? (int) $journal_entry_id : null,
+                'payout_completed_at' => date('Y-m-d H:i:s'),
+            ));
+        return array('success' => true);
+    }
+
     /**
      * Get saved loan disbursement GL line items for a loan (by LID).
      */
@@ -689,6 +973,9 @@ class Loan_Model extends CI_Model {
             return array('success' => true);
         }
 
+        // Finance JE Review does not load loan_lang by default.
+        $this->lang->load('loan');
+
         $savings_gl = '21110';
         $share_gl = '30130';
         if (function_exists('loan_disbursement_default_deductions')) {
@@ -749,10 +1036,22 @@ class Loan_Model extends CI_Model {
         return array('success' => true);
     }
 
+    function _loan_lang_message($key, $fallback, $sprintf_args = array()) {
+        $msg = lang($key);
+        if ($msg === false || $msg === '' || $msg === $key) {
+            $msg = $fallback;
+        }
+        if (!empty($sprintf_args)) {
+            return vsprintf($msg, $sprintf_args);
+        }
+        return $msg;
+    }
+
     /**
      * Credit member savings balance/transaction without posting GL again.
      */
     function _post_disbursement_savings_subledger($pid, $member_id, $gl_account, $amount, $paymethod, $comment, $disburse_date, $LID) {
+        $this->lang->load('loan');
         $pin = current_user()->PIN;
         $this->db->where('PIN', $pin);
         $this->db->where('account_setup', $gl_account);
@@ -761,7 +1060,11 @@ class Loan_Model extends CI_Model {
         if (!$account_type || empty($account_type->account)) {
             return array(
                 'success' => false,
-                'message' => sprintf(lang('loan_disburse_savings_type_missing'), $gl_account),
+                'message' => $this->_loan_lang_message(
+                    'loan_disburse_savings_type_missing',
+                    'No savings product is mapped to GL account %s. Map a savings account type (account_setup) before releasing with a Savings deduction.',
+                    array($gl_account)
+                ),
             );
         }
 
@@ -770,7 +1073,10 @@ class Loan_Model extends CI_Model {
         if (!$member_account || empty($member_account->account)) {
             return array(
                 'success' => false,
-                'message' => lang('loan_disburse_savings_account_missing'),
+                'message' => $this->_loan_lang_message(
+                    'loan_disburse_savings_account_missing',
+                    'This member has no savings account for the Savings Deposit product. Open a savings account first, then post the payout.'
+                ),
             );
         }
 
@@ -791,7 +1097,10 @@ class Loan_Model extends CI_Model {
         if (!$receipt) {
             return array(
                 'success' => false,
-                'message' => lang('loan_disburse_savings_post_fail'),
+                'message' => $this->_loan_lang_message(
+                    'loan_disburse_savings_post_fail',
+                    'Failed to credit the member savings account for the Savings Deposit deduction.'
+                ),
             );
         }
         return array('success' => true, 'receipt' => $receipt);
@@ -801,6 +1110,7 @@ class Loan_Model extends CI_Model {
      * Credit member share sub-ledger (members_share + share_transaction). No GL.
      */
     function _post_disbursement_share_subledger($pid, $member_id, $real_amount, $paymethod, $comment, $disburse_date) {
+        $this->lang->load('loan');
         $this->load->model('setting_model');
         $this->load->model('share_model');
 
@@ -808,7 +1118,10 @@ class Loan_Model extends CI_Model {
         if (!$share_setup || empty($share_setup->amount) || floatval($share_setup->amount) <= 0) {
             return array(
                 'success' => false,
-                'message' => lang('loan_disburse_share_setup_missing'),
+                'message' => $this->_loan_lang_message(
+                    'loan_disburse_share_setup_missing',
+                    'Share settings (cost per share) are not configured. Configure Shares before releasing with a Paid-up Capital Share deduction.'
+                ),
             );
         }
 
@@ -834,7 +1147,10 @@ class Loan_Model extends CI_Model {
         if ($max_share > 0 && ($previous_share + $share_number) > $max_share) {
             return array(
                 'success' => false,
-                'message' => lang('loan_disburse_share_max_reached'),
+                'message' => $this->_loan_lang_message(
+                    'loan_disburse_share_max_reached',
+                    'Paid-up Capital Share deduction would exceed the member maximum shares. Reduce the share deduction or raise the max.'
+                ),
             );
         }
 
@@ -855,7 +1171,10 @@ class Loan_Model extends CI_Model {
         if (!$add_share) {
             return array(
                 'success' => false,
-                'message' => lang('loan_disburse_share_post_fail'),
+                'message' => $this->_loan_lang_message(
+                    'loan_disburse_share_post_fail',
+                    'Failed to credit the member share sub-ledger for the Paid-up Capital Share deduction.'
+                ),
             );
         }
         return array('success' => true, 'receipt' => $add_share);
@@ -1157,7 +1476,12 @@ class Loan_Model extends CI_Model {
                         loan_beginning_balances.interest_balance as total_interest_amount,
                         loan_beginning_balances.total_balance as total_loan,
                         'Beginning Balance' as name,
+                        'bb' as status,
                         1 as edit,
+                        1 as is_beginning_balance,
+                        loan_beginning_balances.id as bb_id,
+                        loan_beginning_balances.posted as bb_posted,
+                        loan_beginning_balances.fiscal_year_id as bb_fiscal_year_id,
                         COALESCE(loan_product.`interval`, 1) as `interval`,
                         loan_beginning_balances.disbursement_date as applicationdate
                     FROM loan_beginning_balances 
@@ -1206,7 +1530,12 @@ class Loan_Model extends CI_Model {
                         loan_beginning_balances.interest_balance as total_interest_amount,
                         loan_beginning_balances.total_balance as total_loan,
                         'Beginning Balance' as name,
+                        'bb' as status,
                         1 as edit,
+                        1 as is_beginning_balance,
+                        loan_beginning_balances.id as bb_id,
+                        loan_beginning_balances.posted as bb_posted,
+                        loan_beginning_balances.fiscal_year_id as bb_fiscal_year_id,
                         COALESCE(loan_product.`interval`, 1) as `interval`,
                         loan_beginning_balances.disbursement_date as applicationdate
                     FROM loan_beginning_balances 
@@ -1778,6 +2107,12 @@ class Loan_Model extends CI_Model {
             $this->db->join('loan_contract lc', 'lc.LID = lcd.LID AND lc.PIN = lcd.PIN');
             $this->db->where('lcd.LID', $LID);
             $this->db->where('lcd.PIN', $pin);
+            if ($this->db->query("SHOW COLUMNS FROM loan_contract_disburse LIKE 'release_status'")->row()) {
+                $this->db->group_start();
+                $this->db->where('lcd.release_status IS NULL', null, false);
+                $this->db->or_where('lcd.release_status', 'paid');
+                $this->db->group_end();
+            }
             $this->db->order_by('lcd.disbursedate', 'ASC');
             $disburse = $this->db->get()->result();
             foreach ($disburse as $d) {
@@ -1835,6 +2170,20 @@ class Loan_Model extends CI_Model {
     }
 
     // Loan Beginning Balances Methods
+    /**
+     * Find a beginning-balance row by its displayed loan_id (not yet activated as loan_contract).
+     */
+    function get_beginning_balance_by_loan_id($loan_id) {
+        if ($loan_id === null || $loan_id === '') {
+            return null;
+        }
+        $pin = current_user()->PIN;
+        $this->db->where('PIN', $pin);
+        $this->db->where('loan_id', $loan_id);
+        $this->db->limit(1);
+        return $this->db->get('loan_beginning_balances')->row();
+    }
+
     function loan_beginning_balance_list($fiscal_year_id = null, $id = null, $loan_product_id = null) {
         $pin = current_user()->PIN;
         $this->db->where('PIN', $pin);

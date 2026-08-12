@@ -178,6 +178,8 @@ $lang['cancel'] = 'Cancel';
 $lang['button_view'] = 'View';
 $lang['button_update'] = 'Update';
 $lang['button_cancel'] = 'Cancel';
+$lang['cash_disbursement_release_not_found'] = 'No pending loan release found for the selected member.';
+$lang['loan_release_loan'] = 'Loan Release';
 
 // Loan beginning balances (referenced in finance views)
 $lang['loan_beginning_balance_list'] = 'Loan Beginning Balances';

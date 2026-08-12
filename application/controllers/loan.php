@@ -1306,8 +1306,8 @@ $pin = current_user()->PIN;
             redirect(current_lang() . '/loan/loan_disbursement', 'refresh');
             return;
         }
-        if ($loaninfo->status != 4 || $loaninfo->disburse != 0) {
-            $this->session->set_flashdata('warning', 'Loan is not approved or already disbursed.');
+        if ($loaninfo->status != 4 || $loaninfo->disburse != 0 || $this->loan_model->get_pending_release($LID, $pin)) {
+            $this->session->set_flashdata('warning', lang('loan_release_exists'));
             redirect(current_lang() . '/loan/loan_disbursement', 'refresh');
             return;
         }
@@ -1418,8 +1418,8 @@ $pin = current_user()->PIN;
 
                 $disburse_date = format_date(trim($this->input->post('disbursedate')));
                 $comment = $this->input->post('comment');
+                $offset_ids = array();
                 if (!empty($offset_loans_selected)) {
-                    $offset_ids = array();
                     foreach ($offset_loans_selected as $o) {
                         $offset_ids[] = $o['LID'];
                     }
@@ -1442,80 +1442,31 @@ $pin = current_user()->PIN;
                 if ($this->db->query("SHOW COLUMNS FROM loan_contract_disburse LIKE 'payment_method'")->row()) {
                     $array_data['payment_method'] = $payment_method_name;
                 }
+                $array_data['offset_loan_ids'] = !empty($offset_ids) ? json_encode(array_values($offset_ids)) : null;
 
                 $this->db->trans_start();
-                $this->db->insert('loan_contract_disburse', $array_data);
-                $this->db->update('loan_contract', array('disburse' => 1), array('LID' => $LID));
+                $this->loan_model->ensure_release_workflow_columns();
+                $this->loan_model->save_pending_release($LID, $array_data, $line_items);
 
                 if (!empty($offset_loans_selected)) {
-                    $offset_ids = array();
-                    foreach ($offset_loans_selected as $o) {
-                        $offset_ids[] = $o['LID'];
-                    }
                     $this->db->where('LID', $LID)->where('PIN', $pin)->update('loan_contract', array(
                         'offset_loans' => implode(',', $offset_ids),
                     ));
-                    foreach ($offset_loans_selected as $o) {
-                        $settle = $this->loan_model->settle_loan_by_offset($o['LID'], $LID, $disburse_date);
-                        if (empty($settle['success'])) {
-                            $this->db->trans_rollback();
-                            $this->data['warning'] = !empty($settle['message']) ? $settle['message'] : lang('loan_offset_settle_fail');
-                            break;
-                        }
-                    }
                 }
 
                 if (empty($this->data['warning'])) {
-                    $this->loan_model->save_disbursement_gl_items($LID, $pin, $line_items);
-                    $this->loan_model->post_loan_disbursement_to_gl($LID, $pin, $line_items, $disburse_date, $loaninfo);
+                    $this->db->trans_complete();
 
-                    $subledger = $this->loan_model->post_disbursement_deduction_subledgers(
-                        $LID, $loaninfo, $line_items, $disburse_date, $payment_method_name
-                    );
-                    if (empty($subledger['success'])) {
-                        $this->db->trans_rollback();
-                        $this->data['warning'] = !empty($subledger['message'])
-                            ? $subledger['message']
-                            : lang('loan_disburse_subledger_fail');
-                    }
-
-                    $product = empty($this->data['warning'])
-                        ? $this->setting_model->loanproduct($loaninfo->product_type)->row()
-                        : null;
-                    if (empty($this->data['warning']) && !$product) {
-                        $this->db->trans_rollback();
-                        $this->data['warning'] = 'Loan product not found. Cannot create repayment schedule.';
-                    } elseif (empty($this->data['warning'])) {
-                        $interest_method = (isset($product->interest_method) && ($product->interest_method == 1 || $product->interest_method == 2)) ? (int) $product->interest_method : 1;
-                        $interval = isset($product->interval) ? (int) $product->interval : 1;
-                        $schedule = $this->loanbase->create_repayment_schedule(
-                            $loaninfo->installment_amount, $loaninfo->rate, $loaninfo->number_istallment,
-                            $disburse_date, $loaninfo->basic_amount, $LID, $interest_method, $interval
-                        );
-                        if (!empty($schedule)) {
-                            foreach ($schedule as $sk => $srow) {
-                                if (!isset($schedule[$sk]['status'])) {
-                                    $schedule[$sk]['status'] = 0;
-                                }
-                                if (!isset($schedule[$sk]['sms_sent'])) {
-                                    $schedule[$sk]['sms_sent'] = 0;
-                                }
-                            }
-                            $this->db->insert_batch('loan_contract_repayment_schedule', $schedule);
+                    if ($this->db->trans_status() === FALSE) {
+                        $this->data['warning'] = lang('loan_evaluation_error') . ' Transaction was rolled back. Please try again or contact support.';
+                    } else {
+                        $msg = lang('loan_release_saved');
+                        if (!empty($offset_loans_selected)) {
+                            $msg .= ' ' . sprintf(lang('loan_offset_pending'), count($offset_loans_selected), number_format($offset_total, 2));
                         }
-                        $this->db->trans_complete();
-
-                        if ($this->db->trans_status() === FALSE) {
-                            $this->data['warning'] = lang('loan_evaluation_error') . ' Transaction was rolled back. Please try again or contact support.';
-                        } else {
-                            $msg = lang('loan_info_saved');
-                            if (!empty($offset_loans_selected)) {
-                                $msg .= ' ' . sprintf(lang('loan_offset_success'), count($offset_loans_selected), number_format($offset_total, 2));
-                            }
-                            $this->session->set_flashdata('message', $msg);
-                            redirect(current_lang() . '/loan/view_repayment_schedule/' . $loanid, 'refresh');
-                            return;
-                        }
+                        $this->session->set_flashdata('message', $msg);
+                        redirect(current_lang() . '/loan/loan_disbursement', 'refresh');
+                        return;
                     }
                 }
                 if ($this->db->trans_status() !== FALSE) {
@@ -1802,9 +1753,37 @@ $pin = current_user()->PIN;
         $this->data['title'] = lang('loan_viewdetails');
         $this->data['loanid'] = $loanid;
         $LID = decode_id($loanid);
-
-
-        $this->data['loaninfo'] = $this->loan_model->loan_info($LID)->row();
+        $loaninfo = $this->loan_model->loan_info($LID)->row();
+        if (!$loaninfo) {
+            // Loan List also shows unactivated beginning balances; send those to BB management.
+            $bb = $this->loan_model->get_beginning_balance_by_loan_id($LID);
+            if ($bb) {
+                $this->session->set_flashdata('warning', lang('loan_beginning_balance_detail_redirect'));
+                $fy = !empty($bb->fiscal_year_id) ? ('?fiscal_year_id=' . (int) $bb->fiscal_year_id) : '';
+                redirect(current_lang() . '/loan/loan_beginning_balance_list' . $fy, 'refresh');
+                return;
+            }
+            // Synthetic BB-{id} LIDs from the list when loan_id is empty
+            if (is_string($LID) && preg_match('/^BB-(\d+)$/', $LID, $m)) {
+                $bb_by_id = $this->loan_model->loan_beginning_balance_list(null, (int) $m[1])->row();
+                if ($bb_by_id) {
+                    $this->session->set_flashdata('warning', lang('loan_beginning_balance_detail_redirect'));
+                    $fy = !empty($bb_by_id->fiscal_year_id) ? ('?fiscal_year_id=' . (int) $bb_by_id->fiscal_year_id) : '';
+                    redirect(current_lang() . '/loan/loan_beginning_balance_list' . $fy, 'refresh');
+                    return;
+                }
+            }
+            show_404();
+            return;
+        }
+        $pin = current_user()->PIN;
+        if ((string) $loaninfo->PIN !== (string) $pin) {
+            show_404();
+            return;
+        }
+        $this->data['loaninfo'] = $loaninfo;
+        $this->data['basicinfo'] = $this->member_model->member_basic_info(null, $loaninfo->PID, $loaninfo->member_id)->row();
+        $this->data['contactinfo'] = $this->member_model->member_contact($loaninfo->PID);
         $this->data['content'] = 'loan/loan_view_details';
         $this->load->view('template', $this->data);
     }
@@ -2950,9 +2929,14 @@ $pin = current_user()->PIN;
     }
 
     function loan_beginning_balance_create($id = null) {
-        if (!is_null($id)) {
+        $encoded_id = '';
+        if (!is_null($id) && $id !== '') {
+            $encoded_id = $id;
             $id = decode_id($id);
+        } else {
+            $id = null;
         }
+        $this->data['encoded_id'] = $encoded_id;
         
         if ($id) {
             $this->data['title'] = lang('loan_beginning_balance_edit');
@@ -2972,6 +2956,7 @@ $pin = current_user()->PIN;
             }
         } else {
             $this->data['title'] = lang('loan_beginning_balance_create');
+            $this->data['balance'] = null;
         }
         
         // Get fiscal years and loan products

@@ -95,9 +95,9 @@ $lang['loan_approval_link'] = 'Approve';
 $lang['loan_approval_inaction'] = 'Approve Loan';
 $lang['loan_approval_comment'] = 'Approve Comment';
 
-$lang['loan_disburse_inaction'] = 'Loan Disbursement';
+$lang['loan_disburse_inaction'] = 'Loan Release';
 $lang['loan_disburse_info'] = 'Loan Disbursement Informations';
-$lang['loan_disburse_link'] = 'Disburse';
+$lang['loan_disburse_link'] = 'Release';
 $lang['loan_disburse_payment_method'] = 'Payment Method';
 $lang['loan_disburse_line_items'] = 'Accounting Entries';
 $lang['loan_disburse_line_help'] = 'Debit: Loan account (principal). Credit: Source account (from payment method). You can add or edit lines; debits must equal credits.';
@@ -110,6 +110,9 @@ $lang['loan_disbursement_print'] = 'Chapisho la Mito';
 $lang['loan_disbursement_statement'] = 'Taarifa ya Mito';
 $lang['loan_disbursement_voucher'] = 'Hati ya Mito';
 $lang['loan_release_loan'] = 'Release Loan';
+$lang['loan_release_exists'] = 'Mkopo huu tayari una kumbukumbu ya release inayosubiri au iliyokamilika.';
+$lang['loan_release_saved'] = 'Release ya mkopo imehifadhiwa na sasa inasubiri Cash Disbursement.';
+$lang['loan_offset_pending'] = 'Offset imewekwa: mkopo %d wenye jumla ya %s utasettlewa wakati payout itakapopostiwa.';
 
 $lang['loan_startrepay_date'] = 'Repayment Start Date';
 $lang['loan_view_detail'] = 'Details';

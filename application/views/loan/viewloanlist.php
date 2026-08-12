@@ -510,20 +510,42 @@ $current_status = isset($status_filter) ? $status_filter : '';
                                 <td><span class="status-pill <?php echo $pill; ?>"><?php echo htmlspecialchars($status_name, ENT_QUOTES, 'UTF-8'); ?></span></td>
                                 <td>
                                     <div class="action-btns">
-                                        <?php echo anchor(current_lang() . "/loan/view_indetail/" . encode_id($value->LID), ' <i class="fa fa-folder-open"></i> ' . lang('loan_view_detail'), 'class="btn btn-primary btn-xs"'); ?>
-                                        <?php if ($value->edit == 0) {
-                                            echo anchor(current_lang() . '/loan/loan_editing/' . encode_id($value->LID), ' <i class="fa fa-edit"></i> ' . lang('button_edit'), 'class="btn btn-default btn-xs"');
-                                        } ?>
-                                        <?php if (isset($value->status) && ((string) $value->status === '4' || (string) $value->status === '5')) {
-                                            $schedule_url = site_url(current_lang() . '/loan/view_repayment_schedule_popup/' . encode_id($value->LID));
-                                            echo '<a href="' . htmlspecialchars($schedule_url) . '" class="btn btn-info btn-xs repayment-schedule-popup" data-schedule-url="' . htmlspecialchars($schedule_url) . '" title="' . htmlspecialchars(lang('loan_view_repayment_schedule')) . '"><i class="fa fa-calendar-check-o"></i> ' . lang('loan_view_repayment_schedule') . '</a>';
-                                            if (!empty($value->disburse)) {
-                                                $print_disburse_url = site_url(current_lang() . '/loan/loan_disbursement_print/' . encode_id($value->LID));
-                                                echo '<a href="' . htmlspecialchars($print_disburse_url) . '" class="btn btn-default btn-xs" target="_blank" title="' . htmlspecialchars(lang('loan_print_disbursement')) . '"><i class="fa fa-print"></i> ' . lang('loan_print_disbursement') . '</a>';
+                                        <?php
+                                        $is_bb_row = !empty($value->is_beginning_balance)
+                                            || $status_name === 'Beginning Balance'
+                                            || $status_code === 'bb';
+                                        if ($is_bb_row) {
+                                            $bb_id = isset($value->bb_id) ? (int) $value->bb_id : 0;
+                                            $bb_posted = isset($value->bb_posted) ? (int) $value->bb_posted : 0;
+                                            $bb_fy = isset($value->bb_fiscal_year_id) ? (int) $value->bb_fiscal_year_id : 0;
+                                            $bb_list_url = site_url(current_lang() . '/loan/loan_beginning_balance_list' . ($bb_fy ? ('?fiscal_year_id=' . $bb_fy) : ''));
+                                            echo '<a href="' . htmlspecialchars($bb_list_url) . '" class="btn btn-primary btn-xs" title="' . htmlspecialchars(lang('loan_beginning_balance_manage')) . '"><i class="fa fa-folder-open"></i> ' . lang('loan_beginning_balance_manage') . '</a>';
+                                            if ($bb_id > 0 && $bb_posted === 0) {
+                                                echo anchor(
+                                                    current_lang() . '/loan/loan_beginning_balance_create/' . encode_id($bb_id),
+                                                    ' <i class="fa fa-edit"></i> ' . lang('button_edit'),
+                                                    'class="btn btn-default btn-xs"'
+                                                );
+                                            } else if ($bb_id > 0 && $bb_posted === 1) {
+                                                echo '<a href="javascript:void(0);" class="btn btn-info btn-xs btn-activate-balance-list" data-id="' . htmlspecialchars(encode_id($bb_id), ENT_QUOTES, 'UTF-8') . '" data-member="' . htmlspecialchars(isset($value->member_id) ? $value->member_id : '', ENT_QUOTES, 'UTF-8') . '"><i class="fa fa-play-circle"></i> ' . lang('loan_beginning_balance_activate') . '</a>';
                                             }
-                                            $ledger_url = site_url(current_lang() . '/loan/loan_ledger/' . encode_id($value->LID));
-                                            echo '<a href="' . htmlspecialchars($ledger_url) . '" class="btn btn-warning btn-xs" title="' . htmlspecialchars(lang('loan_ledger')) . '"><i class="fa fa-book"></i> ' . lang('loan_ledger') . '</a>';
-                                        } ?>
+                                        } else {
+                                            echo anchor(current_lang() . "/loan/view_indetail/" . encode_id($value->LID), ' <i class="fa fa-folder-open"></i> ' . lang('loan_view_detail'), 'class="btn btn-primary btn-xs"');
+                                            if ($value->edit == 0) {
+                                                echo anchor(current_lang() . '/loan/loan_editing/' . encode_id($value->LID), ' <i class="fa fa-edit"></i> ' . lang('button_edit'), 'class="btn btn-default btn-xs"');
+                                            }
+                                            if (isset($value->status) && ((string) $value->status === '4' || (string) $value->status === '5')) {
+                                                $schedule_url = site_url(current_lang() . '/loan/view_repayment_schedule_popup/' . encode_id($value->LID));
+                                                echo '<a href="' . htmlspecialchars($schedule_url) . '" class="btn btn-info btn-xs repayment-schedule-popup" data-schedule-url="' . htmlspecialchars($schedule_url) . '" title="' . htmlspecialchars(lang('loan_view_repayment_schedule')) . '"><i class="fa fa-calendar-check-o"></i> ' . lang('loan_view_repayment_schedule') . '</a>';
+                                                if (!empty($value->disburse)) {
+                                                    $print_disburse_url = site_url(current_lang() . '/loan/loan_disbursement_print/' . encode_id($value->LID));
+                                                    echo '<a href="' . htmlspecialchars($print_disburse_url) . '" class="btn btn-default btn-xs" target="_blank" title="' . htmlspecialchars(lang('loan_print_disbursement')) . '"><i class="fa fa-print"></i> ' . lang('loan_print_disbursement') . '</a>';
+                                                }
+                                                $ledger_url = site_url(current_lang() . '/loan/loan_ledger/' . encode_id($value->LID));
+                                                echo '<a href="' . htmlspecialchars($ledger_url) . '" class="btn btn-warning btn-xs" title="' . htmlspecialchars(lang('loan_ledger')) . '"><i class="fa fa-book"></i> ' . lang('loan_ledger') . '</a>';
+                                            }
+                                        }
+                                        ?>
                                     </div>
                                 </td>
                             </tr>
@@ -745,5 +767,37 @@ $current_status = isset($status_filter) ? $status_filter : '';
         window.addEventListener('load', initMemberSuggest);
         setTimeout(initMemberSuggest, 300);
     }
+
+    function initBbActivateFromList() {
+        if (typeof jQuery === 'undefined') {
+            setTimeout(initBbActivateFromList, 50);
+            return;
+        }
+        jQuery(document).off('click.bbActivateList', '.btn-activate-balance-list').on('click.bbActivateList', '.btn-activate-balance-list', function() {
+            var balanceId = jQuery(this).data('id');
+            var member = jQuery(this).data('member');
+            var activateUrl = '<?php echo site_url(current_lang() . '/loan/loan_beginning_balance_activate'); ?>/' + balanceId;
+            if (typeof swal === 'function') {
+                swal({
+                    title: "<?php echo lang('are_you_sure'); ?>",
+                    text: "<?php echo lang('loan_beginning_balance_activate_confirm'); ?>" + (member ? " (Member: " + member + ")" : ""),
+                    type: "warning",
+                    showCancelButton: true,
+                    confirmButtonColor: "#0275d8",
+                    confirmButtonText: "<?php echo lang('loan_beginning_balance_activate'); ?>",
+                    cancelButtonText: "<?php echo lang('cancel'); ?>",
+                    closeOnConfirm: false,
+                    closeOnCancel: true
+                }, function(isConfirm) {
+                    if (isConfirm) {
+                        window.location.href = activateUrl;
+                    }
+                });
+            } else if (window.confirm("<?php echo lang('loan_beginning_balance_activate_confirm'); ?>")) {
+                window.location.href = activateUrl;
+            }
+        });
+    }
+    initBbActivateFromList();
 })();
 </script>

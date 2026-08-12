@@ -100,12 +100,12 @@ $lang['loan_approval_list'] = 'Loan Approval';
 $lang['loan_approval_inaction'] = 'Approve Loan';
 $lang['loan_approval_comment'] = 'Approve Comment';
 
-$lang['loan_disburse_inaction'] = 'Loan Disbursement';
+$lang['loan_disburse_inaction'] = 'Loan Release';
 $lang['loan_disburse_info'] = 'Loan Disbursement Informations';
-$lang['loan_disburse_link'] = 'Disburse';
+$lang['loan_disburse_link'] = 'Release';
 $lang['loan_disburse_payment_method'] = 'Payment Method';
 $lang['loan_disburse_line_items'] = 'Accounting Entries';
-$lang['loan_disburse_line_help'] = 'Debit: Loan account (principal). Credit: Source account (from payment method). With offset, credit old loan accounts and net cash only. Debits must equal credits.';
+$lang['loan_disburse_line_help'] = 'Prepare the release entry that will later populate Cash Disbursement. Debit: Loan account (principal). Credit: deductions, offset balances, and net cash. Debits must equal credits.';
 $lang['loan_disburse_entries_required'] = 'Please add at least one accounting line with amount.';
 $lang['loan_disburse_no'] = 'Disbursement No.';
 $lang['loan_disburse_no_exists'] = 'This Disbursement No. already exists.';
@@ -115,6 +115,9 @@ $lang['loan_disbursement_print'] = 'Loan Disbursement Print';
 $lang['loan_disbursement_statement'] = 'Loan Disbursement Statement';
 $lang['loan_disbursement_voucher'] = 'Loan Disbursement Voucher';
 $lang['loan_release_loan'] = 'Release Loan';
+$lang['loan_release_exists'] = 'Loan already has a pending or completed release record.';
+$lang['loan_release_saved'] = 'Loan release saved and is now pending cash disbursement.';
+$lang['loan_offset_pending'] = 'Offset queued: %d loan(s) totaling %s will be settled when payout is posted.';
 $lang['loan_offset_section'] = 'Offset Existing Loan(s) / Reloan';
 $lang['loan_offset_help'] = 'Select active loan(s) to settle from this new loan. Old loans will be closed automatically. Cash to the member = new loan amount minus total offset. Accounting lines update when you tick a loan.';
 $lang['loan_offset_principal'] = 'Principal Outstanding';
@@ -126,7 +129,7 @@ $lang['loan_offset_invalid_loan'] = 'One of the selected offset loans is invalid
 $lang['loan_offset_settle_fail'] = 'Failed to close an offset loan. Disbursement was cancelled.';
 $lang['loan_offset_success'] = 'Offset applied: %d loan(s) closed totaling %s.';
 $lang['loan_disburse_deductions'] = 'Loan Proceeds Deductions';
-$lang['loan_disburse_deductions_help'] = 'Enter deduction amounts to withhold from loan proceeds. Accounting lines update automatically. Net cash to member = Loan amount − deductions − offsets (if any). Leave amount blank or 0 to skip a deduction. Savings and Paid-up Share credits also update the member sub-ledgers on Save.';
+$lang['loan_disburse_deductions_help'] = 'Enter deduction amounts to withhold from loan proceeds. Accounting lines update automatically. Net cash to member = Loan amount − deductions − offsets (if any). Leave amount blank or 0 to skip a deduction. Savings and Paid-up Share effects are applied when the linked Cash Disbursement is posted.';
 $lang['loan_disburse_deduction_amount'] = 'Amount';
 $lang['loan_disburse_deductions_total'] = 'Total Deductions';
 $lang['loan_disburse_deductions_exceed'] = 'Total deductions (and offsets) exceed the loan amount. Reduce deductions or offsets.';
@@ -255,6 +258,8 @@ $lang['loan_beginning_balance_activate_no_principal'] = 'Cannot activate: princi
 $lang['loan_beginning_balance_activate_incomplete_terms'] = 'Cannot activate: set Term and/or Monthly Amortization on the beginning balance first';
 $lang['loan_beginning_balance_cannot_void_activated'] = 'Cannot void a beginning balance that has already been activated as a loan';
 $lang['loan_beginning_balance_activated'] = 'Activated';
+$lang['loan_beginning_balance_manage'] = 'Open Beginning Balance';
+$lang['loan_beginning_balance_detail_redirect'] = 'This loan ID is a beginning balance that has not been activated yet. Open it from Loan Beginning Balances, then Activate as Loan to use Details / Ledger.';
 $lang['loan_ledger_beginning_balance'] = 'Beginning Balance (Opening)';
 $lang['export_to_excel'] = 'Export to Excel';
 

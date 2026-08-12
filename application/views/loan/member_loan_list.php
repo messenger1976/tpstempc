@@ -30,9 +30,17 @@
                 <td style="text-align: right;"><?php echo number_format($value->installment_amount,2) ?></td>
                 <td style="text-align: right;"><?php echo number_format($value->total_interest_amount,2) ?></td>
                 <td ><?php echo $value->name; ?></td>
-                 <td><?php echo anchor(current_lang() . "/loan/view_indetail/" . encode_id($value->LID), ' <i class="fa fa-folder-open"></i> ' . lang('loan_view_detail'));
-                 if($value->edit == 0){
-                     echo anchor(current_lang().'/loan/loan_editing/'.encode_id($value->LID),' |  <i class="fa fa-edit"></i> ' . lang('button_edit'));
+                 <td><?php
+                 $is_bb_row = !empty($value->is_beginning_balance) || (isset($value->status) && (string) $value->status === 'bb');
+                 if ($is_bb_row) {
+                     $bb_fy = isset($value->bb_fiscal_year_id) ? (int) $value->bb_fiscal_year_id : 0;
+                     $bb_list_url = current_lang() . '/loan/loan_beginning_balance_list' . ($bb_fy ? ('?fiscal_year_id=' . $bb_fy) : '');
+                     echo anchor($bb_list_url, ' <i class="fa fa-folder-open"></i> ' . lang('loan_beginning_balance_manage'));
+                 } else {
+                     echo anchor(current_lang() . "/loan/view_indetail/" . encode_id($value->LID), ' <i class="fa fa-folder-open"></i> ' . lang('loan_view_detail'));
+                     if ($value->edit == 0) {
+                         echo anchor(current_lang().'/loan/loan_editing/'.encode_id($value->LID),' |  <i class="fa fa-edit"></i> ' . lang('button_edit'));
+                     }
                  }
                  ?></td>
             </tr>

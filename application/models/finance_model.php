@@ -25,17 +25,20 @@ class Finance_Model extends CI_Model {
     function post_journal_entry_to_general_ledger($journal_entry_id, $journal_id = 5) {
         $pin = current_user()->PIN;
         $journal_entry_id = (int) $journal_entry_id;
+        $this->last_post_error = '';
         if ($journal_entry_id <= 0) {
             return false;
         }
         if ($this->is_journal_entry_posted_to_gl($journal_entry_id)) {
             return true;
         }
+        // SELECT * avoids brittle column lists when optional reference_* columns vary by install.
         $entry = $this->db->query(
-            'SELECT id, entry_date, description, PIN, reference_type FROM journal_entry WHERE id = ? AND PIN = ? LIMIT 1',
+            'SELECT * FROM journal_entry WHERE id = ? AND PIN = ? LIMIT 1',
             array($journal_entry_id, $pin)
         )->row();
         if (!$entry) {
+            $this->last_post_error = 'Journal entry not found.';
             log_message('error', 'post_journal_entry_to_general_ledger: journal_entry not found id=' . $journal_entry_id);
             return false;
         }
@@ -303,9 +306,19 @@ class Finance_Model extends CI_Model {
                 }
             }
             if (abs($total_debit - $total_credit) > $balance_tolerance) {
+                $this->last_post_error = 'Journal entry is not balanced. Debit: ' . number_format($total_debit, 2) . ', Credit: ' . number_format($total_credit, 2) . '.';
                 log_message('error', 'post_journal_entry_to_general_ledger: entry ' . $journal_entry_id . ' does not balance. Debit: ' . $total_debit . ', Credit: ' . $total_credit);
                 return false;
             }
+        }
+        // Run any schema ensures BEFORE the GL transaction. MySQL ALTER TABLE
+        // causes an implicit commit and would otherwise leave orphaned GL rows
+        // if loan-release finalize fails afterward.
+        if (!empty($entry->reference_type) && $entry->reference_type === 'cash_disbursement' && !empty($entry->reference_id)) {
+            $this->load->model('loan_model');
+            $this->load->model('cash_disbursement_model');
+            $this->loan_model->ensure_release_workflow_columns();
+            $this->cash_disbursement_model->ensure_loan_release_columns();
         }
         $this->db->trans_start();
         $entry_date = isset($entry->entry_date) ? $entry->entry_date : date('Y-m-d');
@@ -313,6 +326,7 @@ class Finance_Model extends CI_Model {
         $this->db->insert('general_ledger_entry', $ledger_entry);
         $ledger_entry_id = $this->db->insert_id();
         if (!$ledger_entry_id) {
+            $this->last_post_error = 'Failed to create general ledger entry header.';
             $this->db->trans_complete();
             return false;
         }
@@ -344,8 +358,35 @@ class Finance_Model extends CI_Model {
                 $inserted_count++;
             }
         }
+        if (!empty($entry->reference_type) && $entry->reference_type === 'cash_disbursement' && !empty($entry->reference_id)) {
+            $this->load->model('loan_model');
+            $finalize = $this->loan_model->finalize_release_payout_by_cash_disbursement((int) $entry->reference_id, $journal_entry_id, $entry_date);
+            if (is_array($finalize) && empty($finalize['success'])) {
+                $this->last_post_error = !empty($finalize['message'])
+                    ? $finalize['message']
+                    : 'Failed to finalize linked loan release after GL posting.';
+                log_message('error', 'post_journal_entry_to_general_ledger: finalize_release_payout failed for cash_disbursement ' . (int) $entry->reference_id . ' — ' . $this->last_post_error);
+                $this->db->trans_rollback();
+                // Safety net if an earlier DDL/implicit commit left GL rows behind.
+                $this->void_journal_posting_to_gl($journal_entry_id, 'journal_entry');
+                return false;
+            }
+            if ($finalize === false) {
+                $this->last_post_error = 'Failed to finalize linked loan release after GL posting.';
+                log_message('error', 'post_journal_entry_to_general_ledger: finalize_release_payout returned false for cash_disbursement ' . (int) $entry->reference_id);
+                $this->db->trans_rollback();
+                $this->void_journal_posting_to_gl($journal_entry_id, 'journal_entry');
+                return false;
+            }
+        }
         $this->db->trans_complete();
-        return ($inserted_count > 0 && $this->db->trans_status());
+        if ($inserted_count < 1 || $this->db->trans_status() === false) {
+            if ($this->last_post_error === '') {
+                $this->last_post_error = 'No GL lines were inserted. Check that accounts exist in the chart of accounts.';
+            }
+            return false;
+        }
+        return true;
     }
 
     /**
@@ -1446,6 +1487,31 @@ class Finance_Model extends CI_Model {
         $entry = $this->db->where('id', $journal_entry_id)->where('PIN', $pin)->get('journal_entry')->row();
         if (!$entry) {
             return array('success' => false, 'message' => 'Journal entry not found.');
+        }
+        if (!empty($entry->reference_type) && $entry->reference_type === 'cash_disbursement' && !empty($entry->reference_id)) {
+            $this->load->model('cash_disbursement_model');
+            $this->load->model('loan_model');
+            if ($this->cash_disbursement_model->has_linked_loan_release((int) $entry->reference_id)) {
+                $this->loan_model->ensure_release_workflow_columns();
+                $release = $this->db->where('PIN', $pin)
+                    ->where('cash_disbursement_id', (int) $entry->reference_id)
+                    ->order_by('id', 'DESC')
+                    ->get('loan_contract_disburse')
+                    ->row();
+                $release_status = ($release && isset($release->release_status)) ? $release->release_status : '';
+                // Incomplete post: GL rows exist but loan release never reached paid.
+                // Clear orphaned GL so the cash disbursement can be edited and reposted.
+                if ($release_status !== 'paid') {
+                    if ($this->void_journal_posting_to_gl($journal_entry_id, 'journal_entry')) {
+                        return array(
+                            'success' => true,
+                            'message' => 'Incomplete loan-release GL posting was cleared. You can edit the cash disbursement and repost from Journal Entry Review.',
+                        );
+                    }
+                    return array('success' => false, 'message' => 'Failed to clear incomplete loan-release GL posting.');
+                }
+                return array('success' => false, 'message' => 'Linked loan release payouts cannot be voided automatically. Create a manual correction instead.');
+            }
         }
         if (!empty($entry->voids_entryid)) {
             return array('success' => false, 'message' => 'This entry is itself a reversing voucher and cannot be voided.');

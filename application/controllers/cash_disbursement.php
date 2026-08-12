@@ -248,6 +248,20 @@ class Cash_disbursement extends CI_Controller {
      */
     function cash_disbursement_create() {
         $this->data['title'] = lang('cash_disbursement_create');
+        $this->load->model('loan_model');
+
+        // Load payment methods early so create POST can resolve ID -> name.
+        $this->load->model('payment_method_config_model');
+        $payment_methods = $this->payment_method_config_model->get_all_payment_methods();
+        $this->data['payment_methods'] = array();
+        $this->data['payment_methods_by_id'] = array();
+        foreach ($payment_methods as $method) {
+            $this->data['payment_methods'][$method->id] = $method->name;
+            $this->data['payment_methods_by_id'][$method->id] = $method;
+            if (strtolower(trim($method->name)) === 'cash') {
+                $this->data['default_cash_id'] = $method->id;
+            }
+        }
         
         // Form validation rules
         $this->form_validation->set_rules('disburse_date', lang('cash_disbursement_date'), 'required');
@@ -261,6 +275,7 @@ class Cash_disbursement extends CI_Controller {
         }
 
         if ($this->form_validation->run() == TRUE) {
+            $loan_release_lid = trim((string) $this->input->post('loan_release_lid'));
             // Convert payment method ID to name
             $payment_method_id = $this->input->post('payment_method');
             $payment_method_name = '';
@@ -282,6 +297,7 @@ class Cash_disbursement extends CI_Controller {
                 'description' => $this->input->post('description'),
                 'total_amount' => 0,
                 'cancelled' => $cancelled ? 1 : 0,
+                'loan_release_lid' => $loan_release_lid !== '' ? $loan_release_lid : null,
                 'createdby' => current_user()->id,
                 'PIN' => current_user()->PIN,
                 'created_at' => date('Y-m-d H:i:s')
@@ -314,10 +330,42 @@ class Cash_disbursement extends CI_Controller {
                     }
                 }
             }
+            if (!$cancelled && $loan_release_lid !== '') {
+                $release = $this->loan_model->get_pending_release($loan_release_lid, current_user()->PIN);
+                if (!$release) {
+                    $this->data['warning'] = lang('cash_disbursement_release_not_found');
+                } else {
+                    $draft_items = $this->loan_model->get_disbursement_gl_items($loan_release_lid, current_user()->PIN);
+                    if (!empty($draft_items)) {
+                        $line_items = array();
+                        $total_debit = 0;
+                        $total_credit = 0;
+                        foreach ($draft_items as $item) {
+                            $debit = isset($item['debit']) ? floatval($item['debit']) : 0;
+                            $credit = isset($item['credit']) ? floatval($item['credit']) : 0;
+                            if (empty($item['account']) || ($debit <= 0 && $credit <= 0)) {
+                                continue;
+                            }
+                            $line_items[] = array(
+                                'account' => $item['account'],
+                                'debit' => $debit,
+                                'credit' => $credit,
+                                'amount' => $debit + $credit,
+                                'description' => isset($item['description']) ? $item['description'] : '',
+                            );
+                            $total_debit += $debit;
+                            $total_credit += $credit;
+                        }
+                    }
+                    if (empty($disburse_data['description'])) {
+                        $disburse_data['description'] = 'Loan Release ' . $loan_release_lid;
+                    }
+                }
+            }
             $disburse_data['total_amount'] = max($total_debit, $total_credit);
 
             // Create cash disbursement
-            $disburse_id = $this->cash_disbursement_model->create_cash_disbursement($disburse_data, $line_items);
+            $disburse_id = empty($this->data['warning']) ? $this->cash_disbursement_model->create_cash_disbursement($disburse_data, $line_items) : false;
             
             if ($disburse_id) {
                 $this->session->set_flashdata('message', lang('cash_disbursement_create_success'));
@@ -332,20 +380,7 @@ class Cash_disbursement extends CI_Controller {
         
         // Get account list for dropdown
         $this->data['account_list'] = $this->finance_model->account_chart_by_accounttype();
-        
-        // Get payment methods from paymentmenthod table
-        $this->load->model('payment_method_config_model');
-        $payment_methods = $this->payment_method_config_model->get_all_payment_methods();
-        $this->data['payment_methods'] = array();
-        $this->data['payment_methods_by_id'] = array();
-        foreach ($payment_methods as $method) {
-            $this->data['payment_methods'][$method->id] = $method->name;
-            $this->data['payment_methods_by_id'][$method->id] = $method;
-            // Find Cash ID for default selection
-            if (strtolower(trim($method->name)) === 'cash') {
-                $this->data['default_cash_id'] = $method->id;
-            }
-        }
+        $this->data['selected_release_lid'] = set_value('loan_release_lid');
 
         $this->data['content'] = 'cash_disbursement/cash_disbursement_form';
         $this->load->view('template', $this->data);
@@ -357,6 +392,7 @@ class Cash_disbursement extends CI_Controller {
     function cash_disbursement_edit($id) {
         $this->data['id'] = $id;
         $id = decode_id($id);
+        $this->load->model('loan_model');
         
         $this->data['title'] = lang('cash_disbursement_edit');
         
@@ -369,9 +405,15 @@ class Cash_disbursement extends CI_Controller {
         }
         
         if ($this->cash_disbursement_model->is_disbursement_posted_to_gl($id)) {
-            $this->session->set_flashdata('warning', lang('cash_disbursement_cannot_edit_posted'));
-            redirect(current_lang() . '/cash_disbursement/cash_disbursement_list', 'refresh');
+            $this->session->set_flashdata(
+                'warning',
+                lang('cash_disbursement_cannot_edit_posted') . ' Use Void GL Posting on the view page first if this posting was incomplete.'
+            );
+            redirect(current_lang() . '/cash_disbursement/cash_disbursement_view/' . encode_id($id), 'refresh');
         }
+
+        // Rebuild missing JE lines (unposted only) so edit/repost has a complete journal.
+        $this->cash_disbursement_model->repair_missing_journal_entry_items($id);
         
         // Form validation rules
         $this->form_validation->set_rules('disburse_date', lang('cash_disbursement_date'), 'required');
@@ -387,6 +429,7 @@ class Cash_disbursement extends CI_Controller {
         }
 
         if ($this->form_validation->run() == TRUE) {
+            $loan_release_lid = trim((string) $this->input->post('loan_release_lid'));
             // Convert payment method ID to name
             $payment_method_id = $this->input->post('payment_method');
             $payment_method_name = '';
@@ -414,6 +457,7 @@ class Cash_disbursement extends CI_Controller {
                 'description' => $this->input->post('description'),
                 'total_amount' => 0,
                 'cancelled' => $cancelled ? 1 : 0,
+                'loan_release_lid' => $loan_release_lid !== '' ? $loan_release_lid : (!empty($disburse->loan_release_lid) ? $disburse->loan_release_lid : null),
                 'updated_at' => date('Y-m-d H:i:s')
             );
 
@@ -446,6 +490,15 @@ class Cash_disbursement extends CI_Controller {
                     }
                 }
             }
+            if (!$cancelled && !empty($disburse_data['loan_release_lid'])) {
+                // Keep cashier edits: do not rebuild lines from the loan release worksheet.
+                // Sync the edited CD lines back to the release draft so they stay aligned.
+                $this->loan_model->save_disbursement_gl_items(
+                    $disburse_data['loan_release_lid'],
+                    current_user()->PIN,
+                    $line_items
+                );
+            }
             
             $disburse_data['total_amount'] = max($total_debit, $total_credit);
 
@@ -462,6 +515,7 @@ class Cash_disbursement extends CI_Controller {
 
         $this->data['disburse'] = $disburse;
         $this->data['line_items'] = $this->cash_disbursement_model->get_line_items_for_edit($id);
+        $this->data['selected_release_lid'] = !empty($disburse->loan_release_lid) ? $disburse->loan_release_lid : '';
         
         // Get account list for dropdown
         $this->data['account_list'] = $this->finance_model->account_chart_by_accounttype();
@@ -525,6 +579,10 @@ class Cash_disbursement extends CI_Controller {
         $disburse->journal_entry_id = $journal_id;
         $disburse->is_posted_to_gl = $journal_id ? $this->finance_model->is_journal_entry_posted_to_gl($journal_id) : false;
         $this->data['disburse'] = $disburse;
+        if (!empty($disburse->loan_release_lid)) {
+            $this->load->model('loan_model');
+            $this->data['linked_release'] = $this->loan_model->loan_info($disburse->loan_release_lid)->row();
+        }
         $this->data['line_items'] = $this->cash_disbursement_model->get_disburse_items($id);
         $this->data['accounting_entries'] = $this->cash_disbursement_model->get_journal_entries_by_disbursement($id);
         
@@ -705,6 +763,23 @@ class Cash_disbursement extends CI_Controller {
             $status['error'] = 'No members found';
         }
         
+        echo json_encode($status);
+    }
+
+    function pending_loan_releases() {
+        $pid = trim((string) $this->input->get('pid'));
+        $status = array('success' => 'N', 'error' => lang('cash_disbursement_release_not_found'));
+        if ($pid === '') {
+            echo json_encode($status);
+            return;
+        }
+        $this->load->model('loan_model');
+        $rows = $this->loan_model->get_member_pending_releases($pid);
+        if (!empty($rows)) {
+            $status['success'] = 'Y';
+            $status['data'] = $rows;
+            unset($status['error']);
+        }
         echo json_encode($status);
     }
 

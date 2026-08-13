@@ -1845,20 +1845,36 @@ $pin = current_user()->PIN;
         $this->data['title'] = lang('loan_ledger');
         $this->data['loanid'] = $loanid;
         $LID = decode_id($loanid);
+        // Double-encoded URL: first decode yields another encode payload (digits/_), not a LID.
+        if (is_string($LID) && preg_match('/^[0-9]{3}/', $LID) && strpos($LID, '_') !== false) {
+            $retry = decode_id($LID);
+            if ($retry !== null && $retry !== '') {
+                redirect(current_lang() . '/loan/loan_ledger/' . encode_id($retry), 'refresh');
+                return;
+            }
+        }
+        if ($LID === null || $LID === '') {
+            $this->session->set_flashdata('warning', lang('loan_evaluation_error'));
+            redirect(current_lang() . '/loan/loan_repayment', 'refresh');
+            return;
+        }
         $loaninfo = $this->loan_model->loan_info($LID)->row();
         if (!$loaninfo) {
-            show_404();
+            $this->session->set_flashdata('warning', lang('loan_evaluation_error'));
+            redirect(current_lang() . '/loan/loan_repayment', 'refresh');
             return;
         }
         $pin = current_user()->PIN;
-        if ((string)$loaninfo->PIN !== (string)$pin) {
-            show_404();
+        if ((string) $loaninfo->PIN !== (string) $pin) {
+            $this->session->set_flashdata('warning', lang('loan_evaluation_error'));
+            redirect(current_lang() . '/loan/loan_repayment', 'refresh');
             return;
         }
+        $this->data['loanid'] = encode_id($loaninfo->LID);
         $this->data['loaninfo'] = $loaninfo;
         $this->data['basicinfo'] = $this->member_model->member_basic_info(null, $loaninfo->PID, $loaninfo->member_id)->row();
         $this->data['contactinfo'] = $this->member_model->member_contact($loaninfo->PID);
-        $this->data['ledger_transactions'] = $this->loan_model->get_loan_ledger_transactions($LID);
+        $this->data['ledger_transactions'] = $this->loan_model->get_loan_ledger_transactions($loaninfo->LID);
         $this->data['content'] = 'loan/loan_ledger';
         $this->load->view('template', $this->data);
     }
@@ -2253,7 +2269,12 @@ $pin = current_user()->PIN;
                             'interest' => $value->interest, 'principle' => $value->principle, 'duedate' => $value->repaydate,
                             'balance' => $value->balance, 'iliyobaki' => round($amount_tmp, 2), 'createdby' => current_user()->id, 'PIN' => $pin,
                         );
-                        $this->loan_model->record_loan_repayment($array_data, $value->id, $cash_account);
+                        if ($this->loan_model->record_loan_repayment($array_data, $value->id, $cash_account) === false) {
+                            $this->db->trans_rollback();
+                            $this->session->set_flashdata('warning', 'Loan repayment GL posting failed. Check payment method and loan product GL accounts.');
+                            redirect($redirect_back, 'refresh');
+                            return;
+                        }
                         $applied_any = true;
                     }
                 } else {
@@ -2294,7 +2315,12 @@ $pin = current_user()->PIN;
                                 'iliyobaki' => round($amount_tmp, 2), 'penalt' => $penalt_total, 'penalty_months' => $number_months,
                                 'createdby' => current_user()->id, 'PIN' => $pin,
                             );
-                            $this->loan_model->record_loan_repayment($array_data, $value->id, $cash_account);
+                            if ($this->loan_model->record_loan_repayment($array_data, $value->id, $cash_account) === false) {
+                                $this->db->trans_rollback();
+                                $this->session->set_flashdata('warning', 'Loan repayment GL posting failed. Check payment method and loan product GL accounts.');
+                                redirect($redirect_back, 'refresh');
+                                return;
+                            }
                             $applied_any = true;
                         }
                     } else {
@@ -2324,6 +2350,11 @@ $pin = current_user()->PIN;
             $this->db->update('loan_contract', array('status' => 5), array('LID' => $LID, 'status' => 4, 'disburse' => 1, 'PIN' => $pin));
         }
         $this->db->trans_complete();
+        if ($this->db->trans_status() === FALSE) {
+            $this->session->set_flashdata('warning', 'Loan repayment save failed. Please try again.');
+            redirect($redirect_back, 'refresh');
+            return;
+        }
         redirect(site_url(current_lang() . '/loan/view_loanreceipt/' . $receipt), 'refresh');
     }
 
@@ -3458,26 +3489,46 @@ $pin = current_user()->PIN;
         } else {
             $this->session->set_flashdata('warning', !empty($result['message']) ? $result['message'] : 'Void failed');
         }
-        $LID = $this->input->get('LID');
-        if ($LID) {
-            redirect(current_lang() . '/loan/loan_ledger/' . encode_id($LID), 'refresh');
+        // Ledger void links pass ?LID=encode_id(raw_LID). Do NOT encode again or the
+        // ledger URL double-encodes and decode_id returns garbage (blank/404 page).
+        $lid_param = trim((string) $this->input->get('LID'));
+        if ($lid_param !== '') {
+            $decoded = decode_id($lid_param);
+            if ($decoded !== null && $decoded !== '') {
+                redirect(current_lang() . '/loan/loan_ledger/' . encode_id($decoded), 'refresh');
+                return;
+            }
+            // Already a raw LID (or unusable encode) — only encode if it looks like a LID.
+            if (preg_match('/^[A-Za-z0-9\-]+$/', $lid_param)) {
+                redirect(current_lang() . '/loan/loan_ledger/' . encode_id($lid_param), 'refresh');
+                return;
+            }
+        }
+        if (!empty($result['LID'])) {
+            redirect(current_lang() . '/loan/loan_ledger/' . encode_id($result['LID']), 'refresh');
             return;
         }
         redirect(current_lang() . '/loan/loan_repayment', 'refresh');
     }
 
     /**
-     * Void loan disbursement with reversing GL (only if no repayments).
+     * Void loan disbursement with reversing GL + savings/share deduction sub-ledgers
+     * (old-style Loan Disbursement posts only). Requires no active repayments.
      */
     function void_loan_disbursement($loanid) {
         $LID = decode_id($loanid);
+        if ($LID === null || $LID === '') {
+            $this->session->set_flashdata('warning', lang('loan_evaluation_error'));
+            redirect(current_lang() . '/loan/loan_viewlist', 'refresh');
+            return;
+        }
         $result = $this->loan_model->void_loan_disbursement($LID, 'Void loan disbursement');
         if (!empty($result['success'])) {
             $this->session->set_flashdata('message', $result['message']);
         } else {
             $this->session->set_flashdata('warning', !empty($result['message']) ? $result['message'] : 'Void failed');
         }
-        redirect(current_lang() . '/loan/loan_view/' . encode_id($LID), 'refresh');
+        redirect(current_lang() . '/loan/view_indetail/' . encode_id($LID), 'refresh');
     }
 
     // Member Autosuggest Methods for Loan Beginning Balance

@@ -250,6 +250,10 @@
 .member-list-page .status-pill.disburse { background: #f8ac59; }
 .member-list-page .status-pill.bb { background: #f8ac59; }
 .member-list-page .status-pill.mixed { background: #f8ac59; }
+.member-list-page .status-pill.pending-release { background: #23c6c8; }
+.member-list-page .status-pill.released-unposted { background: #f8ac59; }
+.member-list-page .status-pill.active { background: #1ab394; }
+.member-list-page .status-pill.past-due { background: #ed5565; }
 .member-list-page .status-pill.other { background: #676a6c; }
 .member-list-page .action-btns {
     display: flex;
@@ -474,24 +478,30 @@ $current_status = isset($status_filter) ? $status_filter : '';
                             $interval = $this->setting_model->intervalinfo($value->interval)->row();
                             $interval_desc = $interval ? $interval->description : '';
                             $status_code = isset($value->status) ? (string) $value->status : '';
-                            $status_name = isset($value->name) ? $value->name : '';
-                            $pill = 'other';
-                            if ($status_name === 'Beginning Balance' || $status_code === 'bb') {
-                                $pill = 'bb';
-                            } else if ($status_code === '0') {
-                                $pill = 'new';
-                            } else if ($status_code === '1') {
-                                $pill = 'eval';
-                            } else if ($status_code === '2') {
-                                $pill = 'rejected';
-                            } else if ($status_code === '4' || $status_code === '9') {
-                                $pill = 'accepted';
-                            } else if ($status_code === '5') {
-                                $pill = 'closed';
-                            } else if ($status_code === '6') {
-                                $pill = 'disburse';
-                            } else if ($status_code === '7' || $status_code === '8') {
-                                $pill = 'mixed';
+                            $status_name = isset($value->lifecycle_name) && $value->lifecycle_name !== ''
+                                ? $value->lifecycle_name
+                                : (isset($value->name) ? $value->name : '');
+                            $pill = isset($value->lifecycle_pill) && $value->lifecycle_pill !== ''
+                                ? $value->lifecycle_pill
+                                : 'other';
+                            if ($pill === 'other') {
+                                if ($status_name === 'Beginning Balance' || $status_code === 'bb') {
+                                    $pill = 'bb';
+                                } else if ($status_code === '0') {
+                                    $pill = 'new';
+                                } else if ($status_code === '1') {
+                                    $pill = 'eval';
+                                } else if ($status_code === '2') {
+                                    $pill = 'rejected';
+                                } else if ($status_code === '4' || $status_code === '9') {
+                                    $pill = 'accepted';
+                                } else if ($status_code === '5') {
+                                    $pill = 'closed';
+                                } else if ($status_code === '6') {
+                                    $pill = 'disburse';
+                                } else if ($status_code === '7' || $status_code === '8') {
+                                    $pill = 'mixed';
+                                }
                             }
                             ?>
                             <tr>
@@ -507,7 +517,7 @@ $current_status = isset($status_filter) ? $status_filter : '';
                                 <td class="amount-cell"><?php echo number_format($value->installment_amount, 2); ?></td>
                                 <td class="amount-cell"><?php echo number_format($value->total_interest_amount, 2); ?></td>
                                 <td class="amount-cell"><?php echo number_format($value->total_loan, 2); ?></td>
-                                <td><span class="status-pill <?php echo $pill; ?>"><?php echo htmlspecialchars($status_name, ENT_QUOTES, 'UTF-8'); ?></span></td>
+                                <td><span class="status-pill <?php echo htmlspecialchars($pill, ENT_QUOTES, 'UTF-8'); ?>"><?php echo htmlspecialchars($status_name, ENT_QUOTES, 'UTF-8'); ?></span></td>
                                 <td>
                                     <div class="action-btns">
                                         <?php

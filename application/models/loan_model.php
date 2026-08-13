@@ -1463,6 +1463,177 @@ class Loan_Model extends CI_Model {
         return $this->db->query($sql)->result();
     }
 
+    /**
+     * Lifecycle filter keys used on Loan List (derived; does not change loan_contract.status).
+     */
+    function loan_lifecycle_filter_keys() {
+        return array('pending_release', 'released_unposted', 'active', 'past_due');
+    }
+
+    function is_loan_lifecycle_filter($status) {
+        return $status !== null && $status !== '' && in_array((string) $status, $this->loan_lifecycle_filter_keys(), true);
+    }
+
+    function _loan_list_grace_days() {
+        return defined('MAX_NUMBER_DAYS_OVERDUE_PENALT') ? (int) MAX_NUMBER_DAYS_OVERDUE_PENALT : 0;
+    }
+
+    function _sql_loan_has_open_release($lc_alias = 'loan_contract') {
+        return "EXISTS (
+            SELECT 1 FROM loan_contract_disburse lcd
+            WHERE lcd.LID = {$lc_alias}.LID
+              AND lcd.PIN = {$lc_alias}.PIN
+              AND lcd.release_status IN ('pending', 'draft')
+        )";
+    }
+
+    function _sql_loan_is_past_due($lc_alias = 'loan_contract') {
+        $grace = $this->_loan_list_grace_days();
+        return "EXISTS (
+            SELECT 1 FROM loan_contract_repayment_schedule rs
+            WHERE rs.LID = {$lc_alias}.LID
+              AND rs.PIN = {$lc_alias}.PIN
+              AND rs.status = 0
+              AND DATE_ADD(rs.repaydate, INTERVAL {$grace} DAY) < CURDATE()
+        )";
+    }
+
+    function _lifecycle_filter_sql($lifecycle, $lc_alias = 'loan_contract') {
+        $lifecycle = (string) $lifecycle;
+        $open_rel = $this->_sql_loan_has_open_release($lc_alias);
+        $past_due = $this->_sql_loan_is_past_due($lc_alias);
+        if ($lifecycle === 'pending_release') {
+            return "{$lc_alias}.status IN (4,6,9) AND {$lc_alias}.disburse = 0 AND NOT ({$open_rel})";
+        }
+        if ($lifecycle === 'released_unposted') {
+            return "{$lc_alias}.status IN (4,6,9) AND {$lc_alias}.disburse = 0 AND ({$open_rel})";
+        }
+        if ($lifecycle === 'active') {
+            return "{$lc_alias}.status IN (4,6,9) AND {$lc_alias}.disburse = 1 AND NOT ({$past_due})";
+        }
+        if ($lifecycle === 'past_due') {
+            return "{$lc_alias}.status IN (4,6,9) AND {$lc_alias}.disburse = 1 AND ({$past_due})";
+        }
+        return '1=0';
+    }
+
+    function _lifecycle_select_sql($lc_alias = 'loan_contract') {
+        $grace = $this->_loan_list_grace_days();
+        return ",
+            (SELECT lcd.release_status FROM loan_contract_disburse lcd
+             WHERE lcd.LID = {$lc_alias}.LID AND lcd.PIN = {$lc_alias}.PIN
+               AND lcd.release_status IN ('pending','draft')
+             ORDER BY lcd.id DESC LIMIT 1) AS open_release_status,
+            EXISTS (
+                SELECT 1 FROM loan_contract_repayment_schedule rs
+                WHERE rs.LID = {$lc_alias}.LID AND rs.PIN = {$lc_alias}.PIN
+                  AND rs.status = 0
+                  AND DATE_ADD(rs.repaydate, INTERVAL {$grace} DAY) < CURDATE()
+            ) AS is_past_due_flag";
+    }
+
+    /**
+     * Resolve display lifecycle for a loan_contract list row.
+     * Approval statuses keep loan_status.name; Accepted/disbursed family show lifecycle labels.
+     */
+    function resolve_loan_lifecycle($row) {
+        $this->lang->load('loan');
+        $status = isset($row->status) ? (string) $row->status : '';
+        $base_name = isset($row->name) ? $row->name : '';
+
+        if ($status === 'bb' || !empty($row->is_beginning_balance)) {
+            return array(
+                'code' => 'bb',
+                'name' => ($base_name !== '' ? $base_name : 'Beginning Balance'),
+                'pill' => 'bb',
+                'override_name' => false,
+            );
+        }
+
+        if (in_array($status, array('0', '1', '2', '3', '5', '7', '8'), true)) {
+            $pill = 'other';
+            if ($status === '0') {
+                $pill = 'new';
+            } else if ($status === '1') {
+                $pill = 'eval';
+            } else if ($status === '2') {
+                $pill = 'rejected';
+            } else if ($status === '5') {
+                $pill = 'closed';
+            } else if ($status === '7' || $status === '8') {
+                $pill = 'mixed';
+            }
+            return array(
+                'code' => $status,
+                'name' => $base_name,
+                'pill' => $pill,
+                'override_name' => false,
+            );
+        }
+
+        $disburse = isset($row->disburse) && ((string) $row->disburse === '1' || $row->disburse === 1 || $row->disburse === true);
+        $past_due = !empty($row->is_past_due_flag) && (string) $row->is_past_due_flag !== '0';
+        $open_release = !empty($row->open_release_status);
+
+        if ($disburse) {
+            if ($past_due) {
+                return array(
+                    'code' => 'past_due',
+                    'name' => $this->_loan_lang_message('loan_lifecycle_past_due', 'Past Due'),
+                    'pill' => 'past-due',
+                    'override_name' => true,
+                );
+            }
+            return array(
+                'code' => 'active',
+                'name' => $this->_loan_lang_message('loan_lifecycle_active', 'Active'),
+                'pill' => 'active',
+                'override_name' => true,
+            );
+        }
+
+        if ($open_release) {
+            return array(
+                'code' => 'released_unposted',
+                'name' => $this->_loan_lang_message('loan_lifecycle_released_unposted', 'Released not posted'),
+                'pill' => 'released-unposted',
+                'override_name' => true,
+            );
+        }
+
+        if (in_array($status, array('4', '6', '9'), true)) {
+            return array(
+                'code' => 'pending_release',
+                'name' => $this->_loan_lang_message('loan_lifecycle_pending_release', 'Pending Release'),
+                'pill' => 'pending-release',
+                'override_name' => true,
+            );
+        }
+
+        return array(
+            'code' => $status,
+            'name' => $base_name,
+            'pill' => 'other',
+            'override_name' => false,
+        );
+    }
+
+    function enrich_loan_list_lifecycle($rows) {
+        if (empty($rows) || !is_array($rows)) {
+            return $rows;
+        }
+        foreach ($rows as $row) {
+            $info = $this->resolve_loan_lifecycle($row);
+            $row->lifecycle_code = $info['code'];
+            $row->lifecycle_name = $info['name'];
+            $row->lifecycle_pill = $info['pill'];
+            if (!empty($info['override_name'])) {
+                $row->name = $info['name'];
+            }
+        }
+        return $rows;
+    }
+
     function count_loan($key = null, $status = null) {
         $pin = current_user()->PIN;
         
@@ -1474,6 +1645,15 @@ class Loan_Model extends CI_Model {
                 $sql_bb .= " AND (loan_beginning_balances.loan_id LIKE " . $this->db->escape($key . '%') . " OR loan_beginning_balances.member_id LIKE " . $this->db->escape($key . '%') . " OR members.firstname LIKE " . $this->db->escape($key . '%') . " OR members.lastname LIKE " . $this->db->escape($key . '%') . ")";
             }
             return $this->db->query($sql_bb)->num_rows();
+        }
+
+        // Lifecycle filters (derived from disburse / release / schedule)
+        if ($this->is_loan_lifecycle_filter($status)) {
+            $sql = "SELECT loan_contract.LID FROM loan_contract INNER JOIN members ON members.PID=loan_contract.PID WHERE loan_contract.PIN='$pin' AND (" . $this->_lifecycle_filter_sql($status, 'loan_contract') . ")";
+            if (!is_null($key)) {
+                $sql .= " AND (loan_contract.LID LIKE " . $this->db->escape($key . '%') . " OR loan_contract.member_id LIKE " . $this->db->escape($key . '%') . " OR members.firstname LIKE " . $this->db->escape($key . '%') . " OR members.lastname LIKE " . $this->db->escape($key . '%') . ")";
+            }
+            return $this->db->query($sql)->num_rows();
         }
 
         // When status filter is set, count only loan_contract with that status
@@ -1511,7 +1691,7 @@ class Loan_Model extends CI_Model {
 
     function search_loan($key, $limit, $start, $status = null) {
         $pin = current_user()->PIN;
-        $results = array();
+        $life_select = $this->_lifecycle_select_sql('loan_contract');
         
         // Filter: Beginning Balance only
         if ($status !== null && $status !== '' && (string)$status === 'bb') {
@@ -1542,22 +1722,33 @@ class Loan_Model extends CI_Model {
                 $sql_bb .= " AND (loan_beginning_balances.loan_id LIKE '$key%' OR loan_beginning_balances.member_id LIKE '$key%' OR members.firstname LIKE '$key%' OR members.lastname LIKE '$key%')";
             }
             $sql_bb .= " ORDER BY loan_beginning_balances.disbursement_date ASC, loan_beginning_balances.created_at ASC LIMIT " . (int)$limit . " OFFSET " . (int)$start;
-            return $this->db->query($sql_bb)->result();
+            return $this->enrich_loan_list_lifecycle($this->db->query($sql_bb)->result());
+        }
+
+        // Lifecycle filters
+        if ($this->is_loan_lifecycle_filter($status)) {
+            $sql = "SELECT loan_contract.*,loan_status.name" . $life_select . " FROM loan_contract INNER JOIN members ON members.PID=loan_contract.PID ";
+            $sql .= " INNER JOIN loan_status ON loan_status.code=loan_contract.status WHERE loan_contract.PIN='$pin' AND (" . $this->_lifecycle_filter_sql($status, 'loan_contract') . ")";
+            if (!is_null($key)) {
+                $sql .= " AND ( loan_contract.LID LIKE '$key%' OR loan_contract.member_id LIKE '$key%' OR members.firstname LIKE '$key%' OR members.lastname LIKE '$key%')";
+            }
+            $sql .= " ORDER BY loan_contract.applicationdate ASC LIMIT " . (int)$limit . " OFFSET " . (int)$start;
+            return $this->enrich_loan_list_lifecycle($this->db->query($sql)->result());
         }
 
         // When status filter is set, get only loan_contract with that status (no beginning balances)
         if ($status !== null && $status !== '') {
-            $sql = "SELECT loan_contract.*,loan_status.name FROM loan_contract INNER JOIN members ON members.PID=loan_contract.PID ";
+            $sql = "SELECT loan_contract.*,loan_status.name" . $life_select . " FROM loan_contract INNER JOIN members ON members.PID=loan_contract.PID ";
             $sql .= " INNER JOIN loan_status ON loan_status.code=loan_contract.status WHERE loan_contract.PIN='$pin' AND loan_contract.status=" . $this->db->escape($status);
             if (!is_null($key)) {
                 $sql .= " AND ( loan_contract.LID LIKE '$key%' OR loan_contract.member_id LIKE '$key%' OR members.firstname LIKE '$key%' OR members.lastname LIKE '$key%')";
             }
             $sql .= " ORDER BY loan_contract.applicationdate ASC LIMIT " . (int)$limit . " OFFSET " . (int)$start;
-            return $this->db->query($sql)->result();
+            return $this->enrich_loan_list_lifecycle($this->db->query($sql)->result());
         }
         
         // Get regular loans from loan_contract
-        $sql = "SELECT loan_contract.*,loan_status.name FROM loan_contract INNER JOIN members ON members.PID=loan_contract.PID ";
+        $sql = "SELECT loan_contract.*,loan_status.name" . $life_select . " FROM loan_contract INNER JOIN members ON members.PID=loan_contract.PID ";
         $sql .= " INNER JOIN loan_status ON loan_status.code=loan_contract.status WHERE loan_contract.PIN='$pin'";
 
         if (!is_null($key)) {
@@ -1614,7 +1805,7 @@ class Loan_Model extends CI_Model {
         });
         
         // Apply pagination
-        return array_slice($all_results, $start, $limit);
+        return $this->enrich_loan_list_lifecycle(array_slice($all_results, $start, $limit));
     }
 
     function open_repayment_installment($LID) {
@@ -1817,21 +2008,41 @@ class Loan_Model extends CI_Model {
     function add_remain_balance($LID, $amount) {
         $pin = current_user()->PIN;
         $check = $this->db->get_where('loan_balance_carry', array('LID' => $LID, 'PIN' => $pin))->row();
-        if (count($check) > 0) {
+        // Do not use count($check): PHP 8 throws TypeError on null/object.
+        if ($check) {
             $this->db->where('LID', $LID);
             $this->db->where('PIN', $pin);
             $this->db->set('balance', $amount, FALSE);
             return $this->db->update('loan_balance_carry');
-        } else {
-            return $this->db->insert('loan_balance_carry', array('LID' => $LID, 'PIN' => $pin, 'balance' => $amount));
         }
+        return $this->db->insert('loan_balance_carry', array('LID' => $LID, 'PIN' => $pin, 'balance' => $amount));
+    }
+
+    /**
+     * Ensure loan_contract_repayment insert has NOT NULL columns (strict SQL).
+     */
+    function _normalize_repayment_row($array_data) {
+        if (!is_array($array_data)) {
+            return $array_data;
+        }
+        if (!array_key_exists('penalt', $array_data) || $array_data['penalt'] === null || $array_data['penalt'] === '') {
+            $array_data['penalt'] = 0;
+        }
+        if (!array_key_exists('penalty_months', $array_data) || $array_data['penalty_months'] === null || $array_data['penalty_months'] === '') {
+            $array_data['penalty_months'] = 0;
+        }
+        if (!array_key_exists('month', $array_data) || $array_data['month'] === null) {
+            $array_data['month'] = '';
+        }
+        return $array_data;
     }
 
     function record_loan_repayment($array_data, $repay_schedule_ref, $cash_account = null) {
         $pin = current_user()->PIN;
+        $array_data = $this->_normalize_repayment_row($array_data);
         $this->db->trans_start();
         $insert = $this->db->insert('loan_contract_repayment', $array_data);
-        $referenceID = $this->db->insert_id();
+        $referenceID = $this->_loan_repayment_insert_id($array_data);
         //general entry id
         $ledger_entry = array('date' => $array_data['paydate'], 'PIN' => $pin);
         $this->db->insert('general_ledger_entry', $ledger_entry);
@@ -1858,6 +2069,25 @@ class Loan_Model extends CI_Model {
             'PID' => $infodata->PID,
             'member_id' => $infodata->member_id,
         );
+
+        $accounts_needed = array(
+            $debit_account,
+            $product ? $product->loan_principle_account : null,
+            $product ? $product->loan_interest_account : null,
+        );
+        $equity_account_setting = function_exists('default_text_value') ? default_text_value('RETAINED_EARNINGS_ACCOUNT') : '';
+        $equity_account = (is_numeric($equity_account_setting) && (int)$equity_account_setting > 0) ? (int)$equity_account_setting : 3000002;
+        $accounts_needed[] = $equity_account;
+        if (array_key_exists('penalt', $array_data) && floatval($array_data['penalt']) > 0) {
+            $accounts_needed[] = $product ? $product->loan_penalt_account : null;
+        }
+        foreach ($accounts_needed as $acct) {
+            if ($acct === null || $acct === '' || !account_row_info($acct)) {
+                $this->db->_trans_status = FALSE;
+                $this->db->trans_complete();
+                return false;
+            }
+        }
 
         //bank account (cash/bank in from member)
         $ledger['account'] = $debit_account;
@@ -1901,10 +2131,6 @@ class Loan_Model extends CI_Model {
       $ledger['sub_account_type'] = $infoaccount->sub_account_type;
         $this->db->insert('general_ledger', $ledger);
 
-        // Determine equity account (Retained Earnings) from global settings (fallback to 3000002)
-        $equity_account_setting = function_exists('default_text_value') ? default_text_value('RETAINED_EARNINGS_ACCOUNT') : '';
-        $equity_account = (is_numeric($equity_account_setting) && (int)$equity_account_setting > 0) ? (int)$equity_account_setting : 3000002;
-
         //credit equity
         $ledger['credit'] = 0;
         $ledger['debit'] = 0;
@@ -1918,7 +2144,7 @@ class Loan_Model extends CI_Model {
 
 
         //check if penalty exist
-        if (array_key_exists('penalt', $array_data)) {
+        if (array_key_exists('penalt', $array_data) && floatval($array_data['penalt']) > 0) {
             $ledger['credit'] = 0;
             $ledger['debit'] = 0;
             $ledger['account'] = $debit_account;
@@ -1964,9 +2190,10 @@ class Loan_Model extends CI_Model {
     //paying all loan before the end of the given duration
     function record_loan_repayment_all($array_data, $repay_schedule_ref, $loan_id, $cash_account = null) {
         $pin = current_user()->PIN;
+        $array_data = $this->_normalize_repayment_row($array_data);
         $this->db->trans_start();
         $insert = $this->db->insert('loan_contract_repayment', $array_data);
-        $referenceID = $this->db->insert_id();
+        $referenceID = $this->_loan_repayment_insert_id($array_data);
         //general entry id
         $ledger_entry = array('date' => $array_data['paydate'], 'PIN' => $pin);
         $this->db->insert('general_ledger_entry', $ledger_entry);
@@ -2053,7 +2280,7 @@ class Loan_Model extends CI_Model {
 
 
         //check if penalty exist
-        if (array_key_exists('penalt', $array_data)) {
+        if (array_key_exists('penalt', $array_data) && floatval($array_data['penalt']) > 0) {
             $ledger['credit'] = 0;
             $ledger['debit'] = 0;
             $ledger['account'] = $debit_account;
@@ -2156,13 +2383,13 @@ class Loan_Model extends CI_Model {
             $this->db->join('loan_contract lc', 'lc.LID = lcd.LID AND lc.PIN = lcd.PIN');
             $this->db->where('lcd.LID', $LID);
             $this->db->where('lcd.PIN', $pin);
+            // Use a single AND (...) — CI2 group_start/or_where can become
+            // "LID = X AND … OR release_status = paid" and pull other loans' paid releases.
             if ($this->db->query("SHOW COLUMNS FROM loan_contract_disburse LIKE 'release_status'")->row()) {
-                $this->db->group_start();
-                $this->db->where('lcd.release_status IS NULL', null, false);
-                $this->db->or_where('lcd.release_status', 'paid');
-                $this->db->group_end();
+                $this->db->where('(lcd.release_status IS NULL OR lcd.release_status = \'paid\')', null, false);
             }
             $this->db->order_by('lcd.disbursedate', 'ASC');
+            $this->db->order_by('lcd.id', 'ASC');
             $disburse = $this->db->get()->result();
             foreach ($disburse as $d) {
                 $desc = lang('loan_ledger_disbursement');
@@ -2753,6 +2980,101 @@ class Loan_Model extends CI_Model {
     }
 
     /**
+     * Resolve general_ledger.refferenceID for a loan_contract_repayment row.
+     * Correct posts use repayment.id; older/polluted posts used a wrong insert_id
+     * (often general_ledger_entry.id). Fall back by LID + pay date + description.
+     */
+    function resolve_repayment_gl_reference_id($row) {
+        $pin = current_user()->PIN;
+        $row_id = isset($row->id) ? (int) $row->id : 0;
+        if ($row_id > 0) {
+            $hit = $this->db->query(
+                "SELECT id FROM general_ledger
+                 WHERE PIN = ? AND fromtable = 'loan_contract_repayment' AND refferenceID = ?
+                 LIMIT 1",
+                array($pin, $row_id)
+            )->row();
+            if ($hit) {
+                return $row_id;
+            }
+        }
+
+        $lid = isset($row->LID) ? $row->LID : '';
+        $paydate = isset($row->paydate) ? $row->paydate : '';
+        if ($lid === '' || $paydate === '') {
+            return $row_id > 0 ? $row_id : '';
+        }
+
+        $refs = $this->db->query(
+            "SELECT DISTINCT refferenceID
+             FROM general_ledger
+             WHERE PIN = ?
+               AND fromtable = 'loan_contract_repayment'
+               AND LID = ?
+               AND date = ?
+               AND description = 'Loan Repayment'
+               AND (refferenceID IS NOT NULL AND refferenceID != '' AND refferenceID != '0')
+             ORDER BY refferenceID ASC",
+            array($pin, $lid, $paydate)
+        )->result();
+
+        if (count($refs) === 1) {
+            return $refs[0]->refferenceID;
+        }
+
+        // Multiple same-day repayments: prefer ref whose debit total matches this row amount.
+        $target = isset($row->amount) ? round(floatval($row->amount), 2) : 0;
+        if ($target > 0 && !empty($refs)) {
+            foreach ($refs as $ref) {
+                $sum = $this->db->query(
+                    "SELECT ROUND(COALESCE(SUM(debit),0), 2) AS total_debit
+                     FROM general_ledger
+                     WHERE PIN = ? AND fromtable = 'loan_contract_repayment'
+                       AND refferenceID = ? AND LID = ? AND date = ?",
+                    array($pin, $ref->refferenceID, $lid, $paydate)
+                )->row();
+                if ($sum && abs(floatval($sum->total_debit) - $target) < 0.02) {
+                    return $ref->refferenceID;
+                }
+            }
+        }
+
+        if (!empty($refs)) {
+            return $refs[0]->refferenceID;
+        }
+        return $row_id > 0 ? $row_id : '';
+    }
+
+    /**
+     * Reliably get loan_contract_repayment.id after insert (insert_id can be polluted
+     * by activity_logs / other inserts on the same connection).
+     */
+    function _loan_repayment_insert_id($array_data) {
+        $pin = current_user()->PIN;
+        $insert_id = (int) $this->db->insert_id();
+        if ($insert_id > 0) {
+            $check = $this->db->query(
+                "SELECT id FROM loan_contract_repayment WHERE id = ? AND PIN = ? AND LID = ? LIMIT 1",
+                array($insert_id, $pin, isset($array_data['LID']) ? $array_data['LID'] : '')
+            )->row();
+            if ($check) {
+                return $insert_id;
+            }
+        }
+        $found = $this->db->query(
+            "SELECT id FROM loan_contract_repayment
+             WHERE PIN = ? AND LID = ? AND receipt = ?
+             ORDER BY id DESC LIMIT 1",
+            array(
+                $pin,
+                isset($array_data['LID']) ? $array_data['LID'] : '',
+                isset($array_data['receipt']) ? $array_data['receipt'] : '',
+            )
+        )->row();
+        return $found ? (int) $found->id : $insert_id;
+    }
+
+    /**
      * Void a loan repayment receipt: reverse GL for each repayment row and reopen schedule(s).
      */
     function void_loan_repayment_receipt($receipt, $reason = '') {
@@ -2793,7 +3115,20 @@ class Loan_Model extends CI_Model {
                 continue;
             }
             $LID = $row->LID;
-            $gl = $this->finance_model->void_gl_lines_with_reversal('loan_contract_repayment', $row->id, $reason !== '' ? $reason : ('Void repayment ' . $receipt));
+            $gl_ref = $this->resolve_repayment_gl_reference_id($row);
+            $gl = $this->finance_model->void_gl_lines_with_reversal(
+                'loan_contract_repayment',
+                $gl_ref,
+                $reason !== '' ? $reason : ('Void repayment ' . $receipt)
+            );
+            if (empty($gl['success']) && (string) $gl_ref !== (string) $row->id) {
+                // Retry with repayment row id in case some installs stored it correctly.
+                $gl = $this->finance_model->void_gl_lines_with_reversal(
+                    'loan_contract_repayment',
+                    $row->id,
+                    $reason !== '' ? $reason : ('Void repayment ' . $receipt)
+                );
+            }
             if (empty($gl['success'])) {
                 $this->db->_trans_status = FALSE;
                 $this->db->trans_complete();
@@ -2828,54 +3163,210 @@ class Loan_Model extends CI_Model {
         if ($this->db->trans_status() === FALSE) {
             return array('success' => false, 'message' => 'Void failed.');
         }
-        return array('success' => true, 'message' => 'Loan repayment voided with reversing GL entry.');
+        return array('success' => true, 'message' => 'Loan repayment voided with reversing GL entry.', 'LID' => $LID);
     }
 
     /**
      * Void loan disbursement GL (by LID) when no repayments exist.
+     * Also reverses Savings/Share sub-ledgers created by loan disbursement deductions
+     * (without a second GL post — loan GL reversal already covers 21110/30130).
+     * Old-style posts only (loan_contract / "Loan Disbursed"). New-flow paid/draft
+     * releases linked to Cash Disbursement are blocked.
      */
     function void_loan_disbursement($LID, $reason = '') {
         $pin = current_user()->PIN;
         $LID = trim((string) $LID);
+        $reason = trim((string) $reason);
+        if ($reason === '') {
+            $reason = 'Void loan disbursement';
+        }
         $loan = $this->db->where('LID', $LID)->where('PIN', $pin)->get('loan_contract')->row();
         if (!$loan || empty($loan->disburse)) {
             return array('success' => false, 'message' => 'Loan not found or not disbursed.');
         }
-        $paid = $this->db->query(
-            "SELECT COUNT(*) AS cnt FROM loan_contract_repayment WHERE LID = ? AND (is_voided IS NULL OR is_voided = 0)",
-            array($LID)
-        )->row();
-        // is_voided may not exist yet
-        if (!$this->db->query("SHOW COLUMNS FROM loan_contract_repayment LIKE 'is_voided'")->row()) {
-            $paid = $this->db->query("SELECT COUNT(*) AS cnt FROM loan_contract_repayment WHERE LID = ?", array($LID))->row();
+
+        $this->ensure_release_workflow_columns();
+        $release = $this->db->where('LID', $LID)->where('PIN', $pin)
+            ->order_by('id', 'DESC')->limit(1)
+            ->get('loan_contract_disburse')->row();
+        if ($release && isset($release->release_status)
+            && in_array($release->release_status, array('draft', 'paid'), true)) {
+            return array(
+                'success' => false,
+                'message' => 'This loan was paid through Cash Disbursement / Journal Entry Review. Automatic void is not available; create a manual reversing journal instead.',
+            );
+        }
+
+        $has_voided_col = $this->db->query("SHOW COLUMNS FROM loan_contract_repayment LIKE 'is_voided'")->row();
+        if ($has_voided_col) {
+            $paid = $this->db->query(
+                "SELECT COUNT(*) AS cnt FROM loan_contract_repayment WHERE LID = ? AND PIN = ? AND (is_voided IS NULL OR is_voided = 0)",
+                array($LID, $pin)
+            )->row();
+        } else {
+            $paid = $this->db->query(
+                "SELECT COUNT(*) AS cnt FROM loan_contract_repayment WHERE LID = ? AND PIN = ?",
+                array($LID, $pin)
+            )->row();
         }
         if ($paid && intval($paid->cnt) > 0) {
             return array('success' => false, 'message' => 'Cannot void disbursement while repayments exist. Void repayments first.');
         }
 
         $this->load->model('finance_model');
+        $this->load->model('share_model');
         $this->db->trans_start();
+
+        $savings_rev = $this->_reverse_disbursement_savings_subledgers($LID, $reason);
+        if (empty($savings_rev['success'])) {
+            $this->db->trans_rollback();
+            return $savings_rev;
+        }
+
+        $share_rev = $this->_reverse_disbursement_share_subledgers($LID, $reason);
+        if (empty($share_rev['success'])) {
+            $this->db->trans_rollback();
+            return $share_rev;
+        }
+
         // Disbursement GL often keyed by LID without refferenceID — filter by LID + description
-        $gl = $this->finance_model->void_gl_lines_with_reversal('loan_contract', $LID, $reason !== '' ? $reason : 'Void loan disbursement', array(
+        $gl = $this->finance_model->void_gl_lines_with_reversal('loan_contract', $LID, $reason, array(
             'LID' => $LID,
             'description' => 'Loan Disbursed',
             'ignore_refferenceID' => 1,
         ));
         if (empty($gl['success'])) {
             // Try with refferenceID = LID if that was stored
-            $gl = $this->finance_model->void_gl_lines_with_reversal('loan_contract', $LID, $reason !== '' ? $reason : 'Void loan disbursement');
+            $gl = $this->finance_model->void_gl_lines_with_reversal('loan_contract', $LID, $reason);
         }
         if (empty($gl['success'])) {
-            $this->db->trans_complete();
+            $this->db->trans_rollback();
             return array('success' => false, 'message' => !empty($gl['message']) ? $gl['message'] : 'No disbursement GL found to reverse.');
         }
-        $this->db->where('LID', $LID)->delete('loan_contract_repayment_schedule');
-        $this->db->where('LID', $LID)->update('loan_contract', array('disburse' => 0));
+
+        $this->db->where('LID', $LID)->where('PIN', $pin)->delete('loan_contract_repayment_schedule');
+        if ($this->db->table_exists('loan_disbursement_gl_items')) {
+            $this->db->where('LID', $LID)->where('PIN', $pin)->delete('loan_disbursement_gl_items');
+        }
+        $this->db->where('LID', $LID)->where('PIN', $pin)->delete('loan_contract_disburse');
+        $upd = array('disburse' => 0);
+        if ($this->db->query("SHOW COLUMNS FROM loan_contract LIKE 'offset_loans'")->row()) {
+            $upd['offset_loans'] = null;
+        }
+        $this->db->where('LID', $LID)->where('PIN', $pin)->update('loan_contract', $upd);
+
         $this->db->trans_complete();
         if ($this->db->trans_status() === FALSE) {
             return array('success' => false, 'message' => 'Void failed.');
         }
-        return array('success' => true, 'message' => 'Loan disbursement voided with reversing GL entry.');
+
+        $extra = array();
+        if (!empty($savings_rev['count'])) {
+            $extra[] = $savings_rev['count'] . ' savings';
+        }
+        if (!empty($share_rev['count'])) {
+            $extra[] = $share_rev['count'] . ' share';
+        }
+        $msg = 'Loan disbursement voided with reversing GL entry.';
+        if (!empty($extra)) {
+            $msg .= ' Also reversed ' . implode(' and ', $extra) . ' deduction sub-ledger(s).';
+        }
+        $msg .= ' Loan is ready for Loan Release → Cash Disbursement.';
+        return array('success' => true, 'message' => $msg);
+    }
+
+    /**
+     * Reverse savings credits posted as loan disbursement deductions (no second GL).
+     */
+    function _reverse_disbursement_savings_subledgers($LID, $reason = '') {
+        $pin = current_user()->PIN;
+        $this->load->model('finance_model');
+        $comment = 'Loan Disbursement ' . $LID;
+        $rows = $this->db->where('PIN', $pin)
+            ->where('comment', $comment)
+            ->where('system_comment', 'LOAN DISBURSEMENT DEDUCTION')
+            ->where('trans_type', 'CR')
+            ->order_by('id', 'ASC')
+            ->get('savings_transaction')
+            ->result();
+        $count = 0;
+        foreach ($rows as $trans) {
+            if ($this->finance_model->is_savings_transaction_voided($trans->receipt)) {
+                continue;
+            }
+            $acct = $this->finance_model->saving_account_balance($trans->account);
+            if (!$acct) {
+                return array(
+                    'success' => false,
+                    'message' => 'Savings account for disbursement deduction not found (receipt ' . $trans->receipt . ').',
+                );
+            }
+            if (floatval($acct->balance) + 0.009 < floatval($trans->amount)) {
+                return array(
+                    'success' => false,
+                    'message' => 'Cannot reverse Savings deduction: account balance is less than the disbursement credit of '
+                        . number_format(floatval($trans->amount), 2) . '. Adjust savings first.',
+                );
+            }
+            // System comment must not trigger NORMAL WITHDRAWAL GL (loan GL reverse already covers 21110).
+            $void_receipt = $this->finance_model->debit(
+                $trans->account,
+                floatval($trans->amount),
+                !empty($trans->paymethod) ? $trans->paymethod : 'Cash',
+                'VOID-' . $trans->receipt . ' - ' . $reason,
+                isset($trans->cheque_num) ? $trans->cheque_num : '',
+                isset($trans->customer_name) ? $trans->customer_name : '',
+                'LOAN DISBURSEMENT VOID',
+                $trans->PID,
+                date('Y-m-d'),
+                $LID
+            );
+            if (!$void_receipt) {
+                return array(
+                    'success' => false,
+                    'message' => 'Failed to reverse savings deduction receipt ' . $trans->receipt . '.',
+                );
+            }
+            $count++;
+        }
+        return array('success' => true, 'count' => $count);
+    }
+
+    /**
+     * Reverse share buys posted as loan disbursement deductions.
+     */
+    function _reverse_disbursement_share_subledgers($LID, $reason = '') {
+        $pin = current_user()->PIN;
+        $this->load->model('share_model');
+        $comment = 'Loan Disbursement ' . $LID;
+        $rows = $this->db->where('PIN', $pin)
+            ->where('comment', $comment)
+            ->where('trans_type', 'CR')
+            ->order_by('id', 'DESC')
+            ->get('share_transaction')
+            ->result();
+        $count = 0;
+        foreach ($rows as $trans) {
+            if (method_exists($this->share_model, 'is_share_transaction_voided')
+                && $this->share_model->is_share_transaction_voided($trans->receipt)) {
+                continue;
+            }
+            if (method_exists($this->share_model, 'is_void_entry')
+                && $this->share_model->is_void_entry($trans)) {
+                continue;
+            }
+            $result = $this->share_model->void_share_transaction($trans->receipt, $reason);
+            if (empty($result['success'])) {
+                return array(
+                    'success' => false,
+                    'message' => !empty($result['message'])
+                        ? ('Share deduction reverse failed: ' . $result['message'])
+                        : ('Failed to reverse share receipt ' . $trans->receipt),
+                );
+            }
+            $count++;
+        }
+        return array('success' => true, 'count' => $count);
     }
 
     /**

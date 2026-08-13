@@ -35,6 +35,16 @@ $guarantor_list = $loaninfo ? $this->loan_model->get_guarantor(null, $loaninfo->
 $evaluation_histry = $loaninfo ? $this->loan_model->loan_evaluation_history($loaninfo->LID)->result() : array();
 $approval_histry = $loaninfo ? $this->loan_model->loan_approval_history($loaninfo->LID)->result() : array();
 $disburse_histry = $loaninfo ? $this->loan_model->loan_disburse_history($loaninfo->LID)->result() : array();
+$can_void_old_disbursement = false;
+if ($loaninfo && !empty($loaninfo->disburse)) {
+    $latest_release = null;
+    if (!empty($disburse_histry)) {
+        $latest_release = $disburse_histry[0];
+    }
+    $rs = ($latest_release && isset($latest_release->release_status)) ? $latest_release->release_status : null;
+    // Old-style: no release_status / pending-null; block new-flow draft/paid.
+    $can_void_old_disbursement = !in_array($rs, array('draft', 'paid'), true);
+}
 
 $max_loan = 0;
 $open_principle = 0;
@@ -701,6 +711,13 @@ if ($interval) {
                     <a href="<?php echo site_url(current_lang() . '/loan/loan_disbursement_print/' . encode_id($loaninfo->LID)); ?>" class="btn btn-primary btn-sm" target="_blank">
                         <i class="fa fa-print"></i> <?php echo lang('loan_print_disbursement'); ?>
                     </a>
+                    <?php if (!empty($can_void_old_disbursement)) { ?>
+                    <a href="<?php echo site_url(current_lang() . '/loan/void_loan_disbursement/' . encode_id($loaninfo->LID)); ?>"
+                       class="btn btn-danger btn-sm"
+                       onclick="return confirm('<?php echo htmlspecialchars(lang('loan_void_disbursement_confirm'), ENT_QUOTES, 'UTF-8'); ?>');">
+                        <i class="fa fa-undo"></i> <?php echo lang('loan_void_disbursement'); ?>
+                    </a>
+                    <?php } ?>
                 </div>
             <?php } ?>
 

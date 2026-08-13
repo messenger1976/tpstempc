@@ -292,7 +292,7 @@ class Share extends CI_Controller {
     function share_transaction_search(){
         
          $this->load->library('pagination');
-        $this->data['title'] = lang('saving_transaction_search');
+        $this->data['title'] = lang('share_transaction_search');
 
         if (isset($_GET['row_per_pg'])) {
             $this->session->set_userdata('PER_PAGE', $_GET['row_per_pg']);
@@ -306,9 +306,16 @@ class Share extends CI_Controller {
         $from = null;
         $upto = null;
         if (isset($_POST['key']) && $_POST['key'] != '') {
-            $key = $_POST['key'];
-            $expl = explode('-', $key);
-            $key = $expl[0];
+            $key = trim($_POST['key']);
+            // Autocomplete formats: "2005-00173 - Name" or "2005-00173 - MID ==> Name"
+            if (strpos($key, ' ==> ') !== false) {
+                $parts = explode(' ==> ', $key, 2);
+                $key = trim($parts[0]);
+            }
+            if (strpos($key, ' - ') !== false) {
+                $parts = explode(' - ', $key, 2);
+                $key = trim($parts[0]);
+            }
         } else if (isset($_GET['key'])) {
             $key = $_GET['key'];
         }
@@ -378,6 +385,9 @@ class Share extends CI_Controller {
         $this->pagination->initialize($config);
         $page = ($this->uri->segment(4) ? $this->uri->segment(4) : 0);
         $this->data['links'] = $this->pagination->create_links();
+        $this->data['total_rows'] = (int) $config["total_rows"];
+        $this->data['page_start'] = (int) $page;
+        $this->data['per_page'] = (int) $config["per_page"];
 
         $this->data['transactionlist'] = $this->share_model->search_transaction($key, $from, $upto, $config["per_page"], $page);
 

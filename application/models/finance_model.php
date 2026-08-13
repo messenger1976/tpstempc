@@ -25,17 +25,20 @@ class Finance_Model extends CI_Model {
     function post_journal_entry_to_general_ledger($journal_entry_id, $journal_id = 5) {
         $pin = current_user()->PIN;
         $journal_entry_id = (int) $journal_entry_id;
+        $this->last_post_error = '';
         if ($journal_entry_id <= 0) {
             return false;
         }
         if ($this->is_journal_entry_posted_to_gl($journal_entry_id)) {
             return true;
         }
+        // SELECT * avoids brittle column lists when optional reference_* columns vary by install.
         $entry = $this->db->query(
-            'SELECT id, entry_date, description, PIN, reference_type FROM journal_entry WHERE id = ? AND PIN = ? LIMIT 1',
+            'SELECT * FROM journal_entry WHERE id = ? AND PIN = ? LIMIT 1',
             array($journal_entry_id, $pin)
         )->row();
         if (!$entry) {
+            $this->last_post_error = 'Journal entry not found.';
             log_message('error', 'post_journal_entry_to_general_ledger: journal_entry not found id=' . $journal_entry_id);
             return false;
         }
@@ -303,9 +306,23 @@ class Finance_Model extends CI_Model {
                 }
             }
             if (abs($total_debit - $total_credit) > $balance_tolerance) {
+                $this->last_post_error = 'Journal entry is not balanced. Debit: ' . number_format($total_debit, 2) . ', Credit: ' . number_format($total_credit, 2) . '.';
                 log_message('error', 'post_journal_entry_to_general_ledger: entry ' . $journal_entry_id . ' does not balance. Debit: ' . $total_debit . ', Credit: ' . $total_credit);
                 return false;
             }
+        }
+        // Run any schema ensures BEFORE the GL transaction. MySQL ALTER TABLE
+        // causes an implicit commit and would otherwise leave orphaned GL rows
+        // if loan-release finalize fails afterward.
+        if (!empty($entry->reference_type) && $entry->reference_type === 'cash_disbursement' && !empty($entry->reference_id)) {
+            $this->load->model('loan_model');
+            $this->load->model('cash_disbursement_model');
+            $this->loan_model->ensure_release_workflow_columns();
+            $this->cash_disbursement_model->ensure_loan_release_columns();
+        }
+        if (!empty($entry->reference_type) && $entry->reference_type === 'cash_receipt' && !empty($entry->reference_id) && empty($entry->voids_entryid)) {
+            $this->load->model('cash_receipt_model');
+            $this->cash_receipt_model->ensure_received_from_columns();
         }
         $this->db->trans_start();
         $entry_date = isset($entry->entry_date) ? $entry->entry_date : date('Y-m-d');
@@ -313,6 +330,7 @@ class Finance_Model extends CI_Model {
         $this->db->insert('general_ledger_entry', $ledger_entry);
         $ledger_entry_id = $this->db->insert_id();
         if (!$ledger_entry_id) {
+            $this->last_post_error = 'Failed to create general ledger entry header.';
             $this->db->trans_complete();
             return false;
         }
@@ -344,8 +362,55 @@ class Finance_Model extends CI_Model {
                 $inserted_count++;
             }
         }
+        if (!empty($entry->reference_type) && $entry->reference_type === 'cash_disbursement' && !empty($entry->reference_id)) {
+            $this->load->model('loan_model');
+            $finalize = $this->loan_model->finalize_release_payout_by_cash_disbursement((int) $entry->reference_id, $journal_entry_id, $entry_date);
+            if (is_array($finalize) && empty($finalize['success'])) {
+                $this->last_post_error = !empty($finalize['message'])
+                    ? $finalize['message']
+                    : 'Failed to finalize linked loan release after GL posting.';
+                log_message('error', 'post_journal_entry_to_general_ledger: finalize_release_payout failed for cash_disbursement ' . (int) $entry->reference_id . ' — ' . $this->last_post_error);
+                $this->db->trans_rollback();
+                // Safety net if an earlier DDL/implicit commit left GL rows behind.
+                $this->void_journal_posting_to_gl($journal_entry_id, 'journal_entry');
+                return false;
+            }
+            if ($finalize === false) {
+                $this->last_post_error = 'Failed to finalize linked loan release after GL posting.';
+                log_message('error', 'post_journal_entry_to_general_ledger: finalize_release_payout returned false for cash_disbursement ' . (int) $entry->reference_id);
+                $this->db->trans_rollback();
+                $this->void_journal_posting_to_gl($journal_entry_id, 'journal_entry');
+                return false;
+            }
+        }
+        if (!empty($entry->reference_type) && $entry->reference_type === 'cash_receipt' && !empty($entry->reference_id) && empty($entry->voids_entryid)) {
+            $this->load->model('loan_model');
+            $finalize = $this->loan_model->finalize_loan_repayment_by_cash_receipt((int) $entry->reference_id, $journal_entry_id, $entry_date);
+            if (is_array($finalize) && empty($finalize['success'])) {
+                $this->last_post_error = !empty($finalize['message'])
+                    ? $finalize['message']
+                    : 'Failed to apply linked loan repayment after GL posting.';
+                log_message('error', 'post_journal_entry_to_general_ledger: finalize_loan_repayment failed for cash_receipt ' . (int) $entry->reference_id . ' — ' . $this->last_post_error);
+                $this->db->trans_rollback();
+                $this->void_journal_posting_to_gl($journal_entry_id, 'journal_entry');
+                return false;
+            }
+            if ($finalize === false) {
+                $this->last_post_error = 'Failed to apply linked loan repayment after GL posting.';
+                log_message('error', 'post_journal_entry_to_general_ledger: finalize_loan_repayment returned false for cash_receipt ' . (int) $entry->reference_id);
+                $this->db->trans_rollback();
+                $this->void_journal_posting_to_gl($journal_entry_id, 'journal_entry');
+                return false;
+            }
+        }
         $this->db->trans_complete();
-        return ($inserted_count > 0 && $this->db->trans_status());
+        if ($inserted_count < 1 || $this->db->trans_status() === false) {
+            if ($this->last_post_error === '') {
+                $this->last_post_error = 'No GL lines were inserted. Check that accounts exist in the chart of accounts.';
+            }
+            return false;
+        }
+        return true;
     }
 
     /**
@@ -1447,6 +1512,31 @@ class Finance_Model extends CI_Model {
         if (!$entry) {
             return array('success' => false, 'message' => 'Journal entry not found.');
         }
+        if (!empty($entry->reference_type) && $entry->reference_type === 'cash_disbursement' && !empty($entry->reference_id)) {
+            $this->load->model('cash_disbursement_model');
+            $this->load->model('loan_model');
+            if ($this->cash_disbursement_model->has_linked_loan_release((int) $entry->reference_id)) {
+                $this->loan_model->ensure_release_workflow_columns();
+                $release = $this->db->where('PIN', $pin)
+                    ->where('cash_disbursement_id', (int) $entry->reference_id)
+                    ->order_by('id', 'DESC')
+                    ->get('loan_contract_disburse')
+                    ->row();
+                $release_status = ($release && isset($release->release_status)) ? $release->release_status : '';
+                // Incomplete post: GL rows exist but loan release never reached paid.
+                // Clear orphaned GL so the cash disbursement can be edited and reposted.
+                if ($release_status !== 'paid') {
+                    if ($this->void_journal_posting_to_gl($journal_entry_id, 'journal_entry')) {
+                        return array(
+                            'success' => true,
+                            'message' => 'Incomplete loan-release GL posting was cleared. You can edit the cash disbursement and repost from Journal Entry Review.',
+                        );
+                    }
+                    return array('success' => false, 'message' => 'Failed to clear incomplete loan-release GL posting.');
+                }
+                return array('success' => false, 'message' => 'Linked loan release payouts cannot be voided automatically. Create a manual correction instead.');
+            }
+        }
         if (!empty($entry->voids_entryid)) {
             return array('success' => false, 'message' => 'This entry is itself a reversing voucher and cannot be voided.');
         }
@@ -1460,6 +1550,27 @@ class Finance_Model extends CI_Model {
         $line_items = $this->_get_journal_entry_items_for_void($journal_entry_id, $entry);
         if (empty($line_items)) {
             return array('success' => false, 'message' => 'No line items found to reverse.');
+        }
+
+        if (!empty($entry->reference_type) && $entry->reference_type === 'cash_receipt' && !empty($entry->reference_id)) {
+            $this->load->model('cash_receipt_model');
+            $this->load->model('loan_model');
+            $cr = $this->cash_receipt_model->get_cash_receipt((int) $entry->reference_id);
+            $cr_type = ($cr && !empty($cr->received_from_type)) ? strtolower(trim((string) $cr->received_from_type)) : '';
+            if ($cr && $cr_type === 'loan_repayment' && !empty($cr->loan_repayment_applied) && !empty($cr->loan_repayment_receipt)) {
+                $void_loan = $this->loan_model->void_loan_repayment_receipt(
+                    $cr->loan_repayment_receipt,
+                    $reason !== '' ? $reason : 'Void cash receipt loan repayment',
+                    array('reverse_gl' => false, 'from_cash_receipt_void' => true)
+                );
+                if (empty($void_loan['success'])) {
+                    return array(
+                        'success' => false,
+                        'message' => !empty($void_loan['message']) ? $void_loan['message'] : 'Failed to reverse the linked loan repayment.',
+                    );
+                }
+                $this->cash_receipt_model->clear_loan_repayment_applied((int) $cr->id);
+            }
         }
 
         $orig_label = '#' . $journal_entry_id;
@@ -1889,7 +2000,7 @@ class Finance_Model extends CI_Model {
      * @param string $source_filter all|general_journal|cash_receipt|cash_disbursement
      * @return array draw, recordsTotal, recordsFiltered, data rows, grand totals
      */
-    function get_unposted_journal_review_datatable($start, $length, $search, $order_column_index, $order_dir, $source_filter = 'all') {
+    function get_unposted_journal_review_datatable($start, $length, $search, $order_column_index, $order_dir, $source_filter = 'all', $date_from = '', $date_to = '') {
         $pin = current_user()->PIN;
         $has_pin_col = $this->db->query("SHOW COLUMNS FROM general_journal LIKE 'PIN'")->row();
         $gj_pin_cond = $has_pin_col ? ' AND gj.PIN = gje.PIN' : '';
@@ -1898,6 +2009,15 @@ class Finance_Model extends CI_Model {
         $source_filter = strtolower(trim((string) $source_filter));
         if ($source_filter === '' || $source_filter === 'all' || !in_array($source_filter, $allowed_sources, true)) {
             $source_filter = 'all';
+        }
+
+        $date_from = trim((string) $date_from);
+        $date_to = trim((string) $date_to);
+        if ($date_from !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $date_from)) {
+            $date_from = '';
+        }
+        if ($date_to !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $date_to)) {
+            $date_to = '';
         }
 
         $union_parts = array();
@@ -2007,11 +2127,11 @@ class Finance_Model extends CI_Model {
 
         $union_sql = '(' . implode(') UNION ALL (', $union_parts) . ')';
 
-        $search_sql = '';
-        $search_bind = array();
+        $filter_sql = '';
+        $filter_bind = array();
         if ($search !== '') {
             $like = '%' . $this->db->escape_like_str($search) . '%';
-            $search_sql = " AND (
+            $filter_sql .= " AND (
                 CAST(entryid AS CHAR) LIKE ?
                 OR description LIKE ?
                 OR entry_source LIKE ?
@@ -2019,7 +2139,15 @@ class Finance_Model extends CI_Model {
                 OR DATE_FORMAT(entrydate, '%Y-%m-%d') LIKE ?
                 OR createdby IN (SELECT id FROM users WHERE username LIKE ?)
             )";
-            $search_bind = array($like, $like, $like, $like, $like, $like);
+            $filter_bind = array_merge($filter_bind, array($like, $like, $like, $like, $like, $like));
+        }
+        if ($date_from !== '') {
+            $filter_sql .= ' AND DATE(entrydate) >= ?';
+            $filter_bind[] = $date_from;
+        }
+        if ($date_to !== '') {
+            $filter_sql .= ' AND DATE(entrydate) <= ?';
+            $filter_bind[] = $date_to;
         }
 
         $order_map = array(
@@ -2050,8 +2178,8 @@ class Finance_Model extends CI_Model {
         $records_total = $count_total_row ? (int) $count_total_row->cnt : 0;
 
         $count_filtered_q = $this->db->query(
-            "SELECT COUNT(*) AS cnt FROM ({$union_sql}) AS u WHERE 1 = 1{$search_sql}",
-            array_merge($bind, $search_bind)
+            "SELECT COUNT(*) AS cnt FROM ({$union_sql}) AS u WHERE 1 = 1{$filter_sql}",
+            array_merge($bind, $filter_bind)
         );
         if ($count_filtered_q === false) {
             $err = method_exists($this->db, 'error') ? $this->db->error() : array();
@@ -2063,8 +2191,8 @@ class Finance_Model extends CI_Model {
 
         $totals_q = $this->db->query(
             "SELECT COALESCE(SUM(total_debit), 0) AS grand_total_debit, COALESCE(SUM(total_credit), 0) AS grand_total_credit
-             FROM ({$union_sql}) AS u WHERE 1 = 1{$search_sql}",
-            array_merge($bind, $search_bind)
+             FROM ({$union_sql}) AS u WHERE 1 = 1{$filter_sql}",
+            array_merge($bind, $filter_bind)
         );
         $totals_row = ($totals_q !== false) ? $totals_q->row() : null;
         $grand_total_debit = $totals_row ? floatval($totals_row->grand_total_debit) : 0.0;
@@ -2079,10 +2207,10 @@ class Finance_Model extends CI_Model {
             $length = 25;
         }
 
-        $data_sql = "SELECT * FROM ({$union_sql}) AS u WHERE 1 = 1{$search_sql}
+        $data_sql = "SELECT * FROM ({$union_sql}) AS u WHERE 1 = 1{$filter_sql}
             ORDER BY {$order_col} {$order_dir}, entryid DESC
             LIMIT {$length} OFFSET {$start}";
-        $data_q = $this->db->query($data_sql, array_merge($bind, $search_bind));
+        $data_q = $this->db->query($data_sql, array_merge($bind, $filter_bind));
         if ($data_q === false) {
             $err = method_exists($this->db, 'error') ? $this->db->error() : array();
             log_message('error', 'get_unposted_journal_review_datatable data query failed: ' . $this->db->last_query() . ' | ' . json_encode($err));
@@ -4282,6 +4410,24 @@ $pin=current_user()->PIN;
         $this->db->where('ma.id', $id);
         $this->db->where('ma.PIN', $pin);
         return $this->db->get()->row();
+    }
+
+    function list_member_saving_accounts($pid, $member_id = null) {
+        $pin = current_user()->PIN;
+        if ($pid === null || $pid === '') {
+            return array();
+        }
+
+        $this->db->select("ma.id, ma.account, ma.old_members_acct, ma.balance, ma.virtual_balance, ma.status, ma.account_cat, COALESCE(NULLIF(sat.name, ''), sat.description) as account_type_name", FALSE);
+        $this->db->from('members_account ma');
+        $this->db->join('saving_account_type sat', 'ma.account_cat = sat.account', 'left');
+        $this->db->where('ma.PIN', $pin);
+        $this->db->where('ma.RFID', $pid);
+        if ($member_id !== null && $member_id !== '') {
+            $this->db->where('ma.member_id', $member_id);
+        }
+        $this->db->order_by('ma.account', 'ASC');
+        return $this->db->get()->result();
     }
 
     function update_saving_account($data, $id) {

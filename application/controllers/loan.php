@@ -49,18 +49,27 @@ class Loan extends CI_Controller {
      */
 
     function upload_file($array, $name, $folder) {
-        $filename = time() . $array[$name]['name'];
-
-        $path = './' . $folder . '/';
-        $path1 = './' . $folder . '/';
-        $path = $path . basename($filename);
-
-        if (move_uploaded_file($_FILES[$name]['tmp_name'], $path)) {
-            // chmod($path1.$filename, 777);
-            return $filename;
-        } else {
+        if (!isset($array[$name]['tmp_name']) || !is_uploaded_file($array[$name]['tmp_name'])) {
             return 0;
         }
+
+        $original = basename($array[$name]['name']);
+        $safe = preg_replace('/[^A-Za-z0-9._-]/', '_', $original);
+        if ($safe === '' || $safe === '.' || $safe === '..') {
+            $safe = 'document';
+        }
+        $filename = time() . '_' . $safe;
+
+        $dir = FCPATH . $folder . '/';
+        if (!is_dir($dir)) {
+            @mkdir($dir, 0755, true);
+        }
+
+        $path = $dir . $filename;
+        if (move_uploaded_file($array[$name]['tmp_name'], $path)) {
+            return $filename;
+        }
+        return 0;
     }
 
     /*
@@ -253,6 +262,130 @@ class Loan extends CI_Controller {
         $this->data['next_ln_number'] = $this->loan_model->get_next_ln_number();
         $this->data['content'] = 'loan/loan_application_step1';
         $this->load->view('template', $this->data);
+    }
+
+    function member_existing_loans() {
+        header('Content-Type: application/json; charset=UTF-8');
+        $pid = trim((string) $this->input->post('pid'));
+        $member_id = trim((string) $this->input->post('member_id'));
+
+        if ($pid === '' && $member_id !== '') {
+            $member = $this->member_model->member_basic_info(null, null, $member_id)->row();
+            if ($member && isset($member->PID) && $member->PID !== '') {
+                $pid = $member->PID;
+            }
+        }
+
+        if ($pid === '') {
+            echo json_encode(array('success' => 'N', 'loans' => array()));
+            return;
+        }
+
+        $rows = $this->loan_model->list_member_loans($pid);
+        $today = date('Y-m-d');
+        $loans = array();
+        foreach ($rows as $row) {
+            $penalty = 0;
+            $past_due_interest = 0;
+            $is_bb = !empty($row->is_beginning_balance);
+            if ($is_bb) {
+                $penalty = (float) $row->penalty;
+                $past_due_interest = (float) $row->past_due_interest;
+            } else if (!empty($row->LID) && isset($row->disburse) && ((string) $row->disburse === '1' || $row->disburse === 1)) {
+                $due = $this->loan_model->calculate_repayment_due($row->LID, $today);
+                $penalty = isset($due->total_penalty) ? (float) $due->total_penalty : 0;
+                if (!empty($due->items)) {
+                    foreach ($due->items as $item) {
+                        if (isset($item->status) && $item->status === 'overdue') {
+                            $past_due_interest += isset($item->interest) ? (float) $item->interest : 0;
+                        }
+                    }
+                }
+            }
+
+            $status_code = isset($row->status) ? (string) $row->status : '';
+            $status_name = !empty($row->status_name) ? $row->status_name : '';
+            if ($status_name === '' && $status_code !== '' && function_exists('loan_status')) {
+                $mapped = loan_status($status_code);
+                if (!empty($mapped)) {
+                    $status_name = $mapped;
+                }
+            }
+            $status_date = $this->loan_model->member_loan_status_date($row);
+            $loan_date_raw = isset($status_date['date']) ? substr(trim((string) $status_date['date']), 0, 10) : '';
+            $loan_date = '';
+            if ($loan_date_raw !== '' && $loan_date_raw !== '0000-00-00' && function_exists('format_date')) {
+                $loan_date = format_date($loan_date_raw, false);
+            } else if ($loan_date_raw !== '' && $loan_date_raw !== '0000-00-00') {
+                $loan_date = $loan_date_raw;
+            }
+            $loans[] = array(
+                'lid' => $row->LID,
+                'product' => !empty($row->product_name) ? $row->product_name : '',
+                'status' => $status_name,
+                'status_code' => $status_code,
+                'loan_date_label' => !empty($status_date['label']) ? $status_date['label'] : 'Loan Date',
+                'loan_date' => $loan_date,
+                'loan_amount' => number_format((float) $row->basic_amount, 2, '.', ','),
+                'total_amount' => number_format((float) $row->total_loan, 2, '.', ','),
+                'penalty' => number_format($penalty, 2, '.', ','),
+                'past_due_interest' => number_format($past_due_interest, 2, '.', ','),
+            );
+        }
+
+        echo json_encode(array('success' => 'Y', 'loans' => $loans));
+    }
+
+    function member_cbu_summary() {
+        header('Content-Type: application/json; charset=UTF-8');
+        $pid = trim((string) $this->input->post('pid'));
+        $member_id = trim((string) $this->input->post('member_id'));
+        $pin = current_user()->PIN;
+
+        if ($pid === '' && $member_id !== '') {
+            $member = $this->member_model->member_basic_info(null, null, $member_id)->row();
+            if ($member && isset($member->PID) && $member->PID !== '') {
+                $pid = $member->PID;
+                if ($member_id === '' && !empty($member->member_id)) {
+                    $member_id = $member->member_id;
+                }
+            }
+        }
+
+        if ($pid === '') {
+            echo json_encode(array('success' => 'N', 'has_record' => 'N'));
+            return;
+        }
+        if ($member_id === '') {
+            $member = $this->member_model->member_basic_info(null, $pid)->row();
+            if ($member && !empty($member->member_id)) {
+                $member_id = $member->member_id;
+            }
+        }
+
+        $balance_row = $this->contribution_model->contribution_balance($pid, $member_id);
+        $setting = $this->contribution_model->contribution_setting_info(null, $pid, $member_id)->row();
+        if (!$setting) {
+            $this->db->where('PIN', $pin);
+            $setting = $this->db->get('contribution_global')->row();
+        }
+
+        $has_record = ($balance_row || $setting) ? 'Y' : 'N';
+        $source = '';
+        if ($setting) {
+            if (!empty($setting->contribute_source)) {
+                $source = $setting->contribute_source;
+            } else if (!empty($setting->source)) {
+                $source = $setting->source;
+            }
+        }
+        echo json_encode(array(
+            'success' => 'Y',
+            'has_record' => $has_record,
+            'balance' => number_format($balance_row && isset($balance_row->balance) ? (float) $balance_row->balance : 0, 2, '.', ','),
+            'monthly_amount' => number_format($setting && isset($setting->amount) ? (float) $setting->amount : 0, 2, '.', ','),
+            'source' => $source,
+        ));
     }
 
     function pass_monthly_income($monthy_income, $pid, $newinstall = 0, $exclude_lid = null) {
@@ -492,9 +625,11 @@ class Loan extends CI_Controller {
 
 
         $this->data['basicinfo'] = $this->member_model->member_basic_info(null, $info->PID, $info->member_id)->row();
+        $this->data['contactinfo'] = $this->member_model->member_contact($info->PID);
         $this->data['loaninfo'] = $this->loan_model->loan_info($LID)->row();
         $this->data['paysource_list'] = $this->contribution_model->contribution_source()->result();
         $this->data['loan_product_list'] = $this->setting_model->loanproduct()->result();
+        $this->data['title'] = lang('loan_edit');
         $this->data['content'] = 'loan/loan_editing';
         $this->load->view('template', $this->data);
     }
@@ -508,18 +643,26 @@ class Loan extends CI_Controller {
         $this->form_validation->set_rules('comment', lang('loan_supporting_document_comment'), '');
         $upload_photo = TRUE;
         $file_name = 0;
-        if ($this->input->post('comment')) {
+        $comment = trim((string) $this->input->post('comment'));
+        $has_file = isset($_FILES['file']['name']) && is_string($_FILES['file']['name']) && $_FILES['file']['name'] !== '';
+        $file_error = (isset($_FILES['file']['error'])) ? (int) $_FILES['file']['error'] : UPLOAD_ERR_NO_FILE;
 
-            if (isset($_FILES['file']['name']) && $_FILES['file']['name'] != '') {
-                $extension = $this->getExtension($_FILES['file']['name']);
-                $file_name = $this->upload_file($_FILES, 'file', 'uploads/document');
-                $upload_photo = TRUE;
-            } else if (isset($_FILES['file']['name']) && $_FILES['file']['name'] == '') {
-                $this->data['logo_error'] = 'The ' . lang('loan_supporting_document_attach') . ' field is required';
+        if ($has_file || ($file_error !== UPLOAD_ERR_NO_FILE && $file_error !== UPLOAD_ERR_OK)) {
+            if ($file_error !== UPLOAD_ERR_OK) {
+                $this->data['logo_error'] = lang('loan_supporting_document_upload_failed');
                 $upload_photo = FALSE;
+            } else {
+                $file_name = $this->upload_file($_FILES, 'file', 'uploads/document');
+                if ($file_name == 0) {
+                    $this->data['logo_error'] = lang('loan_supporting_document_upload_failed');
+                    $upload_photo = FALSE;
+                }
             }
+        } else if ($comment !== '') {
+            $this->data['logo_error'] = 'The ' . lang('loan_supporting_document_attach') . ' field is required';
+            $upload_photo = FALSE;
         }
-$pin = current_user()->PIN;
+        $pin = current_user()->PIN;
         if ($this->form_validation->run() == TRUE && $upload_photo == true) {
             $declaration = array(
                 'declaration' => trim($this->input->post('declaration')),
@@ -527,28 +670,26 @@ $pin = current_user()->PIN;
                 'PIN' => $pin
             );
             $this->loan_model->loan_declaration($declaration);
-            if ($this->input->post('comment')) {
-                if ($file_name != 0) {
-                    $doc = array(
-                        'comment' => trim($this->input->post('comment')),
-                        'file' => $file_name,
-                        'LID' => $LID,
-                        'PIN' => $pin
-                    );
-                    $this->loan_model->loan_supporting_doc($doc);
-                }
+            if ($file_name != 0) {
+                $original_name = isset($_FILES['file']['name']) ? $_FILES['file']['name'] : '';
+                $doc = array(
+                    'comment' => ($comment !== '') ? $comment : $original_name,
+                    'file' => $file_name,
+                    'LID' => $LID,
+                    'PIN' => $pin
+                );
+                $this->loan_model->loan_supporting_doc($doc);
             }
-
-
 
             $this->data['message'] = lang('loan_info_saved');
         }
 
         $this->data['basicinfo'] = $this->member_model->member_basic_info(null, $info->PID, $info->member_id)->row();
+        $this->data['contactinfo'] = $this->member_model->member_contact($info->PID);
         $this->data['loaninfo'] = $this->loan_model->loan_info($LID)->row();
         $this->data['declaration'] = $this->loan_model->get_declaration($LID);
         $this->data['supporting_doc'] = $this->loan_model->get_supporting_doc($LID);
-
+        $this->data['title'] = lang('loan_security');
         $this->data['content'] = 'loan/loan_security';
         $this->load->view('template', $this->data);
     }
@@ -572,6 +713,9 @@ $pin = current_user()->PIN;
         if (!$this->ion_auth->in_group('Members')) {
             $this->form_validation->set_rules('relationship', lang('loan_quarantor_relationship'), 'required');
             $this->form_validation->set_rules('asset', lang('loan_quarantor_asset'), 'required');
+            if (trim((string) $this->input->post('relationship')) === 'Others') {
+                $this->form_validation->set_rules('relationship_other', lang('loan_quarantor_relationship_other'), 'required');
+            }
         }
         $upload_photo = TRUE;
         $file_name = 0;
@@ -584,10 +728,14 @@ $pin = current_user()->PIN;
 
 $pin = current_user()->PIN;
         if ($this->form_validation->run() == TRUE && $upload_photo == true) {
+            $relationship = trim((string) $this->input->post('relationship'));
+            if ($relationship === 'Others') {
+                $relationship = trim((string) $this->input->post('relationship_other'));
+            }
             $guarantor = array(
                 'LID' => $LID,
                 'PID' => trim($this->input->post('customerid')),
-                'relationship' => trim($this->input->post('relationship')),
+                'relationship' => $relationship,
                 'declaration' => trim($this->input->post('asset')),
                 'PIN' => $pin
             );
@@ -616,17 +764,86 @@ $pin = current_user()->PIN;
         }
 
         $this->data['basicinfo'] = $this->member_model->member_basic_info(null, $info->PID, $info->member_id)->row();
+        $this->data['contactinfo'] = $this->member_model->member_contact($info->PID);
         $this->data['loaninfo'] = $this->loan_model->loan_info($LID)->row();
         $this->data['guarantor_list'] = $this->loan_model->get_guarantor(null, $LID)->result();
-        $this->data['member_list'] = $this->member_model->member_basic_info()->result();
-
+        $selected_guarantor_pid = trim((string) set_value('customerid'));
+        $selected_guarantor = null;
+        if ($selected_guarantor_pid !== '') {
+            $selected_guarantor = $this->member_model->member_basic_info(null, $selected_guarantor_pid)->row();
+        }
+        $this->data['selected_guarantor'] = $selected_guarantor;
+        $this->data['exclude_pid'] = $info->PID;
+        $this->data['title'] = lang('loan_guarantors');
         $this->data['content'] = 'loan/loan_guarantor';
         $this->load->view('template', $this->data);
     }
 
     function loan_evaluation() {
+        $this->load->library('pagination');
         $this->data['title'] = lang('loan_evaluation_list');
-        $this->data['loan_wait'] = $this->loan_model->loan_wait_evaluation();
+
+        if (isset($_GET['row_per_pg'])) {
+            $this->session->set_userdata('PER_PAGE', $_GET['row_per_pg']);
+        } else if (!$this->session->userdata('PER_PAGE')) {
+            $this->session->set_userdata('PER_PAGE', 40);
+        }
+
+        $config["per_page"] = $this->session->userdata('PER_PAGE');
+
+        $key = null;
+        if (isset($_POST['key']) && $_POST['key'] != '') {
+            $key = $_POST['key'];
+        } else if (isset($_GET['key']) && $_GET['key'] != '') {
+            $key = $_GET['key'];
+        }
+        if (!is_null($key) && strpos($key, ' - ') !== FALSE) {
+            $expl = explode(' - ', $key, 2);
+            $key = trim($expl[0]);
+        }
+
+        $suffix_array = array();
+        if (!is_null($key) && $key !== '') {
+            $suffix_array['key'] = $key;
+        }
+        if (count($suffix_array) > 0) {
+            $query_string = http_build_query($suffix_array, '', '&');
+            $config['suffix'] = '?' . $query_string;
+            $config['first_url'] = site_url(current_lang() . '/loan/loan_evaluation') . '?' . $query_string;
+        }
+
+        $config["base_url"] = site_url(current_lang() . '/loan/loan_evaluation/');
+        $config["total_rows"] = $this->loan_model->count_loan_wait_evaluation($key);
+        $config["uri_segment"] = 4;
+
+        $config['full_tag_open'] = '<div class="pagination member-pagination">';
+        $config['full_tag_close'] = '</div>';
+        $config['num_tag_open'] = '<div class="link-pagination">';
+        $config['num_tag_close'] = '</div>';
+        $config['prev_tag_open'] = '<div class="link-pagination nav-btn">';
+        $config['prev_tag_close'] = '</div>';
+        $config['next_tag_open'] = '<div class="link-pagination nav-btn">';
+        $config['next_tag_close'] = '</div>';
+        $config['last_tag_open'] = '<div class="link-pagination nav-btn">';
+        $config['last_tag_close'] = '</div>';
+        $config['first_tag_open'] = '<div class="link-pagination nav-btn">';
+        $config['first_tag_close'] = '</div>';
+        $config['first_link'] = '&laquo;';
+        $config['last_link'] = '&raquo;';
+        $config['next_link'] = 'Next &rsaquo;';
+        $config['prev_link'] = '&lsaquo; Prev';
+        $config['cur_tag_open'] = '<div class="link-pagination current">';
+        $config['cur_tag_close'] = '</div>';
+        $config["num_links"] = 5;
+
+        $this->pagination->initialize($config);
+        $page = ($this->uri->segment(4) ? $this->uri->segment(4) : 0);
+        $this->data['links'] = $this->pagination->create_links();
+        $this->data['total_rows'] = (int) $config["total_rows"];
+        $this->data['page_start'] = (int) $page;
+        $this->data['per_page'] = (int) $config["per_page"];
+        $this->data['search_key'] = $key;
+        $this->data['loan_wait'] = $this->loan_model->loan_wait_evaluation($key, $config["per_page"], $page);
         $this->data['content'] = 'loan/loan_evaluationlist';
         $this->load->view('template', $this->data);
     }
@@ -798,13 +1015,100 @@ $pin = current_user()->PIN;
             $this->data['warning'] = lang('loan_evaluation_error');
         }
         $this->data['loaninfo'] = $this->loan_model->loan_info($LID)->row();
+        $this->data['basicinfo'] = $this->member_model->member_basic_info(null, $this->data['loaninfo']->PID, $this->data['loaninfo']->member_id)->row();
+        $this->data['contactinfo'] = $this->member_model->member_contact($this->data['loaninfo']->PID);
         $this->data['content'] = 'loan/evaluation_acction';
         $this->load->view('template', $this->data);
     }
 
     function loan_approval() {
-        $this->data['title'] = lang('loan_evaluation_list');
-        $this->data['loan_wait'] = $this->loan_model->loan_wait_approval();
+        $this->load->library('pagination');
+        $this->data['title'] = lang('loan_approval_list');
+
+        if (isset($_GET['row_per_pg'])) {
+            $this->session->set_userdata('PER_PAGE', $_GET['row_per_pg']);
+        } else if (!$this->session->userdata('PER_PAGE')) {
+            $this->session->set_userdata('PER_PAGE', 40);
+        }
+
+        $config["per_page"] = $this->session->userdata('PER_PAGE');
+
+        $key = null;
+        if (isset($_POST['key']) && $_POST['key'] != '') {
+            $key = $_POST['key'];
+        } else if (isset($_GET['key']) && $_GET['key'] != '') {
+            $key = $_GET['key'];
+        }
+        if (!is_null($key) && strpos($key, ' - ') !== FALSE) {
+            $expl = explode(' - ', $key, 2);
+            $key = trim($expl[0]);
+        }
+
+        $date_from_raw = trim((string) $this->input->get_post('date_from'));
+        $date_to_raw = trim((string) $this->input->get_post('date_to'));
+        $date_from = ($date_from_raw !== '') ? format_date($date_from_raw) : null;
+        $date_to = ($date_to_raw !== '') ? format_date($date_to_raw) : null;
+
+        $product_id = trim((string) $this->input->get_post('product_id'));
+        if ($product_id === '') {
+            $product_id = 'all';
+        }
+
+        $suffix_array = array();
+        if (!is_null($key) && $key !== '') {
+            $suffix_array['key'] = $key;
+        }
+        if ($date_from_raw !== '') {
+            $suffix_array['date_from'] = $date_from_raw;
+        }
+        if ($date_to_raw !== '') {
+            $suffix_array['date_to'] = $date_to_raw;
+        }
+        if ($product_id !== '' && $product_id !== 'all') {
+            $suffix_array['product_id'] = $product_id;
+        }
+        if (count($suffix_array) > 0) {
+            $query_string = http_build_query($suffix_array, '', '&');
+            $config['suffix'] = '?' . $query_string;
+            $config['first_url'] = site_url(current_lang() . '/loan/loan_approval') . '?' . $query_string;
+        }
+
+        $config["base_url"] = site_url(current_lang() . '/loan/loan_approval/');
+        $config["total_rows"] = $this->loan_model->count_loan_wait_approval($key, $date_from, $date_to, $product_id);
+        $config["uri_segment"] = 4;
+
+        $config['full_tag_open'] = '<div class="pagination member-pagination">';
+        $config['full_tag_close'] = '</div>';
+        $config['num_tag_open'] = '<div class="link-pagination">';
+        $config['num_tag_close'] = '</div>';
+        $config['prev_tag_open'] = '<div class="link-pagination nav-btn">';
+        $config['prev_tag_close'] = '</div>';
+        $config['next_tag_open'] = '<div class="link-pagination nav-btn">';
+        $config['next_tag_close'] = '</div>';
+        $config['last_tag_open'] = '<div class="link-pagination nav-btn">';
+        $config['last_tag_close'] = '</div>';
+        $config['first_tag_open'] = '<div class="link-pagination nav-btn">';
+        $config['first_tag_close'] = '</div>';
+        $config['first_link'] = '&laquo;';
+        $config['last_link'] = '&raquo;';
+        $config['next_link'] = 'Next &rsaquo;';
+        $config['prev_link'] = '&lsaquo; Prev';
+        $config['cur_tag_open'] = '<div class="link-pagination current">';
+        $config['cur_tag_close'] = '</div>';
+        $config["num_links"] = 5;
+
+        $this->pagination->initialize($config);
+        $page = ($this->uri->segment(4) ? $this->uri->segment(4) : 0);
+        $this->data['links'] = $this->pagination->create_links();
+        $this->data['total_rows'] = (int) $config["total_rows"];
+        $this->data['page_start'] = (int) $page;
+        $this->data['per_page'] = (int) $config["per_page"];
+        $this->data['search_key'] = $key;
+        $this->data['date_from'] = $date_from_raw;
+        $this->data['date_to'] = $date_to_raw;
+        $this->data['selected_product_id'] = $product_id;
+        $this->data['loan_products'] = $this->setting_model->loanproduct()->result();
+        $this->data['loan_wait'] = $this->loan_model->loan_wait_approval($key, $date_from, $date_to, $product_id, $config["per_page"], $page);
         $this->data['content'] = 'loan/loan_wait_toapprove';
         $this->load->view('template', $this->data);
     }
@@ -863,20 +1167,39 @@ $pin = current_user()->PIN;
             $this->data['warning'] = lang('loan_evaluation_error');
         }
         $this->data['loaninfo'] = $this->loan_model->loan_info($LID)->row();
+        $this->data['basicinfo'] = $this->member_model->member_basic_info(null, $this->data['loaninfo']->PID, $this->data['loaninfo']->member_id)->row();
+        $this->data['contactinfo'] = $this->member_model->member_contact($this->data['loaninfo']->PID);
         $this->data['content'] = 'loan/loan_approval_action';
         $this->load->view('template', $this->data);
     }
 
     function loan_disbursement() {
+        $this->load->library('pagination');
         $this->data['title'] = lang('loan_disbursement');
+
+        if (isset($_GET['row_per_pg'])) {
+            $this->session->set_userdata('PER_PAGE', $_GET['row_per_pg']);
+        } else if (!$this->session->userdata('PER_PAGE')) {
+            $this->session->set_userdata('PER_PAGE', 40);
+        }
+
+        $config["per_page"] = $this->session->userdata('PER_PAGE');
+
         $pid = trim((string) $this->input->get('pid'));
         $product_id = trim((string) $this->input->get('product_id'));
         if ($product_id === '') {
             $product_id = 'all';
         }
 
+        $date_from_raw = trim((string) $this->input->get('date_from'));
+        $date_to_raw = trim((string) $this->input->get('date_to'));
+        $date_from = ($date_from_raw !== '') ? format_date($date_from_raw) : null;
+        $date_to = ($date_to_raw !== '') ? format_date($date_to_raw) : null;
+
         $this->data['selected_pid'] = $pid;
         $this->data['selected_product_id'] = $product_id;
+        $this->data['date_from'] = $date_from_raw;
+        $this->data['date_to'] = $date_to_raw;
         $this->data['selected_member_text'] = '';
         if ($pid !== '') {
             $member = $this->member_model->member_basic_info(null, $pid)->row();
@@ -886,10 +1209,68 @@ $pin = current_user()->PIN;
             }
         }
 
+        $suffix_array = array();
+        if ($pid !== '') {
+            $suffix_array['pid'] = $pid;
+        }
+        if ($product_id !== '' && $product_id !== 'all') {
+            $suffix_array['product_id'] = $product_id;
+        }
+        if ($date_from_raw !== '') {
+            $suffix_array['date_from'] = $date_from_raw;
+        }
+        if ($date_to_raw !== '') {
+            $suffix_array['date_to'] = $date_to_raw;
+        }
+        if (count($suffix_array) > 0) {
+            $query_string = http_build_query($suffix_array, '', '&');
+            $config['suffix'] = '?' . $query_string;
+            $config['first_url'] = site_url(current_lang() . '/loan/loan_disbursement') . '?' . $query_string;
+        }
+
+        $config["base_url"] = site_url(current_lang() . '/loan/loan_disbursement/');
+        $config["total_rows"] = $this->loan_model->count_loan_wait_disburse(
+            $pid !== '' ? $pid : null,
+            $product_id,
+            $date_from,
+            $date_to
+        );
+        $config["uri_segment"] = 4;
+
+        $config['full_tag_open'] = '<div class="pagination member-pagination">';
+        $config['full_tag_close'] = '</div>';
+        $config['num_tag_open'] = '<div class="link-pagination">';
+        $config['num_tag_close'] = '</div>';
+        $config['prev_tag_open'] = '<div class="link-pagination nav-btn">';
+        $config['prev_tag_close'] = '</div>';
+        $config['next_tag_open'] = '<div class="link-pagination nav-btn">';
+        $config['next_tag_close'] = '</div>';
+        $config['last_tag_open'] = '<div class="link-pagination nav-btn">';
+        $config['last_tag_close'] = '</div>';
+        $config['first_tag_open'] = '<div class="link-pagination nav-btn">';
+        $config['first_tag_close'] = '</div>';
+        $config['first_link'] = '&laquo;';
+        $config['last_link'] = '&raquo;';
+        $config['next_link'] = 'Next &rsaquo;';
+        $config['prev_link'] = '&lsaquo; Prev';
+        $config['cur_tag_open'] = '<div class="link-pagination current">';
+        $config['cur_tag_close'] = '</div>';
+        $config["num_links"] = 5;
+
+        $this->pagination->initialize($config);
+        $page = ($this->uri->segment(4) ? $this->uri->segment(4) : 0);
+        $this->data['links'] = $this->pagination->create_links();
+        $this->data['total_rows'] = (int) $config["total_rows"];
+        $this->data['page_start'] = (int) $page;
+        $this->data['per_page'] = (int) $config["per_page"];
         $this->data['loan_products'] = $this->setting_model->loanproduct()->result();
         $this->data['loan_wait'] = $this->loan_model->loan_wait_disburse(
             $pid !== '' ? $pid : null,
-            $product_id
+            $product_id,
+            $date_from,
+            $date_to,
+            $config["per_page"],
+            $page
         );
         $this->data['content'] = 'loan/loan_wait_disburse';
         $this->load->view('template', $this->data);
@@ -900,6 +1281,7 @@ $pin = current_user()->PIN;
      */
     function search_member_select2() {
         $term = trim((string) $this->input->get('q'));
+        $exclude_pid = trim((string) $this->input->get('exclude_pid'));
         $limit = 20;
         $results = array();
 
@@ -907,6 +1289,9 @@ $pin = current_user()->PIN;
             $members = $this->member_model->search_member($term, 1, 1, $limit, 0);
             if (!empty($members)) {
                 foreach ($members as $member) {
+                    if ($exclude_pid !== '' && (string) $member->PID === $exclude_pid) {
+                        continue;
+                    }
                     $fullname = trim($member->firstname . ' ' . $member->middlename . ' ' . $member->lastname);
                     $results[] = array(
                         'id' => $member->PID,
@@ -935,11 +1320,27 @@ $pin = current_user()->PIN;
             redirect(current_lang() . '/loan/loan_disbursement', 'refresh');
             return;
         }
-        if ($loaninfo->status != 4 || $loaninfo->disburse != 0) {
-            $this->session->set_flashdata('warning', 'Loan is not approved or already disbursed.');
+        if ((int) $loaninfo->status !== 4) {
+            $this->session->set_flashdata('warning', lang('loan_release_not_approved'));
             redirect(current_lang() . '/loan/loan_disbursement', 'refresh');
             return;
         }
+        if ((string) $loaninfo->disburse !== '0' && (int) $loaninfo->disburse !== 0) {
+            $this->session->set_flashdata('warning', lang('loan_release_already_disbursed'));
+            redirect(current_lang() . '/loan/loan_disbursement', 'refresh');
+            return;
+        }
+
+        $existing_release = $this->loan_model->get_pending_release($LID, $pin);
+        if ($existing_release && isset($existing_release->release_status) && $existing_release->release_status === 'draft') {
+            $cd_note = !empty($existing_release->cash_disbursement_id)
+                ? (' (Cash Disbursement ID ' . (int) $existing_release->cash_disbursement_id . ')')
+                : '';
+            $this->session->set_flashdata('warning', lang('loan_release_linked_to_cd') . $cd_note);
+            redirect(current_lang() . '/loan/loan_disbursement', 'refresh');
+            return;
+        }
+        // release_status=pending: allow re-open/edit of the draft worksheet.
 
         $this->form_validation->set_rules('disbursedate', lang('loan_disburse_date'), 'required|valid_date');
         $this->form_validation->set_rules('comment', lang('loan_comment'), 'required');
@@ -1047,8 +1448,8 @@ $pin = current_user()->PIN;
 
                 $disburse_date = format_date(trim($this->input->post('disbursedate')));
                 $comment = $this->input->post('comment');
+                $offset_ids = array();
                 if (!empty($offset_loans_selected)) {
-                    $offset_ids = array();
                     foreach ($offset_loans_selected as $o) {
                         $offset_ids[] = $o['LID'];
                     }
@@ -1071,80 +1472,31 @@ $pin = current_user()->PIN;
                 if ($this->db->query("SHOW COLUMNS FROM loan_contract_disburse LIKE 'payment_method'")->row()) {
                     $array_data['payment_method'] = $payment_method_name;
                 }
+                $array_data['offset_loan_ids'] = !empty($offset_ids) ? json_encode(array_values($offset_ids)) : null;
 
                 $this->db->trans_start();
-                $this->db->insert('loan_contract_disburse', $array_data);
-                $this->db->update('loan_contract', array('disburse' => 1), array('LID' => $LID));
+                $this->loan_model->ensure_release_workflow_columns();
+                $this->loan_model->save_pending_release($LID, $array_data, $line_items);
 
                 if (!empty($offset_loans_selected)) {
-                    $offset_ids = array();
-                    foreach ($offset_loans_selected as $o) {
-                        $offset_ids[] = $o['LID'];
-                    }
                     $this->db->where('LID', $LID)->where('PIN', $pin)->update('loan_contract', array(
                         'offset_loans' => implode(',', $offset_ids),
                     ));
-                    foreach ($offset_loans_selected as $o) {
-                        $settle = $this->loan_model->settle_loan_by_offset($o['LID'], $LID, $disburse_date);
-                        if (empty($settle['success'])) {
-                            $this->db->trans_rollback();
-                            $this->data['warning'] = !empty($settle['message']) ? $settle['message'] : lang('loan_offset_settle_fail');
-                            break;
-                        }
-                    }
                 }
 
                 if (empty($this->data['warning'])) {
-                    $this->loan_model->save_disbursement_gl_items($LID, $pin, $line_items);
-                    $this->loan_model->post_loan_disbursement_to_gl($LID, $pin, $line_items, $disburse_date, $loaninfo);
+                    $this->db->trans_complete();
 
-                    $subledger = $this->loan_model->post_disbursement_deduction_subledgers(
-                        $LID, $loaninfo, $line_items, $disburse_date, $payment_method_name
-                    );
-                    if (empty($subledger['success'])) {
-                        $this->db->trans_rollback();
-                        $this->data['warning'] = !empty($subledger['message'])
-                            ? $subledger['message']
-                            : lang('loan_disburse_subledger_fail');
-                    }
-
-                    $product = empty($this->data['warning'])
-                        ? $this->setting_model->loanproduct($loaninfo->product_type)->row()
-                        : null;
-                    if (empty($this->data['warning']) && !$product) {
-                        $this->db->trans_rollback();
-                        $this->data['warning'] = 'Loan product not found. Cannot create repayment schedule.';
-                    } elseif (empty($this->data['warning'])) {
-                        $interest_method = (isset($product->interest_method) && ($product->interest_method == 1 || $product->interest_method == 2)) ? (int) $product->interest_method : 1;
-                        $interval = isset($product->interval) ? (int) $product->interval : 1;
-                        $schedule = $this->loanbase->create_repayment_schedule(
-                            $loaninfo->installment_amount, $loaninfo->rate, $loaninfo->number_istallment,
-                            $disburse_date, $loaninfo->basic_amount, $LID, $interest_method, $interval
-                        );
-                        if (!empty($schedule)) {
-                            foreach ($schedule as $sk => $srow) {
-                                if (!isset($schedule[$sk]['status'])) {
-                                    $schedule[$sk]['status'] = 0;
-                                }
-                                if (!isset($schedule[$sk]['sms_sent'])) {
-                                    $schedule[$sk]['sms_sent'] = 0;
-                                }
-                            }
-                            $this->db->insert_batch('loan_contract_repayment_schedule', $schedule);
+                    if ($this->db->trans_status() === FALSE) {
+                        $this->data['warning'] = lang('loan_evaluation_error') . ' Transaction was rolled back. Please try again or contact support.';
+                    } else {
+                        $msg = lang('loan_release_saved');
+                        if (!empty($offset_loans_selected)) {
+                            $msg .= ' ' . sprintf(lang('loan_offset_pending'), count($offset_loans_selected), number_format($offset_total, 2));
                         }
-                        $this->db->trans_complete();
-
-                        if ($this->db->trans_status() === FALSE) {
-                            $this->data['warning'] = lang('loan_evaluation_error') . ' Transaction was rolled back. Please try again or contact support.';
-                        } else {
-                            $msg = lang('loan_info_saved');
-                            if (!empty($offset_loans_selected)) {
-                                $msg .= ' ' . sprintf(lang('loan_offset_success'), count($offset_loans_selected), number_format($offset_total, 2));
-                            }
-                            $this->session->set_flashdata('message', $msg);
-                            redirect(current_lang() . '/loan/view_repayment_schedule/' . $loanid, 'refresh');
-                            return;
-                        }
+                        $this->session->set_flashdata('message', $msg);
+                        redirect(current_lang() . '/loan/loan_disbursement', 'refresh');
+                        return;
                     }
                 }
                 if ($this->db->trans_status() !== FALSE) {
@@ -1182,6 +1534,31 @@ $pin = current_user()->PIN;
         $this->data['default_payment_method_id'] = $default_payment_method_id;
         $this->data['show_disburse_no'] = (bool) $this->db->query("SHOW COLUMNS FROM loan_contract_disburse LIKE 'disburse_no'")->row();
         $this->data['next_disburse_no'] = $this->loan_model->get_next_loan_disburse_no();
+        $this->data['existing_release'] = $existing_release;
+        $this->data['existing_gl_items'] = array();
+        if ($existing_release) {
+            $this->data['existing_gl_items'] = $this->loan_model->get_disbursement_gl_items($LID, $pin);
+            if (!empty($existing_release->disburse_no)) {
+                $this->data['next_disburse_no'] = $existing_release->disburse_no;
+            }
+            if (!empty($existing_release->payment_method)) {
+                $pm_name = strtolower(trim((string) $existing_release->payment_method));
+                foreach ($payment_methods as $method) {
+                    if (strtolower(trim((string) $method->name)) === $pm_name) {
+                        $this->data['default_payment_method_id'] = $method->id;
+                        $this->data['default_credit_account'] = $this->loan_model->get_credit_account_for_payment_method($method->id);
+                        break;
+                    }
+                }
+            }
+            if (!empty($existing_release->offset_loan_ids)) {
+                $decoded_offsets = json_decode($existing_release->offset_loan_ids, true);
+                if (is_array($decoded_offsets) && empty($this->data['selected_offset_loans'])) {
+                    // selected_offset_loans set below after post check; stash for later
+                    $this->data['_release_offset_loans'] = $decoded_offsets;
+                }
+            }
+        }
         $payment_method_credit_accounts = array();
         foreach ($payment_methods as $method) {
             $payment_method_credit_accounts[$method->id] = $this->loan_model->get_credit_account_for_payment_method($method->id);
@@ -1213,8 +1590,17 @@ $pin = current_user()->PIN;
         }
         $this->data['offsetable_loans_json'] = $offset_json;
         $posted_offsets = $this->input->post('offset_loans');
-        $this->data['selected_offset_loans'] = is_array($posted_offsets) ? $posted_offsets : array();
+        if (is_array($posted_offsets)) {
+            $this->data['selected_offset_loans'] = $posted_offsets;
+        } elseif (!empty($this->data['_release_offset_loans']) && is_array($this->data['_release_offset_loans'])) {
+            $this->data['selected_offset_loans'] = $this->data['_release_offset_loans'];
+        } else {
+            $this->data['selected_offset_loans'] = array();
+        }
+        unset($this->data['_release_offset_loans']);
 
+        $this->data['basicinfo'] = $this->member_model->member_basic_info(null, $loaninfo->PID, $loaninfo->member_id)->row();
+        $this->data['contactinfo'] = $this->member_model->member_contact($loaninfo->PID);
         $this->data['content'] = 'loan/loan_disburse_entry';
         $this->load->view('template', $this->data);
     }
@@ -1226,7 +1612,9 @@ $pin = current_user()->PIN;
         if (empty(trim($disburse_no))) {
             return TRUE;
         }
-        if ($this->loan_model->loan_disburse_no_exists(trim($disburse_no), null)) {
+        $loanid = $this->uri->segment(4);
+        $exclude_lid = $loanid ? decode_id($loanid) : null;
+        if ($this->loan_model->loan_disburse_no_exists(trim($disburse_no), $exclude_lid)) {
             $this->form_validation->set_message('check_loan_disburse_no', lang('loan_disburse_no_exists'));
             return FALSE;
         }
@@ -1331,7 +1719,7 @@ $pin = current_user()->PIN;
 
     function loan_viewlist() {
         $this->load->library('pagination');
-        $this->data['title'] = lang('member_list');
+        $this->data['title'] = lang('loan_viewlist');
 
         if (!$this->ion_auth->logged_in()) {
             //redirect them to the login page
@@ -1350,8 +1738,12 @@ $pin = current_user()->PIN;
         $key = null;
         if (isset($_POST['key']) && $_POST['key'] != '') {
             $key = $_POST['key'];
-        } else if (isset($_GET['key'])) {
+        } else if (isset($_GET['key']) && $_GET['key'] != '') {
             $key = $_GET['key'];
+        }
+        if (!is_null($key) && strpos($key, ' - ') !== FALSE) {
+            $expl = explode(' - ', $key, 2);
+            $key = trim($expl[0]);
         }
 
         $status_filter = null;
@@ -1361,44 +1753,59 @@ $pin = current_user()->PIN;
             $status_filter = $_GET['status_filter'];
         }
 
-        if (!is_null($key)) {
-            $config['suffix'] = '?key=' . urlencode($key);
+        $suffix_array = array();
+        if (!is_null($key) && $key !== '') {
+            $suffix_array['key'] = $key;
         }
         if ($status_filter !== null && $status_filter !== '') {
-            $config['suffix'] = (isset($config['suffix']) ? $config['suffix'] . '&' : '?') . 'status_filter=' . urlencode($status_filter);
+            $suffix_array['status_filter'] = $status_filter;
         }
-
+        if (count($suffix_array) > 0) {
+            $query_string = http_build_query($suffix_array, '', '&');
+            $config['suffix'] = '?' . $query_string;
+            $config['first_url'] = site_url(current_lang() . '/loan/loan_viewlist') . '?' . $query_string;
+        }
 
         $config["base_url"] = site_url(current_lang() . '/loan/loan_viewlist/');
         $config["total_rows"] = $this->loan_model->count_loan($key, $status_filter);
         $config["uri_segment"] = 4;
 
-        $config['full_tag_open'] = '<div class="pagination" style="background-color:#fff; margin-left:0px;">';
+        $config['full_tag_open'] = '<div class="pagination member-pagination">';
         $config['full_tag_close'] = '</div>';
 
         $config['num_tag_open'] = '<div class="link-pagination">';
         $config['num_tag_close'] = '</div>';
 
-        $config['prev_tag_open'] = '<div class="link-pagination">';
+        $config['prev_tag_open'] = '<div class="link-pagination nav-btn">';
         $config['prev_tag_close'] = '</div>';
 
-        $config['next_tag_open'] = '<div class="link-pagination">';
+        $config['next_tag_open'] = '<div class="link-pagination nav-btn">';
         $config['next_tag_close'] = '</div>';
 
-        $config['next_link'] = 'Next';
-        $config['prev_link'] = 'Previous';
+        $config['last_tag_open'] = '<div class="link-pagination nav-btn">';
+        $config['last_tag_close'] = '</div>';
+
+        $config['first_tag_open'] = '<div class="link-pagination nav-btn">';
+        $config['first_tag_close'] = '</div>';
+
+        $config['first_link'] = '&laquo;';
+        $config['last_link'] = '&raquo;';
+        $config['next_link'] = 'Next &rsaquo;';
+        $config['prev_link'] = '&lsaquo; Prev';
         $config['cur_tag_open'] = '<div class="link-pagination current">';
         $config['cur_tag_close'] = '</div>';
 
-
-        $config["num_links"] = 10;
-
+        $config["num_links"] = 5;
 
         $this->pagination->initialize($config);
         $page = ($this->uri->segment(4) ? $this->uri->segment(4) : 0);
         $this->data['links'] = $this->pagination->create_links();
+        $this->data['total_rows'] = (int) $config["total_rows"];
+        $this->data['page_start'] = (int) $page;
+        $this->data['per_page'] = (int) $config["per_page"];
 
         $this->data['loan_list'] = $this->loan_model->search_loan($key, $config["per_page"], $page, $status_filter);
+        $this->data['search_key'] = $key;
 
         $this->data['status_filter'] = $status_filter;
         $this->data['status_list'] = loan_status();
@@ -1410,9 +1817,37 @@ $pin = current_user()->PIN;
         $this->data['title'] = lang('loan_viewdetails');
         $this->data['loanid'] = $loanid;
         $LID = decode_id($loanid);
-
-
-        $this->data['loaninfo'] = $this->loan_model->loan_info($LID)->row();
+        $loaninfo = $this->loan_model->loan_info($LID)->row();
+        if (!$loaninfo) {
+            // Loan List also shows unactivated beginning balances; send those to BB management.
+            $bb = $this->loan_model->get_beginning_balance_by_loan_id($LID);
+            if ($bb) {
+                $this->session->set_flashdata('warning', lang('loan_beginning_balance_detail_redirect'));
+                $fy = !empty($bb->fiscal_year_id) ? ('?fiscal_year_id=' . (int) $bb->fiscal_year_id) : '';
+                redirect(current_lang() . '/loan/loan_beginning_balance_list' . $fy, 'refresh');
+                return;
+            }
+            // Synthetic BB-{id} LIDs from the list when loan_id is empty
+            if (is_string($LID) && preg_match('/^BB-(\d+)$/', $LID, $m)) {
+                $bb_by_id = $this->loan_model->loan_beginning_balance_list(null, (int) $m[1])->row();
+                if ($bb_by_id) {
+                    $this->session->set_flashdata('warning', lang('loan_beginning_balance_detail_redirect'));
+                    $fy = !empty($bb_by_id->fiscal_year_id) ? ('?fiscal_year_id=' . (int) $bb_by_id->fiscal_year_id) : '';
+                    redirect(current_lang() . '/loan/loan_beginning_balance_list' . $fy, 'refresh');
+                    return;
+                }
+            }
+            show_404();
+            return;
+        }
+        $pin = current_user()->PIN;
+        if ((string) $loaninfo->PIN !== (string) $pin) {
+            show_404();
+            return;
+        }
+        $this->data['loaninfo'] = $loaninfo;
+        $this->data['basicinfo'] = $this->member_model->member_basic_info(null, $loaninfo->PID, $loaninfo->member_id)->row();
+        $this->data['contactinfo'] = $this->member_model->member_contact($loaninfo->PID);
         $this->data['content'] = 'loan/loan_view_details';
         $this->load->view('template', $this->data);
     }
@@ -1422,26 +1857,44 @@ $pin = current_user()->PIN;
      */
     function loan_ledger($loanid) {
         $this->data['title'] = lang('loan_ledger');
+        $this->data['loanid'] = $loanid;
         $LID = decode_id($loanid);
+        // Double-encoded URL: first decode yields another encode payload (digits/_), not a LID.
+        if (is_string($LID) && preg_match('/^[0-9]{3}/', $LID) && strpos($LID, '_') !== false) {
+            $retry = decode_id($LID);
+            if ($retry !== null && $retry !== '') {
+                redirect(current_lang() . '/loan/loan_ledger/' . encode_id($retry), 'refresh');
+                return;
+            }
+        }
+        if ($LID === null || $LID === '') {
+            $this->session->set_flashdata('warning', lang('loan_evaluation_error'));
+            redirect(current_lang() . '/loan/loan_repayment', 'refresh');
+            return;
+        }
         $loaninfo = $this->loan_model->loan_info($LID)->row();
         if (!$loaninfo) {
-            show_404();
+            $this->session->set_flashdata('warning', lang('loan_evaluation_error'));
+            redirect(current_lang() . '/loan/loan_repayment', 'refresh');
             return;
         }
         $pin = current_user()->PIN;
-        if ((string)$loaninfo->PIN !== (string)$pin) {
-            show_404();
+        if ((string) $loaninfo->PIN !== (string) $pin) {
+            $this->session->set_flashdata('warning', lang('loan_evaluation_error'));
+            redirect(current_lang() . '/loan/loan_repayment', 'refresh');
             return;
         }
+        $this->data['loanid'] = encode_id($loaninfo->LID);
         $this->data['loaninfo'] = $loaninfo;
-        $this->data['ledger_transactions'] = $this->loan_model->get_loan_ledger_transactions($LID);
+        $this->data['basicinfo'] = $this->member_model->member_basic_info(null, $loaninfo->PID, $loaninfo->member_id)->row();
+        $this->data['contactinfo'] = $this->member_model->member_contact($loaninfo->PID);
+        $this->data['ledger_transactions'] = $this->loan_model->get_loan_ledger_transactions($loaninfo->LID);
         $this->data['content'] = 'loan/loan_ledger';
         $this->load->view('template', $this->data);
     }
 
     function loan_repayment() {
         $this->load->library('pagination');
-        $pin = current_user()->PIN;
         $this->data['title'] = lang('loan_repayment');
 
         if (isset($_GET['row_per_pg'])) {
@@ -1454,34 +1907,79 @@ $pin = current_user()->PIN;
         $key = null;
         if (isset($_POST['key']) && $_POST['key'] != '') {
             $key = $_POST['key'];
-        } else if (isset($_GET['key'])) {
+        } else if (isset($_GET['key']) && $_GET['key'] != '') {
             $key = $_GET['key'];
         }
-        if (!is_null($key)) {
-            $config['suffix'] = '?key=' . urlencode($key);
+        if (!is_null($key) && strpos($key, ' - ') !== FALSE) {
+            $expl = explode(' - ', $key, 2);
+            $key = trim($expl[0]);
+        }
+
+        $date_from_raw = trim((string) $this->input->get_post('date_from'));
+        $date_to_raw = trim((string) $this->input->get_post('date_to'));
+        $date_from = ($date_from_raw !== '') ? format_date($date_from_raw) : null;
+        $date_to = ($date_to_raw !== '') ? format_date($date_to_raw) : null;
+
+        $product_id = trim((string) $this->input->get_post('product_id'));
+        if ($product_id === '') {
+            $product_id = 'all';
+        }
+
+        $suffix_array = array();
+        if (!is_null($key) && $key !== '') {
+            $suffix_array['key'] = $key;
+        }
+        if ($date_from_raw !== '') {
+            $suffix_array['date_from'] = $date_from_raw;
+        }
+        if ($date_to_raw !== '') {
+            $suffix_array['date_to'] = $date_to_raw;
+        }
+        if ($product_id !== '' && $product_id !== 'all') {
+            $suffix_array['product_id'] = $product_id;
+        }
+        if (count($suffix_array) > 0) {
+            $query_string = http_build_query($suffix_array, '', '&');
+            $config['suffix'] = '?' . $query_string;
+            $config['first_url'] = site_url(current_lang() . '/loan/loan_repayment') . '?' . $query_string;
         }
 
         $config["base_url"] = site_url(current_lang() . '/loan/loan_repayment/');
-        $config["total_rows"] = $this->loan_model->count_loan_repayment_list_released_with_balance($key);
+        $config["total_rows"] = $this->loan_model->count_loan_repayment_list_released_with_balance($key, $date_from, $date_to, $product_id);
         $config["uri_segment"] = 4;
-        $config['full_tag_open'] = '<div class="pagination" style="background-color:#fff; margin-left:0px;">';
+
+        $config['full_tag_open'] = '<div class="pagination member-pagination">';
         $config['full_tag_close'] = '</div>';
         $config['num_tag_open'] = '<div class="link-pagination">';
         $config['num_tag_close'] = '</div>';
-        $config['prev_tag_open'] = '<div class="link-pagination">';
+        $config['prev_tag_open'] = '<div class="link-pagination nav-btn">';
         $config['prev_tag_close'] = '</div>';
-        $config['next_tag_open'] = '<div class="link-pagination">';
+        $config['next_tag_open'] = '<div class="link-pagination nav-btn">';
         $config['next_tag_close'] = '</div>';
-        $config['next_link'] = 'Next';
-        $config['prev_link'] = 'Previous';
+        $config['last_tag_open'] = '<div class="link-pagination nav-btn">';
+        $config['last_tag_close'] = '</div>';
+        $config['first_tag_open'] = '<div class="link-pagination nav-btn">';
+        $config['first_tag_close'] = '</div>';
+        $config['first_link'] = '&laquo;';
+        $config['last_link'] = '&raquo;';
+        $config['next_link'] = 'Next &rsaquo;';
+        $config['prev_link'] = '&lsaquo; Prev';
         $config['cur_tag_open'] = '<div class="link-pagination current">';
         $config['cur_tag_close'] = '</div>';
-        $config["num_links"] = 10;
+        $config["num_links"] = 5;
 
         $this->pagination->initialize($config);
         $page = ($this->uri->segment(4) ? $this->uri->segment(4) : 0);
         $this->data['links'] = $this->pagination->create_links();
-        $this->data['loan_list'] = $this->loan_model->loan_repayment_list_released_with_balance($key, $config["per_page"], $page);
+        $this->data['total_rows'] = (int) $config["total_rows"];
+        $this->data['page_start'] = (int) $page;
+        $this->data['per_page'] = (int) $config["per_page"];
+        $this->data['search_key'] = $key;
+        $this->data['date_from'] = $date_from_raw;
+        $this->data['date_to'] = $date_to_raw;
+        $this->data['selected_product_id'] = $product_id;
+        $this->data['loan_products'] = $this->setting_model->loanproduct()->result();
+        $this->data['loan_list'] = $this->loan_model->loan_repayment_list_released_with_balance($key, $config["per_page"], $page, $date_from, $date_to, $product_id);
 
         $this->load->model('cash_receipt_model');
         $this->data['next_receipt_no'] = $this->cash_receipt_model->get_next_shared_receipt_no();
@@ -1548,6 +2046,9 @@ $pin = current_user()->PIN;
         $this->data['repayment_due'] = $this->loan_model->calculate_repayment_due($LID, $paydate_default);
         $this->data['repayment_due_url'] = site_url(current_lang() . '/loan/loan_repayment_due_preview/' . $loanid);
         $this->data['collection_notice_url'] = site_url(current_lang() . '/loan/loan_collection_notice_print/' . $loanid);
+
+        $this->data['basicinfo'] = $this->member_model->member_basic_info(null, $loaninfo->PID, $loaninfo->member_id)->row();
+        $this->data['contactinfo'] = $this->member_model->member_contact($loaninfo->PID);
 
         $this->data['content'] = 'loan/loan_repayment_entry';
         $this->load->view('template', $this->data);
@@ -1691,6 +2192,15 @@ $pin = current_user()->PIN;
         $payment_method_id = (int) $this->input->post('payment_method');
 
         $this->load->model('cash_receipt_model');
+        $pending_cr = $this->cash_receipt_model->get_unposted_loan_repayment_for_loan($LID);
+        if ($pending_cr) {
+            $this->session->set_flashdata(
+                'warning',
+                sprintf(lang('loan_repay_pending_cash_receipt'), $pending_cr->receipt_no)
+            );
+            redirect($redirect_back, 'refresh');
+            return;
+        }
         if ($this->cash_receipt_model->receipt_no_exists($receipt_no)) {
             $this->session->set_flashdata('warning', lang('cash_receipt_no_exists'));
             redirect($redirect_back, 'refresh');
@@ -1708,7 +2218,6 @@ $pin = current_user()->PIN;
             redirect($redirect_back, 'refresh');
             return;
         }
-        // Determine cash/bank GL account from payment method (fallback to 1010001 if not configured)
         $cash_account = null;
         if ($payment_method_id > 0) {
             $cash_account = $this->loan_model->get_credit_account_for_payment_method($payment_method_id);
@@ -1716,144 +2225,14 @@ $pin = current_user()->PIN;
         if (!$cash_account) {
             $cash_account = 1010001;
         }
-        $product = $this->setting_model->loanproduct($loaninfo->product_type)->row();
-        $open_repayment = $this->loan_model->open_repayment_installment($LID);
-        $previous_remain_balance = $this->loan_model->get_previous_remain_balance($LID);
-        $amount_tmp = ($amount + $previous_remain_balance);
 
-        if ($amount <= 0) {
-            $this->session->set_flashdata('warning', 'Amount should be greater than 0');
+        $applied = $this->loan_model->apply_loan_repayment($LID, $amount, $paydate, $receipt_no, $cash_account, array('post_gl' => true));
+        if (empty($applied['success'])) {
+            $this->session->set_flashdata('warning', !empty($applied['message']) ? $applied['message'] : 'Loan repayment save failed. Please try again.');
             redirect($redirect_back, 'refresh');
             return;
         }
-        if ($loaninfo->status != 4) {
-            $this->session->set_flashdata('warning', 'Invalid Operation, Loan Status does not allow Repayment process');
-            redirect($redirect_back, 'refresh');
-            return;
-        }
-        if (count($open_repayment) < 1) {
-            $open_repayment_check = $this->loan_model->open_repayment_installment($LID);
-            if (count($open_repayment_check) < 1) {
-                $this->db->update('loan_contract', array('status' => 5), array('LID' => $LID, 'status' => 4, 'disburse' => 1, 'PIN' => $pin));
-            }
-            $this->session->set_flashdata('warning', 'No open installment available for new payment');
-            redirect($redirect_back, 'refresh');
-            return;
-        }
-
-        $due_preview = $this->loan_model->calculate_repayment_due($LID, $paydate);
-        if (!empty($due_preview->items) && (float) $due_preview->minimum_to_apply > 0
-            && round((float) $amount, 2) + 0.00001 < (float) $due_preview->minimum_to_apply) {
-            $this->session->set_flashdata(
-                'warning',
-                sprintf(lang('loan_repay_amount_insufficient'), number_format((float) $due_preview->minimum_to_apply, 2))
-            );
-            redirect($redirect_back, 'refresh');
-            return;
-        }
-
-        $this->db->trans_start();
-        $receipt = $this->loan_model->loan_repay_receipt($LID, $amount, $paydate, $receipt_no);
-        $applied_any = false;
-        foreach ($open_repayment as $key => $value) {
-            $repay_amount_install = $loaninfo->installment_amount;
-            if ($amount_tmp >= $repay_amount_install) {
-                $grace_days = $this->loan_model->get_penalt_grace_days($product);
-                $max_date = date("Y-m-d", strtotime(date("Y-m-d", strtotime($value->repaydate)) . " +" . $grace_days . " days"));
-                if ($paydate <= $max_date) {
-                    $repay_amount_install_to_pay_all_loan = round($value->repayamount + $value->balance, 2);
-                    if ($amount_tmp >= $repay_amount_install_to_pay_all_loan) {
-                        $new_principle = round($repay_amount_install_to_pay_all_loan - $value->interest, 2);
-                        $amount_tmp -= $repay_amount_install_to_pay_all_loan;
-                        $array_data = array(
-                            'LID' => $LID, 'receipt' => $receipt, 'installment' => $value->installment_number,
-                            'amount' => $repay_amount_install_to_pay_all_loan, 'paydate' => $paydate,
-                            'interest' => $value->interest, 'principle' => $new_principle, 'duedate' => $value->repaydate,
-                            'balance' => 0, 'iliyobaki' => round($amount_tmp, 2), 'createdby' => current_user()->id, 'PIN' => $pin,
-                        );
-                        $this->loan_model->record_loan_repayment_all($array_data, $value->id, $value->LID, $cash_account);
-                        $applied_any = true;
-                        break;
-                    } else {
-                        $amount_tmp -= $repay_amount_install;
-                        $array_data = array(
-                            'LID' => $LID, 'receipt' => $receipt, 'installment' => $value->installment_number,
-                            'amount' => $repay_amount_install, 'paydate' => $paydate,
-                            'interest' => $value->interest, 'principle' => $value->principle, 'duedate' => $value->repaydate,
-                            'balance' => $value->balance, 'iliyobaki' => round($amount_tmp, 2), 'createdby' => current_user()->id, 'PIN' => $pin,
-                        );
-                        $this->loan_model->record_loan_repayment($array_data, $value->id, $cash_account);
-                        $applied_any = true;
-                    }
-                } else {
-                    $d1 = new DateTime($max_date);
-                    $d2 = new DateTime($paydate);
-                    $number_months = ($d1->diff($d2)->m + ($d1->diff($d2)->y * 12)) + 1;
-                    $penalt_method = $product->penalt_method;
-                    $penalt_percentage = $product->penalt_percentage;
-                    $penalt = 0;
-                    $principle = $value->principle;
-                    $interest_val = $value->interest;
-                    if ($penalt_method == 1) $penalt = (($penalt_percentage / 100) * $principle);
-                    else if ($penalt_method == 2) $penalt = (($penalt_percentage / 100) * ($principle + $interest_val));
-                    $penalt_avail = round($penalt, 2);
-                    $penalt_total = round($penalt_avail * $number_months, 2);
-                    $test_remain = round($repay_amount_install + $penalt_total, 2);
-                    if ($amount_tmp >= $test_remain) {
-                        $repay_amount_install_to_pay_all_loan = round($value->repayamount + $value->balance + $penalt_total, 2);
-                        if ($amount_tmp >= $repay_amount_install_to_pay_all_loan) {
-                            $new_principle = round($value->repayamount + $value->balance - $value->interest, 2);
-                            $amount_tmp -= $repay_amount_install_to_pay_all_loan;
-                            $array_data = array(
-                                'LID' => $LID, 'receipt' => $receipt, 'installment' => $value->installment_number,
-                                'amount' => $repay_amount_install_to_pay_all_loan, 'paydate' => $paydate,
-                                'interest' => $value->interest, 'principle' => $new_principle, 'balance' => 0, 'duedate' => $value->repaydate,
-                                'iliyobaki' => round($amount_tmp, 2), 'penalt' => $penalt_total, 'penalty_months' => $number_months,
-                                'createdby' => current_user()->id, 'PIN' => $pin,
-                            );
-                            $this->loan_model->record_loan_repayment_all($array_data, $value->id, $value->LID, $cash_account);
-                            $applied_any = true;
-                            break;
-                        } else {
-                            $amount_tmp -= $test_remain;
-                            $array_data = array(
-                                'LID' => $LID, 'receipt' => $receipt, 'installment' => $value->installment_number,
-                                'amount' => $repay_amount_install, 'paydate' => $paydate,
-                                'interest' => $value->interest, 'principle' => $value->principle, 'balance' => $value->balance, 'duedate' => $value->repaydate,
-                                'iliyobaki' => round($amount_tmp, 2), 'penalt' => $penalt_total, 'penalty_months' => $number_months,
-                                'createdby' => current_user()->id, 'PIN' => $pin,
-                            );
-                            $this->loan_model->record_loan_repayment($array_data, $value->id, $cash_account);
-                            $applied_any = true;
-                        }
-                    } else {
-                        break;
-                    }
-                }
-            } else {
-                break;
-            }
-        }
-        if ($amount_tmp > 0) {
-            $this->loan_model->add_remain_balance($LID, round($amount_tmp, 2));
-        } else {
-            $this->loan_model->add_remain_balance($LID, 0);
-        }
-        if (!$applied_any) {
-            $this->db->trans_rollback();
-            $this->session->set_flashdata(
-                'warning',
-                sprintf(lang('loan_repay_amount_insufficient'), number_format((float) $due_preview->minimum_to_apply, 2))
-            );
-            redirect($redirect_back, 'refresh');
-            return;
-        }
-        $open_repayment_check = $this->loan_model->open_repayment_installment($LID);
-        if (count($open_repayment_check) < 1) {
-            $this->db->update('loan_contract', array('status' => 5), array('LID' => $LID, 'status' => 4, 'disburse' => 1, 'PIN' => $pin));
-        }
-        $this->db->trans_complete();
-        redirect(site_url(current_lang() . '/loan/view_loanreceipt/' . $receipt), 'refresh');
+        redirect(site_url(current_lang() . '/loan/view_loanreceipt/' . $applied['receipt']), 'refresh');
     }
 
     /**
@@ -1905,6 +2284,14 @@ $pin = current_user()->PIN;
         $receipt_no = trim($this->input->post('receipt_no'));
 
         $this->load->model('cash_receipt_model');
+        $pending_cr = $this->cash_receipt_model->get_unposted_loan_repayment_for_loan($LID);
+        if ($pending_cr) {
+            $this->output->set_output(json_encode(array(
+                'success' => false,
+                'warning' => sprintf(lang('loan_repay_pending_cash_receipt'), $pending_cr->receipt_no),
+            )));
+            return;
+        }
         if ($this->cash_receipt_model->receipt_no_exists($receipt_no)) {
             $this->output->set_output(json_encode(array('success' => false, 'warning' => lang('cash_receipt_no_exists'))));
             return;
@@ -1913,6 +2300,19 @@ $pin = current_user()->PIN;
             $this->output->set_output(json_encode(array('success' => false, 'warning' => lang('cash_receipt_no_exists'))));
             return;
         }
+
+        $applied = $this->loan_model->apply_loan_repayment($LID, $amount, $paydate, $receipt_no, null, array('post_gl' => true));
+        if (empty($applied['success'])) {
+            $this->output->set_output(json_encode(array(
+                'success' => false,
+                'warning' => !empty($applied['message']) ? $applied['message'] : 'Loan repayment save failed. Please try again.',
+            )));
+            return;
+        }
+        $redirect = site_url(current_lang() . '/loan/view_loanreceipt/' . $applied['receipt']);
+        $this->output->set_output(json_encode(array('success' => true, 'redirect' => $redirect)));
+        return;
+        if (false) { // unreachable: apply_loan_repayment is the engine
 
         $loaninfo = $this->loan_model->loan_info($LID)->row();
         if (!$loaninfo) {
@@ -2053,6 +2453,7 @@ $pin = current_user()->PIN;
         $this->db->trans_complete();
         $redirect = site_url(current_lang() . '/loan/view_loanreceipt/' . $receipt);
         $this->output->set_output(json_encode(array('success' => true, 'redirect' => $redirect)));
+        } // end unreachable legacy block
     }
 
     function view_repayment_schedule($loanid) {
@@ -2062,6 +2463,10 @@ $pin = current_user()->PIN;
         $this->db->order_by('installment_number', 'ASC');
         $this->data['schedule'] = $this->db->get_where('loan_contract_repayment_schedule', array('LID' => $LID))->result();
         $this->data['loaninfo'] = $this->loan_model->loan_info($LID)->row();
+        if ($this->data['loaninfo']) {
+            $this->data['basicinfo'] = $this->member_model->member_basic_info(null, $this->data['loaninfo']->PID, $this->data['loaninfo']->member_id)->row();
+            $this->data['contactinfo'] = $this->member_model->member_contact($this->data['loaninfo']->PID);
+        }
         $this->data['content'] = 'loan/loan_repayment_schedule';
         $this->load->view('template', $this->data);
     }
@@ -2504,9 +2909,14 @@ $pin = current_user()->PIN;
     }
 
     function loan_beginning_balance_create($id = null) {
-        if (!is_null($id)) {
+        $encoded_id = '';
+        if (!is_null($id) && $id !== '') {
+            $encoded_id = $id;
             $id = decode_id($id);
+        } else {
+            $id = null;
         }
+        $this->data['encoded_id'] = $encoded_id;
         
         if ($id) {
             $this->data['title'] = lang('loan_beginning_balance_edit');
@@ -2526,6 +2936,7 @@ $pin = current_user()->PIN;
             }
         } else {
             $this->data['title'] = lang('loan_beginning_balance_create');
+            $this->data['balance'] = null;
         }
         
         // Get fiscal years and loan products
@@ -2977,26 +3388,46 @@ $pin = current_user()->PIN;
         } else {
             $this->session->set_flashdata('warning', !empty($result['message']) ? $result['message'] : 'Void failed');
         }
-        $LID = $this->input->get('LID');
-        if ($LID) {
-            redirect(current_lang() . '/loan/loan_ledger/' . encode_id($LID), 'refresh');
+        // Ledger void links pass ?LID=encode_id(raw_LID). Do NOT encode again or the
+        // ledger URL double-encodes and decode_id returns garbage (blank/404 page).
+        $lid_param = trim((string) $this->input->get('LID'));
+        if ($lid_param !== '') {
+            $decoded = decode_id($lid_param);
+            if ($decoded !== null && $decoded !== '') {
+                redirect(current_lang() . '/loan/loan_ledger/' . encode_id($decoded), 'refresh');
+                return;
+            }
+            // Already a raw LID (or unusable encode) — only encode if it looks like a LID.
+            if (preg_match('/^[A-Za-z0-9\-]+$/', $lid_param)) {
+                redirect(current_lang() . '/loan/loan_ledger/' . encode_id($lid_param), 'refresh');
+                return;
+            }
+        }
+        if (!empty($result['LID'])) {
+            redirect(current_lang() . '/loan/loan_ledger/' . encode_id($result['LID']), 'refresh');
             return;
         }
         redirect(current_lang() . '/loan/loan_repayment', 'refresh');
     }
 
     /**
-     * Void loan disbursement with reversing GL (only if no repayments).
+     * Void loan disbursement with reversing GL + savings/share deduction sub-ledgers
+     * (old-style Loan Disbursement posts only). Requires no active repayments.
      */
     function void_loan_disbursement($loanid) {
         $LID = decode_id($loanid);
+        if ($LID === null || $LID === '') {
+            $this->session->set_flashdata('warning', lang('loan_evaluation_error'));
+            redirect(current_lang() . '/loan/loan_viewlist', 'refresh');
+            return;
+        }
         $result = $this->loan_model->void_loan_disbursement($LID, 'Void loan disbursement');
         if (!empty($result['success'])) {
             $this->session->set_flashdata('message', $result['message']);
         } else {
             $this->session->set_flashdata('warning', !empty($result['message']) ? $result['message'] : 'Void failed');
         }
-        redirect(current_lang() . '/loan/loan_view/' . encode_id($LID), 'refresh');
+        redirect(current_lang() . '/loan/view_indetail/' . encode_id($LID), 'refresh');
     }
 
     // Member Autosuggest Methods for Loan Beginning Balance

@@ -320,30 +320,64 @@ $pin = current_user()->PIN;
             );
         }
 
+        $share_no = floatval($trans->share_no);
+        $cost = floatval($trans->cost_per_share);
+        $amountshare = round($share_no * $cost, 2);
+        $real = floatval($trans->amount);
+        $previous_share = floatval($trans->previous_share);
+        $previous_balance = floatval($trans->previous_balance);
+        if ($previous_share < -0.01) {
+            return array('success' => false, 'message' => 'Cannot reverse share buy: balance mismatch');
+        }
+
+        // Pre-buy snapshot from the transaction (authoritative when no later open txs).
+        $snapshot_amount = round($previous_share * $cost, 2);
+        if ($snapshot_amount > $previous_balance + 0.009) {
+            $snapshot_amount = round($previous_balance, 2);
+        }
+        $snapshot_remain = round($previous_balance - $snapshot_amount, 2);
+        if ($snapshot_remain < -0.009) {
+            $snapshot_remain = 0;
+        }
+        $snapshot_amount = max(0, $snapshot_amount);
+        $snapshot_remain = max(0, $snapshot_remain);
+        $snapshot_shares = max(0, $previous_share);
+
         $current = $this->share_member_info($trans->PID, $trans->member_id);
+        if (!$current && $trans->trans_type === 'CR') {
+            // Orphan share_transaction: members_share missing (loan disbursement credits).
+            // Insert the pre-buy snapshot; void then posts the reversing history row.
+            $this->db->insert('members_share', array(
+                'PID' => $trans->PID,
+                'member_id' => $trans->member_id,
+                'amount' => $snapshot_amount,
+                'totalshare' => $snapshot_shares,
+                'remainbalance' => $snapshot_remain,
+                'PIN' => $pin,
+            ));
+            $current = $this->share_member_info($trans->PID, $trans->member_id);
+        }
         if (!$current) {
             return array('success' => false, 'message' => 'Member share balance not found');
         }
 
-        $share_no = floatval($trans->share_no);
-        $cost = floatval($trans->cost_per_share);
-        $amountshare = $share_no * $cost;
-        $real = floatval($trans->amount);
-        $previous_share = floatval($trans->previous_share);
-        $previous_balance = floatval($trans->previous_balance);
         $pre_void_share = floatval($current->totalshare);
         $pre_void_balance = floatval($current->amount) + floatval($current->remainbalance);
 
         $this->db->trans_start();
 
         if ($trans->trans_type === 'CR') {
-            // Reverse buy: restore amount / remain / share count from previous_*
+            // Reverse buy: prefer transaction previous_* snapshot. Incremental
+            // (current.amount - amountshare) fails when members_share was zeroed,
+            // rebuilt, or remain-to-share conversion left amount below amountshare.
             $old_amount = floatval($current->amount) - $amountshare;
             $old_remain = $previous_balance - $old_amount;
-            if ($old_amount < -0.01 || $previous_share < -0.01) {
-                $this->db->_trans_status = FALSE;
-                $this->db->trans_complete();
-                return array('success' => false, 'message' => 'Cannot reverse share buy: balance mismatch');
+            $use_snapshot = ($old_amount < -0.01)
+                || (abs(($old_amount + max(0, $old_remain)) - $previous_balance) > 0.05)
+                || (abs(floatval($current->totalshare) - ($previous_share + $share_no)) > 0.01);
+            if ($use_snapshot) {
+                $old_amount = $snapshot_amount;
+                $old_remain = $snapshot_remain;
             }
             $this->db->where('PID', $trans->PID);
             $this->db->where('member_id', $trans->member_id);
@@ -351,7 +385,7 @@ $pin = current_user()->PIN;
             $this->db->update('members_share', array(
                 'amount' => max(0, round($old_amount, 2)),
                 'remainbalance' => max(0, round($old_remain, 2)),
-                'totalshare' => max(0, $previous_share),
+                'totalshare' => $snapshot_shares,
             ));
             $void_type = 'DR';
             $void_system = 'VOID BUY SHARE';

@@ -143,8 +143,9 @@ foreach ($account_list as $type_data) {
 
             $attrs = 'value="' . htmlspecialchars($account->account, ENT_QUOTES) . '"';
             if ($is_parent) {
-                $attrs .= ' disabled="disabled" data-is-parent="1" class="coa-parent-account" style="font-weight:bold;"';
-            } else if ((string)$selected_account !== '' && (string)$selected_account === $account_str) {
+                $attrs .= ' data-is-parent="1" class="coa-parent-account" style="font-weight:bold;"';
+            }
+            if ((string)$selected_account !== '' && (string)$selected_account === $account_str) {
                 $attrs .= ' selected="selected"';
             }
 

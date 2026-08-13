@@ -535,6 +535,7 @@ class Member extends CI_Controller {
         $this->form_validation->set_rules('physical', lang('member_contact_physical'), '');
         $this->form_validation->set_rules('sourceofincome', 'Source of Income', 'max_length[255]');
         $this->form_validation->set_rules('occupation', lang('member_contact_occupation'), '');
+        $this->form_validation->set_rules('salary_grade', lang('member_contact_salary_grade'), 'max_length[50]');
         $this->form_validation->set_rules('tinno', lang('member_contact_tinno'), '');
         $this->form_validation->set_rules('sssno', lang('member_contact_sssno'), '');
         $this->form_validation->set_rules('bpno', lang('member_contact_bpno'), '');
@@ -569,7 +570,9 @@ class Member extends CI_Controller {
             if ($this->input->post('phone2')) {
                 $member_contact['phone2'] = trim($this->input->post('pre_phone2')) . trim($this->input->post('phone2'));
             }
-
+            if ($this->db->field_exists('salary_grade', 'members_contact')) {
+                $member_contact['salary_grade'] = trim($this->input->post('salary_grade'));
+            }
 
             $return = $this->member_model->add_contact($member_contact, $id, $this->data['basicinfo']->formstatus);
             if ($return) {
@@ -638,6 +641,32 @@ class Member extends CI_Controller {
 
         $this->data['content'] = 'member/nextkininfo';
         $this->load->view('template', $this->data);
+    }
+
+    function autosuggest_member_list() {
+        header('Content-Type: application/json; charset=UTF-8');
+
+        $q = isset($_GET['q']) ? trim($_GET['q']) : '';
+        if ($q === '') {
+            echo json_encode(array());
+            return;
+        }
+
+        $searchstatus = isset($_GET['searchstatus']) ? $_GET['searchstatus'] : '';
+        $searchmember = isset($_GET['searchmember']) ? $_GET['searchmember'] : '';
+
+        $rows = $this->member_model->suggest_members($q, $searchstatus, $searchmember, 15);
+        $out = array();
+        foreach ($rows as $row) {
+            $full_name = trim(preg_replace('/\s+/', ' ', $row->firstname . ' ' . $row->middlename . ' ' . $row->lastname));
+            $out[] = array(
+                'member_id' => $row->member_id,
+                'name' => $full_name,
+                'status' => ($row->status == 1) ? 'Active' : 'Inactive',
+                'pid' => $row->PID,
+            );
+        }
+        echo json_encode($out);
     }
 
     function member_list() {
@@ -715,36 +744,41 @@ class Member extends CI_Controller {
         $config["total_rows"] = $this->member_model->count_member($key, $searchstatus, $searchmember);
         $config["uri_segment"] = 4;
 
-        $config['full_tag_open'] = '<div class="pagination" style="background-color:#fff; margin-left:0px;">';
+        $config['full_tag_open'] = '<div class="pagination member-pagination">';
         $config['full_tag_close'] = '</div>';
 
         $config['num_tag_open'] = '<div class="link-pagination">';
         $config['num_tag_close'] = '</div>';
 
-        $config['prev_tag_open'] = '<div class="link-pagination">';
+        $config['prev_tag_open'] = '<div class="link-pagination nav-btn">';
         $config['prev_tag_close'] = '</div>';
 
-        $config['next_tag_open'] = '<div class="link-pagination">';
+        $config['next_tag_open'] = '<div class="link-pagination nav-btn">';
         $config['next_tag_close'] = '</div>';
-        
-        $config['last_tag_open'] = '<div class="link-pagination">';
+
+        $config['last_tag_open'] = '<div class="link-pagination nav-btn">';
         $config['last_tag_close'] = '</div>';
-        
-        $config['first_tag_open'] = '<div class="link-pagination">';
+
+        $config['first_tag_open'] = '<div class="link-pagination nav-btn">';
         $config['first_tag_close'] = '</div>';
 
-        $config['next_link'] = 'Next';
-        $config['prev_link'] = 'Previous';
+        $config['first_link'] = '&laquo;';
+        $config['last_link'] = '&raquo;';
+        $config['next_link'] = 'Next &rsaquo;';
+        $config['prev_link'] = '&lsaquo; Prev';
         $config['cur_tag_open'] = '<div class="link-pagination current">';
         $config['cur_tag_close'] = '</div>';
 
 
-        $config["num_links"] = 10;
+        $config["num_links"] = 5;
 
 
         $this->pagination->initialize($config);
         $page = ($this->uri->segment(4) ? $this->uri->segment(4) : 0);
         $this->data['links'] = $this->pagination->create_links();
+        $this->data['total_rows'] = $config["total_rows"];
+        $this->data['page_start'] = $page;
+        $this->data['per_page'] = $config["per_page"];
 
         $this->data['member_list'] = $this->member_model->search_member($key,$searchstatus, $searchmember, $config["per_page"], $page);
 
@@ -862,9 +896,10 @@ class Member extends CI_Controller {
         } else if (isset($_GET['key'])) {
             $key = $_GET['key'];
         }
+        $this->data['key'] = $key;
 
         if (!is_null($key)) {
-            $config['suffix'] = '?key=' . $key;
+            $config['suffix'] = '?key=' . urlencode($key);
         }
 
 
@@ -872,30 +907,41 @@ class Member extends CI_Controller {
         $config["total_rows"] = $this->member_model->count_member($key);
         $config["uri_segment"] = 4;
 
-        $config['full_tag_open'] = '<div class="pagination" style="background-color:#fff; margin-left:0px;">';
+        $config['full_tag_open'] = '<div class="pagination member-pagination">';
         $config['full_tag_close'] = '</div>';
 
         $config['num_tag_open'] = '<div class="link-pagination">';
         $config['num_tag_close'] = '</div>';
 
-        $config['prev_tag_open'] = '<div class="link-pagination">';
+        $config['prev_tag_open'] = '<div class="link-pagination nav-btn">';
         $config['prev_tag_close'] = '</div>';
 
-        $config['next_tag_open'] = '<div class="link-pagination">';
+        $config['next_tag_open'] = '<div class="link-pagination nav-btn">';
         $config['next_tag_close'] = '</div>';
 
-        $config['next_link'] = 'Next';
-        $config['prev_link'] = 'Previous';
+        $config['last_tag_open'] = '<div class="link-pagination nav-btn">';
+        $config['last_tag_close'] = '</div>';
+
+        $config['first_tag_open'] = '<div class="link-pagination nav-btn">';
+        $config['first_tag_close'] = '</div>';
+
+        $config['first_link'] = '&laquo;';
+        $config['last_link'] = '&raquo;';
+        $config['next_link'] = 'Next &rsaquo;';
+        $config['prev_link'] = '&lsaquo; Prev';
         $config['cur_tag_open'] = '<div class="link-pagination current">';
         $config['cur_tag_close'] = '</div>';
 
 
-        $config["num_links"] = 10;
+        $config["num_links"] = 5;
 
 
         $this->pagination->initialize($config);
         $page = ($this->uri->segment(4) ? $this->uri->segment(4) : 0);
         $this->data['links'] = $this->pagination->create_links();
+        $this->data['total_rows'] = $config["total_rows"];
+        $this->data['page_start'] = $page;
+        $this->data['per_page'] = $config["per_page"];
 
         $this->data['member_state'] = $this->member_model->search_member($key, '1','1',$config["per_page"], $page);
 

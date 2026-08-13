@@ -22,6 +22,7 @@
         <link href="<?php echo base_url() ?>media/css/googleapis.css" rel="stylesheet">
         <link href="<?php echo base_url(); ?>media/css/style1.css" rel="stylesheet">
         <link href="<?php echo base_url(); ?>media/css/style.css" rel="stylesheet">
+        <link href="<?php echo base_url(); ?>media/css/app-shell.css?v=20260813" rel="stylesheet">
  
         <!-- Sweet Alert -->
         <link href="<?php echo base_url(); ?>media/css/plugins/sweetalert/sweetalert.css" rel="stylesheet">
@@ -31,9 +32,22 @@
         <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/js/bootstrap.min.js"></script>
 
  <style type="text/css">
-        div#member_info img{
+        /* Keep legacy small thumbnails only when the preview is not the modern card layout */
+        #member_info > img,
+        #member_info table img {
             height: 50px;
             width: 100px;
+        }
+        #member_info .cbu-member-photo img,
+        #member_info .member-photo-wrap img {
+            width: 100% !important;
+            height: 100% !important;
+            object-fit: cover;
+            display: block;
+        }
+        #member_info .cbu-member-photo.avatar-fallback img {
+            object-fit: contain !important;
+            background: #e8f8f5;
         }
     </style>
     </head>
@@ -157,6 +171,24 @@
         
         <!-- Sweet alert -->
         <script src="<?php echo base_url(); ?>media/js/plugins/sweetalert/sweetalert.min.js"></script>
+        <script>
+            window.TAPSTEMCO_MEMBER_SEARCH = {
+                pidTitle: <?php echo json_encode(lang('member_pid')); ?>,
+                pidEmpty: <?php echo json_encode(lang('alert_pid')); ?>,
+                midTitle: <?php echo json_encode(lang('member_member_id')); ?>,
+                midEmpty: <?php echo json_encode(lang('alert_member_id')); ?>
+            };
+            window.TAPSTEMCO_PHOTO_BASE = <?php echo json_encode(base_url() . 'uploads/memberphoto/'); ?>;
+            window.TAPSTEMCO_AVATAR_BASE = <?php echo json_encode(base_url() . 'media/img/avatars/'); ?>;
+            window.TAPSTEMCO_MEMBER_STATUS = {
+                active: <?php echo json_encode(lang('member_active')); ?>,
+                inactive: <?php echo json_encode(lang('member_inactive')); ?>,
+                deleted: 'Deleted',
+                label: <?php echo json_encode(lang('member_status')); ?>
+            };
+        </script>
+        <script src="<?php echo base_url(); ?>media/js/member_search_prompt.js?v=20260812b"></script>
+        <script src="<?php echo base_url(); ?>media/js/member_avatar.js?v=20260812d"></script>
 
         <!-- Report PDF download (Download PDF buttons) -->
         <script src="<?php echo base_url(); ?>assets/js/report_pdf_download.js"></script>

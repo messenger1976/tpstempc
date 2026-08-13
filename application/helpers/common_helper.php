@@ -349,6 +349,22 @@ if (!function_exists('company_info')) {
 
 }
 
+if (!function_exists('member_avatar_url')) {
+
+    function member_avatar_url($photo = '', $gender = '') {
+        $photo = trim((string) $photo);
+        $is_placeholder = ($photo === '' || $photo === '0' || strtolower($photo) === 'avatar.gif');
+        $g = strtoupper(trim((string) $gender));
+        $is_male = ($g !== '' && substr($g, 0, 1) === 'M' && strpos($g, 'FEMALE') !== 0);
+        $default = base_url() . 'media/img/avatars/' . ($is_male ? 'male.svg' : 'female.svg');
+        if ($is_placeholder) {
+            return $default;
+        }
+        return base_url() . 'uploads/memberphoto/' . $photo;
+    }
+
+}
+
 if (!function_exists('company_info_detail')) {
 
     function company_info_detail() {
@@ -365,8 +381,15 @@ if (!function_exists('loan_status')) {
 
     function loan_status($id = null) {
         $CI = &get_instance();
+        if (isset($CI->lang)) {
+            $CI->lang->load('loan');
+        }
         $array = array(
             '' => 'All status',
+            'pending_release' => function_exists('lang') && lang('loan_lifecycle_pending_release') ? lang('loan_lifecycle_pending_release') : 'Pending Release',
+            'released_unposted' => function_exists('lang') && lang('loan_lifecycle_released_unposted') ? lang('loan_lifecycle_released_unposted') : 'Released not posted',
+            'active' => function_exists('lang') && lang('loan_lifecycle_active') ? lang('loan_lifecycle_active') : 'Active',
+            'past_due' => function_exists('lang') && lang('loan_lifecycle_past_due') ? lang('loan_lifecycle_past_due') : 'Past Due',
             '0' => 'New Loan',
             '1' => 'Evaluated',
             '2' => 'Rejected',
@@ -379,7 +402,7 @@ if (!function_exists('loan_status')) {
             'bb' => 'Beginning Balance',
         );
         if (!is_null($id)) {
-            return $array[$id];
+            return isset($array[$id]) ? $array[$id] : $id;
         }
 
         return $array;

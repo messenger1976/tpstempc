@@ -229,7 +229,7 @@ $lang['loan_product_list'] = 'Loan Product';
 $lang['loan_application'] = 'New Loan Application';
 $lang['loan_evaluation'] = 'Loan Evaluation';
 $lang['loan_approval'] = 'Loan Approval';
-$lang['loan_disbursement'] = 'Loan Disbursement';
+$lang['loan_disbursement'] = 'Loan Release';
 $lang['loan_repayment'] = 'Loan Repayment';
 $lang['loan_viewlist'] = 'Loan List';
 $lang['loan_report'] = 'Loan Reports';
@@ -268,6 +268,7 @@ $lang['ledger_trial_balance'] = 'Trial Balance';
 
 //Journal Entry
 $lang['journalentry'] = 'Journal Entry';
+$lang['void_transactions'] = 'Void Transactions';
 $lang['client_account'] = 'Client Account';
 $lang['reseller_account_list'] = 'Reseller Account List';
 

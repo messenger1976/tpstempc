@@ -28,6 +28,7 @@ class Finance extends CI_Controller {
         $this->data['current_title'] = lang('page_finance');
         $this->lang->load('setting');
         $this->lang->load('finance');
+        $this->lang->load('loan');
         $this->load->model('member_model');
         $this->load->model('finance_model');
         $this->load->model('setting_model');
@@ -763,6 +764,26 @@ class Finance extends CI_Controller {
             return;
         }
 
+        // Initial badge counts for unposted source tabs
+        $this->data['unposted_source_counts'] = $this->finance_model->get_unposted_journal_review_source_counts();
+        
+        $this->data['content'] = 'finance/journal_entry_review';
+        $this->load->view('template', $this->data);
+    }
+
+    /**
+     * Void Transactions — posted GL listing with void-with-reversal actions.
+     * Permission: Void_transactions (Module 6 Finance).
+     */
+    function void_transactions() {
+        $this->data['title'] = lang('void_transactions');
+
+        if (!has_role(6, 'Void_transactions')) {
+            $this->session->set_flashdata('warning', 'You do not have permission to access this page.');
+            redirect(current_lang() . '/dashboard', 'refresh');
+            return;
+        }
+
         $posted_date_from = trim((string) $this->input->get('posted_date_from'));
         $posted_date_to = trim((string) $this->input->get('posted_date_to'));
         if ($posted_date_from !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $posted_date_from)) {
@@ -777,7 +798,6 @@ class Finance extends CI_Controller {
             $posted_tab = 'all';
         }
 
-        // Posted to GL entries (so user can void and repost)
         $posted_entries = array();
         $posted_general = $this->finance_model->get_posted_general_journal_entries();
         foreach ($posted_general as $e) {
@@ -836,10 +856,7 @@ class Finance extends CI_Controller {
         $this->data['posted_date_to'] = $posted_date_to;
         $this->data['posted_tab'] = $posted_tab;
 
-        // Initial badge counts for unposted source tabs
-        $this->data['unposted_source_counts'] = $this->finance_model->get_unposted_journal_review_source_counts();
-        
-        $this->data['content'] = 'finance/journal_entry_review';
+        $this->data['content'] = 'finance/void_transactions';
         $this->load->view('template', $this->data);
     }
 
@@ -873,6 +890,14 @@ class Finance extends CI_Controller {
         if ($source_filter === '') {
             $source_filter = 'all';
         }
+        $date_from = trim((string) $this->input->post('date_from'));
+        $date_to = trim((string) $this->input->post('date_to'));
+        if ($date_from !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $date_from)) {
+            $date_from = '';
+        }
+        if ($date_to !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $date_to)) {
+            $date_to = '';
+        }
         $order_column_index = 3;
         $order_dir = 'desc';
         $order = $this->input->post('order');
@@ -888,7 +913,9 @@ class Finance extends CI_Controller {
                 $search,
                 $order_column_index,
                 $order_dir,
-                $source_filter
+                $source_filter,
+                $date_from,
+                $date_to
             );
 
             $data = array();
@@ -946,10 +973,11 @@ class Finance extends CI_Controller {
             : '&mdash;';
 
         $status_html = $balanced
-            ? '<span class="label label-success">Balanced</span>'
-            : '<span class="label label-danger">Unbalanced</span>';
+            ? '<span class="status-pill balanced">Balanced</span>'
+            : '<span class="status-pill unbalanced">Unbalanced</span>';
 
-        $actions = '<a href="' . site_url($view_url) . '" class="btn btn-info btn-xs" title="View Details">'
+        $actions = '<div class="action-btns">'
+            . '<a href="' . site_url($view_url) . '" class="btn btn-info btn-xs" title="View Details">'
             . '<i class="fa fa-eye"></i> View</a>';
 
         if ($is_general && $balanced) {
@@ -968,13 +996,14 @@ class Finance extends CI_Controller {
                 . ' class="btn btn-success btn-xs" title="Post to GL">'
                 . '<i class="fa fa-book"></i> Post to GL</a>';
         } elseif ($is_receipt_disburse && $is_posted) {
-            $actions .= ' <span class="label label-default">Posted to GL</span>';
+            $actions .= ' <span class="status-pill source">Posted to GL</span>';
         }
+        $actions .= '</div>';
 
         return array(
             $checkbox,
             (int) $entry->entryid,
-            '<span class="label label-default">' . htmlspecialchars($source_label, ENT_QUOTES, 'UTF-8') . '</span>',
+            '<span class="status-pill source">' . htmlspecialchars($source_label, ENT_QUOTES, 'UTF-8') . '</span>',
             date('M d, Y', strtotime($entry->entrydate)),
             htmlspecialchars($entry->description, ENT_QUOTES, 'UTF-8'),
             htmlspecialchars($entry->created_by_name, ENT_QUOTES, 'UTF-8'),
@@ -1086,7 +1115,10 @@ class Finance extends CI_Controller {
         if ($result) {
             $this->session->set_flashdata('message', 'Journal entry has been posted to General Ledger successfully.');
         } else {
-            $this->session->set_flashdata('warning', 'Failed to post to General Ledger. Entry may be unbalanced or not found. Check error logs.');
+            $detail = !empty($this->finance_model->last_post_error)
+                ? $this->finance_model->last_post_error
+                : 'Entry may be unbalanced or not found. Check error logs.';
+            $this->session->set_flashdata('warning', 'Failed to post to General Ledger. ' . $detail);
         }
         redirect(current_lang() . '/finance/journal_entry_review', 'refresh');
     }
@@ -1098,9 +1130,9 @@ class Finance extends CI_Controller {
     function void_gl_posting_general($id) {
         $encoded = $id;
         $id = decode_id($id);
-        if (!has_role(6, 'Review_journal_entry')) {
+        if (!has_role(6, 'Void_transactions')) {
             $this->session->set_flashdata('warning', 'You do not have permission to void journal entries.');
-            redirect(current_lang() . '/finance/journal_entry_review', 'refresh');
+            redirect(current_lang() . '/dashboard', 'refresh');
             return;
         }
         if (!$this->finance_model->is_journal_posted($id)) {
@@ -1131,14 +1163,14 @@ class Finance extends CI_Controller {
      */
     function void_gl_posting_journal_entry($id) {
         $id = decode_id($id);
-        if (!has_role(6, 'Review_journal_entry')) {
+        if (!has_role(6, 'Void_transactions')) {
             $this->session->set_flashdata('warning', 'You do not have permission to void journal entries.');
-            redirect(current_lang() . '/finance/journal_entry_review', 'refresh');
+            redirect(current_lang() . '/dashboard', 'refresh');
             return;
         }
         if (!$this->finance_model->is_journal_entry_posted_to_gl($id)) {
             $this->session->set_flashdata('warning', 'This entry is not posted to the General Ledger.');
-            redirect(current_lang() . '/finance/journal_entry_review', 'refresh');
+            redirect(current_lang() . '/finance/void_transactions', 'refresh');
             return;
         }
         $reason = trim((string) $this->input->post('void_reason'));
@@ -1151,22 +1183,22 @@ class Finance extends CI_Controller {
         } else {
             $this->session->set_flashdata('warning', !empty($result['message']) ? $result['message'] : 'Void failed.');
         }
-        redirect(current_lang() . '/finance/journal_entry_review', 'refresh');
+        redirect(current_lang() . '/finance/void_transactions', 'refresh');
     }
 
     /**
      * Void GL posting for multiple selected entries (batch). Expects void_ids[] = "source::encoded_id" (e.g. general_journal::xxx or journal_entry::xxx).
      */
     function void_gl_posting_batch() {
-        if (!has_role(6, 'Review_journal_entry')) {
+        if (!has_role(6, 'Void_transactions')) {
             $this->session->set_flashdata('warning', 'You do not have permission to void GL postings.');
-            redirect(current_lang() . '/finance/journal_entry_review', 'refresh');
+            redirect(current_lang() . '/dashboard', 'refresh');
             return;
         }
         $void_ids = $this->input->post('void_ids', FALSE);
         if (empty($void_ids)) {
             $this->session->set_flashdata('warning', 'No entries selected. Please select at least one posted entry to void.');
-            redirect(current_lang() . '/finance/journal_entry_review', 'refresh');
+            redirect(current_lang() . '/finance/void_transactions', 'refresh');
             return;
         }
         if (!is_array($void_ids)) {
@@ -1222,7 +1254,7 @@ class Finance extends CI_Controller {
         if ($success_count === 0 && $skip_count === 0 && $invalid_count === 0) {
             $this->session->set_flashdata('warning', 'No entries were voided. Please select at least one posted entry and try again.');
         }
-        redirect(current_lang() . '/finance/journal_entry_review', 'refresh');
+        redirect(current_lang() . '/finance/void_transactions', 'refresh');
     }
 
     function journal_entry_batch_approve() {

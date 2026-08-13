@@ -77,12 +77,19 @@ class Saving extends CI_Controller {
         $config["per_page"] = $this->session->userdata('PER_PAGE');
         
         $key = null;
-        
+        $raw_key = '';
         if (isset($_POST['key']) && $_POST['key'] != '') {
-            $explode = explode('-', $_POST['key']);
-            $key = trim($explode[0]);
+            $raw_key = trim($_POST['key']);
         } else if (isset($_GET['key']) && $_GET['key'] != '') {
-            $key = trim($_GET['key']);
+            $raw_key = trim($_GET['key']);
+        }
+        if ($raw_key !== '') {
+            if (strpos($raw_key, ' - ') !== false) {
+                $parts = explode(' - ', $raw_key);
+                $key = trim($parts[0]);
+            } else {
+                $key = $raw_key;
+            }
         }
         
         $account_type_filter = null;
@@ -133,6 +140,7 @@ class Saving extends CI_Controller {
         if (count($suffix_array) > 0) {
             $query_string = http_build_query($suffix_array, '', '&');
             $config['suffix'] = '?' . $query_string;
+            $config['first_url'] = site_url(current_lang() . '/saving/saving_account_listing') . '?' . $query_string;
         }
         
         
@@ -140,36 +148,41 @@ class Saving extends CI_Controller {
         $config["total_rows"] = $this->finance_model->count_saving_account($key, $account_type_filter, $status_filter, $gl_posted_filter);
         $config["uri_segment"] = 4;
         
-        $config['full_tag_open'] = '<div class="pagination" style="background-color:#fff; margin-left:0px;">';
+        $config['full_tag_open'] = '<div class="pagination member-pagination">';
         $config['full_tag_close'] = '</div>';
         
         $config['num_tag_open'] = '<div class="link-pagination">';
         $config['num_tag_close'] = '</div>';
         
-        $config['prev_tag_open'] = '<div class="link-pagination">';
+        $config['prev_tag_open'] = '<div class="link-pagination nav-btn">';
         $config['prev_tag_close'] = '</div>';
         
-        $config['next_tag_open'] = '<div class="link-pagination">';
+        $config['next_tag_open'] = '<div class="link-pagination nav-btn">';
         $config['next_tag_close'] = '</div>';
         
-        $config['last_tag_open'] = '<div class="link-pagination">';
+        $config['last_tag_open'] = '<div class="link-pagination nav-btn">';
         $config['last_tag_close'] = '</div>';
         
-        $config['first_tag_open'] = '<div class="link-pagination">';
+        $config['first_tag_open'] = '<div class="link-pagination nav-btn">';
         $config['first_tag_close'] = '</div>';
         
-        $config['next_link'] = 'Next';
-        $config['prev_link'] = 'Previous';
+        $config['first_link'] = '&laquo;';
+        $config['last_link'] = '&raquo;';
+        $config['next_link'] = 'Next &rsaquo;';
+        $config['prev_link'] = '&lsaquo; Prev';
         $config['cur_tag_open'] = '<div class="link-pagination current">';
         $config['cur_tag_close'] = '</div>';
         
         
-        $config["num_links"] = 10;
+        $config["num_links"] = 5;
         
         
         $this->pagination->initialize($config);
         $page = ($this->uri->segment(4) ? $this->uri->segment(4) : 0);
         $this->data['links'] = $this->pagination->create_links();
+        $this->data['total_rows'] = $config["total_rows"];
+        $this->data['page_start'] = $page;
+        $this->data['per_page'] = $config["per_page"];
         
         $this->data['saving_accounts'] = $this->finance_model->search_saving_account($key, $config["per_page"], $page, $account_type_filter, $status_filter, $gl_posted_filter);
         $this->data['total_savings_amount'] = $this->finance_model->get_total_savings_amount($key, $account_type_filter, $status_filter, $gl_posted_filter);
@@ -636,6 +649,10 @@ class Saving extends CI_Controller {
         }
         
         $this->data['account_list'] = $this->finance_model->saving_account_list()->result();
+        $this->data['member_accounts'] = array();
+        if (!empty($this->data['account_info']) && isset($this->data['account_info']->RFID)) {
+            $this->data['member_accounts'] = $this->finance_model->list_member_saving_accounts($this->data['account_info']->RFID);
+        }
         $this->data['content'] = 'saving/edit_account';
         $this->load->view('template', $this->data);
     }
@@ -956,36 +973,46 @@ class Saving extends CI_Controller {
         if (count($suffix_array) > 0) {
             $query_string = http_build_query($suffix_array, '', '&');
             $config['suffix'] = '?' . $query_string;
+            $config['first_url'] = site_url(current_lang() . '/saving/transaction_search') . '?' . $query_string;
         }
 
         $config["base_url"] = site_url(current_lang() . '/saving/transaction_search/');
         $config["total_rows"] = $this->finance_model->count_transaction($key, $from, $upto, $trans_type, $account_type_filter);
         $config["uri_segment"] = 4;
 
-        $config['full_tag_open'] = '<div class="pagination" style="background-color:#fff; margin-left:0px;">';
+        $config['full_tag_open'] = '<div class="pagination member-pagination">';
         $config['full_tag_close'] = '</div>';
 
         $config['num_tag_open'] = '<div class="link-pagination">';
         $config['num_tag_close'] = '</div>';
 
-        $config['prev_tag_open'] = '<div class="link-pagination">';
+        $config['prev_tag_open'] = '<div class="link-pagination nav-btn">';
         $config['prev_tag_close'] = '</div>';
 
-        $config['next_tag_open'] = '<div class="link-pagination">';
+        $config['next_tag_open'] = '<div class="link-pagination nav-btn">';
         $config['next_tag_close'] = '</div>';
 
-        $config['next_link'] = 'Next';
-        $config['prev_link'] = 'Previous';
+        $config['last_tag_open'] = '<div class="link-pagination nav-btn">';
+        $config['last_tag_close'] = '</div>';
+
+        $config['first_tag_open'] = '<div class="link-pagination nav-btn">';
+        $config['first_tag_close'] = '</div>';
+
+        $config['first_link'] = '&laquo;';
+        $config['last_link'] = '&raquo;';
+        $config['next_link'] = 'Next &rsaquo;';
+        $config['prev_link'] = '&lsaquo; Prev';
         $config['cur_tag_open'] = '<div class="link-pagination current">';
         $config['cur_tag_close'] = '</div>';
 
-
-        $config["num_links"] = 10;
-
+        $config["num_links"] = 5;
 
         $this->pagination->initialize($config);
         $page = ($this->uri->segment(4) ? $this->uri->segment(4) : 0);
         $this->data['links'] = $this->pagination->create_links();
+        $this->data['total_rows'] = (int) $config["total_rows"];
+        $this->data['page_start'] = (int) $page;
+        $this->data['per_page'] = (int) $config["per_page"];
 
         $transactions = array();
         try {
@@ -1146,6 +1173,49 @@ class Saving extends CI_Controller {
             
             echo $value->account . ' - [' . $value->old_members_acct . '] ' . $value->firstname . ' ' . $value->middlename . ' ' . $value->lastname . $type_label . "\n";
         }
+    }
+
+    function autosuggest_account_list() {
+        header('Content-Type: application/json; charset=UTF-8');
+        $q = isset($_GET['q']) ? trim($_GET['q']) : '';
+        if ($q === '') {
+            echo json_encode(array());
+            return;
+        }
+
+        $pin = current_user()->PIN;
+        $like = $this->db->escape_like_str($q);
+        $this->db->select('ma.account, ma.old_members_acct, m.firstname, m.middlename, m.lastname, m.member_id, sat.name as account_type_name, sat.description as account_type_desc, sat.account_setup');
+        $this->db->from('members_account ma');
+        $this->db->join('members m', 'ma.RFID = m.PID', 'inner');
+        $this->db->join('saving_account_type sat', 'ma.account_cat = sat.account AND sat.PIN = ma.PIN', 'left');
+        $this->db->where('m.PIN', $pin);
+        $this->db->where("(ma.account LIKE '" . $like . "%' OR ma.old_members_acct LIKE '" . $like . "%' OR m.firstname LIKE '" . $like . "%' OR m.lastname LIKE '" . $like . "%' OR m.member_id LIKE '" . $like . "%')", NULL, FALSE);
+        $this->db->order_by('ma.account', 'ASC');
+        $this->db->limit(15);
+        $rows = $this->db->get()->result();
+
+        $out = array();
+        foreach ($rows as $row) {
+            $type = $this->detect_member_account_type($row->account_type_name, $row->account_type_desc, $row->account_setup);
+            $name = trim(preg_replace('/\s+/', ' ', $row->firstname . ' ' . $row->middlename . ' ' . $row->lastname));
+            $type_label = '';
+            if ($type === 'special') {
+                $type_label = 'Special';
+            } else if ($type === 'mso') {
+                $type_label = 'MSO';
+            }
+            $out[] = array(
+                'account' => $row->account,
+                'old_account' => $row->old_members_acct,
+                'member_id' => $row->member_id,
+                'name' => $name,
+                'type' => $type,
+                'type_label' => $type_label,
+                'display_account' => $row->old_members_acct ? $row->old_members_acct : $row->account,
+            );
+        }
+        echo json_encode($out);
     }
 
     function autosuggest_account_all() {
@@ -1428,6 +1498,42 @@ class Saving extends CI_Controller {
             $status['error'] = $error;
             echo json_encode($status);
         }
+    }
+
+    function member_saving_accounts() {
+        header('Content-Type: application/json; charset=UTF-8');
+        $pid = trim((string) $this->input->post('pid'));
+        $member_id = trim((string) $this->input->post('member_id'));
+
+        if ($pid === '' && $member_id !== '') {
+            $member = $this->member_model->member_basic_info(null, null, $member_id)->row();
+            if ($member && isset($member->PID) && $member->PID !== '') {
+                $pid = $member->PID;
+            }
+        }
+
+        if ($pid === '') {
+            echo json_encode(array('success' => 'N', 'accounts' => array()));
+            return;
+        }
+
+        $rows = $this->finance_model->list_member_saving_accounts($pid);
+        $accounts = array();
+        foreach ($rows as $row) {
+            $status_value = isset($row->status) ? $row->status : '1';
+            $is_active = ($status_value == '1' || $status_value === 1 || $status_value === null || $status_value === '');
+            $accounts[] = array(
+                'account' => $row->account,
+                'old_account' => $row->old_members_acct,
+                'type' => $row->account_type_name ? $row->account_type_name : '',
+                'balance' => number_format((float) $row->balance, 2, '.', ','),
+                'virtual_balance' => number_format((float) $row->virtual_balance, 2, '.', ','),
+                'status' => $is_active ? lang('account_status_active') : lang('account_status_inactive'),
+                'active' => $is_active ? 1 : 0,
+            );
+        }
+
+        echo json_encode(array('success' => 'Y', 'accounts' => $accounts));
     }
     
     function search_member_share() {

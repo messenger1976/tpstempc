@@ -543,16 +543,21 @@ jQuery.autocomplete = function(input, options) {
                         }else if(options.column == 'MID'){
                             $("#"+options.secondID).val(userdata["PID"]); 
                         }
-                        var output = '<div style="border:1px solid  #ccc;font-size:15px;"><table style="width:100%;"><tr><td style="width:70%;">';
-                        output += '<div style="border-bottom:1px dashed #ccc;"><strong>'+options.Name+' : </strong> '+userdata["firstname"]+' '+userdata["middlename"]+' '+userdata["lastname"]+'</div>';
-                        output += '<div style="border-bottom:1px dashed #ccc;"><strong>'+options.gender+' : </strong> '+userdata["gender"]+'</div>';
-                        output += '<div style="border-bottom:1px dashed #ccc;"><strong>'+options.dob+' : </strong> '+userdata["dob"]+'</div>';
-                        output += '<div style="border-bottom:1px dashed #ccc;"><strong>'+options.joindate+' : </strong> '+userdata["joiningdate"]+'</div>';
-                        output += '<div style="border-bottom:1px dashed #ccc;"><strong>'+options.phone1+': </strong> '+contact["phone1"]+'</div>';
-                        output += '<div style="border-bottom:1px dashed #ccc;"><strong>'+options.phone2+' : </strong> '+contact["phone2"]+'</div>';
-                        output += '<div style="border-bottom:1px dashed #ccc;"><strong>'+options.email+' : </strong> '+contact["email"]+'</div>';
-                        output +='</td><td>  <img style=" height:120px;" src="'+options.photourl+userdata["photo"].toString()+'"/></td></tr></table>       </div>';
-                        output += '<br/><br/><div style="border-bottom:1px dashed #ccc; font-size:25px;"><strong>'+options.balance_share+' : </strong> '+balance+'</div>';
+                        var photo = userdata["photo"] ? userdata["photo"].toString() : '';
+                        var fullName = (userdata["firstname"] || '') + ' ' + (userdata["middlename"] || '') + ' ' + (userdata["lastname"] || '');
+                        var output = '<div class="cbu-member-card">';
+                        output += '<div class="cbu-member-photo"><img src="' + options.photourl + photo + '" alt=""/></div>';
+                        output += '<h3 class="cbu-member-name">' + fullName + '</h3>';
+                        output += '<ul class="cbu-member-details">';
+                        output += '<li><span class="lbl">' + options.gender + '</span><span class="val">' + (userdata["gender"] || '') + '</span></li>';
+                        output += '<li><span class="lbl">' + options.dob + '</span><span class="val">' + (userdata["dob"] || '') + '</span></li>';
+                        output += '<li><span class="lbl">' + options.joindate + '</span><span class="val">' + (userdata["joiningdate"] || '') + '</span></li>';
+                        output += '<li><span class="lbl">' + options.phone1 + '</span><span class="val">' + (contact["phone1"] || '') + '</span></li>';
+                        output += '<li><span class="lbl">' + options.phone2 + '</span><span class="val">' + (contact["phone2"] || '') + '</span></li>';
+                        output += '<li><span class="lbl">' + options.email + '</span><span class="val">' + (contact["email"] || '') + '</span></li>';
+                        output += '</ul>';
+                        output += '<div class="cbu-balance"><span class="lbl">' + options.balance_share + '</span><span class="val">' + balance + '</span></div>';
+                        output += '</div>';
                         $('#member_info').html(output);   
                     }
                         

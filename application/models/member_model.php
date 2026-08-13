@@ -378,6 +378,33 @@ class Member_Model extends CI_Model {
         return $this->db->query($sql)->result();
     }
 
+    function suggest_members($q, $searchstatus = null, $searchmember = null, $limit = 15) {
+        $pin = current_user()->PIN;
+        $q = trim((string) $q);
+        if ($q === '') {
+            return array();
+        }
+
+        $like = $this->db->escape_like_str($q);
+        $this->db->select('id, PID, member_id, firstname, middlename, lastname, status, none_member');
+        $this->db->from('members');
+        $this->db->where('PIN', $pin);
+        $this->db->where('status !=', 2);
+        $this->db->where("(PID LIKE '%" . $like . "%' ESCAPE '!' OR member_id LIKE '%" . $like . "%' ESCAPE '!' OR firstname LIKE '%" . $like . "%' ESCAPE '!' OR middlename LIKE '%" . $like . "%' ESCAPE '!' OR lastname LIKE '%" . $like . "%' ESCAPE '!' OR CONCAT(IFNULL(firstname,''),' ',IFNULL(middlename,''),' ',IFNULL(lastname,'')) LIKE '%" . $like . "%' ESCAPE '!')", null, false);
+
+        if (!is_null($searchstatus) && $searchstatus !== '') {
+            $this->db->where('status', (int) $searchstatus);
+        }
+        if (!is_null($searchmember) && $searchmember !== '') {
+            $none_member = ($searchmember == 1) ? 0 : 1;
+            $this->db->where('none_member', $none_member);
+        }
+
+        $this->db->order_by('member_id', 'asc');
+        $this->db->limit((int) $limit);
+        return $this->db->get()->result();
+    }
+
     function soft_delete_member($id) {
         $pin = current_user()->PIN;
         $this->db->where('id', $id);

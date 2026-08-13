@@ -39,10 +39,31 @@ $lang['loan_supporting_document_attach'] = "Attach";
 $lang['loan_supporting_document_doc'] = "Doc";
 $lang['loan_supporting_document_remove'] = "Remove";
 $lang['loan_supporting_document_view'] = "Download";
+$lang['loan_supporting_document_upload_failed'] = "The supporting document could not be uploaded. Check the file size and try again.";
+$lang['loan_supporting_document_hint'] = "Choose a file, then click Save. Uploaded files appear in the list above. Document comment is optional.";
+$lang['loan_supporting_document_list'] = "Uploaded documents";
 
 //guarantor
 $lang['loan_quarantor_name'] = 'Guarantor Name';
+$lang['loan_quarantor_name_placeholder'] = 'Search by Member ID or Name...';
 $lang['loan_quarantor_relationship'] = 'Relationship';
+$lang['loan_quarantor_relationship_other'] = 'Specify relationship';
+$lang['loan_quarantor_relationship_options'] = array(
+    'Spouse' => 'Spouse',
+    'Father' => 'Father',
+    'Mother' => 'Mother',
+    'Son' => 'Son',
+    'Daughter' => 'Daughter',
+    'Brother' => 'Brother',
+    'Sister' => 'Sister',
+    'Uncle' => 'Uncle',
+    'Aunt' => 'Aunt',
+    'Cousin' => 'Cousin',
+    'Friend' => 'Friend',
+    'Colleague' => 'Colleague',
+    'Relative' => 'Relative',
+    'Others' => 'Others',
+);
 $lang['loan_quarantor_asset'] = 'Declared assets';
 $lang['loan_quarantor_declaration'] = 'Guarantor declaration';
 $lang['loan_quarantor_attachment'] = 'Attachment';
@@ -72,30 +93,44 @@ $lang['loan_edit'] = 'Edit Loan Information';
 
 $lang['evaluation_comment'] = 'Evaluation Comment';
 $lang['loan_status'] = 'Status';
+$lang['loan_lifecycle_pending_release'] = 'Pending Release';
+$lang['loan_lifecycle_released_unposted'] = 'Released not posted';
+$lang['loan_lifecycle_active'] = 'Active';
+$lang['loan_lifecycle_past_due'] = 'Past Due';
 $lang['loan_comment'] = 'Comment';
 $lang['loan_recorder'] = 'Recorder';
 $lang['loan_evaluated_test'] = 'Save Information';
 $lang['loan_evaluation_error'] = 'Some error exist in submited data, Scroll down to see more details';
 
 $lang['loan_approval_link'] = 'Approve';
+$lang['loan_approval_list'] = 'Loan Approval';
 $lang['loan_approval_inaction'] = 'Approve Loan';
 $lang['loan_approval_comment'] = 'Approve Comment';
 
-$lang['loan_disburse_inaction'] = 'Loan Disbursement';
+$lang['loan_disburse_inaction'] = 'Loan Release';
 $lang['loan_disburse_info'] = 'Loan Disbursement Informations';
-$lang['loan_disburse_link'] = 'Disburse';
+$lang['loan_disburse_link'] = 'Release';
 $lang['loan_disburse_payment_method'] = 'Payment Method';
 $lang['loan_disburse_line_items'] = 'Accounting Entries';
-$lang['loan_disburse_line_help'] = 'Debit: Loan account (principal). Credit: Source account (from payment method). With offset, credit old loan accounts and net cash only. Debits must equal credits.';
+$lang['loan_disburse_line_help'] = 'Prepare the release entry that will later populate Cash Disbursement. Debit: Loan account (principal). Credit: deductions, offset balances, and net cash. Debits must equal credits.';
 $lang['loan_disburse_entries_required'] = 'Please add at least one accounting line with amount.';
 $lang['loan_disburse_no'] = 'Disbursement No.';
 $lang['loan_disburse_no_exists'] = 'This Disbursement No. already exists.';
 $lang['loan_disburse_date'] = 'Disbursement Date';
 $lang['loan_print_disbursement'] = 'Print Disbursement';
+$lang['loan_void_disbursement'] = 'Void Disbursement';
+$lang['loan_void_disbursement_confirm'] = 'Void this loan disbursement? This will reverse the Loan Disbursed GL entry and any Savings/Share deduction sub-ledgers from the release, delete the schedule, and mark the loan as not disbursed so you can use Loan Release → Cash Disbursement. Continue only if there are no repayments.';
 $lang['loan_disbursement_print'] = 'Loan Disbursement Print';
 $lang['loan_disbursement_statement'] = 'Loan Disbursement Statement';
 $lang['loan_disbursement_voucher'] = 'Loan Disbursement Voucher';
 $lang['loan_release_loan'] = 'Release Loan';
+$lang['loan_release_exists'] = 'Loan already has a pending or completed release record.';
+$lang['loan_release_not_approved'] = 'This loan is not approved for release.';
+$lang['loan_release_already_disbursed'] = 'This loan is already marked as disbursed.';
+$lang['loan_release_linked_to_cd'] = 'This loan release is already linked to a Cash Disbursement. Continue from Finance → Cash Disbursement (or Journal Entry Review to post).';
+$lang['loan_release_editing_pending'] = 'Editing an existing pending release. Save updates the worksheet for Cash Disbursement.';
+$lang['loan_release_saved'] = 'Loan release saved and is now pending cash disbursement.';
+$lang['loan_offset_pending'] = 'Offset queued: %d loan(s) totaling %s will be settled when payout is posted.';
 $lang['loan_offset_section'] = 'Offset Existing Loan(s) / Reloan';
 $lang['loan_offset_help'] = 'Select active loan(s) to settle from this new loan. Old loans will be closed automatically. Cash to the member = new loan amount minus total offset. Accounting lines update when you tick a loan.';
 $lang['loan_offset_principal'] = 'Principal Outstanding';
@@ -107,7 +142,7 @@ $lang['loan_offset_invalid_loan'] = 'One of the selected offset loans is invalid
 $lang['loan_offset_settle_fail'] = 'Failed to close an offset loan. Disbursement was cancelled.';
 $lang['loan_offset_success'] = 'Offset applied: %d loan(s) closed totaling %s.';
 $lang['loan_disburse_deductions'] = 'Loan Proceeds Deductions';
-$lang['loan_disburse_deductions_help'] = 'Enter deduction amounts to withhold from loan proceeds. Accounting lines update automatically. Net cash to member = Loan amount − deductions − offsets (if any). Leave amount blank or 0 to skip a deduction. Savings and Paid-up Share credits also update the member sub-ledgers on Save.';
+$lang['loan_disburse_deductions_help'] = 'Enter deduction amounts to withhold from loan proceeds. Accounting lines update automatically. Net cash to member = Loan amount − deductions − offsets (if any). Leave amount blank or 0 to skip a deduction. Savings and Paid-up Share effects are applied when the linked Cash Disbursement is posted.';
 $lang['loan_disburse_deduction_amount'] = 'Amount';
 $lang['loan_disburse_deductions_total'] = 'Total Deductions';
 $lang['loan_disburse_deductions_exceed'] = 'Total deductions (and offsets) exceed the loan amount. Reduce deductions or offsets.';
@@ -141,6 +176,7 @@ $lang['loan_repay_amount_insufficient'] = 'Amount is not enough to apply this pa
 $lang['loan_repay_use_suggested'] = 'Use suggested amount';
 $lang['loan_repay_penalty_months'] = 'Penalty months';
 $lang['loan_repay_suggested'] = 'Suggested payment';
+$lang['loan_repay_pending_cash_receipt'] = 'This loan already has an unposted Cash Receipt (%s). Post or delete that receipt before collecting here.';
 $lang['loan_collection_notice'] = 'Loan Collection Notice';
 $lang['loan_collection_notice_print'] = 'Print Collection Notice';
 $lang['loan_collection_notice_as_of'] = 'Amount due as of';
@@ -236,6 +272,8 @@ $lang['loan_beginning_balance_activate_no_principal'] = 'Cannot activate: princi
 $lang['loan_beginning_balance_activate_incomplete_terms'] = 'Cannot activate: set Term and/or Monthly Amortization on the beginning balance first';
 $lang['loan_beginning_balance_cannot_void_activated'] = 'Cannot void a beginning balance that has already been activated as a loan';
 $lang['loan_beginning_balance_activated'] = 'Activated';
+$lang['loan_beginning_balance_manage'] = 'Open Beginning Balance';
+$lang['loan_beginning_balance_detail_redirect'] = 'This loan ID is a beginning balance that has not been activated yet. Open it from Loan Beginning Balances, then Activate as Loan to use Details / Ledger.';
 $lang['loan_ledger_beginning_balance'] = 'Beginning Balance (Opening)';
 $lang['export_to_excel'] = 'Export to Excel';
 

@@ -11,6 +11,102 @@ class Cash_receipt_model extends CI_Model {
         $this->load->model('payment_method_config_model');
     }
 
+    function ensure_received_from_columns() {
+        if (!$this->db->table_exists('cash_receipts')) {
+            return;
+        }
+        $columns = array(
+            'received_from_type' => "VARCHAR(32) NULL DEFAULT NULL",
+            'loan_repayment_lid' => "VARCHAR(50) NULL DEFAULT NULL",
+            'loan_repayment_receipt' => "VARCHAR(50) NULL DEFAULT NULL",
+            'loan_repayment_applied' => "TINYINT(1) NOT NULL DEFAULT 0",
+        );
+        foreach ($columns as $col => $definition) {
+            if (!$this->db->query("SHOW COLUMNS FROM cash_receipts LIKE '" . $this->db->escape_str($col) . "'")->row()) {
+                $this->db->query("ALTER TABLE cash_receipts ADD COLUMN `$col` $definition");
+            }
+        }
+    }
+
+    /**
+     * Unposted (not yet applied) Cash Receipt tagged as Loan Repayment for this loan.
+     */
+    function get_unposted_loan_repayment_for_loan($lid, $exclude_id = null) {
+        $this->ensure_received_from_columns();
+        $lid = trim((string) $lid);
+        if ($lid === '' || !$this->db->table_exists('cash_receipts')) {
+            return null;
+        }
+        $pin = current_user()->PIN;
+        $this->db->where('PIN', $pin);
+        $this->db->where('received_from_type', 'loan_repayment');
+        $this->db->where('loan_repayment_lid', $lid);
+        $this->db->where('(cancelled IS NULL OR cancelled = 0)', null, false);
+        if ($this->db->query("SHOW COLUMNS FROM cash_receipts LIKE 'loan_repayment_applied'")->row()) {
+            $this->db->where('(loan_repayment_applied IS NULL OR loan_repayment_applied = 0)', null, false);
+        }
+        if ($exclude_id) {
+            $this->db->where('id !=', (int) $exclude_id);
+        }
+        $this->db->order_by('id', 'DESC');
+        $this->db->limit(1);
+        return $this->db->get('cash_receipts')->row();
+    }
+
+    function get_cash_receipt_by_loan_repayment_receipt($internal_receipt) {
+        $this->ensure_received_from_columns();
+        $internal_receipt = trim((string) $internal_receipt);
+        if ($internal_receipt === '' || !$this->db->query("SHOW COLUMNS FROM cash_receipts LIKE 'loan_repayment_receipt'")->row()) {
+            return null;
+        }
+        $this->db->where('PIN', current_user()->PIN);
+        $this->db->where('loan_repayment_receipt', $internal_receipt);
+        $this->db->limit(1);
+        return $this->db->get('cash_receipts')->row();
+    }
+
+    function mark_loan_repayment_applied($cash_receipt_id, $internal_receipt) {
+        $this->ensure_received_from_columns();
+        $cash_receipt_id = (int) $cash_receipt_id;
+        if ($cash_receipt_id <= 0) {
+            return false;
+        }
+        $data = array();
+        if ($this->db->query("SHOW COLUMNS FROM cash_receipts LIKE 'loan_repayment_applied'")->row()) {
+            $data['loan_repayment_applied'] = 1;
+        }
+        if ($this->db->query("SHOW COLUMNS FROM cash_receipts LIKE 'loan_repayment_receipt'")->row()) {
+            $data['loan_repayment_receipt'] = $internal_receipt;
+        }
+        if (empty($data)) {
+            return true;
+        }
+        $this->db->where('id', $cash_receipt_id);
+        $this->db->where('PIN', current_user()->PIN);
+        return $this->db->update('cash_receipts', $data);
+    }
+
+    function clear_loan_repayment_applied($cash_receipt_id) {
+        $this->ensure_received_from_columns();
+        $cash_receipt_id = (int) $cash_receipt_id;
+        if ($cash_receipt_id <= 0) {
+            return false;
+        }
+        $data = array();
+        if ($this->db->query("SHOW COLUMNS FROM cash_receipts LIKE 'loan_repayment_applied'")->row()) {
+            $data['loan_repayment_applied'] = 0;
+        }
+        if ($this->db->query("SHOW COLUMNS FROM cash_receipts LIKE 'loan_repayment_receipt'")->row()) {
+            $data['loan_repayment_receipt'] = null;
+        }
+        if (empty($data)) {
+            return true;
+        }
+        $this->db->where('id', $cash_receipt_id);
+        $this->db->where('PIN', current_user()->PIN);
+        return $this->db->update('cash_receipts', $data);
+    }
+
     /**
      * Get all cash receipts
      */
@@ -44,6 +140,7 @@ class Cash_receipt_model extends CI_Model {
      * Get single cash receipt
      */
     function get_cash_receipt($id) {
+        $this->ensure_received_from_columns();
         $this->db->where('PIN', current_user()->PIN);
         $this->db->where('id', $id);
         
@@ -80,6 +177,7 @@ class Cash_receipt_model extends CI_Model {
      * Create new cash receipt
      */
     function create_cash_receipt($receipt_data, $line_items) {
+        $this->ensure_received_from_columns();
         // Insert receipt header
         $this->db->insert('cash_receipts', $receipt_data);
         
@@ -149,7 +247,8 @@ class Cash_receipt_model extends CI_Model {
         }
 
         // Update remaining receipt header fields (payment_method already done above)
-        $allowed = array('receipt_no', 'receipt_date', 'received_from', 'cheque_no', 'bank_name', 'description', 'total_amount', 'cancelled', 'updated_at');
+        $this->ensure_received_from_columns();
+        $allowed = array('receipt_no', 'receipt_date', 'received_from', 'received_from_type', 'loan_repayment_lid', 'loan_repayment_receipt', 'loan_repayment_applied', 'cheque_no', 'bank_name', 'description', 'total_amount', 'cancelled', 'updated_at');
         $set_parts = array();
         $params = array();
         foreach ($allowed as $col) {

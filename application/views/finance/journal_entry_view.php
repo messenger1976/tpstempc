@@ -214,7 +214,7 @@ if (isset($message) && !empty($message)) {
                                     <div class="alert alert-success">
                                         <i class="fa fa-check-circle"></i> This journal entry has already been posted to General Ledger.
                                     </div>
-                                    <?php if (has_role(6, 'Review_journal_entry')): ?>
+                                    <?php if (has_role(6, 'Void_transactions')): ?>
                                         <form method="post" action="<?php echo site_url(current_lang() . '/finance/void_gl_posting_general/' . $id); ?>" style="display:inline-block; max-width:480px;"
                                               onsubmit="return confirm('Void this journal by creating a reversing entry?\n\nThis will:\n1) Create a new reversing JE (debits/credits swapped)\n2) Post it to GL\n3) Reverse any CBU sub-ledger links\n\nOriginal GL lines are kept for audit.');">
                                             <div class="form-group" style="margin-bottom:8px;">

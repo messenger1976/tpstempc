@@ -1,4 +1,20 @@
 <?php $this->load->view('loan/list_page_styles'); ?>
+<style>
+.member-list-page .member-table > thead > tr > th,
+.member-list-page .member-table > tbody > tr > td {
+    border: 1px solid #e7eaec !important;
+}
+.member-list-page .member-table > thead > tr > th {
+    border-top: 0 !important;
+}
+.member-list-page .member-table > thead > tr > th:not(:first-child),
+.member-list-page .member-table > tbody > tr > td:not(:first-child) {
+    border-left: 0 !important;
+}
+.member-list-page .member-table > tbody > tr:hover td {
+    box-shadow: none;
+}
+</style>
 
 <?php
 $search_key = isset($search_key) ? $search_key : (isset($_GET['key']) ? $_GET['key'] : (isset($_POST['key']) ? $_POST['key'] : ''));
@@ -64,7 +80,7 @@ $search_key = isset($search_key) ? $search_key : (isset($_GET['key']) ? $_GET['k
             </div>
         </div>
         <div class="table-responsive">
-            <table class="table table-striped member-table">
+            <table class="table table-striped table-bordered member-table">
                 <thead>
                     <tr>
                         <th><?php echo lang('loan_LID'); ?></th>

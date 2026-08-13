@@ -97,6 +97,11 @@ $can_edit = ($loaninfo && isset($loaninfo->edit) && (string) $loaninfo->edit ===
     height: 36px;
 }
 .loan-app-page textarea.form-control { height: auto; min-height: 80px; }
+.loan-app-page input[type="file"].form-control {
+    height: auto;
+    padding: 6px;
+    line-height: 1.4;
+}
 .loan-app-page .form-control:focus {
     border-color: #1ab394;
     box-shadow: 0 0 0 2px rgba(26,179,148,0.15);
@@ -408,6 +413,7 @@ $can_edit = ($loaninfo && isset($loaninfo->edit) && (string) $loaninfo->edit ===
                         </div>
                     </div>
 
+                    <div class="section-divider"><?php echo lang('loan_supporting_document_list'); ?></div>
                     <?php if (count($supporting_doc) > 0) { ?>
                         <div class="docs-table table-responsive">
                             <table class="table table-striped">
@@ -424,7 +430,7 @@ $can_edit = ($loaninfo && isset($loaninfo->edit) && (string) $loaninfo->edit ===
                                     <?php foreach ($supporting_doc as $value) { ?>
                                         <tr>
                                             <td><?php echo htmlspecialchars($value->comment, ENT_QUOTES, 'UTF-8'); ?></td>
-                                            <td><?php echo anchor(base_url() . 'uploads/document/' . $value->file, lang('loan_supporting_document_view'), 'class="btn-link-action" target="_blank"'); ?></td>
+                                            <td><?php echo anchor(base_url() . 'uploads/document/' . rawurlencode($value->file), lang('loan_supporting_document_view'), 'class="btn-link-action" target="_blank"'); ?></td>
                                             <?php if ($can_edit) { ?>
                                                 <td><?php echo anchor(current_lang() . '/loan/deletedoc/' . $loanid . '/' . $value->id, lang('loan_supporting_document_remove'), 'class="btn-link-danger"'); ?></td>
                                             <?php } ?>
@@ -432,6 +438,10 @@ $can_edit = ($loaninfo && isset($loaninfo->edit) && (string) $loaninfo->edit ===
                                     <?php } ?>
                                 </tbody>
                             </table>
+                        </div>
+                    <?php } else { ?>
+                        <div class="empty-loans" style="padding: 12px 0 18px; text-align: left;">
+                            <?php echo lang('loan_doc_not_found'); ?>
                         </div>
                     <?php } ?>
 
@@ -449,6 +459,9 @@ $can_edit = ($loaninfo && isset($loaninfo->edit) && (string) $loaninfo->edit ===
                         <label class="col-lg-4 control-label"><?php echo lang('loan_supporting_document_attach'); ?> :</label>
                         <div class="col-lg-7">
                             <input name="file" type="file" class="form-control"/>
+                            <div class="help-block" style="margin-top: 6px; color: #888; font-size: 12px;">
+                                <?php echo lang('loan_supporting_document_hint'); ?>
+                            </div>
                             <?php
                             if (isset($logo_error)) {
                                 echo '<div class="error_message">' . $logo_error . '</div>';

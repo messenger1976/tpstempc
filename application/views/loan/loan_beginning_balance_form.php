@@ -55,12 +55,18 @@ $list_url = site_url(current_lang() . '/loan/loan_beginning_balance_list' . ($is
 .loan-bb-page .cbu-panel .panel-head {
     display: flex;
     align-items: center;
+    justify-content: space-between;
     gap: 10px;
     padding: 14px 20px;
     background: #fafbfc;
     border-bottom: 1px solid #e7eaec;
 }
-.loan-bb-page .cbu-panel .panel-head i {
+.loan-bb-page .cbu-panel .panel-head .head-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.loan-bb-page .cbu-panel .panel-head i.icon-badge {
     width: 30px;
     height: 30px;
     border-radius: 50%;
@@ -74,6 +80,27 @@ $list_url = site_url(current_lang() . '/loan/loan_beginning_balance_list' . ($is
     margin: 0;
     font-size: 15px;
     font-weight: 700;
+    color: #2f4050;
+}
+.loan-bb-page .cbu-panel .panel-head .btn {
+    border-radius: 6px;
+    font-weight: 600;
+}
+.loan-bb-page .cbu-actions .btn {
+    margin-right: 8px;
+    padding: 9px 20px;
+}
+.loan-bb-page .cbu-actions .btn-primary {
+    box-shadow: 0 2px 6px rgba(26,179,148,0.25);
+}
+.loan-bb-page .cbu-actions .btn-default {
+    background: #fff;
+    border: 1px solid #e1e5e8;
+    color: #676a6c;
+}
+.loan-bb-page .cbu-actions .btn-default:hover {
+    background: #f8fafb;
+    border-color: #c5c9cc;
     color: #2f4050;
 }
 .loan-bb-page .cbu-panel .panel-body { padding: 22px 20px 12px; overflow: visible; }
@@ -307,9 +334,9 @@ $list_url = site_url(current_lang() . '/loan/loan_beginning_balance_list' . ($is
 }
 </style>
 
-<?php echo form_open($form_action, 'class="form-horizontal loan-bb-page"'); ?>
+<?php echo form_open($form_action, 'class="form-horizontal"'); ?>
 
-<div class="col-lg-12">
+<div class="col-lg-12 loan-bb-page">
     <?php
     if (isset($message) && !empty($message)) {
         echo '<div class="cbu-alert success displaymessage">' . $message . '</div>';
@@ -326,8 +353,13 @@ $list_url = site_url(current_lang() . '/loan/loan_beginning_balance_list' . ($is
         <div class="col-lg-7">
             <div class="cbu-panel">
                 <div class="panel-head">
-                    <i class="fa fa-<?php echo $is_edit ? 'edit' : 'plus'; ?>"></i>
-                    <h4><?php echo $is_edit ? lang('loan_beginning_balance_edit') : lang('loan_beginning_balance_create'); ?></h4>
+                    <div class="head-left">
+                        <i class="fa fa-<?php echo $is_edit ? 'edit' : 'plus'; ?> icon-badge"></i>
+                        <h4><?php echo $is_edit ? lang('loan_beginning_balance_edit') : lang('loan_beginning_balance_create'); ?></h4>
+                    </div>
+                    <a href="<?php echo $list_url; ?>" class="btn btn-default btn-sm">
+                        <i class="fa fa-arrow-left"></i> <?php echo lang('button_cancel'); ?>
+                    </a>
                 </div>
                 <div class="panel-body">
                     <div class="section-divider">
@@ -769,8 +801,9 @@ function calculateTotal() {
                             return;
                         }
                         try {
-                            var json = JSON.parse(xhr.responseText || '{}');
-                            render(json.items || []);
+                            var json = JSON.parse(xhr.responseText || '[]');
+                            var list = Array.isArray(json) ? json : (json.items || []);
+                            render(list);
                         } catch (e) {
                             hideBox();
                         }

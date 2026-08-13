@@ -49,18 +49,27 @@ class Loan extends CI_Controller {
      */
 
     function upload_file($array, $name, $folder) {
-        $filename = time() . $array[$name]['name'];
-
-        $path = './' . $folder . '/';
-        $path1 = './' . $folder . '/';
-        $path = $path . basename($filename);
-
-        if (move_uploaded_file($_FILES[$name]['tmp_name'], $path)) {
-            // chmod($path1.$filename, 777);
-            return $filename;
-        } else {
+        if (!isset($array[$name]['tmp_name']) || !is_uploaded_file($array[$name]['tmp_name'])) {
             return 0;
         }
+
+        $original = basename($array[$name]['name']);
+        $safe = preg_replace('/[^A-Za-z0-9._-]/', '_', $original);
+        if ($safe === '' || $safe === '.' || $safe === '..') {
+            $safe = 'document';
+        }
+        $filename = time() . '_' . $safe;
+
+        $dir = FCPATH . $folder . '/';
+        if (!is_dir($dir)) {
+            @mkdir($dir, 0755, true);
+        }
+
+        $path = $dir . $filename;
+        if (move_uploaded_file($array[$name]['tmp_name'], $path)) {
+            return $filename;
+        }
+        return 0;
     }
 
     /*
@@ -634,18 +643,26 @@ class Loan extends CI_Controller {
         $this->form_validation->set_rules('comment', lang('loan_supporting_document_comment'), '');
         $upload_photo = TRUE;
         $file_name = 0;
-        if ($this->input->post('comment')) {
+        $comment = trim((string) $this->input->post('comment'));
+        $has_file = isset($_FILES['file']['name']) && is_string($_FILES['file']['name']) && $_FILES['file']['name'] !== '';
+        $file_error = (isset($_FILES['file']['error'])) ? (int) $_FILES['file']['error'] : UPLOAD_ERR_NO_FILE;
 
-            if (isset($_FILES['file']['name']) && $_FILES['file']['name'] != '') {
-                $extension = $this->getExtension($_FILES['file']['name']);
-                $file_name = $this->upload_file($_FILES, 'file', 'uploads/document');
-                $upload_photo = TRUE;
-            } else if (isset($_FILES['file']['name']) && $_FILES['file']['name'] == '') {
-                $this->data['logo_error'] = 'The ' . lang('loan_supporting_document_attach') . ' field is required';
+        if ($has_file || ($file_error !== UPLOAD_ERR_NO_FILE && $file_error !== UPLOAD_ERR_OK)) {
+            if ($file_error !== UPLOAD_ERR_OK) {
+                $this->data['logo_error'] = lang('loan_supporting_document_upload_failed');
                 $upload_photo = FALSE;
+            } else {
+                $file_name = $this->upload_file($_FILES, 'file', 'uploads/document');
+                if ($file_name == 0) {
+                    $this->data['logo_error'] = lang('loan_supporting_document_upload_failed');
+                    $upload_photo = FALSE;
+                }
             }
+        } else if ($comment !== '') {
+            $this->data['logo_error'] = 'The ' . lang('loan_supporting_document_attach') . ' field is required';
+            $upload_photo = FALSE;
         }
-$pin = current_user()->PIN;
+        $pin = current_user()->PIN;
         if ($this->form_validation->run() == TRUE && $upload_photo == true) {
             $declaration = array(
                 'declaration' => trim($this->input->post('declaration')),
@@ -653,19 +670,16 @@ $pin = current_user()->PIN;
                 'PIN' => $pin
             );
             $this->loan_model->loan_declaration($declaration);
-            if ($this->input->post('comment')) {
-                if ($file_name != 0) {
-                    $doc = array(
-                        'comment' => trim($this->input->post('comment')),
-                        'file' => $file_name,
-                        'LID' => $LID,
-                        'PIN' => $pin
-                    );
-                    $this->loan_model->loan_supporting_doc($doc);
-                }
+            if ($file_name != 0) {
+                $original_name = isset($_FILES['file']['name']) ? $_FILES['file']['name'] : '';
+                $doc = array(
+                    'comment' => ($comment !== '') ? $comment : $original_name,
+                    'file' => $file_name,
+                    'LID' => $LID,
+                    'PIN' => $pin
+                );
+                $this->loan_model->loan_supporting_doc($doc);
             }
-
-
 
             $this->data['message'] = lang('loan_info_saved');
         }
@@ -2178,6 +2192,15 @@ $pin = current_user()->PIN;
         $payment_method_id = (int) $this->input->post('payment_method');
 
         $this->load->model('cash_receipt_model');
+        $pending_cr = $this->cash_receipt_model->get_unposted_loan_repayment_for_loan($LID);
+        if ($pending_cr) {
+            $this->session->set_flashdata(
+                'warning',
+                sprintf(lang('loan_repay_pending_cash_receipt'), $pending_cr->receipt_no)
+            );
+            redirect($redirect_back, 'refresh');
+            return;
+        }
         if ($this->cash_receipt_model->receipt_no_exists($receipt_no)) {
             $this->session->set_flashdata('warning', lang('cash_receipt_no_exists'));
             redirect($redirect_back, 'refresh');
@@ -2195,7 +2218,6 @@ $pin = current_user()->PIN;
             redirect($redirect_back, 'refresh');
             return;
         }
-        // Determine cash/bank GL account from payment method (fallback to 1010001 if not configured)
         $cash_account = null;
         if ($payment_method_id > 0) {
             $cash_account = $this->loan_model->get_credit_account_for_payment_method($payment_method_id);
@@ -2203,159 +2225,14 @@ $pin = current_user()->PIN;
         if (!$cash_account) {
             $cash_account = 1010001;
         }
-        $product = $this->setting_model->loanproduct($loaninfo->product_type)->row();
-        $open_repayment = $this->loan_model->open_repayment_installment($LID);
-        $previous_remain_balance = $this->loan_model->get_previous_remain_balance($LID);
-        $amount_tmp = ($amount + $previous_remain_balance);
 
-        if ($amount <= 0) {
-            $this->session->set_flashdata('warning', 'Amount should be greater than 0');
+        $applied = $this->loan_model->apply_loan_repayment($LID, $amount, $paydate, $receipt_no, $cash_account, array('post_gl' => true));
+        if (empty($applied['success'])) {
+            $this->session->set_flashdata('warning', !empty($applied['message']) ? $applied['message'] : 'Loan repayment save failed. Please try again.');
             redirect($redirect_back, 'refresh');
             return;
         }
-        if ($loaninfo->status != 4) {
-            $this->session->set_flashdata('warning', 'Invalid Operation, Loan Status does not allow Repayment process');
-            redirect($redirect_back, 'refresh');
-            return;
-        }
-        if (count($open_repayment) < 1) {
-            $open_repayment_check = $this->loan_model->open_repayment_installment($LID);
-            if (count($open_repayment_check) < 1) {
-                $this->db->update('loan_contract', array('status' => 5), array('LID' => $LID, 'status' => 4, 'disburse' => 1, 'PIN' => $pin));
-            }
-            $this->session->set_flashdata('warning', 'No open installment available for new payment');
-            redirect($redirect_back, 'refresh');
-            return;
-        }
-
-        $due_preview = $this->loan_model->calculate_repayment_due($LID, $paydate);
-        if (!empty($due_preview->items) && (float) $due_preview->minimum_to_apply > 0
-            && round((float) $amount, 2) + 0.00001 < (float) $due_preview->minimum_to_apply) {
-            $this->session->set_flashdata(
-                'warning',
-                sprintf(lang('loan_repay_amount_insufficient'), number_format((float) $due_preview->minimum_to_apply, 2))
-            );
-            redirect($redirect_back, 'refresh');
-            return;
-        }
-
-        $this->db->trans_start();
-        $receipt = $this->loan_model->loan_repay_receipt($LID, $amount, $paydate, $receipt_no);
-        $applied_any = false;
-        foreach ($open_repayment as $key => $value) {
-            $repay_amount_install = $loaninfo->installment_amount;
-            if ($amount_tmp >= $repay_amount_install) {
-                $grace_days = $this->loan_model->get_penalt_grace_days($product);
-                $max_date = date("Y-m-d", strtotime(date("Y-m-d", strtotime($value->repaydate)) . " +" . $grace_days . " days"));
-                if ($paydate <= $max_date) {
-                    $repay_amount_install_to_pay_all_loan = round($value->repayamount + $value->balance, 2);
-                    if ($amount_tmp >= $repay_amount_install_to_pay_all_loan) {
-                        $new_principle = round($repay_amount_install_to_pay_all_loan - $value->interest, 2);
-                        $amount_tmp -= $repay_amount_install_to_pay_all_loan;
-                        $array_data = array(
-                            'LID' => $LID, 'receipt' => $receipt, 'installment' => $value->installment_number,
-                            'amount' => $repay_amount_install_to_pay_all_loan, 'paydate' => $paydate,
-                            'interest' => $value->interest, 'principle' => $new_principle, 'duedate' => $value->repaydate,
-                            'balance' => 0, 'iliyobaki' => round($amount_tmp, 2), 'createdby' => current_user()->id, 'PIN' => $pin,
-                        );
-                        $this->loan_model->record_loan_repayment_all($array_data, $value->id, $value->LID, $cash_account);
-                        $applied_any = true;
-                        break;
-                    } else {
-                        $amount_tmp -= $repay_amount_install;
-                        $array_data = array(
-                            'LID' => $LID, 'receipt' => $receipt, 'installment' => $value->installment_number,
-                            'amount' => $repay_amount_install, 'paydate' => $paydate,
-                            'interest' => $value->interest, 'principle' => $value->principle, 'duedate' => $value->repaydate,
-                            'balance' => $value->balance, 'iliyobaki' => round($amount_tmp, 2), 'createdby' => current_user()->id, 'PIN' => $pin,
-                        );
-                        if ($this->loan_model->record_loan_repayment($array_data, $value->id, $cash_account) === false) {
-                            $this->db->trans_rollback();
-                            $this->session->set_flashdata('warning', 'Loan repayment GL posting failed. Check payment method and loan product GL accounts.');
-                            redirect($redirect_back, 'refresh');
-                            return;
-                        }
-                        $applied_any = true;
-                    }
-                } else {
-                    $d1 = new DateTime($max_date);
-                    $d2 = new DateTime($paydate);
-                    $number_months = ($d1->diff($d2)->m + ($d1->diff($d2)->y * 12)) + 1;
-                    $penalt_method = $product->penalt_method;
-                    $penalt_percentage = $product->penalt_percentage;
-                    $penalt = 0;
-                    $principle = $value->principle;
-                    $interest_val = $value->interest;
-                    if ($penalt_method == 1) $penalt = (($penalt_percentage / 100) * $principle);
-                    else if ($penalt_method == 2) $penalt = (($penalt_percentage / 100) * ($principle + $interest_val));
-                    $penalt_avail = round($penalt, 2);
-                    $penalt_total = round($penalt_avail * $number_months, 2);
-                    $test_remain = round($repay_amount_install + $penalt_total, 2);
-                    if ($amount_tmp >= $test_remain) {
-                        $repay_amount_install_to_pay_all_loan = round($value->repayamount + $value->balance + $penalt_total, 2);
-                        if ($amount_tmp >= $repay_amount_install_to_pay_all_loan) {
-                            $new_principle = round($value->repayamount + $value->balance - $value->interest, 2);
-                            $amount_tmp -= $repay_amount_install_to_pay_all_loan;
-                            $array_data = array(
-                                'LID' => $LID, 'receipt' => $receipt, 'installment' => $value->installment_number,
-                                'amount' => $repay_amount_install_to_pay_all_loan, 'paydate' => $paydate,
-                                'interest' => $value->interest, 'principle' => $new_principle, 'balance' => 0, 'duedate' => $value->repaydate,
-                                'iliyobaki' => round($amount_tmp, 2), 'penalt' => $penalt_total, 'penalty_months' => $number_months,
-                                'createdby' => current_user()->id, 'PIN' => $pin,
-                            );
-                            $this->loan_model->record_loan_repayment_all($array_data, $value->id, $value->LID, $cash_account);
-                            $applied_any = true;
-                            break;
-                        } else {
-                            $amount_tmp -= $test_remain;
-                            $array_data = array(
-                                'LID' => $LID, 'receipt' => $receipt, 'installment' => $value->installment_number,
-                                'amount' => $repay_amount_install, 'paydate' => $paydate,
-                                'interest' => $value->interest, 'principle' => $value->principle, 'balance' => $value->balance, 'duedate' => $value->repaydate,
-                                'iliyobaki' => round($amount_tmp, 2), 'penalt' => $penalt_total, 'penalty_months' => $number_months,
-                                'createdby' => current_user()->id, 'PIN' => $pin,
-                            );
-                            if ($this->loan_model->record_loan_repayment($array_data, $value->id, $cash_account) === false) {
-                                $this->db->trans_rollback();
-                                $this->session->set_flashdata('warning', 'Loan repayment GL posting failed. Check payment method and loan product GL accounts.');
-                                redirect($redirect_back, 'refresh');
-                                return;
-                            }
-                            $applied_any = true;
-                        }
-                    } else {
-                        break;
-                    }
-                }
-            } else {
-                break;
-            }
-        }
-        if ($amount_tmp > 0) {
-            $this->loan_model->add_remain_balance($LID, round($amount_tmp, 2));
-        } else {
-            $this->loan_model->add_remain_balance($LID, 0);
-        }
-        if (!$applied_any) {
-            $this->db->trans_rollback();
-            $this->session->set_flashdata(
-                'warning',
-                sprintf(lang('loan_repay_amount_insufficient'), number_format((float) $due_preview->minimum_to_apply, 2))
-            );
-            redirect($redirect_back, 'refresh');
-            return;
-        }
-        $open_repayment_check = $this->loan_model->open_repayment_installment($LID);
-        if (count($open_repayment_check) < 1) {
-            $this->db->update('loan_contract', array('status' => 5), array('LID' => $LID, 'status' => 4, 'disburse' => 1, 'PIN' => $pin));
-        }
-        $this->db->trans_complete();
-        if ($this->db->trans_status() === FALSE) {
-            $this->session->set_flashdata('warning', 'Loan repayment save failed. Please try again.');
-            redirect($redirect_back, 'refresh');
-            return;
-        }
-        redirect(site_url(current_lang() . '/loan/view_loanreceipt/' . $receipt), 'refresh');
+        redirect(site_url(current_lang() . '/loan/view_loanreceipt/' . $applied['receipt']), 'refresh');
     }
 
     /**
@@ -2407,6 +2284,14 @@ $pin = current_user()->PIN;
         $receipt_no = trim($this->input->post('receipt_no'));
 
         $this->load->model('cash_receipt_model');
+        $pending_cr = $this->cash_receipt_model->get_unposted_loan_repayment_for_loan($LID);
+        if ($pending_cr) {
+            $this->output->set_output(json_encode(array(
+                'success' => false,
+                'warning' => sprintf(lang('loan_repay_pending_cash_receipt'), $pending_cr->receipt_no),
+            )));
+            return;
+        }
         if ($this->cash_receipt_model->receipt_no_exists($receipt_no)) {
             $this->output->set_output(json_encode(array('success' => false, 'warning' => lang('cash_receipt_no_exists'))));
             return;
@@ -2415,6 +2300,19 @@ $pin = current_user()->PIN;
             $this->output->set_output(json_encode(array('success' => false, 'warning' => lang('cash_receipt_no_exists'))));
             return;
         }
+
+        $applied = $this->loan_model->apply_loan_repayment($LID, $amount, $paydate, $receipt_no, null, array('post_gl' => true));
+        if (empty($applied['success'])) {
+            $this->output->set_output(json_encode(array(
+                'success' => false,
+                'warning' => !empty($applied['message']) ? $applied['message'] : 'Loan repayment save failed. Please try again.',
+            )));
+            return;
+        }
+        $redirect = site_url(current_lang() . '/loan/view_loanreceipt/' . $applied['receipt']);
+        $this->output->set_output(json_encode(array('success' => true, 'redirect' => $redirect)));
+        return;
+        if (false) { // unreachable: apply_loan_repayment is the engine
 
         $loaninfo = $this->loan_model->loan_info($LID)->row();
         if (!$loaninfo) {
@@ -2555,6 +2453,7 @@ $pin = current_user()->PIN;
         $this->db->trans_complete();
         $redirect = site_url(current_lang() . '/loan/view_loanreceipt/' . $receipt);
         $this->output->set_output(json_encode(array('success' => true, 'redirect' => $redirect)));
+        } // end unreachable legacy block
     }
 
     function view_repayment_schedule($loanid) {

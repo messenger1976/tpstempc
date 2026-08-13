@@ -32,24 +32,14 @@ $list_url = site_url(current_lang() . '/cash_disbursement/cash_disbursement_list
     gap: 8px;
     align-items: center;
 }
-.member-list-page .status-pill {
-    display: inline-block;
-    padding: 3px 10px;
-    border-radius: 12px;
-    font-size: 11px;
-    font-weight: 700;
-}
 .member-list-page .status-pill.posted {
-    background: #e8f8f5;
-    color: #1ab394;
+    background: #1ab394;
 }
 .member-list-page .status-pill.draft {
-    background: #eef1f2;
-    color: #676a6c;
+    background: #676a6c;
 }
 .member-list-page .status-pill.cancelled {
-    background: #fdeceb;
-    color: #c0392b;
+    background: #ed5565;
 }
 .member-list-page .disburse-no-wrap {
     display: flex;
@@ -72,6 +62,20 @@ $list_url = site_url(current_lang() . '/cash_disbursement/cash_disbursement_list
 .member-list-page .dt-buttons .btn {
     border-radius: 6px;
     margin-right: 4px;
+}
+.member-list-page .member-table > thead > tr > th,
+.member-list-page .member-table > tbody > tr > td {
+    border: 1px solid #e7eaec !important;
+}
+.member-list-page .member-table > thead > tr > th {
+    border-top: 0 !important;
+}
+.member-list-page .member-table > thead > tr > th:not(:first-child),
+.member-list-page .member-table > tbody > tr > td:not(:first-child) {
+    border-left: 0 !important;
+}
+.member-list-page .member-table > tbody > tr:hover td {
+    box-shadow: none;
 }
 </style>
 
@@ -146,7 +150,7 @@ $list_url = site_url(current_lang() . '/cash_disbursement/cash_disbursement_list
             </div>
         </div>
         <div class="table-responsive" style="padding: 0 4px 8px;">
-            <table class="table table-striped member-table dataTables-example" id="cashDisbursementTable">
+            <table class="table table-striped table-bordered member-table dataTables-example" id="cashDisbursementTable">
                 <thead>
                     <tr>
                         <th><?php echo lang('cash_disbursement_no'); ?></th>

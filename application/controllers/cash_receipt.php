@@ -17,6 +17,7 @@ class Cash_receipt extends CI_Controller {
         $this->data['current_title'] = lang('page_cash_receipt');
         $this->lang->load('setting');
         $this->lang->load('finance');
+        $this->lang->load('loan');
         $this->load->helper('text');
         $this->load->model('cash_receipt_model');
         $this->load->model('finance_model');
@@ -98,11 +99,12 @@ class Cash_receipt extends CI_Controller {
      */
     function cash_receipt_create() {
         $this->data['title'] = lang('cash_receipt_create');
-        
-        // Form validation rules
+        $this->_load_payment_methods();
+
         $cancelled = $this->input->post('cancelled') == '1';
         $this->form_validation->set_rules('receipt_date', lang('cash_receipt_date'), 'required');
         $this->form_validation->set_rules('receipt_no', lang('cash_receipt_no'), 'required|callback_check_receipt_no');
+        $this->form_validation->set_rules('received_from_type', lang('cash_receipt_received_from_type'), 'required');
         $this->form_validation->set_rules('received_from', lang('cash_receipt_received_from'), 'required');
         $this->form_validation->set_rules('payment_method', lang('cash_receipt_payment_method'), 'required');
         $this->form_validation->set_rules('description', lang('cash_receipt_description'), 'required');
@@ -111,33 +113,37 @@ class Cash_receipt extends CI_Controller {
         }
 
         if ($this->form_validation->run() == TRUE) {
-            // Convert payment method ID to name
+            $received_from_type = $this->_normalize_received_from_type($this->input->post('received_from_type'));
+            $loan_repayment_lid = '';
+            if ($received_from_type === 'loan_repayment') {
+                $loan_repayment_lid = trim((string) $this->input->post('loan_repayment_lid'));
+            }
+
             $payment_method_id = $this->input->post('payment_method');
             $payment_method_name = '';
             if (!empty($payment_method_id) && isset($this->data['payment_methods_by_id'][$payment_method_id])) {
                 $payment_method_name = $this->data['payment_methods_by_id'][$payment_method_id]->name;
             } else {
-                // Fallback: use posted value if ID lookup fails (for backward compatibility)
                 $payment_method_name = $payment_method_id;
             }
-            
-            // Prepare receipt data
+
             $receipt_data = array(
                 'receipt_no' => $this->input->post('receipt_no'),
                 'receipt_date' => date('Y-m-d', strtotime($this->input->post('receipt_date'))),
                 'received_from' => $this->input->post('received_from'),
+                'received_from_type' => $received_from_type,
                 'payment_method' => $payment_method_name,
                 'cheque_no' => $this->input->post('cheque_no'),
                 'bank_name' => $this->input->post('bank_name'),
                 'description' => $this->input->post('description'),
                 'total_amount' => 0,
                 'cancelled' => $cancelled ? 1 : 0,
+                'loan_repayment_lid' => ($received_from_type === 'loan_repayment' && $loan_repayment_lid !== '') ? $loan_repayment_lid : null,
                 'createdby' => current_user()->id,
                 'PIN' => current_user()->PIN,
                 'created_at' => date('Y-m-d H:i:s')
             );
 
-            // Get line items (skip when cancelled - just record document reference)
             $line_items = array();
             $total_debit = 0;
             $total_credit = 0;
@@ -164,38 +170,41 @@ class Cash_receipt extends CI_Controller {
                     }
                 }
             }
+            if (!$cancelled && $received_from_type === 'loan_repayment') {
+                if ($loan_repayment_lid === '') {
+                    $this->data['warning'] = lang('cash_receipt_loan_repayment_required');
+                } else {
+                    $this->load->model('loan_model');
+                    $loan = $this->loan_model->loan_info($loan_repayment_lid)->row();
+                    if (!$loan || (string) $loan->PIN !== (string) current_user()->PIN) {
+                        $this->data['warning'] = lang('cash_receipt_loan_not_found');
+                    } else {
+                        if (empty($receipt_data['description'])) {
+                            $receipt_data['description'] = 'Loan Repayment ' . $loan_repayment_lid;
+                        }
+                        $apply_error = $this->_loan_repayment_save_error($loan_repayment_lid, $receipt_data['receipt_date'], $total_debit);
+                        if ($apply_error !== '') {
+                            $this->data['warning'] = $apply_error;
+                        }
+                    }
+                }
+            }
             $receipt_data['total_amount'] = max($total_debit, $total_credit);
 
-            // Create cash receipt
-            $receipt_id = $this->cash_receipt_model->create_cash_receipt($receipt_data, $line_items);
-            
+            $receipt_id = empty($this->data['warning']) ? $this->cash_receipt_model->create_cash_receipt($receipt_data, $line_items) : false;
+
             if ($receipt_id) {
                 $this->session->set_flashdata('message', lang('cash_receipt_create_success'));
                 redirect(current_lang() . '/cash_receipt/cash_receipt_view/' . encode_id($receipt_id), 'refresh');
-            } else {
+            } else if (empty($this->data['warning'])) {
                 $this->data['warning'] = lang('cash_receipt_create_fail');
             }
         }
 
-        // Get next receipt number
         $this->data['next_receipt_no'] = $this->cash_receipt_model->get_next_receipt_no();
-        
-        // Get account list for dropdown
         $this->data['account_list'] = $this->finance_model->account_chart_by_accounttype();
-        
-        // Get payment methods from paymentmenthod table
-        $this->load->model('payment_method_config_model');
-        $payment_methods = $this->payment_method_config_model->get_all_payment_methods();
-        $this->data['payment_methods'] = array();
-        $this->data['payment_methods_by_id'] = array();
-        foreach ($payment_methods as $method) {
-            $this->data['payment_methods'][$method->id] = $method->name;
-            $this->data['payment_methods_by_id'][$method->id] = $method;
-            // Find Cash ID for default selection
-            if (strtolower(trim($method->name)) === 'cash') {
-                $this->data['default_cash_id'] = $method->id;
-            }
-        }
+        $this->data['selected_received_from_type'] = set_value('received_from_type');
+        $this->data['selected_loan_repayment_lid'] = set_value('loan_repayment_lid');
 
         $this->data['content'] = 'cash_receipt/cash_receipt_form';
         $this->load->view('template', $this->data);
@@ -209,6 +218,7 @@ class Cash_receipt extends CI_Controller {
         $id = decode_id($id);
         
         $this->data['title'] = lang('cash_receipt_edit');
+        $this->_load_payment_methods();
         
         // Get receipt data
         $receipt = $this->cash_receipt_model->get_cash_receipt($id);
@@ -226,6 +236,7 @@ class Cash_receipt extends CI_Controller {
         // Form validation rules
         $this->form_validation->set_rules('receipt_date', lang('cash_receipt_date'), 'required');
         $this->form_validation->set_rules('receipt_no', lang('cash_receipt_no'), 'required');
+        $this->form_validation->set_rules('received_from_type', lang('cash_receipt_received_from_type'), 'required');
         $this->form_validation->set_rules('received_from', lang('cash_receipt_received_from'), 'required');
         $this->form_validation->set_rules('payment_method', lang('cash_receipt_payment_method'), 'required');
         $this->form_validation->set_rules('description', lang('cash_receipt_description'), 'required');
@@ -237,6 +248,12 @@ class Cash_receipt extends CI_Controller {
         }
 
         if ($this->form_validation->run() == TRUE) {
+            $received_from_type = $this->_normalize_received_from_type($this->input->post('received_from_type'));
+            $loan_repayment_lid = '';
+            if ($received_from_type === 'loan_repayment') {
+                $loan_repayment_lid = trim((string) $this->input->post('loan_repayment_lid'));
+            }
+
             // Convert payment method ID to name
             $payment_method_id = $this->input->post('payment_method');
             $payment_method_name = '';
@@ -258,12 +275,14 @@ class Cash_receipt extends CI_Controller {
                 'receipt_no' => $this->input->post('receipt_no'),
                 'receipt_date' => date('Y-m-d', strtotime($this->input->post('receipt_date'))),
                 'received_from' => $this->input->post('received_from'),
+                'received_from_type' => $received_from_type,
                 'payment_method' => $payment_method_name,
                 'cheque_no' => $this->input->post('cheque_no'),
                 'bank_name' => $this->input->post('bank_name'),
                 'description' => $this->input->post('description'),
                 'total_amount' => 0,
                 'cancelled' => $cancelled ? 1 : 0,
+                'loan_repayment_lid' => ($received_from_type === 'loan_repayment' && $loan_repayment_lid !== '') ? $loan_repayment_lid : null,
                 'updated_at' => date('Y-m-d H:i:s')
             );
 
@@ -299,8 +318,25 @@ class Cash_receipt extends CI_Controller {
             
             $receipt_data['total_amount'] = max($total_debit, $total_credit);
 
+            if (!$cancelled && $received_from_type === 'loan_repayment') {
+                if ($loan_repayment_lid === '') {
+                    $this->data['warning'] = lang('cash_receipt_loan_repayment_required');
+                } else {
+                    $this->load->model('loan_model');
+                    $loan = $this->loan_model->loan_info($loan_repayment_lid)->row();
+                    if (!$loan || (string) $loan->PIN !== (string) current_user()->PIN) {
+                        $this->data['warning'] = lang('cash_receipt_loan_not_found');
+                    } else {
+                        $apply_error = $this->_loan_repayment_save_error($loan_repayment_lid, $receipt_data['receipt_date'], $total_debit, $id);
+                        if ($apply_error !== '') {
+                            $this->data['warning'] = $apply_error;
+                        }
+                    }
+                }
+            }
+
             // Update cash receipt
-            $result = $this->cash_receipt_model->update_cash_receipt($id, $receipt_data, $line_items);
+            $result = empty($this->data['warning']) ? $this->cash_receipt_model->update_cash_receipt($id, $receipt_data, $line_items) : false;
             
             if ($result) {
                 $this->session->set_flashdata('message', lang('cash_receipt_update_success'));
@@ -312,26 +348,14 @@ class Cash_receipt extends CI_Controller {
 
         $this->data['receipt'] = $receipt;
         $this->data['line_items'] = $this->cash_receipt_model->get_line_items_for_edit($id);
-        
-        // Get account list for dropdown
         $this->data['account_list'] = $this->finance_model->account_chart_by_accounttype();
-        
-        // Get payment methods from paymentmenthod table
-        $this->load->model('payment_method_config_model');
-        $payment_methods = $this->payment_method_config_model->get_all_payment_methods();
-        $this->data['payment_methods'] = array();
-        $this->data['payment_methods_by_id'] = array();
-        $this->data['payment_method_id_by_name'] = array();
-        foreach ($payment_methods as $method) {
-            $this->data['payment_methods'][$method->id] = $method->name;
-            $this->data['payment_methods_by_id'][$method->id] = $method;
-            $this->data['payment_method_id_by_name'][strtolower(trim($method->name))] = $method->id;
-        }
+        $this->data['selected_received_from_type'] = set_value('received_from_type', $this->_resolve_received_from_type($receipt));
+        $this->data['selected_loan_repayment_lid'] = set_value('loan_repayment_lid', !empty($receipt->loan_repayment_lid) ? $receipt->loan_repayment_lid : '');
+
         // If saved payment method is not in the table (e.g. was removed from config), still show it so it can be selected
         if (!empty($receipt->payment_method)) {
             $saved_method_lower = strtolower(trim($receipt->payment_method));
             if (!isset($this->data['payment_method_id_by_name'][$saved_method_lower])) {
-                // Add as a temporary entry with a fake ID (negative to avoid conflicts)
                 $temp_id = -999;
                 $this->data['payment_methods'][$temp_id] = $receipt->payment_method;
             }
@@ -765,5 +789,199 @@ class Cash_receipt extends CI_Controller {
         }
         
         echo json_encode($status);
+    }
+
+    /**
+     * Suggested debit/credit lines for Cash Receipt → Loan Repayment.
+     */
+    function loan_repayment_worksheet() {
+        $lid = trim((string) $this->input->get('lid'));
+        $payment_method_id = (int) $this->input->get('payment_method');
+        $receipt_date = trim((string) $this->input->get('receipt_date'));
+        $amount = $this->input->get('amount');
+        $paydate = date('Y-m-d');
+        if ($receipt_date !== '') {
+            $parts = explode('-', str_replace('/', '-', $receipt_date));
+            if (count($parts) === 3 && strlen($parts[0]) === 2 && strlen($parts[2]) === 4) {
+                $paydate = $parts[2] . '-' . $parts[1] . '-' . $parts[0];
+            } else if (count($parts) === 3 && strlen($parts[0]) === 4) {
+                $paydate = $parts[0] . '-' . $parts[1] . '-' . $parts[2];
+            }
+        }
+        $status = array('success' => 'N', 'error' => lang('cash_receipt_loan_not_found'));
+        if ($lid === '') {
+            echo json_encode($status);
+            return;
+        }
+        $this->load->model('loan_model');
+        $sheet = $this->loan_model->get_cash_receipt_repayment_worksheet($lid, $payment_method_id, $paydate, $amount);
+        if (!empty($sheet)) {
+            $status = array('success' => 'Y', 'data' => $sheet);
+        }
+        echo json_encode($status);
+    }
+
+    /**
+     * GL account mapped to a payment method (for auto-picking the cash/bank line).
+     */
+    function payment_method_gl_account() {
+        $id = (int) $this->input->get('id');
+        $status = array('success' => 'N', 'error' => lang('cash_receipt_payment_method_account_missing'));
+        if ($id <= 0) {
+            echo json_encode($status);
+            return;
+        }
+        $this->load->model('loan_model');
+        $account = $this->loan_model->get_credit_account_for_payment_method($id);
+        if (!empty($account)) {
+            $status = array('success' => 'Y', 'account' => $account);
+        }
+        echo json_encode($status);
+    }
+
+    function search_supplier() {
+        $key = trim((string) $this->input->get('key'));
+        $status = array('success' => 'N', 'error' => lang('cash_receipt_no_suppliers_found'));
+        if (strlen($key) < 2) {
+            $status['error'] = lang('cash_receipt_search_min_chars');
+            echo json_encode($status);
+            return;
+        }
+        $this->load->model('supplier_model');
+        $rows = $this->supplier_model->search_supplier($key, 20, 0);
+        if (!empty($rows)) {
+            $status['success'] = 'Y';
+            $status['data'] = array();
+            foreach ($rows as $row) {
+                $status['data'][] = array(
+                    'supplierid' => isset($row->supplierid) ? $row->supplierid : '',
+                    'name' => isset($row->name) ? $row->name : '',
+                );
+            }
+            unset($status['error']);
+        }
+        echo json_encode($status);
+    }
+
+    function search_customer() {
+        $key = trim((string) $this->input->get('key'));
+        $status = array('success' => 'N', 'error' => lang('cash_receipt_no_customers_found'));
+        if (strlen($key) < 2) {
+            $status['error'] = lang('cash_receipt_search_min_chars');
+            echo json_encode($status);
+            return;
+        }
+        $this->load->model('customer_model');
+        $rows = $this->customer_model->search_customer($key, 20, 0);
+        if (!empty($rows)) {
+            $status['success'] = 'Y';
+            $status['data'] = array();
+            foreach ($rows as $row) {
+                $status['data'][] = array(
+                    'customerid' => isset($row->customerid) ? $row->customerid : '',
+                    'name' => isset($row->name) ? $row->name : '',
+                );
+            }
+            unset($status['error']);
+        }
+        echo json_encode($status);
+    }
+
+    /**
+     * List repayable loans for a member (Received From → Loan Repayment).
+     */
+    function member_repayable_loans() {
+        $pid = trim((string) $this->input->get('pid'));
+        $exclude_id = (int) $this->input->get('exclude_id');
+        $status = array('success' => 'N', 'error' => lang('cash_receipt_no_repayable_loans'));
+        if ($pid === '') {
+            echo json_encode($status);
+            return;
+        }
+        $this->load->model('loan_model');
+        $rows = $this->loan_model->get_member_repayable_loans($pid, $exclude_id > 0 ? $exclude_id : null);
+        if (!empty($rows)) {
+            $status['success'] = 'Y';
+            $status['data'] = $rows;
+            unset($status['error']);
+        }
+        echo json_encode($status);
+    }
+
+    /**
+     * Get Accounts Payable account code (supplier refunds).
+     */
+    function get_ap_account() {
+        $this->db->where('PIN', current_user()->PIN);
+        $this->db->group_start();
+        $this->db->like('name', 'Accounts Payable', 'both');
+        $this->db->or_like('name', 'Account Payable', 'both');
+        $this->db->or_like('name', 'AP', 'both');
+        $this->db->or_like('name', 'Payable', 'both');
+        $this->db->group_end();
+        $this->db->where_in('account_type', array(2, 20000));
+        $this->db->limit(1);
+
+        $account = $this->db->get('account_chart')->row();
+
+        $status = array();
+        if ($account) {
+            $status['success'] = 'Y';
+            $status['account'] = $account->account;
+            $status['name'] = $account->name;
+        } else {
+            $status['success'] = 'N';
+            $status['error'] = 'Accounts Payable account not found in chart of accounts';
+        }
+
+        echo json_encode($status);
+    }
+
+    private function _load_payment_methods() {
+        $this->load->model('payment_method_config_model');
+        $payment_methods = $this->payment_method_config_model->get_all_payment_methods();
+        $this->data['payment_methods'] = array();
+        $this->data['payment_methods_by_id'] = array();
+        $this->data['payment_method_id_by_name'] = array();
+        foreach ($payment_methods as $method) {
+            $this->data['payment_methods'][$method->id] = $method->name;
+            $this->data['payment_methods_by_id'][$method->id] = $method;
+            $this->data['payment_method_id_by_name'][strtolower(trim($method->name))] = $method->id;
+            if (strtolower(trim($method->name)) === 'cash') {
+                $this->data['default_cash_id'] = $method->id;
+            }
+        }
+    }
+
+    private function _loan_repayment_save_error($lid, $paydate, $amount, $exclude_receipt_id = null) {
+        $this->load->model('loan_model');
+        $pending = $this->cash_receipt_model->get_unposted_loan_repayment_for_loan($lid, $exclude_receipt_id);
+        if ($pending) {
+            return sprintf(lang('loan_repay_pending_cash_receipt'), $pending->receipt_no);
+        }
+        $plan = $this->loan_model->plan_loan_repayment_applications($lid, $amount, $paydate);
+        if (empty($plan['success'])) {
+            return isset($plan['message']) ? $plan['message'] : lang('cash_receipt_loan_not_found');
+        }
+        return '';
+    }
+
+    private function _normalize_received_from_type($type) {
+        $type = strtolower(trim((string) $type));
+        $allowed = array('loan_repayment', 'member', 'supplier', 'customer', 'miscellaneous');
+        if (!in_array($type, $allowed, true)) {
+            return 'miscellaneous';
+        }
+        return $type;
+    }
+
+    private function _resolve_received_from_type($receipt) {
+        if ($receipt && !empty($receipt->received_from_type)) {
+            return $this->_normalize_received_from_type($receipt->received_from_type);
+        }
+        if ($receipt && !empty($receipt->loan_repayment_lid)) {
+            return 'loan_repayment';
+        }
+        return 'miscellaneous';
     }
 }

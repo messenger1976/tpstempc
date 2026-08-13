@@ -37,6 +37,9 @@ $lang['loan_supporting_document_attach'] = "Attach";
 $lang['loan_supporting_document_doc'] = "Doc";
 $lang['loan_supporting_document_remove'] = "Remove";
 $lang['loan_supporting_document_view'] = "Download";
+$lang['loan_supporting_document_upload_failed'] = "The supporting document could not be uploaded. Check the file size and try again.";
+$lang['loan_supporting_document_hint'] = "Choose a file, then click Save. Uploaded files appear in the list above. Document comment is optional.";
+$lang['loan_supporting_document_list'] = "Uploaded documents";
 
 //guarantor
 $lang['loan_quarantor_name'] = 'Guarantor Name';
@@ -146,6 +149,7 @@ $lang['loan_repay_amount_insufficient'] = 'Kiasi hakitoshi kutumia malipo haya. 
 $lang['loan_repay_use_suggested'] = 'Tumia kiasi kilichopendekezwa';
 $lang['loan_repay_penalty_months'] = 'Miezi ya adhabu';
 $lang['loan_repay_suggested'] = 'Malipo yaliyopendekezwa';
+$lang['loan_repay_pending_cash_receipt'] = 'Mkopo huu tayari una Stakabadhi ya Fedha ambayo bado haijachapishwa (%s). Chapisha au futa stakabadhi hiyo kabla ya kukusanya hapa.';
 $lang['loan_collection_notice'] = 'Notisi ya Ukusanyaji wa Mkopo';
 $lang['loan_collection_notice_print'] = 'Chapisha Notisi ya Ukusanyaji';
 $lang['loan_collection_notice_as_of'] = 'Kiasi kinachodaiwa kufikia';

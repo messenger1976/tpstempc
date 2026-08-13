@@ -30,6 +30,20 @@ $loan_list = isset($loan_list) ? $loan_list : array();
     border-radius: 4px;
     box-shadow: 0 6px 12px rgba(0,0,0,.175);
 }
+.member-list-page .member-table > thead > tr > th,
+.member-list-page .member-table > tbody > tr > td {
+    border: 1px solid #e7eaec !important;
+}
+.member-list-page .member-table > thead > tr > th {
+    border-top: 0 !important;
+}
+.member-list-page .member-table > thead > tr > th:not(:first-child),
+.member-list-page .member-table > tbody > tr > td:not(:first-child) {
+    border-left: 0 !important;
+}
+.member-list-page .member-table > tbody > tr:hover td {
+    box-shadow: none;
+}
 </style>
 
 <div class="col-lg-12 member-list-page">
@@ -117,7 +131,7 @@ $loan_list = isset($loan_list) ? $loan_list : array();
             </div>
         </div>
         <div class="table-responsive">
-            <table class="table table-striped member-table">
+            <table class="table table-striped table-bordered member-table">
                 <thead>
                     <tr>
                         <th><?php echo lang('loan_LID'); ?></th>

@@ -39,6 +39,9 @@ $lang['loan_supporting_document_attach'] = "Attach";
 $lang['loan_supporting_document_doc'] = "Doc";
 $lang['loan_supporting_document_remove'] = "Remove";
 $lang['loan_supporting_document_view'] = "Download";
+$lang['loan_supporting_document_upload_failed'] = "The supporting document could not be uploaded. Check the file size and try again.";
+$lang['loan_supporting_document_hint'] = "Choose a file, then click Save. Uploaded files appear in the list above. Document comment is optional.";
+$lang['loan_supporting_document_list'] = "Uploaded documents";
 
 //guarantor
 $lang['loan_quarantor_name'] = 'Guarantor Name';
@@ -173,6 +176,7 @@ $lang['loan_repay_amount_insufficient'] = 'Amount is not enough to apply this pa
 $lang['loan_repay_use_suggested'] = 'Use suggested amount';
 $lang['loan_repay_penalty_months'] = 'Penalty months';
 $lang['loan_repay_suggested'] = 'Suggested payment';
+$lang['loan_repay_pending_cash_receipt'] = 'This loan already has an unposted Cash Receipt (%s). Post or delete that receipt before collecting here.';
 $lang['loan_collection_notice'] = 'Loan Collection Notice';
 $lang['loan_collection_notice_print'] = 'Print Collection Notice';
 $lang['loan_collection_notice_as_of'] = 'Amount due as of';

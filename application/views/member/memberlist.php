@@ -201,7 +201,7 @@
 }
 .member-list-page .member-table > thead > tr > th {
     background: linear-gradient(180deg, #fbfcfd 0%, #f4f7f8 100%);
-    border-bottom: 1px solid #e7eaec !important;
+    border: 1px solid #e7eaec !important;
     border-top: 0 !important;
     color: #5a5e63;
     font-size: 11px;
@@ -217,19 +217,20 @@
 }
 .member-list-page .member-table > tbody > tr > td {
     vertical-align: middle;
-    border-color: #eef1f2;
+    border: 1px solid #e7eaec !important;
     padding: 12px 14px;
     color: #2f4050;
     font-size: 13px;
+}
+.member-list-page .member-table > thead > tr > th:not(:first-child),
+.member-list-page .member-table > tbody > tr > td:not(:first-child) {
+    border-left: 0 !important;
 }
 .member-list-page .member-table > tbody > tr:nth-child(even) {
     background: #fcfdfd;
 }
 .member-list-page .member-table > tbody > tr:hover {
     background: #f3fbf8 !important;
-}
-.member-list-page .member-table > tbody > tr:hover td {
-    box-shadow: inset 3px 0 0 #1ab394;
 }
 .member-list-page .member-avatar {
     width: 42px;
@@ -467,7 +468,7 @@
             </div>
         </div>
         <div class="table-responsive">
-            <table class="table table-striped member-table">
+            <table class="table table-striped table-bordered member-table">
                 <thead>
                     <tr>
                         <th><?php echo 'Mem ID'; ?></th>

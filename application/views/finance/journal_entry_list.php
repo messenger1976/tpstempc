@@ -31,28 +31,17 @@ $list_url = site_url(current_lang() . '/finance/journal_entry_list');
     gap: 8px;
     align-items: center;
 }
-.member-list-page .status-pill {
-    display: inline-block;
-    padding: 3px 10px;
-    border-radius: 12px;
-    font-size: 11px;
-    font-weight: 700;
-}
 .member-list-page .status-pill.posted {
-    background: #e8f8f5;
-    color: #1ab394;
+    background: #1ab394;
 }
 .member-list-page .status-pill.draft {
-    background: #eef1f2;
-    color: #676a6c;
+    background: #676a6c;
 }
 .member-list-page .status-pill.voided {
-    background: #fdeceb;
-    color: #c0392b;
+    background: #ed5565;
 }
 .member-list-page .status-pill.reversal {
-    background: #eef3fb;
-    color: #3c6eae;
+    background: #1c84c6;
 }
 .member-list-page .dataTables_wrapper .dataTables_filter input,
 .member-list-page .dataTables_wrapper .dataTables_length select {

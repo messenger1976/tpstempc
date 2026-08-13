@@ -320,6 +320,10 @@ class Finance_Model extends CI_Model {
             $this->loan_model->ensure_release_workflow_columns();
             $this->cash_disbursement_model->ensure_loan_release_columns();
         }
+        if (!empty($entry->reference_type) && $entry->reference_type === 'cash_receipt' && !empty($entry->reference_id) && empty($entry->voids_entryid)) {
+            $this->load->model('cash_receipt_model');
+            $this->cash_receipt_model->ensure_received_from_columns();
+        }
         $this->db->trans_start();
         $entry_date = isset($entry->entry_date) ? $entry->entry_date : date('Y-m-d');
         $ledger_entry = array('date' => $entry_date, 'PIN' => $pin);
@@ -374,6 +378,26 @@ class Finance_Model extends CI_Model {
             if ($finalize === false) {
                 $this->last_post_error = 'Failed to finalize linked loan release after GL posting.';
                 log_message('error', 'post_journal_entry_to_general_ledger: finalize_release_payout returned false for cash_disbursement ' . (int) $entry->reference_id);
+                $this->db->trans_rollback();
+                $this->void_journal_posting_to_gl($journal_entry_id, 'journal_entry');
+                return false;
+            }
+        }
+        if (!empty($entry->reference_type) && $entry->reference_type === 'cash_receipt' && !empty($entry->reference_id) && empty($entry->voids_entryid)) {
+            $this->load->model('loan_model');
+            $finalize = $this->loan_model->finalize_loan_repayment_by_cash_receipt((int) $entry->reference_id, $journal_entry_id, $entry_date);
+            if (is_array($finalize) && empty($finalize['success'])) {
+                $this->last_post_error = !empty($finalize['message'])
+                    ? $finalize['message']
+                    : 'Failed to apply linked loan repayment after GL posting.';
+                log_message('error', 'post_journal_entry_to_general_ledger: finalize_loan_repayment failed for cash_receipt ' . (int) $entry->reference_id . ' — ' . $this->last_post_error);
+                $this->db->trans_rollback();
+                $this->void_journal_posting_to_gl($journal_entry_id, 'journal_entry');
+                return false;
+            }
+            if ($finalize === false) {
+                $this->last_post_error = 'Failed to apply linked loan repayment after GL posting.';
+                log_message('error', 'post_journal_entry_to_general_ledger: finalize_loan_repayment returned false for cash_receipt ' . (int) $entry->reference_id);
                 $this->db->trans_rollback();
                 $this->void_journal_posting_to_gl($journal_entry_id, 'journal_entry');
                 return false;
@@ -1526,6 +1550,27 @@ class Finance_Model extends CI_Model {
         $line_items = $this->_get_journal_entry_items_for_void($journal_entry_id, $entry);
         if (empty($line_items)) {
             return array('success' => false, 'message' => 'No line items found to reverse.');
+        }
+
+        if (!empty($entry->reference_type) && $entry->reference_type === 'cash_receipt' && !empty($entry->reference_id)) {
+            $this->load->model('cash_receipt_model');
+            $this->load->model('loan_model');
+            $cr = $this->cash_receipt_model->get_cash_receipt((int) $entry->reference_id);
+            $cr_type = ($cr && !empty($cr->received_from_type)) ? strtolower(trim((string) $cr->received_from_type)) : '';
+            if ($cr && $cr_type === 'loan_repayment' && !empty($cr->loan_repayment_applied) && !empty($cr->loan_repayment_receipt)) {
+                $void_loan = $this->loan_model->void_loan_repayment_receipt(
+                    $cr->loan_repayment_receipt,
+                    $reason !== '' ? $reason : 'Void cash receipt loan repayment',
+                    array('reverse_gl' => false, 'from_cash_receipt_void' => true)
+                );
+                if (empty($void_loan['success'])) {
+                    return array(
+                        'success' => false,
+                        'message' => !empty($void_loan['message']) ? $void_loan['message'] : 'Failed to reverse the linked loan repayment.',
+                    );
+                }
+                $this->cash_receipt_model->clear_loan_repayment_applied((int) $cr->id);
+            }
         }
 
         $orig_label = '#' . $journal_entry_id;

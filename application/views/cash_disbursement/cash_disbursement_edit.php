@@ -1,10 +1,145 @@
 <link href="<?php echo base_url(); ?>assets/css/plugins/datapicker/datepicker3.css?v=20260801" rel="stylesheet">
 <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-datepicker/1.9.0/css/bootstrap-datepicker.min.css" rel="stylesheet" crossorigin="anonymous" referrerpolicy="no-referrer">
+<link href="<?php echo base_url(); ?>assets/css/plugins/select2/select2.min.css" rel="stylesheet">
 <style>
 .datepicker-dropdown,.datepicker{z-index:9999!important;width:auto;min-width:0;}
 .datepicker-dropdown.dropdown-menu{background:#fff;border:1px solid #e7eaec;box-shadow:0 2px 8px rgba(0,0,0,0.12);padding:8px;width:auto;min-width:220px;max-width:280px;}
 .datepicker table{width:auto;margin:0;table-layout:fixed;}
 .datepicker td,.datepicker th{text-align:center;width:auto;}
+.select2-container--default .select2-results__option[aria-disabled=true]{color:#222;cursor:default;}
+.select2-container--default .select2-results__option .coa-bold{font-weight:bold;color:#111;}
+.select2-container{width:100%!important;}
+
+.cd-edit-page { margin-top: 4px; }
+.cd-edit-page .cbu-alert {
+    display: block;
+    margin: 0 0 16px;
+    padding: 10px 14px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 600;
+}
+.cd-edit-page .cbu-alert.success {
+    background: #e8f8f5;
+    color: #0e7c69;
+    border: 1px solid #c9ebe3;
+}
+.cd-edit-page .cbu-alert.danger {
+    background: #fdeceb;
+    color: #c0392b;
+    border: 1px solid #f5c6cb;
+}
+.cd-edit-page .cbu-panel {
+    background: #fff;
+    border: 1px solid #e7eaec;
+    border-radius: 10px;
+    margin-bottom: 20px;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+    overflow: visible;
+}
+.cd-edit-page .cbu-panel .panel-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 14px 20px;
+    background: #fafbfc;
+    border-bottom: 1px solid #e7eaec;
+}
+.cd-edit-page .cbu-panel .panel-head .head-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.cd-edit-page .cbu-panel .panel-head i.icon-badge {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background: #e8f8f5;
+    color: #1ab394;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+.cd-edit-page .cbu-panel .panel-head h4 {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 700;
+    color: #2f4050;
+}
+.cd-edit-page .cbu-panel .panel-head .btn {
+    border-radius: 6px;
+    font-weight: 600;
+}
+.cd-edit-page .cbu-panel .panel-body { padding: 20px; overflow: visible; }
+.cd-edit-page .form-horizontal .form-group { margin-bottom: 16px; }
+.cd-edit-page .form-horizontal .control-label {
+    color: #676a6c;
+    font-weight: 600;
+    padding-top: 9px;
+}
+.cd-edit-page .form-control {
+    border-radius: 6px;
+    border-color: #e5e6e7;
+    box-shadow: none;
+    height: 36px;
+}
+.cd-edit-page textarea.form-control { height: auto; min-height: 80px; }
+.cd-edit-page .form-control:focus {
+    border-color: #1ab394;
+    box-shadow: 0 0 0 2px rgba(26,179,148,0.15);
+}
+.cd-edit-page .form-control[readonly] {
+    background: #f8fafb;
+    font-weight: 700;
+}
+.cd-edit-page .help-block {
+    font-size: 12px;
+    color: #888;
+    margin-top: 6px;
+    margin-bottom: 0;
+}
+.cd-edit-page .required { color: #ed5565; }
+.cd-edit-page .input-group-addon {
+    background: #f8fafb;
+    cursor: pointer;
+    color: #1ab394;
+}
+.cd-edit-page .btn-primary {
+    background: #1ab394;
+    border-color: #1ab394;
+}
+.cd-edit-page .btn {
+    border-radius: 6px;
+    font-weight: 600;
+}
+.cd-edit-page .select2-container .select2-selection--single {
+    height: 36px;
+    border-radius: 6px;
+    border-color: #e5e6e7;
+}
+.cd-edit-page .select2-container--default .select2-selection--single .select2-selection__rendered {
+    line-height: 34px;
+    padding-left: 12px;
+    color: #2f4050;
+}
+.cd-edit-page .select2-container--default .select2-selection--single .select2-selection__arrow {
+    height: 34px;
+}
+.cd-edit-page .select2-container--default.select2-container--focus .select2-selection--single,
+.cd-edit-page .select2-container--default.select2-container--open .select2-selection--single {
+    border-color: #1ab394;
+}
+.cd-edit-page .loan-release-box {
+    background: #f0faf7;
+    border: 1px solid #c9ebe3;
+    border-radius: 8px;
+    padding: 12px 14px;
+    margin-bottom: 12px;
+    font-size: 13px;
+    color: #2f4050;
+}
+.cd-edit-page .loan-release-box strong { color: #0e7c69; }
 .cd-edit-paid-to-detail {
     background: #fafbfc;
     border: 1px solid #e7eaec;
@@ -24,9 +159,54 @@
     overflow-y: auto;
 }
 .cd-edit-paid-to-results .table { margin-bottom: 0; background: #fff; }
+.cd-edit-page .lines-table {
+    margin: 0;
+    background: #fff;
+}
+.cd-edit-page .lines-table > thead > tr > th {
+    background: #fafbfc;
+    border-bottom: 1px solid #e7eaec;
+    color: #676a6c;
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .02em;
+    vertical-align: middle;
+}
+.cd-edit-page .lines-table > tbody > tr > td,
+.cd-edit-page .lines-table > tfoot > tr > td {
+    vertical-align: middle;
+}
+.cd-edit-page .lines-table .amount-cell input {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+}
+.cd-edit-page .balance-diff {
+    font-weight: 700;
+    font-size: 13px;
+}
+.cd-edit-page .line-actions { margin-top: 12px; }
+.cd-edit-page .form-actions {
+    margin-top: 8px;
+    padding-top: 16px;
+    border-top: 1px solid #f0f2f3;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+.cd-edit-page .cancelled-box {
+    background: #fafbfc;
+    border: 1px solid #e7eaec;
+    border-radius: 8px;
+    padding: 12px 14px;
+}
+.cd-edit-page .cancelled-box .checkbox { margin: 0; }
 </style>
 
 <?php
+$account_list = isset($account_list) ? $account_list : array();
+$line_items = isset($line_items) && is_array($line_items) ? $line_items : array();
 $selected_paid_to_type = isset($selected_paid_to_type) ? $selected_paid_to_type : 'miscellaneous';
 $paid_to_value = set_value('paid_to', isset($disburse->paid_to) ? $disburse->paid_to : '');
 $paid_to_types = array(
@@ -37,40 +217,44 @@ $paid_to_types = array(
     'miscellaneous' => lang('cash_disbursement_paid_to_miscellaneous'),
 );
 $cash_disbursement_numeric_id = isset($disburse->id) ? (int) $disburse->id : 0;
+$list_url = site_url(current_lang() . '/cash_disbursement/cash_disbursement_list');
+$view_url = site_url(current_lang() . '/cash_disbursement/cash_disbursement_view/' . $id);
 ?>
+
+<select id="coaOptionsSource" style="display:none;">
+    <option value=""><?php echo lang('select_default_text'); ?></option>
+    <?php $this->load->view('finance/partials/coa_select_options', array('account_list' => $account_list, 'selected_account' => '')); ?>
+</select>
 
 <?php echo form_open_multipart(current_lang() . "/cash_disbursement/cash_disbursement_edit/" . $id, 'class="form-horizontal" id="cashDisbursementForm"'); ?>
-
-<?php
-if (isset($message) && !empty($message)) {
-    echo '<div class="label label-info displaymessage">' . $message . '</div>';
-} else if ($this->session->flashdata('message') != '') {
-    echo '<div class="label label-info displaymessage">' . $this->session->flashdata('message') . '</div>';
-} else if (isset($warning) && !empty($warning)) {
-    echo '<div class="label label-danger displaymessage">' . $warning . '</div>';
-} else if ($this->session->flashdata('warning') != '') {
-    echo '<div class="label label-danger displaymessage">' . $this->session->flashdata('warning') . '</div>';
-}
-?>
 
 <input type="hidden" name="id" value="<?php echo $disburse->id; ?>"/>
 <input type="hidden" name="loan_release_lid" id="loan_release_lid" value="<?php echo !empty($selected_release_lid) ? htmlspecialchars($selected_release_lid) : ''; ?>"/>
 
-<div class="wrapper wrapper-content animated fadeInRight">
-    <div class="row">
-        <div class="col-lg-12">
-            <div class="ibox float-e-margins">
-                <div class="ibox-title">
-                    <h5><?php echo lang('cash_disbursement_edit'); ?> - <?php echo $disburse->disburse_no; ?></h5>
-                    <div class="ibox-tools">
-                        <a href="<?php echo site_url(current_lang() . '/cash_disbursement/cash_disbursement_list'); ?>" class="btn btn-white btn-xs">
-                            <i class="fa fa-arrow-left"></i> <?php echo lang('back'); ?>
-                        </a>
-                    </div>
-                </div>
-                <div class="ibox-content">
-                    
-                    <!-- Disbursement Header Information -->
+<div class="col-lg-12 cd-edit-page">
+    <?php
+    if (isset($message) && !empty($message)) {
+        echo '<div class="cbu-alert success displaymessage">' . $message . '</div>';
+    } else if ($this->session->flashdata('message') != '') {
+        echo '<div class="cbu-alert success displaymessage">' . $this->session->flashdata('message') . '</div>';
+    } else if (isset($warning) && !empty($warning)) {
+        echo '<div class="cbu-alert danger displaymessage">' . $warning . '</div>';
+    } else if ($this->session->flashdata('warning') != '') {
+        echo '<div class="cbu-alert danger displaymessage">' . $this->session->flashdata('warning') . '</div>';
+    }
+    ?>
+
+    <div class="cbu-panel">
+        <div class="panel-head">
+            <div class="head-left">
+                <i class="fa fa-edit icon-badge"></i>
+                <h4><?php echo lang('cash_disbursement_edit'); ?> - <?php echo htmlspecialchars($disburse->disburse_no, ENT_QUOTES, 'UTF-8'); ?></h4>
+            </div>
+            <a href="<?php echo $list_url; ?>" class="btn btn-default btn-sm">
+                <i class="fa fa-arrow-left"></i> <?php echo lang('back'); ?>
+            </a>
+        </div>
+        <div class="panel-body">
                     <div class="row">
                         <div class="col-md-6">
                             <div class="form-group">
@@ -102,7 +286,7 @@ if (isset($message) && !empty($message)) {
 
                     <div class="row" id="loanReleaseEditPanel" style="<?php echo !empty($selected_release_lid) ? '' : 'display:none;'; ?>">
                         <div class="col-md-12">
-                            <div class="alert alert-info" style="margin-bottom:10px;">
+                            <div class="loan-release-box">
                                 <strong><?php echo lang('loan_release_loan'); ?>:</strong>
                                 <span id="loanReleaseEditLabel"><?php echo htmlspecialchars((string) $selected_release_lid); ?></span>
                             </div>
@@ -219,24 +403,32 @@ if (isset($message) && !empty($message)) {
                         <div class="col-md-12">
                             <div class="form-group">
                                 <div class="col-lg-offset-2 col-lg-10">
-                                    <div class="checkbox">
-                                        <label>
-                                            <input type="checkbox" name="cancelled" id="cancelled" value="1" <?php echo set_checkbox('cancelled', '1', !empty($disburse->cancelled)); ?>/>
-                                            <?php echo lang('cancelled'); ?>
-                                        </label>
+                                    <div class="cancelled-box">
+                                        <div class="checkbox">
+                                            <label>
+                                                <input type="checkbox" name="cancelled" id="cancelled" value="1" <?php echo set_checkbox('cancelled', '1', !empty($disburse->cancelled)); ?>/>
+                                                <?php echo lang('cancelled'); ?>
+                                            </label>
+                                        </div>
+                                        <p class="help-block"><?php echo lang('cash_disbursement_cancelled_help'); ?></p>
                                     </div>
-                                    <p class="help-block text-muted" style="margin-left: 0;"><?php echo lang('cash_disbursement_cancelled_help'); ?></p>
                                 </div>
                             </div>
                         </div>
                     </div>
+        </div>
+    </div>
 
-                    <hr/>
-
-                    <!-- Line Items Table (journal-entry style: Account | Description | Debit | Credit) -->
-                    <h4><?php echo lang('cash_disbursement_line_items'); ?></h4>
+    <div class="cbu-panel">
+        <div class="panel-head">
+            <div class="head-left">
+                <i class="fa fa-list-alt icon-badge"></i>
+                <h4><?php echo lang('cash_disbursement_line_items'); ?></h4>
+            </div>
+        </div>
+        <div class="panel-body">
                     <div class="table-responsive">
-                        <table id="lineItemsTable" class="table table-bordered">
+                        <table id="lineItemsTable" class="table table-striped lines-table">
                             <thead>
                                 <tr>
                                     <th style="width: 30%;"><?php echo lang('cash_disbursement_account'); ?> <span class="required">*</span></th>
@@ -259,22 +451,16 @@ if (isset($message) && !empty($message)) {
                                     <td>
                                         <select class="form-control account-select" name="account[]">
                                             <option value=""><?php echo lang('select_default_text'); ?></option>
-                                            <?php foreach ($account_list as $key1 => $value1) { ?>
-                                                <optgroup label="<?php echo htmlspecialchars($value1['info']->account . ' - ' . $value1['info']->name); ?>">
-                                                    <?php foreach ($value1['data'] as $key => $value) { ?>
-                                                        <option value="<?php echo $value->account; ?>" <?php echo ($item->account == $value->account) ? 'selected' : ''; ?>><?php echo htmlspecialchars($value->account . ' - ' . $value->name); ?></option>
-                                                    <?php } ?>
-                                                </optgroup>
-                                            <?php } ?>
+                                            <?php $this->load->view('finance/partials/coa_select_options', array('account_list' => $account_list, 'selected_account' => $item->account)); ?>
                                         </select>
                                     </td>
                                     <td>
                                         <input type="text" name="line_description[]" class="form-control" value="<?php echo htmlspecialchars($item->description); ?>"/>
                                     </td>
-                                    <td>
+                                    <td class="amount-cell">
                                         <input type="number" step="0.01" min="0" name="debit[]" class="form-control debit-input" value="<?php echo $item_debit; ?>" placeholder="0.00"/>
                                     </td>
-                                    <td>
+                                    <td class="amount-cell">
                                         <input type="number" step="0.01" min="0" name="credit[]" class="form-control credit-input" value="<?php echo $item_credit; ?>" placeholder="0.00"/>
                                     </td>
                                     <td>
@@ -284,44 +470,63 @@ if (isset($message) && !empty($message)) {
                                     </td>
                                 </tr>
                                 <?php endforeach; ?>
+                                <?php if (empty($line_items)): ?>
+                                <tr class="line-item">
+                                    <td>
+                                        <select class="form-control account-select" name="account[]">
+                                            <option value=""><?php echo lang('select_default_text'); ?></option>
+                                            <?php $this->load->view('finance/partials/coa_select_options', array('account_list' => $account_list, 'selected_account' => '')); ?>
+                                        </select>
+                                    </td>
+                                    <td>
+                                        <input type="text" name="line_description[]" class="form-control" value=""/>
+                                    </td>
+                                    <td class="amount-cell">
+                                        <input type="number" step="0.01" min="0" name="debit[]" class="form-control debit-input" value="" placeholder="0.00"/>
+                                    </td>
+                                    <td class="amount-cell">
+                                        <input type="number" step="0.01" min="0" name="credit[]" class="form-control credit-input" value="" placeholder="0.00"/>
+                                    </td>
+                                    <td>
+                                        <button type="button" class="btn btn-danger btn-xs remove-line" disabled title="<?php echo lang('delete'); ?>">
+                                            <i class="fa fa-trash"></i>
+                                        </button>
+                                    </td>
+                                </tr>
+                                <?php endif; ?>
                             </tbody>
                             <tfoot>
                                 <tr>
                                     <td colspan="2" class="text-right"><strong><?php echo lang('total'); ?>:</strong></td>
-                                    <td>
+                                    <td class="amount-cell">
                                         <input type="text" id="total_debit" class="form-control" readonly value="<?php echo number_format($edit_total_debit, 2); ?>"/>
                                     </td>
-                                    <td>
+                                    <td class="amount-cell">
                                         <input type="text" id="total_credit" class="form-control" readonly value="<?php echo number_format($edit_total_credit, 2); ?>"/>
                                     </td>
                                     <td></td>
                                 </tr>
                                 <tr>
-                                    <td colspan="2" id="balance_diff" class="text-right" style="color: red; font-weight: bold;"></td>
+                                    <td colspan="2" id="balance_diff" class="text-right balance-diff"></td>
                                     <td colspan="3"></td>
                                 </tr>
                             </tfoot>
                         </table>
+                    </div>
+                    <div class="line-actions">
                         <button type="button" class="btn btn-primary" id="addLineItem">
                             <i class="fa fa-plus"></i> <?php echo lang('add_row'); ?>
                         </button>
                     </div>
 
-                    <hr/>
-
-                    <div class="form-group">
-                        <div class="col-lg-offset-2 col-lg-10">
-                            <button type="submit" class="btn btn-primary">
-                                <i class="fa fa-save"></i> <?php echo lang('update'); ?>
-                            </button>
-                            <a href="<?php echo site_url(current_lang() . '/cash_disbursement/cash_disbursement_view/' . $id); ?>" class="btn btn-white">
-                                <?php echo lang('cancel'); ?>
-                            </a>
-                        </div>
+                    <div class="form-actions">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fa fa-save"></i> <?php echo lang('update'); ?>
+                        </button>
+                        <a href="<?php echo $view_url; ?>" class="btn btn-default">
+                            <i class="fa fa-undo"></i> <?php echo lang('cancel'); ?>
+                        </a>
                     </div>
-
-                </div>
-            </div>
         </div>
     </div>
 </div>
@@ -342,6 +547,77 @@ if (isset($message) && !empty($message)) {
         function boot(){
             var releaseCache = {};
             var cashDisbursementId = <?php echo (int) $cash_disbursement_numeric_id; ?>;
+
+            function ensureSelect2(cb){
+                if ($.fn.select2) { cb(); return; }
+                loadScript(
+                    '<?php echo base_url(); ?>assets/js/plugins/select2/select2.full.min.js',
+                    cb,
+                    'https://cdnjs.cloudflare.com/ajax/libs/select2/4.0.13/js/select2.full.min.js'
+                );
+            }
+
+            function formatCoaOption(data) {
+                if (!data.element) { return data.text; }
+                var $opt = $(data.element);
+                var isParent = $opt.data('is-parent') == 1 || $opt.hasClass('coa-parent-account');
+                var isHeader = $opt.data('coa-header') == 1;
+                if (isParent || isHeader) {
+                    return $('<span class="coa-bold"></span>').text(data.text);
+                }
+                return data.text;
+            }
+
+            function initAccountSelect($el) {
+                if (!$el || !$el.length || !$.fn.select2) { return; }
+                if ($el.hasClass('select2-hidden-accessible')) {
+                    $el.select2('destroy');
+                }
+                $el.select2({
+                    width: '100%',
+                    placeholder: <?php echo json_encode(lang('select_default_text')); ?>,
+                    allowClear: true,
+                    templateResult: formatCoaOption,
+                    templateSelection: function(data) { return data.text; }
+                });
+            }
+
+            function destroyAccountSelect($el) {
+                if ($el && $el.length && $el.hasClass('select2-hidden-accessible')) {
+                    $el.select2('destroy');
+                }
+            }
+
+            function makeAccountSelectHtml(selectedAccount) {
+                var $tmp = $('<select/>').html($('#coaOptionsSource').html());
+                if (selectedAccount) {
+                    $tmp.find('option').each(function() {
+                        var $opt = $(this);
+                        if ($opt.prop('disabled')) { return; }
+                        if (String($opt.attr('value') || '') === String(selectedAccount)) {
+                            $opt.attr('selected', 'selected');
+                        } else {
+                            $opt.removeAttr('selected');
+                        }
+                    });
+                }
+                return $tmp.html();
+            }
+
+            function addLineRow(account, debit, credit, desc) {
+                var html = '<tr class="line-item">' +
+                    '<td><select class="form-control account-select" name="account[]">' + makeAccountSelectHtml(account || '') + '</select></td>' +
+                    '<td><input type="text" name="line_description[]" class="form-control" value="' + String(desc || '').replace(/"/g, '&quot;') + '"/></td>' +
+                    '<td class="amount-cell"><input type="number" step="0.01" min="0" name="debit[]" class="form-control debit-input" value="' + (debit || '') + '" placeholder="0.00"/></td>' +
+                    '<td class="amount-cell"><input type="number" step="0.01" min="0" name="credit[]" class="form-control credit-input" value="' + (credit || '') + '" placeholder="0.00"/></td>' +
+                    '<td><button type="button" class="btn btn-danger btn-xs remove-line" title="<?php echo addslashes(lang('delete')); ?>"><i class="fa fa-trash"></i></button></td></tr>';
+                var $row = $(html);
+                $('#lineItemsTable tbody').append($row);
+                initAccountSelect($row.find('.account-select'));
+                updateRemoveButtons();
+                calculateTotals();
+                return $row;
+            }
 
             function ensureBootstrapDP(cb){
                 function wrapBootstrapDP(){
@@ -370,6 +646,9 @@ if (isset($message) && !empty($message)) {
                     orientation: 'bottom auto', todayHighlight: true, container: 'body'
                 });
             }
+            ensureSelect2(function(){
+                $('.account-select').each(function(){ initAccountSelect($(this)); });
+            });
             ensureBootstrapDP(initPicker);
 
             updateRemoveButtons();
@@ -655,23 +934,21 @@ if (isset($message) && !empty($message)) {
             updatePaidToUI(false);
 
             $('#addLineItem').on('click', function(){
-                var newRow = $('.line-item:first').clone();
-                newRow.find('input, select').val('');
-                $('#lineItemsTable tbody').append(newRow);
-                updateRemoveButtons();
-                calculateTotals();
+                addLineRow('', '', '', '');
             });
 
             $(document).on('click', '.remove-line', function(){
-                if ($('.line-item').length > 1) {
-                    $(this).closest('tr').remove();
+                if ($('#lineItemsTable tbody tr.line-item').length > 1) {
+                    var $row = $(this).closest('tr');
+                    destroyAccountSelect($row.find('.account-select'));
+                    $row.remove();
                     updateRemoveButtons();
                     calculateTotals();
                 }
             });
 
             function updateRemoveButtons(){
-                var count = $('.line-item').length;
+                var count = $('#lineItemsTable tbody tr.line-item').length;
                 $('.remove-line').prop('disabled', count <= 1);
             }
 

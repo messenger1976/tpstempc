@@ -14,6 +14,7 @@ class Cash_disbursement_model extends CI_Model {
         if ($this->db->table_exists('cash_disbursements')) {
             $columns = array(
                 'loan_release_lid' => "VARCHAR(50) NULL DEFAULT NULL",
+                'paid_to_type' => "VARCHAR(32) NULL DEFAULT NULL",
             );
             foreach ($columns as $col => $definition) {
                 if (!$this->db->query("SHOW COLUMNS FROM cash_disbursements LIKE '" . $this->db->escape_str($col) . "'")->row()) {
@@ -55,6 +56,7 @@ class Cash_disbursement_model extends CI_Model {
      * Get single cash disbursement
      */
     function get_cash_disbursement($id) {
+        $this->ensure_loan_release_columns();
         $this->db->where('PIN', current_user()->PIN);
         $this->db->where('id', $id);
         
@@ -216,7 +218,8 @@ class Cash_disbursement_model extends CI_Model {
         }
 
         // Update remaining disbursement header fields (payment_method already done above)
-        $allowed = array('disburse_no', 'disburse_date', 'paid_to', 'cheque_no', 'bank_name', 'description', 'total_amount', 'cancelled', 'updated_at', 'loan_release_lid');
+        $existing = $this->get_cash_disbursement($id);
+        $allowed = array('disburse_no', 'disburse_date', 'paid_to', 'paid_to_type', 'cheque_no', 'bank_name', 'description', 'total_amount', 'cancelled', 'updated_at', 'loan_release_lid');
         $set_parts = array();
         $params = array();
         foreach ($allowed as $col) {
@@ -256,6 +259,17 @@ class Cash_disbursement_model extends CI_Model {
                 if (isset($item['credit'])) $row['credit'] = $item['credit'];
                 $this->db->insert('cash_disbursement_items', $row);
             }
+        }
+
+        // Keep loan-release link in sync when payee type / LID changes on edit.
+        $this->load->model('loan_model');
+        $new_lid = array_key_exists('loan_release_lid', $disburse_data) ? $disburse_data['loan_release_lid'] : null;
+        $old_lid = ($existing && !empty($existing->loan_release_lid)) ? $existing->loan_release_lid : null;
+        if ($old_lid && (empty($new_lid) || (string) $new_lid !== (string) $old_lid)) {
+            $this->loan_model->unlink_pending_release_cash_disbursement($id);
+        }
+        if (!empty($new_lid)) {
+            $this->loan_model->link_pending_release_to_cash_disbursement($new_lid, $id);
         }
 
         // Complete transaction so disbursement + items are committed even if journal creation fails

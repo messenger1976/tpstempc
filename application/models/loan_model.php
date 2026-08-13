@@ -650,12 +650,11 @@ class Loan_Model extends CI_Model {
     function get_pending_release($LID, $pin = null) {
         $pin = $pin ? $pin : current_user()->PIN;
         $this->ensure_release_workflow_columns();
+        // Use where_in (not or_where) so LID/PIN stay required — or_where without
+        // grouping used to match any draft row in the table and block every Release click.
         $this->db->where('LID', $LID);
         $this->db->where('PIN', $pin);
-        $this->db->group_start();
-        $this->db->where('release_status', 'pending');
-        $this->db->or_where('release_status', 'draft');
-        $this->db->group_end();
+        $this->db->where_in('release_status', array('pending', 'draft'));
         $this->db->order_by('disbursedate', 'DESC');
         $this->db->limit(1);
         return $this->db->get('loan_contract_disburse')->row();
@@ -715,7 +714,7 @@ class Loan_Model extends CI_Model {
         $sql = "SELECT lcd.LID, lcd.disbursedate, lcd.comment, lcd.disburse_no, lcd.payment_method,
                        lcd.release_status, lcd.cash_disbursement_id,
                        lcd.offset_loan_ids,
-                       lc.basic_amount, lc.member_id, lc.product_type, lc.installment_amount,
+                       lc.basic_amount, lc.member_id, lc.PID, lc.product_type, lc.installment_amount,
                        lp.name AS product_name,
                        m.firstname, m.middlename, m.lastname
                 FROM loan_contract_disburse lcd
@@ -727,23 +726,73 @@ class Loan_Model extends CI_Model {
                   AND lcd.release_status IN ('pending', 'draft')
                 ORDER BY lcd.disbursedate DESC, lcd.LID DESC";
         $rows = $this->db->query($sql, array($pin, $pid))->result();
+        return $this->_enrich_pending_release_rows($rows, $pin);
+    }
+
+    /**
+     * Search / list loan releases waiting for Cash Disbursement (release_status=pending).
+     * Empty $key returns the pending list (for display). Optionally include the draft
+     * linked to $include_draft_for_cd_id (edit of the same CD only).
+     */
+    function search_pending_releases($key, $limit = 20, $include_draft_for_cd_id = null) {
+        $pin = current_user()->PIN;
+        $this->ensure_release_workflow_columns();
+        $key = trim((string) $key);
+        $limit = max(1, min(50, (int) $limit));
+        $params = array($pin);
+        $status_sql = "lcd.release_status = 'pending'";
+        if ($include_draft_for_cd_id !== null && (int) $include_draft_for_cd_id > 0) {
+            $status_sql = "(lcd.release_status = 'pending' OR (lcd.release_status = 'draft' AND lcd.cash_disbursement_id = ?))";
+            $params[] = (int) $include_draft_for_cd_id;
+        }
+        $key_sql = '';
+        if ($key !== '') {
+            $like = '%' . $this->db->escape_like_str($key) . '%';
+            $key_sql = " AND (
+                    lcd.LID LIKE ?
+                    OR IFNULL(lcd.disburse_no, '') LIKE ?
+                    OR IFNULL(lc.member_id, '') LIKE ?
+                    OR IFNULL(lc.PID, '') LIKE ?
+                    OR IFNULL(m.firstname, '') LIKE ?
+                    OR IFNULL(m.middlename, '') LIKE ?
+                    OR IFNULL(m.lastname, '') LIKE ?
+                    OR CONCAT(IFNULL(m.firstname,''), ' ', IFNULL(m.middlename,''), ' ', IFNULL(m.lastname,'')) LIKE ?
+                  )";
+            $params[] = $like;
+            $params[] = $like;
+            $params[] = $like;
+            $params[] = $like;
+            $params[] = $like;
+            $params[] = $like;
+            $params[] = $like;
+            $params[] = $like;
+        }
+        $sql = "SELECT lcd.LID, lcd.disbursedate, lcd.comment, lcd.disburse_no, lcd.payment_method,
+                       lcd.release_status, lcd.cash_disbursement_id,
+                       lcd.offset_loan_ids,
+                       lc.basic_amount, lc.member_id, lc.PID, lc.product_type, lc.installment_amount,
+                       lp.name AS product_name,
+                       m.firstname, m.middlename, m.lastname
+                FROM loan_contract_disburse lcd
+                INNER JOIN loan_contract lc ON lc.LID = lcd.LID AND lc.PIN = lcd.PIN
+                LEFT JOIN loan_product lp ON lp.id = lc.product_type AND lp.PIN = lc.PIN
+                LEFT JOIN members m ON m.PID = lc.PID AND m.PIN = lc.PIN
+                WHERE lcd.PIN = ?
+                  AND {$status_sql}
+                  {$key_sql}
+                ORDER BY lcd.disbursedate DESC, lcd.LID DESC
+                LIMIT {$limit}";
+        $rows = $this->db->query($sql, $params)->result();
+        return $this->_enrich_pending_release_rows($rows, $pin);
+    }
+
+    private function _enrich_pending_release_rows($rows, $pin) {
         foreach ($rows as $row) {
             $line_items = $this->get_disbursement_gl_items($row->LID, $pin);
-            $total_credit = 0.0;
             $net_cash = 0.0;
             $offset_total = 0.0;
             $offset_ids = array();
             $row->line_items = $line_items;
-            foreach ($line_items as $item) {
-                $credit = isset($item['credit']) ? floatval($item['credit']) : 0;
-                $account = isset($item['account']) ? (string) $item['account'] : '';
-                if ($credit > 0.009) {
-                    $total_credit += $credit;
-                    if ($account === '21110' || $account === '30130') {
-                        // deduction only
-                    }
-                }
-            }
             if (!empty($row->offset_loan_ids)) {
                 $decoded = json_decode($row->offset_loan_ids, true);
                 if (is_array($decoded)) {

@@ -41,6 +41,8 @@ $payment_methods = isset($payment_methods) ? $payment_methods : array();
 $account_list = isset($account_list) ? $account_list : array();
 $offsetable_loans = isset($offsetable_loans) ? $offsetable_loans : array();
 $selected_offset_loans = isset($selected_offset_loans) ? $selected_offset_loans : array();
+$existing_release = isset($existing_release) ? $existing_release : null;
+$existing_gl_items = isset($existing_gl_items) ? $existing_gl_items : array();
 $disburse_deductions = isset($disburse_deductions) ? $disburse_deductions : array();
 ?>
 
@@ -460,6 +462,11 @@ $disburse_deductions = isset($disburse_deductions) ? $disburse_deductions : arra
         </div>
         <div class="panel-body">
             <?php echo form_open(current_lang() . "/loan/loan_disburse_entry/" . $loanid, array('id' => 'loanDisburseEntryForm')); ?>
+            <?php if (!empty($existing_release)): ?>
+            <div class="alert alert-info" style="margin-bottom:14px;">
+                <?php echo lang('loan_release_editing_pending'); ?>
+            </div>
+            <?php endif; ?>
             <div class="row">
                 <?php if (!empty($show_disburse_no) && isset($next_disburse_no)): ?>
                 <div class="col-md-4">
@@ -474,7 +481,13 @@ $disburse_deductions = isset($disburse_deductions) ? $disburse_deductions : arra
                     <div class="form-group">
                         <label><?php echo lang('loan_disburse_date'); ?> <span class="required">*</span></label>
                         <div class="input-group date" id="disburseDatePicker">
-                            <input type="text" name="disbursedate" value="<?php echo set_value('disbursedate', date('d-m-Y')); ?>" data-date-format="dd-mm-yyyy" class="form-control" placeholder="dd-mm-yyyy" required/>
+                            <?php
+                            $default_disburse_date = date('d-m-Y');
+                            if (!empty($existing_release) && !empty($existing_release->disbursedate)) {
+                                $default_disburse_date = date('d-m-Y', strtotime($existing_release->disbursedate));
+                            }
+                            ?>
+                            <input type="text" name="disbursedate" value="<?php echo set_value('disbursedate', $default_disburse_date); ?>" data-date-format="dd-mm-yyyy" class="form-control" placeholder="dd-mm-yyyy" required/>
                             <span class="input-group-addon"><i class="fa fa-calendar"></i></span>
                         </div>
                         <?php echo form_error('disbursedate'); ?>
@@ -496,7 +509,7 @@ $disburse_deductions = isset($disburse_deductions) ? $disburse_deductions : arra
             </div>
             <div class="form-group">
                 <label><?php echo lang('loan_comment'); ?> <span class="required">*</span></label>
-                <textarea name="comment" class="form-control" rows="2" required><?php echo set_value('comment'); ?></textarea>
+                <textarea name="comment" class="form-control" rows="2" required><?php echo set_value('comment', (!empty($existing_release) && !empty($existing_release->comment)) ? $existing_release->comment : ''); ?></textarea>
                 <?php echo form_error('comment'); ?>
             </div>
 
@@ -572,23 +585,36 @@ $disburse_deductions = isset($disburse_deductions) ? $disburse_deductions : arra
                     </thead>
                     <tbody>
                         <?php
-                        $default_lines = array(
-                            array('account' => $loan_principle_account, 'debit' => $basic_amount, 'credit' => 0, 'desc' => 'Loan principal'),
-                        );
-                        foreach ($disburse_deductions as $ded) {
+                        $default_lines = array();
+                        if (!empty($existing_gl_items) && is_array($existing_gl_items)) {
+                            foreach ($existing_gl_items as $gi) {
+                                $default_lines[] = array(
+                                    'account' => isset($gi['account']) ? $gi['account'] : '',
+                                    'debit' => isset($gi['debit']) ? $gi['debit'] : 0,
+                                    'credit' => isset($gi['credit']) ? $gi['credit'] : 0,
+                                    'desc' => isset($gi['description']) ? $gi['description'] : '',
+                                );
+                            }
+                        }
+                        if (empty($default_lines)) {
+                            $default_lines = array(
+                                array('account' => $loan_principle_account, 'debit' => $basic_amount, 'credit' => 0, 'desc' => 'Loan principal'),
+                            );
+                            foreach ($disburse_deductions as $ded) {
+                                $default_lines[] = array(
+                                    'account' => $ded['account'],
+                                    'debit' => 0,
+                                    'credit' => isset($ded['amount']) ? $ded['amount'] : 0,
+                                    'desc' => $ded['description'],
+                                );
+                            }
                             $default_lines[] = array(
-                                'account' => $ded['account'],
+                                'account' => $default_credit_account,
                                 'debit' => 0,
-                                'credit' => isset($ded['amount']) ? $ded['amount'] : 0,
-                                'desc' => $ded['description'],
+                                'credit' => $basic_amount,
+                                'desc' => 'Net cash to member',
                             );
                         }
-                        $default_lines[] = array(
-                            'account' => $default_credit_account,
-                            'debit' => 0,
-                            'credit' => $basic_amount,
-                            'desc' => 'Net cash to member',
-                        );
                         foreach ($default_lines as $line):
                         ?>
                         <tr class="line-item">

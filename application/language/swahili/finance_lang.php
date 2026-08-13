@@ -89,7 +89,9 @@ $lang['journalentry_total'] ='Total';
 $lang['journalentry_tax'] ='Tax';
 $lang['add_row'] ='Add Row';
 $lang['record_addbtn'] ='Record Journal';
-$lang['cash_disbursement_release_not_found'] = 'Hakuna loan release inayosubiri kwa mwanachama huyu.';
+$lang['cash_disbursement_release_not_found'] = 'Hakuna loan release inayosubiri kwa mlipaji aliyechaguliwa.';
 $lang['loan_release_loan'] = 'Loan Release';
+$lang['cash_disbursement_loan_release_required'] = 'Tafadhali chagua loan release inayosubiri.';
+$lang['cash_disbursement_no_pending_releases'] = 'Hakuna loan release zinazosubiri.';
 
 ?>

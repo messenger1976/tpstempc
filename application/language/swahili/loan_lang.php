@@ -111,6 +111,10 @@ $lang['loan_disbursement_statement'] = 'Taarifa ya Mito';
 $lang['loan_disbursement_voucher'] = 'Hati ya Mito';
 $lang['loan_release_loan'] = 'Release Loan';
 $lang['loan_release_exists'] = 'Mkopo huu tayari una kumbukumbu ya release inayosubiri au iliyokamilika.';
+$lang['loan_release_not_approved'] = 'This loan is not approved for release.';
+$lang['loan_release_already_disbursed'] = 'This loan is already marked as disbursed.';
+$lang['loan_release_linked_to_cd'] = 'This loan release is already linked to a Cash Disbursement. Continue from Finance → Cash Disbursement (or Journal Entry Review to post).';
+$lang['loan_release_editing_pending'] = 'Editing an existing pending release. Save updates the worksheet for Cash Disbursement.';
 $lang['loan_release_saved'] = 'Release ya mkopo imehifadhiwa na sasa inasubiri Cash Disbursement.';
 $lang['loan_offset_pending'] = 'Offset imewekwa: mkopo %d wenye jumla ya %s utasettlewa wakati payout itakapopostiwa.';
 

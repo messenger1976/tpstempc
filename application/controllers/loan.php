@@ -1306,11 +1306,27 @@ $pin = current_user()->PIN;
             redirect(current_lang() . '/loan/loan_disbursement', 'refresh');
             return;
         }
-        if ($loaninfo->status != 4 || $loaninfo->disburse != 0 || $this->loan_model->get_pending_release($LID, $pin)) {
-            $this->session->set_flashdata('warning', lang('loan_release_exists'));
+        if ((int) $loaninfo->status !== 4) {
+            $this->session->set_flashdata('warning', lang('loan_release_not_approved'));
             redirect(current_lang() . '/loan/loan_disbursement', 'refresh');
             return;
         }
+        if ((string) $loaninfo->disburse !== '0' && (int) $loaninfo->disburse !== 0) {
+            $this->session->set_flashdata('warning', lang('loan_release_already_disbursed'));
+            redirect(current_lang() . '/loan/loan_disbursement', 'refresh');
+            return;
+        }
+
+        $existing_release = $this->loan_model->get_pending_release($LID, $pin);
+        if ($existing_release && isset($existing_release->release_status) && $existing_release->release_status === 'draft') {
+            $cd_note = !empty($existing_release->cash_disbursement_id)
+                ? (' (Cash Disbursement ID ' . (int) $existing_release->cash_disbursement_id . ')')
+                : '';
+            $this->session->set_flashdata('warning', lang('loan_release_linked_to_cd') . $cd_note);
+            redirect(current_lang() . '/loan/loan_disbursement', 'refresh');
+            return;
+        }
+        // release_status=pending: allow re-open/edit of the draft worksheet.
 
         $this->form_validation->set_rules('disbursedate', lang('loan_disburse_date'), 'required|valid_date');
         $this->form_validation->set_rules('comment', lang('loan_comment'), 'required');
@@ -1504,6 +1520,31 @@ $pin = current_user()->PIN;
         $this->data['default_payment_method_id'] = $default_payment_method_id;
         $this->data['show_disburse_no'] = (bool) $this->db->query("SHOW COLUMNS FROM loan_contract_disburse LIKE 'disburse_no'")->row();
         $this->data['next_disburse_no'] = $this->loan_model->get_next_loan_disburse_no();
+        $this->data['existing_release'] = $existing_release;
+        $this->data['existing_gl_items'] = array();
+        if ($existing_release) {
+            $this->data['existing_gl_items'] = $this->loan_model->get_disbursement_gl_items($LID, $pin);
+            if (!empty($existing_release->disburse_no)) {
+                $this->data['next_disburse_no'] = $existing_release->disburse_no;
+            }
+            if (!empty($existing_release->payment_method)) {
+                $pm_name = strtolower(trim((string) $existing_release->payment_method));
+                foreach ($payment_methods as $method) {
+                    if (strtolower(trim((string) $method->name)) === $pm_name) {
+                        $this->data['default_payment_method_id'] = $method->id;
+                        $this->data['default_credit_account'] = $this->loan_model->get_credit_account_for_payment_method($method->id);
+                        break;
+                    }
+                }
+            }
+            if (!empty($existing_release->offset_loan_ids)) {
+                $decoded_offsets = json_decode($existing_release->offset_loan_ids, true);
+                if (is_array($decoded_offsets) && empty($this->data['selected_offset_loans'])) {
+                    // selected_offset_loans set below after post check; stash for later
+                    $this->data['_release_offset_loans'] = $decoded_offsets;
+                }
+            }
+        }
         $payment_method_credit_accounts = array();
         foreach ($payment_methods as $method) {
             $payment_method_credit_accounts[$method->id] = $this->loan_model->get_credit_account_for_payment_method($method->id);
@@ -1535,7 +1576,14 @@ $pin = current_user()->PIN;
         }
         $this->data['offsetable_loans_json'] = $offset_json;
         $posted_offsets = $this->input->post('offset_loans');
-        $this->data['selected_offset_loans'] = is_array($posted_offsets) ? $posted_offsets : array();
+        if (is_array($posted_offsets)) {
+            $this->data['selected_offset_loans'] = $posted_offsets;
+        } elseif (!empty($this->data['_release_offset_loans']) && is_array($this->data['_release_offset_loans'])) {
+            $this->data['selected_offset_loans'] = $this->data['_release_offset_loans'];
+        } else {
+            $this->data['selected_offset_loans'] = array();
+        }
+        unset($this->data['_release_offset_loans']);
 
         $this->data['basicinfo'] = $this->member_model->member_basic_info(null, $loaninfo->PID, $loaninfo->member_id)->row();
         $this->data['contactinfo'] = $this->member_model->member_contact($loaninfo->PID);
@@ -1550,7 +1598,9 @@ $pin = current_user()->PIN;
         if (empty(trim($disburse_no))) {
             return TRUE;
         }
-        if ($this->loan_model->loan_disburse_no_exists(trim($disburse_no), null)) {
+        $loanid = $this->uri->segment(4);
+        $exclude_lid = $loanid ? decode_id($loanid) : null;
+        if ($this->loan_model->loan_disburse_no_exists(trim($disburse_no), $exclude_lid)) {
             $this->form_validation->set_message('check_loan_disburse_no', lang('loan_disburse_no_exists'));
             return FALSE;
         }

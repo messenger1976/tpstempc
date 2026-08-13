@@ -119,18 +119,6 @@ $list_url = site_url(current_lang() . '/finance/void_transactions');
     font-size: 13px;
     font-weight: 600;
 }
-.vt-page .dataTables_wrapper .dataTables_filter input,
-.vt-page .dataTables_wrapper .dataTables_length select {
-    border: 1px solid #e5e6e7;
-    border-radius: 6px;
-    height: 32px;
-    padding: 4px 8px;
-}
-.vt-page .dataTables_wrapper .dataTables_paginate .paginate_button.current {
-    background: #1ab394 !important;
-    border-color: #1ab394 !important;
-    color: #fff !important;
-}
 .vt-page .amount-cell {
     text-align: right;
     font-weight: 700;

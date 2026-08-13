@@ -47,36 +47,6 @@ $list_url = site_url(current_lang() . '/cash_disbursement/cash_disbursement_list
     gap: 6px;
     align-items: center;
 }
-.member-list-page .dataTables_wrapper .dataTables_filter input,
-.member-list-page .dataTables_wrapper .dataTables_length select {
-    border: 1px solid #e5e6e7;
-    border-radius: 6px;
-    height: 32px;
-    padding: 4px 8px;
-}
-.member-list-page .dataTables_wrapper .dataTables_paginate .paginate_button.current {
-    background: #1ab394 !important;
-    border-color: #1ab394 !important;
-    color: #fff !important;
-}
-.member-list-page .dt-buttons .btn {
-    border-radius: 6px;
-    margin-right: 4px;
-}
-.member-list-page .member-table > thead > tr > th,
-.member-list-page .member-table > tbody > tr > td {
-    border: 1px solid #e7eaec !important;
-}
-.member-list-page .member-table > thead > tr > th {
-    border-top: 0 !important;
-}
-.member-list-page .member-table > thead > tr > th:not(:first-child),
-.member-list-page .member-table > tbody > tr > td:not(:first-child) {
-    border-left: 0 !important;
-}
-.member-list-page .member-table > tbody > tr:hover td {
-    box-shadow: none;
-}
 </style>
 
 <div class="col-lg-12 member-list-page">

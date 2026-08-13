@@ -184,6 +184,8 @@
 }
 .member-list-page .member-table {
     margin: 0;
+    width: 100%;
+    table-layout: fixed;
     background: #fff;
     border-collapse: separate;
     border-spacing: 0;
@@ -197,32 +199,55 @@
     border-bottom: 1px solid #e7eaec !important;
     border-top: 0 !important;
     color: #5a5e63;
-    font-size: 11px;
+    font-size: 10px;
     font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: .04em;
+    letter-spacing: .02em;
     vertical-align: middle;
-    white-space: nowrap;
-    padding: 13px 14px;
+    white-space: normal;
+    line-height: 1.25;
+    padding: 8px 6px;
     position: sticky;
     top: 0;
     z-index: 2;
 }
 .member-list-page .member-table > tbody > tr > td {
     vertical-align: middle;
-    border-color: #eef1f2;
-    padding: 12px 14px;
+    padding: 6px 6px;
     color: #2f4050;
-    font-size: 13px;
+    font-size: 12px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.member-list-page .member-table > thead > tr > th,
+.member-list-page .member-table > tbody > tr > td,
+.member-list-page .member-table > tfoot > tr > th,
+.member-list-page .member-table > tfoot > tr > td {
+    border: 1px solid #e7eaec !important;
+}
+.member-list-page .member-table > thead > tr > th {
+    border-top: 0 !important;
+}
+.member-list-page .member-table > thead > tr > th:not(:first-child),
+.member-list-page .member-table > tbody > tr > td:not(:first-child),
+.member-list-page .member-table > tfoot > tr > th:not(:first-child),
+.member-list-page .member-table > tfoot > tr > td:not(:first-child) {
+    border-left: 0 !important;
+}
+.member-list-page .member-table col.col-pid { width: 11%; }
+.member-list-page .member-table col.col-mid { width: 12%; }
+.member-list-page .member-table col.col-name { width: 20%; }
+.member-list-page .member-table col.col-amt { width: 11.4%; }
+.member-list-page .name-cell {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 .member-list-page .member-table > tbody > tr:nth-child(even):not(.totals-row) {
     background: #fcfdfd;
 }
 .member-list-page .member-table > tbody > tr:hover:not(.totals-row) {
     background: #f3fbf8 !important;
-}
-.member-list-page .member-table > tbody > tr:hover:not(.totals-row) td {
-    box-shadow: inset 3px 0 0 #1ab394;
 }
 .member-list-page .member-table > tbody > tr.totals-row {
     background: linear-gradient(180deg, #f7fcfa 0%, #eef8f5 100%);
@@ -234,23 +259,29 @@
     border-top: 2px solid #c9ebe3;
     font-weight: 700;
     color: #2f4050;
-    padding-top: 14px;
-    padding-bottom: 14px;
+    padding-top: 8px;
+    padding-bottom: 8px;
 }
 .member-list-page .member-id-chip {
     display: inline-block;
-    padding: 4px 10px;
-    border-radius: 12px;
+    max-width: 100%;
+    padding: 2px 6px;
+    border-radius: 10px;
     background: #e8f8f5;
     color: #0e7c69;
     font-weight: 700;
-    font-size: 12px;
+    font-size: 11px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    vertical-align: middle;
 }
 .member-list-page .amount-cell {
     text-align: right;
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
     font-weight: 600;
+    font-size: 12px;
 }
 .member-list-page .list-footer {
     display: flex;
@@ -421,6 +452,16 @@
         </div>
         <div class="table-responsive">
             <table class="table table-striped member-table">
+                <colgroup>
+                    <col class="col-pid">
+                    <col class="col-mid">
+                    <col class="col-name">
+                    <col class="col-amt">
+                    <col class="col-amt">
+                    <col class="col-amt">
+                    <col class="col-amt">
+                    <col class="col-amt">
+                </colgroup>
                 <thead>
                     <tr>
                         <th><?php echo lang('member_pid'); ?></th>
@@ -521,9 +562,10 @@
                             }
                             ?>
                             <tr>
-                                <td><?php echo htmlspecialchars($value->PID, ENT_QUOTES, 'UTF-8'); ?></td>
-                                <td><span class="member-id-chip"><?php echo htmlspecialchars($value->member_id, ENT_QUOTES, 'UTF-8'); ?></span></td>
-                                <td><?php echo htmlspecialchars($value->firstname . ' ' . $value->middlename . ' ' . $value->lastname, ENT_QUOTES, 'UTF-8'); ?></td>
+                                <td title="<?php echo htmlspecialchars($value->PID, ENT_QUOTES, 'UTF-8'); ?>"><?php echo htmlspecialchars($value->PID, ENT_QUOTES, 'UTF-8'); ?></td>
+                                <td title="<?php echo htmlspecialchars($value->member_id, ENT_QUOTES, 'UTF-8'); ?>"><span class="member-id-chip"><?php echo htmlspecialchars($value->member_id, ENT_QUOTES, 'UTF-8'); ?></span></td>
+                                <?php $full_name = trim($value->firstname . ' ' . $value->middlename . ' ' . $value->lastname); ?>
+                                <td class="name-cell" title="<?php echo htmlspecialchars($full_name, ENT_QUOTES, 'UTF-8'); ?>"><?php echo htmlspecialchars($full_name, ENT_QUOTES, 'UTF-8'); ?></td>
                                 <td class="amount-cell"><?php echo $contribution_label; ?></td>
                                 <td class="amount-cell"><?php echo $share_label; ?></td>
                                 <td class="amount-cell"><?php echo $loan_label; ?></td>

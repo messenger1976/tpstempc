@@ -264,21 +264,40 @@ $closing_balance = $total_credit - $total_debit;
 }
 .loan-ledger-page .ledger-table {
     margin: 0;
+    width: 100%;
     background: #fff;
 }
 .loan-ledger-page .ledger-table > thead > tr > th {
-    background: #fafbfc;
+    background: linear-gradient(180deg, #fbfcfd 0%, #f4f7f8 100%);
     border-bottom: 1px solid #e7eaec;
-    color: #676a6c;
-    font-size: 12px;
+    color: #5a5e63;
+    font-size: 10px;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: .02em;
+    white-space: normal;
+    line-height: 1.25;
+    padding: 8px 6px;
+    vertical-align: middle;
 }
 .loan-ledger-page .ledger-table > tbody > tr > td,
 .loan-ledger-page .ledger-table > tfoot > tr > th {
     vertical-align: middle;
-    font-size: 13px;
+    font-size: 12px;
+    padding: 6px 6px;
+}
+.loan-ledger-page .ledger-table > thead > tr > th,
+.loan-ledger-page .ledger-table > tbody > tr > td,
+.loan-ledger-page .ledger-table > tfoot > tr > th {
+    border: 1px solid #e7eaec !important;
+}
+.loan-ledger-page .ledger-table > thead > tr > th {
+    border-top: 0 !important;
+}
+.loan-ledger-page .ledger-table > thead > tr > th:not(:first-child),
+.loan-ledger-page .ledger-table > tbody > tr > td:not(:first-child),
+.loan-ledger-page .ledger-table > tfoot > tr > th:not(:first-child) {
+    border-left: 0 !important;
 }
 .loan-ledger-page .ledger-table .amount-cell {
     text-align: right;
@@ -324,19 +343,8 @@ $closing_balance = $total_credit - $total_debit;
     background: #1ab394;
     border-color: #1ab394;
 }
-.loan-ledger-page .dataTables_wrapper .dataTables_filter input,
-.loan-ledger-page .dataTables_wrapper .dataTables_length select {
-    border: 1px solid #e5e6e7;
-    border-radius: 6px;
-    height: 32px;
-    padding: 4px 8px;
-}
-.loan-ledger-page .dataTables_wrapper .dataTables_paginate .paginate_button.current {
-    background: #1ab394 !important;
-    border-color: #1ab394 !important;
-    color: #fff !important;
-}
 </style>
+<?php $this->load->view('loan/list_datatable_styles'); ?>
 
 <div class="col-lg-12 loan-ledger-page">
     <?php

@@ -128,18 +128,6 @@ $unposted_tab_defs = array(
     font-size: 13px;
     font-weight: 600;
 }
-.jer-page .dataTables_wrapper .dataTables_filter input,
-.jer-page .dataTables_wrapper .dataTables_length select {
-    border: 1px solid #e5e6e7;
-    border-radius: 6px;
-    height: 32px;
-    padding: 4px 8px;
-}
-.jer-page .dataTables_wrapper .dataTables_paginate .paginate_button.current {
-    background: #1ab394 !important;
-    border-color: #1ab394 !important;
-    color: #fff !important;
-}
 .jer-page .member-table > tfoot > tr > td {
     background: #f8fafb;
     border-top: 2px solid #e7eaec;

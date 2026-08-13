@@ -182,6 +182,7 @@
 }
 .member-list-page .member-table {
     margin: 0;
+    width: 100%;
     background: #fff;
     border-collapse: separate;
     border-spacing: 0;
@@ -195,49 +196,67 @@
     border-bottom: 1px solid #e7eaec !important;
     border-top: 0 !important;
     color: #5a5e63;
-    font-size: 11px;
+    font-size: 10px;
     font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: .04em;
+    letter-spacing: .02em;
     vertical-align: middle;
-    white-space: nowrap;
-    padding: 13px 14px;
+    white-space: normal;
+    line-height: 1.25;
+    padding: 8px 6px;
     position: sticky;
     top: 0;
     z-index: 2;
 }
 .member-list-page .member-table > tbody > tr > td {
     vertical-align: middle;
-    border-color: #eef1f2;
-    padding: 12px 14px;
+    padding: 6px 6px;
     color: #2f4050;
-    font-size: 13px;
+    font-size: 12px;
+}
+.member-list-page .member-table > thead > tr > th,
+.member-list-page .member-table > tbody > tr > td,
+.member-list-page .member-table > tfoot > tr > th,
+.member-list-page .member-table > tfoot > tr > td {
+    border: 1px solid #e7eaec !important;
+}
+.member-list-page .member-table > thead > tr > th {
+    border-top: 0 !important;
+}
+.member-list-page .member-table > thead > tr > th:not(:first-child),
+.member-list-page .member-table > tbody > tr > td:not(:first-child),
+.member-list-page .member-table > tfoot > tr > th:not(:first-child),
+.member-list-page .member-table > tfoot > tr > td:not(:first-child) {
+    border-left: 0 !important;
 }
 .member-list-page .member-table > tbody > tr:nth-child(even) { background: #fcfdfd; }
 .member-list-page .member-table > tbody > tr:hover { background: #f3fbf8 !important; }
-.member-list-page .member-table > tbody > tr:hover td {
-    box-shadow: inset 3px 0 0 #1ab394;
-}
 .member-list-page .member-id-chip {
     display: inline-block;
-    padding: 4px 10px;
-    border-radius: 12px;
+    max-width: 100%;
+    padding: 2px 6px;
+    border-radius: 10px;
     background: #e8f8f5;
     color: #0e7c69;
     font-weight: 700;
-    font-size: 12px;
+    font-size: 11px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    vertical-align: middle;
 }
 .member-list-page .amount-cell {
     text-align: right;
     font-variant-numeric: tabular-nums;
     font-weight: 700;
     white-space: nowrap;
+    font-size: 12px;
 }
 .member-list-page .status-pill {
     display: inline-block;
-    padding: 5px 11px;
-    border-radius: 14px;
-    font-size: 11px;
+    padding: 3px 8px;
+    border-radius: 12px;
+    font-size: 10px;
     font-weight: 700;
     color: #fff !important;
     white-space: nowrap;
@@ -384,4 +403,5 @@
     .member-list-page .filter-actions .btn { flex: 1; }
 }
 </style>
+<?php $this->load->view('loan/list_datatable_styles'); ?>
 <?php $this->load->view('loan/list_action_icon_script'); ?>

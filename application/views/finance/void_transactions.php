@@ -95,9 +95,19 @@ $list_url = site_url(current_lang() . '/finance/void_transactions');
     font-size: 11px;
     font-weight: 700;
 }
+/* list_page_styles forces color:#fff !important — use solid backgrounds for contrast */
 .vt-page .status-pill.source {
-    background: #eef3fb;
-    color: #3c6eae;
+    background: #1c84c6;
+    color: #fff !important;
+}
+.vt-page .status-pill.source-cash_receipt {
+    background: #1ab394;
+}
+.vt-page .status-pill.source-cash_disbursement {
+    background: #f8ac59;
+}
+.vt-page .status-pill.source-general_journal {
+    background: #1c84c6;
 }
 .vt-page .tab-content-wrap {
     border: 1px solid #e7eaec;
@@ -268,7 +278,7 @@ $list_url = site_url(current_lang() . '/finance/void_transactions');
                                                     <input type="checkbox" name="void_ids[]" value="<?php echo htmlspecialchars($void_value, ENT_QUOTES, 'UTF-8'); ?>" class="void-checkbox"/>
                                                 </td>
                                                 <td><span class="member-id-chip"><?php echo (int) $entry->entryid; ?></span></td>
-                                                <td><span class="status-pill source"><?php echo htmlspecialchars($source_label, ENT_QUOTES, 'UTF-8'); ?></span></td>
+                                                <td><span class="status-pill source source-<?php echo htmlspecialchars($entry_source, ENT_QUOTES, 'UTF-8'); ?>"><?php echo htmlspecialchars($source_label, ENT_QUOTES, 'UTF-8'); ?></span></td>
                                                 <td data-order="<?php echo htmlspecialchars($entry->entrydate, ENT_QUOTES, 'UTF-8'); ?>">
                                                     <?php echo htmlspecialchars(date('M d, Y', strtotime($entry->entrydate)), ENT_QUOTES, 'UTF-8'); ?>
                                                 </td>

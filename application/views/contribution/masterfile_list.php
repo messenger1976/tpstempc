@@ -244,10 +244,31 @@
 }
 .member-list-page .status-pill.active { background: #1ab394; }
 .member-list-page .status-pill.inactive { background: #f8ac59; }
+.member-list-page .action-btns {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 6px;
+    align-items: center;
+}
 .member-list-page .action-btns .btn {
-    border-radius: 5px;
-    font-weight: 600;
-    padding: 4px 10px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    min-width: 30px;
+    height: 30px;
+    padding: 0;
+    border-radius: 6px;
+    font-size: 0;
+    line-height: 1;
+    overflow: hidden;
+}
+.member-list-page .action-btns .btn i,
+.member-list-page .action-btns .btn .fa {
+    font-size: 13px;
+    line-height: 1;
+    margin: 0;
+    width: auto;
 }
 .member-list-page .list-footer {
     display: flex;
@@ -369,6 +390,7 @@
     .member-list-page .filter-actions .btn { flex: 1; }
 }
 </style>
+<?php $this->load->view('loan/list_action_icon_script'); ?>
 
 <!-- CBU Ledger popup: plain overlay so it never depends on the Bootstrap modal plugin -->
 <div id="cbuLedgerOverlay" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.5); z-index:10500; overflow:auto;">

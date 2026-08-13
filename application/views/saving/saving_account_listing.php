@@ -293,14 +293,29 @@
 .member-list-page .gl-pill.no { background: #f8ac59; }
 .member-list-page .action-btns {
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     gap: 6px;
     align-items: center;
 }
 .member-list-page .action-btns .btn {
-    border-radius: 5px;
-    font-weight: 600;
-    padding: 4px 10px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    min-width: 30px;
+    height: 30px;
+    padding: 0;
+    border-radius: 6px;
+    font-size: 0;
+    line-height: 1;
+    overflow: hidden;
+}
+.member-list-page .action-btns .btn i,
+.member-list-page .action-btns .btn .fa {
+    font-size: 13px;
+    line-height: 1;
+    margin: 0;
+    width: auto;
 }
 .member-list-page .list-footer {
     display: flex;
@@ -411,6 +426,7 @@
     .member-list-page .panel-head-right .btn { flex: 1; }
 }
 </style>
+<?php $this->load->view('loan/list_action_icon_script'); ?>
 
 <?php
 $search_key = isset($jxy['key']) ? $jxy['key'] : (isset($_GET['key']) ? $_GET['key'] : '');

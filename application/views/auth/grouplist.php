@@ -22,9 +22,6 @@ $create_url = site_url(current_lang() . '/auth/create_group');
 .member-list-page .group-desc {
     color: #676a6c;
 }
-.member-list-page .action-btns .btn {
-    margin-right: 4px;
-}
 </style>
 
 <div class="col-lg-12 member-list-page">

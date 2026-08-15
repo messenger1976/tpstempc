@@ -3035,6 +3035,12 @@ class Loan_Model extends CI_Model {
 
     function loan_beginning_balance_update($data, $id) {
         $pin = current_user()->PIN;
+        $id = (int) $id;
+        // Confirm row exists for this PIN (CI update() can return TRUE with 0 matches).
+        $exists = $this->db->where('id', $id)->where('PIN', $pin)->count_all_results('loan_beginning_balances');
+        if ($exists < 1) {
+            return false;
+        }
         $this->db->where('id', $id);
         $this->db->where('PIN', $pin);
         return $this->db->update('loan_beginning_balances', $data);

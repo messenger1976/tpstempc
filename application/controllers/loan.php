@@ -2928,27 +2928,34 @@ $pin = current_user()->PIN;
                 return;
             }
             
-            // Posted but not activated: allow editing dates/terms only (GL amounts locked)
-            if ($this->data['balance']->posted == 1) {
-                if ($this->loan_model->is_loan_beginning_balance_activated($this->data['balance'])) {
-                    $this->session->set_flashdata('warning', lang('loan_beginning_balance_already_activated'));
-                    redirect(current_lang() . '/loan/loan_beginning_balance_list?fiscal_year_id=' . $this->data['balance']->fiscal_year_id, 'refresh');
-                    return;
-                }
-                $this->data['posted_dates_only'] = true;
-                $this->data['title'] = lang('loan_beginning_balance_edit_dates');
-            } else {
-                $this->data['posted_dates_only'] = false;
+            // Posted but not activated: allow full edit. Activated BBs cannot be edited here.
+            if ($this->data['balance']->posted == 1
+                && $this->loan_model->is_loan_beginning_balance_activated($this->data['balance'])) {
+                $this->session->set_flashdata('warning', lang('loan_beginning_balance_already_activated'));
+                redirect(current_lang() . '/loan/loan_beginning_balance_list?fiscal_year_id=' . $this->data['balance']->fiscal_year_id, 'refresh');
+                return;
             }
+            $this->data['posted_unlocked'] = ((int) $this->data['balance']->posted === 1);
         } else {
             $this->data['title'] = lang('loan_beginning_balance_create');
             $this->data['balance'] = null;
-            $this->data['posted_dates_only'] = false;
+            $this->data['posted_unlocked'] = false;
         }
         
         // Get fiscal years and loan products
         $this->data['fiscal_years'] = $this->setting_model->fiscal_year_list()->result();
         $this->data['loan_products'] = $this->setting_model->loanproduct()->result();
+
+        // Strip thousand separators before validation. Edit form values use number_format()
+        // (e.g. 15,000.00) which fails CI's numeric rule and silently blocks save.
+        if ($this->input->post()) {
+            foreach (array('principal_balance', 'interest_balance', 'penalty_balance', 'loan_amount', 'monthly_amort') as $amt_field) {
+                $raw = $this->input->post($amt_field);
+                if ($raw !== FALSE && $raw !== null && $raw !== '') {
+                    $_POST[$amt_field] = str_replace(',', '', trim((string) $raw));
+                }
+            }
+        }
         
         // Form validation
         $this->form_validation->set_rules('fiscal_year_id', lang('fiscal_year'), 'required|numeric');
@@ -3051,50 +3058,31 @@ $pin = current_user()->PIN;
                                 }
                             } else {
                                 $existing_row = $this->loan_model->loan_beginning_balance_list(null, $id)->row();
-                                if ($existing_row && (int) $existing_row->posted === 1) {
-                                    if ($this->loan_model->is_loan_beginning_balance_activated($existing_row)) {
-                                        $this->data['warning'] = lang('loan_beginning_balance_already_activated');
+                                if ($existing_row && $this->loan_model->is_loan_beginning_balance_activated($existing_row)) {
+                                    $this->data['warning'] = lang('loan_beginning_balance_already_activated');
+                                } else {
+                                    // Check if another record exists with same fiscal year, member and product
+                                    $existing = $this->loan_model->loan_beginning_balance_list($fiscal_year_id)->result();
+                                    $duplicate = false;
+                                    foreach ($existing as $ex) {
+                                        if ($ex->id != $id && $ex->member_id == $member_id && $ex->loan_product_id == $loan_product_id) {
+                                            $duplicate = true;
+                                            break;
+                                        }
+                                    }
+
+                                    if ($duplicate) {
+                                        $this->data['warning'] = lang('loan_beginning_balance_already_exists');
                                     } else {
-                                        // Posted: only dates/terms/description (and optional loan_id) may change
-                                        $data = array(
-                                            'loan_id' => $loan_id ? $loan_id : $existing_row->loan_id,
-                                            'disbursement_date' => $disbursement_date ? $disbursement_date : null,
-                                            'monthly_amort' => $monthly_amort,
-                                            'last_date_paid' => $last_date_paid ? $last_date_paid : null,
-                                            'term' => $term,
-                                            'description' => $description,
-                                            'updated_at' => date('Y-m-d H:i:s'),
-                                        );
+                                        $data['updated_at'] = date('Y-m-d H:i:s');
                                         $result = $this->loan_model->loan_beginning_balance_update($data, $id);
                                         if ($result) {
                                             $this->session->set_flashdata('message', lang('loan_beginning_balance_update_success'));
-                                            redirect(current_lang() . '/loan/loan_beginning_balance_list?fiscal_year_id=' . $existing_row->fiscal_year_id, 'refresh');
+                                            redirect(current_lang() . '/loan/loan_beginning_balance_list?fiscal_year_id=' . $fiscal_year_id, 'refresh');
                                         } else {
                                             $this->data['warning'] = lang('loan_beginning_balance_update_fail');
                                         }
                                     }
-                                } else {
-                                // Check if another record exists with same fiscal year, member and product
-                                $existing = $this->loan_model->loan_beginning_balance_list($fiscal_year_id)->result();
-                                $duplicate = false;
-                                foreach ($existing as $ex) {
-                                    if ($ex->id != $id && $ex->member_id == $member_id && $ex->loan_product_id == $loan_product_id) {
-                                        $duplicate = true;
-                                        break;
-                                    }
-                                }
-                                
-                                if ($duplicate) {
-                                    $this->data['warning'] = lang('loan_beginning_balance_already_exists');
-                                } else {
-                                    $result = $this->loan_model->loan_beginning_balance_update($data, $id);
-                                    if ($result) {
-                                        $this->session->set_flashdata('message', lang('loan_beginning_balance_update_success'));
-                                        redirect(current_lang() . '/loan/loan_beginning_balance_list?fiscal_year_id=' . $fiscal_year_id, 'refresh');
-                                    } else {
-                                        $this->data['warning'] = lang('loan_beginning_balance_update_fail');
-                                    }
-                                }
                                 }
                             }
                         }

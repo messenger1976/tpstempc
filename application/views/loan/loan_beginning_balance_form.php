@@ -4,26 +4,36 @@ $balance = isset($balance) ? $balance : null;
 $encoded_id = isset($encoded_id) ? $encoded_id : '';
 $fiscal_years = isset($fiscal_years) ? $fiscal_years : array();
 $loan_products = isset($loan_products) ? $loan_products : array();
-$posted_dates_only = !empty($posted_dates_only);
+$posted_unlocked = !empty($posted_unlocked);
 $is_edit = !empty($balance);
 $form_action = current_lang() . '/loan/loan_beginning_balance_create' . ($encoded_id !== '' ? '/' . $encoded_id : '');
-$lock_attr = $posted_dates_only ? ' disabled="disabled"' : '';
-$readonly_attr = $posted_dates_only ? ' readonly="readonly"' : '';
 
-$member_id_value = $is_edit ? $balance->member_id : set_value('member_id');
-$fiscal_year_value = $is_edit ? $balance->fiscal_year_id : set_value('fiscal_year_id');
-$product_value = $is_edit ? $balance->loan_product_id : set_value('loan_product_id');
-$loan_id_value = $is_edit ? $balance->loan_id : set_value('loan_id');
-$principal_value = $is_edit ? number_format($balance->principal_balance, 2) : set_value('principal_balance', '0.00');
-$interest_value = $is_edit ? number_format($balance->interest_balance, 2) : set_value('interest_balance', '0.00');
-$penalty_value = $is_edit ? number_format($balance->penalty_balance, 2) : set_value('penalty_balance', '0.00');
-$total_value = $is_edit ? number_format($balance->total_balance, 2) : '0.00';
-$disbursement_value = ($is_edit && $balance->disbursement_date) ? date('d-m-Y', strtotime($balance->disbursement_date)) : set_value('disbursement_date');
-$loan_amount_value = ($is_edit && $balance->loan_amount) ? number_format($balance->loan_amount, 2) : set_value('loan_amount', '');
-$monthly_amort_value = ($is_edit && $balance->monthly_amort) ? number_format($balance->monthly_amort, 2) : set_value('monthly_amort', '');
-$last_date_paid_value = ($is_edit && $balance->last_date_paid) ? date('d-m-Y', strtotime($balance->last_date_paid)) : set_value('last_date_paid');
-$term_value = $is_edit ? $balance->term : set_value('term', '');
-$description_value = $is_edit ? $balance->description : set_value('description');
+$member_id_value = set_value('member_id', $is_edit ? $balance->member_id : '');
+$fiscal_year_value = set_value('fiscal_year_id', $is_edit ? $balance->fiscal_year_id : '');
+$product_value = set_value('loan_product_id', $is_edit ? $balance->loan_product_id : '');
+$loan_id_value = set_value('loan_id', $is_edit ? $balance->loan_id : '');
+$principal_value = set_value('principal_balance', $is_edit ? number_format((float) $balance->principal_balance, 2, '.', '') : '0.00');
+$interest_value = set_value('interest_balance', $is_edit ? number_format((float) $balance->interest_balance, 2, '.', '') : '0.00');
+$penalty_value = set_value('penalty_balance', $is_edit ? number_format((float) $balance->penalty_balance, 2, '.', '') : '0.00');
+$total_value = $is_edit
+    ? number_format((float) $balance->principal_balance + (float) $balance->interest_balance + (float) $balance->penalty_balance, 2, '.', '')
+    : '0.00';
+if ($this->input->post('principal_balance') !== FALSE) {
+    $total_value = number_format(
+        (float) str_replace(',', '', (string) set_value('principal_balance', 0))
+        + (float) str_replace(',', '', (string) set_value('interest_balance', 0))
+        + (float) str_replace(',', '', (string) set_value('penalty_balance', 0)),
+        2,
+        '.',
+        ''
+    );
+}
+$disbursement_value = set_value('disbursement_date', ($is_edit && $balance->disbursement_date) ? date('d-m-Y', strtotime($balance->disbursement_date)) : '');
+$loan_amount_value = set_value('loan_amount', ($is_edit && $balance->loan_amount) ? number_format((float) $balance->loan_amount, 2, '.', '') : '');
+$monthly_amort_value = set_value('monthly_amort', ($is_edit && $balance->monthly_amort) ? number_format((float) $balance->monthly_amort, 2, '.', '') : '');
+$last_date_paid_value = set_value('last_date_paid', ($is_edit && $balance->last_date_paid) ? date('d-m-Y', strtotime($balance->last_date_paid)) : '');
+$term_value = set_value('term', $is_edit ? $balance->term : '');
+$description_value = set_value('description', $is_edit ? $balance->description : '');
 $list_url = site_url(current_lang() . '/loan/loan_beginning_balance_list' . ($is_edit && !empty($balance->fiscal_year_id) ? '?fiscal_year_id=' . (int) $balance->fiscal_year_id : ''));
 ?>
 
@@ -350,6 +360,9 @@ $list_url = site_url(current_lang() . '/loan/loan_beginning_balance_list' . ($is
     } else if ($this->session->flashdata('warning') != '') {
         echo '<div class="cbu-alert danger displaymessage">' . $this->session->flashdata('warning') . '</div>';
     }
+    if (validation_errors()) {
+        echo '<div class="cbu-alert danger displaymessage">' . validation_errors() . '</div>';
+    }
     ?>
 
     <div class="row">
@@ -358,23 +371,17 @@ $list_url = site_url(current_lang() . '/loan/loan_beginning_balance_list' . ($is
                 <div class="panel-head">
                     <div class="head-left">
                         <i class="fa fa-<?php echo $is_edit ? 'edit' : 'plus'; ?> icon-badge"></i>
-                        <h4><?php echo $posted_dates_only ? lang('loan_beginning_balance_edit_dates') : ($is_edit ? lang('loan_beginning_balance_edit') : lang('loan_beginning_balance_create')); ?></h4>
+                        <h4><?php echo $is_edit ? lang('loan_beginning_balance_edit') : lang('loan_beginning_balance_create'); ?></h4>
                     </div>
                     <a href="<?php echo $list_url; ?>" class="btn btn-default btn-sm">
                         <i class="fa fa-arrow-left"></i> <?php echo lang('button_cancel'); ?>
                     </a>
                 </div>
                 <div class="panel-body">
-                    <?php if ($posted_dates_only) { ?>
+                    <?php if ($posted_unlocked) { ?>
                         <div class="cbu-alert" style="background:#fff8e6;color:#8a6d3b;border:1px solid #faebcc;margin-bottom:16px;">
-                            <?php echo lang('loan_beginning_balance_edit_dates_hint'); ?>
+                            <?php echo lang('loan_beginning_balance_edit_posted_hint'); ?>
                         </div>
-                        <input type="hidden" name="fiscal_year_id" value="<?php echo htmlspecialchars((string) $fiscal_year_value, ENT_QUOTES, 'UTF-8'); ?>" />
-                        <input type="hidden" name="member_id" value="<?php echo htmlspecialchars((string) $member_id_value, ENT_QUOTES, 'UTF-8'); ?>" />
-                        <input type="hidden" name="loan_product_id" value="<?php echo htmlspecialchars((string) $product_value, ENT_QUOTES, 'UTF-8'); ?>" />
-                        <input type="hidden" name="principal_balance" value="<?php echo htmlspecialchars((string) $principal_value, ENT_QUOTES, 'UTF-8'); ?>" />
-                        <input type="hidden" name="interest_balance" value="<?php echo htmlspecialchars((string) $interest_value, ENT_QUOTES, 'UTF-8'); ?>" />
-                        <input type="hidden" name="penalty_balance" value="<?php echo htmlspecialchars((string) $penalty_value, ENT_QUOTES, 'UTF-8'); ?>" />
                     <?php } ?>
 
                     <div class="section-divider">
@@ -384,7 +391,7 @@ $list_url = site_url(current_lang() . '/loan/loan_beginning_balance_list' . ($is
                     <div class="form-group">
                         <label class="col-lg-4 control-label"><?php echo lang('fiscal_year'); ?> : <span class="required">*</span></label>
                         <div class="col-lg-7">
-                            <select class="form-control" id="fiscal_year_id"<?php echo $posted_dates_only ? '' : ' name="fiscal_year_id"'; ?> required<?php echo $lock_attr; ?>>
+                            <select class="form-control" name="fiscal_year_id" id="fiscal_year_id" required>
                                 <option value=""><?php echo lang('select_default_text'); ?></option>
                                 <?php foreach ($fiscal_years as $fy) { ?>
                                     <option value="<?php echo (int) $fy->id; ?>"<?php echo ((string) $fiscal_year_value === (string) $fy->id) ? ' selected="selected"' : ''; ?>>
@@ -401,26 +408,22 @@ $list_url = site_url(current_lang() . '/loan/loan_beginning_balance_list' . ($is
                         <div class="col-lg-7">
                             <div class="cbu-lookup">
                                 <div class="input-group">
-                                    <input type="text" <?php echo $posted_dates_only ? 'id="member_id_display"' : 'name="member_id" id="member_id"'; ?> value="<?php echo htmlspecialchars((string) $member_id_value, ENT_QUOTES, 'UTF-8'); ?>" class="form-control" autocomplete="off" required<?php echo $readonly_attr; ?> />
-                                    <?php if (!$posted_dates_only) { ?>
+                                    <input type="text" name="member_id" id="member_id" value="<?php echo htmlspecialchars((string) $member_id_value, ENT_QUOTES, 'UTF-8'); ?>" class="form-control" autocomplete="off" required />
                                     <span class="input-group-addon" id="search_mid" title="Search member">
                                         <span class="fa fa-search"></span>
                                     </span>
-                                    <?php } ?>
                                 </div>
                                 <div id="mid-suggest-box" class="member-suggest-box" role="listbox" aria-label="Member suggestions"></div>
                             </div>
                             <?php echo form_error('member_id'); ?>
-                            <?php if (!$posted_dates_only) { ?>
                             <span class="help-block"><?php echo lang('member_id'); ?> — type to search, then press search or Enter</span>
-                            <?php } ?>
                         </div>
                     </div>
 
                     <div class="form-group">
                         <label class="col-lg-4 control-label"><?php echo lang('loan_beginning_balance_loan_product'); ?> : <span class="required">*</span></label>
                         <div class="col-lg-7">
-                            <select class="form-control" <?php echo $posted_dates_only ? 'id="loan_product_id_display"' : 'name="loan_product_id" id="loan_product_id"'; ?> required<?php echo $lock_attr; ?>>
+                            <select class="form-control" name="loan_product_id" id="loan_product_id" required>
                                 <option value=""><?php echo lang('select_default_text'); ?></option>
                                 <?php foreach ($loan_products as $product) { ?>
                                     <option value="<?php echo (int) $product->id; ?>"<?php echo ((string) $product_value === (string) $product->id) ? ' selected="selected"' : ''; ?>>
@@ -448,7 +451,7 @@ $list_url = site_url(current_lang() . '/loan/loan_beginning_balance_list' . ($is
                     <div class="form-group">
                         <label class="col-lg-4 control-label"><?php echo lang('loan_beginning_balance_principal'); ?> :</label>
                         <div class="col-lg-7">
-                            <input type="text" <?php echo $posted_dates_only ? 'id="principal_balance_display"' : 'name="principal_balance" id="principal_balance"'; ?> value="<?php echo htmlspecialchars((string) $principal_value, ENT_QUOTES, 'UTF-8'); ?>" class="form-control" onkeyup="formatNumber(this); calculateTotal();"<?php echo $readonly_attr; ?> />
+                            <input type="text" name="principal_balance" id="principal_balance" value="<?php echo htmlspecialchars((string) $principal_value, ENT_QUOTES, 'UTF-8'); ?>" class="form-control" onkeyup="formatNumber(this); calculateTotal();" />
                             <?php echo form_error('principal_balance'); ?>
                         </div>
                     </div>
@@ -456,7 +459,7 @@ $list_url = site_url(current_lang() . '/loan/loan_beginning_balance_list' . ($is
                     <div class="form-group">
                         <label class="col-lg-4 control-label"><?php echo lang('loan_beginning_balance_interest'); ?> :</label>
                         <div class="col-lg-7">
-                            <input type="text" <?php echo $posted_dates_only ? 'id="interest_balance_display"' : 'name="interest_balance" id="interest_balance"'; ?> value="<?php echo htmlspecialchars((string) $interest_value, ENT_QUOTES, 'UTF-8'); ?>" class="form-control" onkeyup="formatNumber(this); calculateTotal();"<?php echo $readonly_attr; ?> />
+                            <input type="text" name="interest_balance" id="interest_balance" value="<?php echo htmlspecialchars((string) $interest_value, ENT_QUOTES, 'UTF-8'); ?>" class="form-control" onkeyup="formatNumber(this); calculateTotal();" />
                             <?php echo form_error('interest_balance'); ?>
                         </div>
                     </div>
@@ -464,7 +467,7 @@ $list_url = site_url(current_lang() . '/loan/loan_beginning_balance_list' . ($is
                     <div class="form-group">
                         <label class="col-lg-4 control-label"><?php echo lang('loan_beginning_balance_penalty'); ?> :</label>
                         <div class="col-lg-7">
-                            <input type="text" <?php echo $posted_dates_only ? 'id="penalty_balance_display"' : 'name="penalty_balance" id="penalty_balance"'; ?> value="<?php echo htmlspecialchars((string) $penalty_value, ENT_QUOTES, 'UTF-8'); ?>" class="form-control" onkeyup="formatNumber(this); calculateTotal();"<?php echo $readonly_attr; ?> />
+                            <input type="text" name="penalty_balance" id="penalty_balance" value="<?php echo htmlspecialchars((string) $penalty_value, ENT_QUOTES, 'UTF-8'); ?>" class="form-control" onkeyup="formatNumber(this); calculateTotal();" />
                             <?php echo form_error('penalty_balance'); ?>
                         </div>
                     </div>
@@ -495,7 +498,7 @@ $list_url = site_url(current_lang() . '/loan/loan_beginning_balance_list' . ($is
                     <div class="form-group">
                         <label class="col-lg-4 control-label"><?php echo lang('loan_beginning_balance_loan_amount'); ?> :</label>
                         <div class="col-lg-7">
-                            <input type="text" name="loan_amount" id="loan_amount" value="<?php echo htmlspecialchars((string) $loan_amount_value, ENT_QUOTES, 'UTF-8'); ?>" class="form-control" onkeyup="formatNumber(this);"<?php echo $readonly_attr; ?> />
+                            <input type="text" name="loan_amount" id="loan_amount" value="<?php echo htmlspecialchars((string) $loan_amount_value, ENT_QUOTES, 'UTF-8'); ?>" class="form-control" onkeyup="formatNumber(this);" />
                             <?php echo form_error('loan_amount'); ?>
                         </div>
                     </div>

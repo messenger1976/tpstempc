@@ -284,7 +284,7 @@ $row_count = is_array($loan_beginning_balances) ? count($loan_beginning_balances
                                                 </a>
                                             <?php } else { ?>
                                                 <a class="btn btn-default btn-xs" href="<?php echo site_url(current_lang() . '/loan/loan_beginning_balance_create/' . encode_id($balance->id)); ?>">
-                                                    <i class="fa fa-calendar"></i> <?php echo lang('loan_beginning_balance_edit_dates'); ?>
+                                                    <i class="fa fa-edit"></i> <?php echo lang('button_edit'); ?>
                                                 </a>
                                                 <a href="javascript:void(0);" class="btn btn-info btn-xs btn-activate-balance" data-id="<?php echo encode_id($balance->id); ?>" data-member="<?php echo htmlspecialchars($balance->member_id, ENT_QUOTES, 'UTF-8'); ?>">
                                                     <i class="fa fa-play-circle"></i> <?php echo lang('loan_beginning_balance_activate'); ?>

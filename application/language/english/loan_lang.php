@@ -278,6 +278,7 @@ $lang['loan_beginning_balance_cannot_void_activated'] = 'Cannot void a beginning
 $lang['loan_beginning_balance_activated'] = 'Activated';
 $lang['loan_beginning_balance_edit_dates_hint'] = 'Posted balances: you can still edit Disbursement Date, Last Date Paid, Term, Monthly Amortization, and Description before activating. Amounts and member/product cannot change after posting.';
 $lang['loan_beginning_balance_edit_dates'] = 'Edit Dates / Terms';
+$lang['loan_beginning_balance_edit_posted_hint'] = 'This beginning balance is already posted to the General Ledger. You can edit all fields here, but changing amounts or accounts does not automatically reverse or re-post GL. Void and re-post if the ledger must match.';
 $lang['loan_beginning_balance_manage'] = 'Open Beginning Balance';
 $lang['loan_beginning_balance_detail_redirect'] = 'This loan ID is a beginning balance that has not been activated yet. Open it from Loan Beginning Balances, then Activate as Loan to use Details / Ledger.';
 $lang['loan_ledger_beginning_balance'] = 'Beginning Balance (Opening)';

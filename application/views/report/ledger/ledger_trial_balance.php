@@ -263,6 +263,10 @@ $check_exp_inc = 0;
                 <i class="fa fa-print"></i> Print
             </button>
             &nbsp; &nbsp; &nbsp; &nbsp;
+            <a href="<?php echo site_url(current_lang() . '/report/ledger_trial_balance_export/' . $link_cat . '/' . $id); ?>" class="btn btn-success">
+                <i class="fa fa-file-excel-o"></i> <?php echo lang('export_excel'); ?>
+            </a>
+            &nbsp; &nbsp; &nbsp; &nbsp;
             <a href="<?php echo site_url(current_lang() . '/report/create_ledger_trans_title/' . $link_cat . '/' . $id); ?>" class="btn btn-primary">Edit</a>
             &nbsp; &nbsp; &nbsp; &nbsp;
             <a href="<?php echo site_url(current_lang() . '/report/general_leger_transaction/' . $link_cat); ?>" class="btn btn-default">Back</a>

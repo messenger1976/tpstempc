@@ -630,12 +630,23 @@ FROM member_registrationfee INNER JOIN members ON member_registrationfee.member_
 
     function account_contribution_balance($fromdate, $todate) {
         $pin = current_user()->PIN;
-        // As-of report: members joined on or before todate (fromdate retained for report metadata / edit form).
+        $todate = $this->db->escape_str($todate);
+        // As-of report: members joined on or before todate; CBU from transactions through todate
+        // (fromdate retained for report metadata / edit form). Live members_contribution.balance is not used.
         $sql = "SELECT members.PID, members.member_id, members.joiningdate,
 CONCAT(TRIM(members.firstname), ' ', TRIM(IFNULL(members.middlename, '')), ' ', TRIM(members.lastname)) AS name,
-IFNULL(members_contribution.balance, 0) AS balance
+IFNULL(bal.balance, 0) AS balance
 FROM members
-LEFT JOIN members_contribution ON members.PID = members_contribution.PID
+LEFT JOIN (
+    SELECT PID,
+        SUM(CASE WHEN trans_type = 'CR' THEN amount ELSE -amount END) AS balance
+    FROM contribution_transaction
+    WHERE PIN = '$pin'
+      AND createdon <= '$todate 23:59:59'
+      AND (comment IS NULL OR comment NOT LIKE 'VOID%')
+      AND (system_comment IS NULL OR system_comment NOT LIKE 'VOID%')
+    GROUP BY PID
+) bal ON members.PID = bal.PID
 WHERE members.PIN = '$pin' AND members.joiningdate <= '$todate 23:59:59'
 ORDER BY ABS(members.member_id) ASC, members.member_id ASC";
 

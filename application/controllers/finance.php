@@ -1678,6 +1678,11 @@ class Finance extends CI_Controller {
      * Void a posted chart beginning balance with reversing GL entry.
      */
     function beginning_balance_void($id) {
+        if (!has_role(6, 'Void_transactions')) {
+            $this->session->set_flashdata('warning', lang('access_denied'));
+            redirect(current_lang() . '/finance/beginning_balance_list', 'refresh');
+            return;
+        }
         $id = decode_id($id);
         $balance = $this->finance_model->beginning_balance_list(null, $id)->row();
         if (!$balance) {

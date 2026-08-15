@@ -82,25 +82,27 @@ class Supplier extends CI_Controller {
             $key = $_GET['key'];
         }
 
-        if (!is_null($key)) {
-            $config['suffix'] = '?key=' . $key;
+        $query_string = '';
+        if (!is_null($key) && $key !== '') {
+            $query_string = 'key=' . urlencode($key);
+            $config['suffix'] = '?' . $query_string;
+            $config['first_url'] = site_url(current_lang() . '/supplier/supplier_list') . '?' . $query_string;
         }
-
 
         $config["base_url"] = site_url(current_lang() . '/supplier/supplier_list/');
         $config["total_rows"] = $this->supplier_model->count_supplier($key);
         $config["uri_segment"] = 4;
 
-        $config['full_tag_open'] = '<div class="pagination" style="background-color:#fff; margin-left:0px;">';
+        $config['full_tag_open'] = '<div class="pagination member-pagination">';
         $config['full_tag_close'] = '</div>';
 
         $config['num_tag_open'] = '<div class="link-pagination">';
         $config['num_tag_close'] = '</div>';
 
-        $config['prev_tag_open'] = '<div class="link-pagination">';
+        $config['prev_tag_open'] = '<div class="link-pagination nav-btn">';
         $config['prev_tag_close'] = '</div>';
 
-        $config['next_tag_open'] = '<div class="link-pagination">';
+        $config['next_tag_open'] = '<div class="link-pagination nav-btn">';
         $config['next_tag_close'] = '</div>';
 
         $config['next_link'] = 'Next';
@@ -108,17 +110,17 @@ class Supplier extends CI_Controller {
         $config['cur_tag_open'] = '<div class="link-pagination current">';
         $config['cur_tag_close'] = '</div>';
 
-
         $config["num_links"] = 10;
-
 
         $this->pagination->initialize($config);
         $page = ($this->uri->segment(4) ? $this->uri->segment(4) : 0);
         $this->data['links'] = $this->pagination->create_links();
 
+        $this->data['key'] = $key;
+        $this->data['total_rows'] = (int) $config['total_rows'];
+        $this->data['page_start'] = (int) $page;
+        $this->data['per_page'] = (int) $config['per_page'];
         $this->data['supplier_list'] = $this->supplier_model->search_supplier($key, $config["per_page"], $page);
-
-
 
         $this->data['content'] = 'supplier/supplier_list';
         $this->load->view('template', $this->data);
@@ -605,6 +607,11 @@ class Supplier extends CI_Controller {
      * Void a supplier invoice payment with reversing GL.
      */
     function void_invoice_payment($receipt) {
+        if (!has_role(6, 'Void_transactions')) {
+            $this->session->set_flashdata('warning', lang('access_denied'));
+            redirect(current_lang() . '/supplier/spendmoney_purchase_invoice', 'refresh');
+            return;
+        }
         $result = $this->supplier_model->void_supplier_payment($receipt, 'Void supplier payment');
         if (!empty($result['success'])) {
             $this->session->set_flashdata('message', $result['message']);

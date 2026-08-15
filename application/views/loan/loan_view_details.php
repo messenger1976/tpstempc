@@ -36,7 +36,7 @@ $evaluation_histry = $loaninfo ? $this->loan_model->loan_evaluation_history($loa
 $approval_histry = $loaninfo ? $this->loan_model->loan_approval_history($loaninfo->LID)->result() : array();
 $disburse_histry = $loaninfo ? $this->loan_model->loan_disburse_history($loaninfo->LID)->result() : array();
 $can_void_old_disbursement = false;
-if ($loaninfo && !empty($loaninfo->disburse)) {
+if ($loaninfo && !empty($loaninfo->disburse) && has_role(5, 'void_transaction')) {
     $latest_release = null;
     if (!empty($disburse_histry)) {
         $latest_release = $disburse_histry[0];

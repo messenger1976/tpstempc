@@ -413,7 +413,7 @@ class Share extends CI_Controller {
             redirect('auth/login', 'refresh');
         }
 
-        if (!has_role(4, 'Buy_shares') && !has_role(4, 'Refund_shares')) {
+        if (!has_role(4, 'void_transaction')) {
             $this->session->set_flashdata('warning', lang('access_denied'));
             redirect(current_lang() . '/share/share_transaction_search', 'refresh');
             return;

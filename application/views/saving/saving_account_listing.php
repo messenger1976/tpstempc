@@ -559,10 +559,12 @@ if (!empty($export_params)) {
                 <i class="fa fa-book"></i> <?php echo lang('saving_account_post_selected_to_gl'); ?>
             </button>
             <span id="post_selected_hint" class="bulk-hint"></span>
+            <?php if (has_role(3, 'void_transaction')) { ?>
             <button type="submit" name="void_selected" id="btn_void_selected_gl" class="btn btn-danger btn-sm" disabled="disabled" formaction="<?php echo base_url() . current_lang(); ?>/saving/void_selected_gl">
                 <i class="fa fa-undo"></i> <?php echo lang('saving_account_void_selected_gl'); ?>
             </button>
             <span id="void_selected_hint" class="bulk-hint"></span>
+            <?php } ?>
         </div>
 
         <div class="table-responsive">
@@ -572,9 +574,11 @@ if (!empty($export_params)) {
                         <th style="width: 40px; text-align: center;">
                             <input type="checkbox" id="select_all_post_gl" title="<?php echo htmlspecialchars(lang('saving_account_select_all_post_gl'), ENT_QUOTES, 'UTF-8'); ?>"/>
                         </th>
+                        <?php if (has_role(3, 'void_transaction')) { ?>
                         <th style="width: 40px; text-align: center;">
                             <input type="checkbox" id="select_all_void_gl" title="<?php echo htmlspecialchars(lang('saving_account_select_all_void_gl'), ENT_QUOTES, 'UTF-8'); ?>"/>
                         </th>
+                        <?php } ?>
                         <th><?php echo lang('account_number'); ?></th>
                         <th><?php echo lang('member_member_id'); ?></th>
                         <th><?php echo lang('member_fullname'); ?></th>
@@ -612,6 +616,7 @@ if (!empty($export_params)) {
                                         <input type="checkbox" disabled="disabled" title="<?php echo htmlspecialchars(lang('saving_account_no_unposted'), ENT_QUOTES, 'UTF-8'); ?>"/>
                                     <?php } ?>
                                 </td>
+                                <?php if (has_role(3, 'void_transaction')) { ?>
                                 <td style="text-align: center;">
                                     <?php if ($can_void) { ?>
                                         <input type="checkbox" name="void_ids[]" value="<?php echo htmlspecialchars(encode_id($value->id), ENT_QUOTES, 'UTF-8'); ?>" class="cb_void_gl"/>
@@ -619,6 +624,7 @@ if (!empty($export_params)) {
                                         <input type="checkbox" disabled="disabled" title="<?php echo htmlspecialchars(lang('saving_account_no_posted_to_void'), ENT_QUOTES, 'UTF-8'); ?>"/>
                                     <?php } ?>
                                 </td>
+                                <?php } ?>
                                 <td><?php echo htmlspecialchars($value->account, ENT_QUOTES, 'UTF-8'); ?></td>
                                 <td><span class="member-id-chip"><?php echo htmlspecialchars($value->member_id, ENT_QUOTES, 'UTF-8'); ?></span></td>
                                 <td><?php echo htmlspecialchars($display_name, ENT_QUOTES, 'UTF-8'); ?></td>
@@ -663,7 +669,7 @@ if (!empty($export_params)) {
                         <?php } ?>
                     <?php } else { ?>
                         <tr>
-                            <td colspan="12">
+                            <td colspan="<?php echo has_role(3, 'void_transaction') ? '12' : '11'; ?>">
                                 <div class="empty-state">
                                     <i class="fa fa-bank"></i>
                                     <?php echo lang('no_records_found'); ?>

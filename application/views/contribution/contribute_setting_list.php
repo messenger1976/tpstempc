@@ -498,6 +498,7 @@
                                        id="posted<?php echo $value->id; ?>"
                                        data-id="<?php echo $value->id; ?>"
                                        data-value="<?php echo $value->posted; ?>"
+                                       data-can-void="<?php echo has_role(2, 'void_transaction') ? '1' : '0'; ?>"
                                        data-pid="<?php echo htmlspecialchars($value->PID, ENT_QUOTES, 'UTF-8'); ?>"
                                        data-memberid="<?php echo htmlspecialchars(trim($value->member_id), ENT_QUOTES, 'UTF-8'); ?>"
                                        href="#"><?php echo $is_posted ? 'Yes' : 'No'; ?></a>
@@ -694,6 +695,10 @@
                 var postedvalue = $(this).data('value');
 
                 if (postedvalue == 1 || postedvalue == '1') {
+                    if ($(this).data('can-void') != 1 && $(this).data('can-void') != '1') {
+                        swal('Access denied', 'You do not have permission to void CBU beginning balances.', 'error');
+                        return;
+                    }
                     swal({
                         title: "Void CBU Beginning Balance",
                         text: "This will create reversing GL entries and reverse the member CBU balance. Continue?",

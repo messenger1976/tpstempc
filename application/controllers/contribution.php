@@ -930,6 +930,15 @@ class Contribution extends CI_Controller {
 
         // Void / unpost posted beginning balance with reversing entry
         if ((string) $this->input->post('posted') === '1' || intval($this->input->post('posted')) === 1) {
+            if (!has_role(2, 'void_transaction')) {
+                echo json_encode(array(
+                    'id' => $id,
+                    'success' => 'N',
+                    'message' => lang('access_denied'),
+                    'posted' => 1,
+                ));
+                return;
+            }
             $reason = trim((string) $this->input->post('void_reason'));
             $result = $this->contribution_model->void_contribution_beginning_balance($id, $reason);
             $status = array(

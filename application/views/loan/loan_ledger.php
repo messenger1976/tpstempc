@@ -512,7 +512,7 @@ $closing_balance = $total_credit - $total_debit;
                                     <td class="amount-cell credit-cell"><?php echo $row->credit > 0 ? number_format($row->credit, 2) : ''; ?></td>
                                     <td class="amount-cell"><?php echo number_format($running_balance, 2); ?></td>
                                     <td>
-                                        <?php if ($is_repayment && !empty($row->receipt) && $loan_lid !== '') { ?>
+                                        <?php if ($is_repayment && !empty($row->receipt) && $loan_lid !== '' && has_role(5, 'void_transaction')) { ?>
                                             <a class="btn btn-warning btn-xs"
                                                href="<?php echo site_url(current_lang() . '/loan/void_loan_repayment/' . rawurlencode($row->receipt) . '?LID=' . encode_id($loan_lid)); ?>"
                                                onclick="return confirm('Void this repayment with a reversing GL entry? Schedule will reopen.');">

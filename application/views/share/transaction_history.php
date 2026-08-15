@@ -539,7 +539,7 @@ $upto_val = (isset($sp['upto']) && $sp['upto'] !== '') ? format_date($sp['upto']
                                 <td>
                                     <div class="action-btns">
                                         <?php echo anchor(current_lang() . "/share/receipt_view/" . $value->receipt, ' <i class="fa fa-eye"></i> ' . lang('view_link'), 'class="btn btn-primary btn-xs"'); ?>
-                                        <?php if ((has_role(4, 'Buy_shares') || has_role(4, 'Refund_shares')) && empty($value->is_void_entry)) { ?>
+                                        <?php if (has_role(4, 'void_transaction') && empty($value->is_void_entry)) { ?>
                                             <?php if (!empty($value->is_voided)) { ?>
                                                 <span class="void-pill done">
                                                     <i class="fa fa-check-circle"></i> <?php echo lang('share_voided_label'); ?>

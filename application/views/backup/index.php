@@ -9,9 +9,9 @@
         <?php endif; ?>
 
         <?php if ($this->session->flashdata('error')): ?>
-            <div class="alert alert-danger alert-dismissable">
+            <div class="alert alert-danger alert-dismissable backup-flash-error">
                 <button aria-hidden="true" data-dismiss="alert" class="close" type="button">×</button>
-                <?php echo $this->session->flashdata('error'); ?>
+                <strong>Upload failed:</strong> <?php echo $this->session->flashdata('error'); ?>
             </div>
         <?php endif; ?>
 
@@ -24,7 +24,7 @@
                 <div class="row">
                     <div class="col-md-12">
                         <p class="text-muted">
-                            <i class="fa fa-info-circle"></i> Create, download, and manage your database backups. 
+                            <i class="fa fa-info-circle"></i> Create, upload, download, and manage your database backups. 
                             Regular backups are essential for data security and disaster recovery.
                         </p>
                     </div>
@@ -37,6 +37,23 @@
                         <span class="text-muted" style="margin-left: 15px;">
                             <i class="fa fa-info-circle"></i> Backup files are stored in: <code>backups/</code> folder
                         </span>
+                    </div>
+                </div>
+                <div class="row" style="margin-top: 10px;">
+                    <div class="col-md-12">
+                        <form id="uploadBackupForm" method="post" enctype="multipart/form-data"
+                              action="<?php echo site_url(current_lang() . '/backup/upload'); ?>"
+                              class="form-inline">
+                            <button type="button" class="btn btn-info" id="btnUploadBackup" onclick="uploadBackup()">
+                                <i class="fa fa-upload"></i> Upload Backup
+                            </button>
+                            <input type="file" id="backupFileInput" name="backup_file"
+                                   accept=".sql,application/sql,text/plain,text/x-sql"
+                                   style="position:absolute; left:-9999px; width:1px; height:1px; opacity:0;">
+                            <span class="text-muted" style="margin-left: 15px;">
+                                <i class="fa fa-info-circle"></i> Upload a <code>.sql</code> file to restore later
+                            </span>
+                        </form>
                     </div>
                 </div>
             </div>
@@ -132,6 +149,7 @@
                             <li>Backup files are stored in: <code>backups/</code> folder</li>
                             <li>Restoring a backup will overwrite current data</li>
                             <li>Always create a backup before restoring</li>
+                            <li>Uploaded <code>.sql</code> files appear in Available Backups for restore</li>
                             <li>Only administrators can access this module</li>
                             <li>All backup operations are logged</li>
                         </ul>
@@ -158,6 +176,59 @@ function createBackup() {
     }, function() {
         window.location.href = "<?php echo site_url(current_lang() . '/backup/create'); ?>";
     });
+}
+
+function uploadBackup() {
+    var maxUploadBytes = <?php echo isset($max_upload_bytes) ? (int) $max_upload_bytes : 0; ?>;
+    var maxUploadLabel = <?php echo json_encode(isset($max_upload_label) ? $max_upload_label : ini_get('upload_max_filesize')); ?>;
+    var $input = $('#backupFileInput');
+    $input.off('change.uploadBackup').on('change.uploadBackup', function() {
+        var file = this.files && this.files[0] ? this.files[0] : null;
+        if (!file) {
+            return;
+        }
+
+        var filename = file.name || '';
+        var extension = filename.split('.').pop().toLowerCase();
+        if (extension !== 'sql') {
+            swal("Invalid File", "Please select a .sql backup file.", "error");
+            $input.val('');
+            return;
+        }
+
+        if (maxUploadBytes > 0 && file.size > maxUploadBytes) {
+            swal(
+                "File Too Large",
+                "\"" + filename + "\" is " + (file.size / (1024 * 1024)).toFixed(1) +
+                " MB. Server upload limit is " + maxUploadLabel +
+                ". Increase upload_max_filesize / post_max_size in php.ini, then restart Apache.",
+                "error"
+            );
+            $input.val('');
+            return;
+        }
+
+        swal({
+            title: "Upload Backup?",
+            text: "Upload \"" + filename + "\" (" + (file.size / (1024 * 1024)).toFixed(1) + " MB) to the backups folder?",
+            type: "info",
+            showCancelButton: true,
+            confirmButtonColor: "#23c6c8",
+            confirmButtonText: "Yes, Upload!",
+            cancelButtonText: "Cancel",
+            closeOnConfirm: true
+        }, function(isConfirm) {
+            if (isConfirm) {
+                $('#btnUploadBackup').prop('disabled', true).html('<i class="fa fa-spinner fa-spin"></i> Uploading...');
+                document.getElementById('uploadBackupForm').submit();
+            } else {
+                $input.val('');
+            }
+        });
+    });
+
+    $input.val('');
+    $input.trigger('click');
 }
 
 function deleteBackup(filename) {
@@ -206,11 +277,11 @@ function restoreBackup(filename) {
     });
 }
 
-// Auto-dismiss alerts after 5 seconds
+// Keep error alerts visible; auto-dismiss success only
 $(document).ready(function() {
     setTimeout(function() {
-        $('.alert').fadeOut('slow');
-    }, 5000);
+        $('.alert-success').fadeOut('slow');
+    }, 8000);
 });
 </script>
 

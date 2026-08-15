@@ -3335,6 +3335,11 @@ $pin = current_user()->PIN;
      * Void posted loan beginning balance with reversing GL.
      */
     function loan_beginning_balance_void($id) {
+        if (!has_role(5, 'void_transaction')) {
+            $this->session->set_flashdata('warning', lang('access_denied'));
+            redirect(current_lang() . '/loan/loan_beginning_balance_list', 'refresh');
+            return;
+        }
         $id = decode_id($id);
         $balance = $this->loan_model->loan_beginning_balance_list(null, $id)->row();
         if (!$balance) {
@@ -3381,6 +3386,11 @@ $pin = current_user()->PIN;
      * Void a loan repayment receipt with reversing GL.
      */
     function void_loan_repayment($receipt) {
+        if (!has_role(5, 'void_transaction')) {
+            $this->session->set_flashdata('warning', lang('access_denied'));
+            redirect(current_lang() . '/loan/loan_repayment', 'refresh');
+            return;
+        }
         $receipt = rawurldecode($receipt);
         $result = $this->loan_model->void_loan_repayment_receipt($receipt, 'Void from loan ledger');
         if (!empty($result['success'])) {
@@ -3415,6 +3425,11 @@ $pin = current_user()->PIN;
      * (old-style Loan Disbursement posts only). Requires no active repayments.
      */
     function void_loan_disbursement($loanid) {
+        if (!has_role(5, 'void_transaction')) {
+            $this->session->set_flashdata('warning', lang('access_denied'));
+            redirect(current_lang() . '/loan/loan_viewlist', 'refresh');
+            return;
+        }
         $LID = decode_id($loanid);
         if ($LID === null || $LID === '') {
             $this->session->set_flashdata('warning', lang('loan_evaluation_error'));

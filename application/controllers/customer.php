@@ -608,6 +608,11 @@ class Customer extends CI_Controller {
      * Void a customer invoice payment with reversing GL.
      */
     function void_invoice_payment($receipt) {
+        if (!has_role(6, 'Void_transactions')) {
+            $this->session->set_flashdata('warning', lang('access_denied'));
+            redirect(current_lang() . '/customer/invoice_receipt/' . $receipt, 'refresh');
+            return;
+        }
         $result = $this->customer_model->void_customer_payment($receipt, 'Void from payment receipt');
         if (!empty($result['success'])) {
             $this->session->set_flashdata('message', $result['message']);

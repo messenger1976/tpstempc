@@ -178,9 +178,11 @@ $row_count = is_array($beginning_balances) ? count($beginning_balances) : 0;
                                                     <i class="fa fa-check"></i> <?php echo lang('beginning_balance_post'); ?>
                                                 </a>
                                             <?php } else { ?>
+                                                <?php if (has_role(6, 'Void_transactions')) { ?>
                                                 <a class="btn btn-danger btn-xs" href="<?php echo site_url(current_lang() . '/finance/beginning_balance_void/' . encode_id($balance->id)); ?>" onclick="return confirm('Void this beginning balance with a reversing GL entry? Original GL lines are kept for audit.');">
                                                     <i class="fa fa-undo"></i> Void
                                                 </a>
+                                                <?php } ?>
                                             <?php } ?>
                                         </div>
                                     </td>

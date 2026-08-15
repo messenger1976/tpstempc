@@ -272,7 +272,7 @@ $je_balanced = abs($je_total_debit - $je_total_credit) <= 0.001;
                         <i class="fa fa-print"></i> <?php echo lang('print'); ?>
                     </a>
                 <?php } ?>
-                <?php if ($disburse && has_role(6, 'Journal_entry') && !empty($disburse->is_posted_to_gl) && !empty($disburse->journal_entry_id) && empty($disburse->cancelled)) { ?>
+                <?php if ($disburse && has_role(6, 'Void_transactions') && !empty($disburse->is_posted_to_gl) && !empty($disburse->journal_entry_id) && empty($disburse->cancelled)) { ?>
                     <a href="<?php echo site_url(current_lang() . '/finance/void_gl_posting_journal_entry/' . encode_id($disburse->journal_entry_id)); ?>"
                        onclick="return confirm('Void the GL posting only? The disbursement and journal entry will stay; you can repost to GL from Journal Entry Review.');"
                        class="btn btn-warning btn-sm">

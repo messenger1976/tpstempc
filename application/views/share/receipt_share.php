@@ -119,7 +119,7 @@ if (isset($message) && !empty($message)) {
                 && !$is_voided
                 && in_array($trans->trans_type, array('CR', 'DR'), true)
                 && !$this->share_model->has_later_share_transactions($trans)
-                && (has_role(4, 'Buy_shares') || has_role(4, 'Refund_shares'));
+                && (has_role(4, 'void_transaction'));
             ?>
 
             <?php if ($is_void_entry) { ?>

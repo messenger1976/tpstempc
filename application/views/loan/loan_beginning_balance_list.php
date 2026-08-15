@@ -243,9 +243,11 @@ $row_count = is_array($loan_beginning_balances) ? count($loan_beginning_balances
                                                 <a href="javascript:void(0);" class="btn btn-info btn-xs btn-activate-balance" data-id="<?php echo encode_id($balance->id); ?>" data-member="<?php echo htmlspecialchars($balance->member_id, ENT_QUOTES, 'UTF-8'); ?>">
                                                     <i class="fa fa-play-circle"></i> <?php echo lang('loan_beginning_balance_activate'); ?>
                                                 </a>
+                                                <?php if (has_role(5, 'void_transaction')) { ?>
                                                 <a class="btn btn-danger btn-xs" href="<?php echo site_url(current_lang() . '/loan/loan_beginning_balance_void/' . encode_id($balance->id)); ?>" onclick="return confirm('Void this loan beginning balance with a reversing GL entry?');">
                                                     <i class="fa fa-undo"></i> Void
                                                 </a>
+                                                <?php } ?>
                                             <?php } ?>
                                         </div>
                                     </td>

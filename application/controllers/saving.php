@@ -507,7 +507,7 @@ class Saving extends CI_Controller {
         if (!$this->ion_auth->logged_in()) {
             redirect('auth/login', 'refresh');
         }
-        if (!has_role(3, 'saving_account_list')) {
+        if (!has_role(3, 'void_transaction')) {
             $this->session->set_flashdata('warning', lang('access_denied'));
             redirect('dashboard', 'refresh');
             return;

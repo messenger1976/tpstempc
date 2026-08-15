@@ -472,6 +472,8 @@ $current_status = isset($status_filter) ? $status_filter : '';
                     <tr>
                         <th><?php echo lang('loan_LID'); ?></th>
                         <th><?php echo lang('member_name'); ?></th>
+                        <th><?php echo lang('loan_product'); ?></th>
+                        <th><?php echo lang('loan_applicationdate'); ?></th>
                         <th style="text-align:right;"><?php echo lang('loan_applied_amount'); ?></th>
                         <th style="text-align:center;"><?php echo lang('loan_installment'); ?></th>
                         <th style="text-align:right;"><?php echo lang('loan_installment_amount'); ?></th>
@@ -520,6 +522,8 @@ $current_status = isset($status_filter) ? $status_filter : '';
                                     $pill = 'mixed';
                                 }
                             }
+                            $app_date = !empty($value->applicationdate) ? format_date($value->applicationdate, false) : '';
+                            $product_name = !empty($value->product_name) ? $value->product_name : '-';
                             ?>
                             <tr>
                                 <td><span class="member-id-chip"><?php echo htmlspecialchars($value->LID, ENT_QUOTES, 'UTF-8'); ?></span></td>
@@ -529,6 +533,8 @@ $current_status = isset($status_filter) ? $status_filter : '';
                                     <?php } ?>
                                     <?php echo htmlspecialchars($full_name, ENT_QUOTES, 'UTF-8'); ?>
                                 </td>
+                                <td><?php echo htmlspecialchars($product_name, ENT_QUOTES, 'UTF-8'); ?></td>
+                                <td><?php echo htmlspecialchars($app_date, ENT_QUOTES, 'UTF-8'); ?></td>
                                 <td class="amount-cell"><?php echo number_format($value->basic_amount, 2); ?></td>
                                 <td style="text-align:center;"><?php echo htmlspecialchars($value->number_istallment . ($interval_desc !== '' ? ' ' . $interval_desc : ''), ENT_QUOTES, 'UTF-8'); ?></td>
                                 <td class="amount-cell"><?php echo number_format($value->installment_amount, 2); ?></td>
@@ -579,7 +585,7 @@ $current_status = isset($status_filter) ? $status_filter : '';
                         <?php } ?>
                     <?php } else { ?>
                         <tr>
-                            <td colspan="9">
+                            <td colspan="11">
                                 <div class="empty-state">
                                     <i class="fa fa-list"></i>
                                     <?php echo lang('no_records_found'); ?>

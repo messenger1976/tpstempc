@@ -1899,7 +1899,8 @@ class Loan_Model extends CI_Model {
                         loan_beginning_balances.posted as bb_posted,
                         loan_beginning_balances.fiscal_year_id as bb_fiscal_year_id,
                         COALESCE(loan_product.`interval`, 1) as `interval`,
-                        loan_beginning_balances.disbursement_date as applicationdate
+                        loan_beginning_balances.disbursement_date as applicationdate,
+                        loan_product.name as product_name
                     FROM loan_beginning_balances 
                     INNER JOIN members ON members.member_id=loan_beginning_balances.member_id 
                     LEFT JOIN loan_product ON loan_product.id=loan_beginning_balances.loan_product_id AND loan_product.PIN='$pin'
@@ -1908,41 +1909,47 @@ class Loan_Model extends CI_Model {
             if (!is_null($key)) {
                 $sql_bb .= " AND (loan_beginning_balances.loan_id LIKE '$key%' OR loan_beginning_balances.member_id LIKE '$key%' OR members.firstname LIKE '$key%' OR members.lastname LIKE '$key%')";
             }
-            $sql_bb .= " ORDER BY loan_beginning_balances.disbursement_date ASC, loan_beginning_balances.created_at ASC LIMIT " . (int)$limit . " OFFSET " . (int)$start;
+            $sql_bb .= " ORDER BY loan_beginning_balances.disbursement_date DESC, loan_beginning_balances.created_at DESC LIMIT " . (int)$limit . " OFFSET " . (int)$start;
             return $this->enrich_loan_list_lifecycle($this->db->query($sql_bb)->result());
         }
 
         // Lifecycle filters
         if ($this->is_loan_lifecycle_filter($status)) {
-            $sql = "SELECT loan_contract.*,loan_status.name" . $life_select . " FROM loan_contract INNER JOIN members ON members.PID=loan_contract.PID ";
-            $sql .= " INNER JOIN loan_status ON loan_status.code=loan_contract.status WHERE loan_contract.PIN='$pin' AND (" . $this->_lifecycle_filter_sql($status, 'loan_contract') . ")";
+            $sql = "SELECT loan_contract.*,loan_status.name,loan_product.name AS product_name" . $life_select . " FROM loan_contract INNER JOIN members ON members.PID=loan_contract.PID ";
+            $sql .= " INNER JOIN loan_status ON loan_status.code=loan_contract.status ";
+            $sql .= " LEFT JOIN loan_product ON loan_product.id=loan_contract.product_type AND loan_product.PIN='$pin' ";
+            $sql .= " WHERE loan_contract.PIN='$pin' AND (" . $this->_lifecycle_filter_sql($status, 'loan_contract') . ")";
             if (!is_null($key)) {
                 $sql .= " AND ( loan_contract.LID LIKE '$key%' OR loan_contract.member_id LIKE '$key%' OR members.firstname LIKE '$key%' OR members.lastname LIKE '$key%')";
             }
-            $sql .= " ORDER BY loan_contract.applicationdate ASC LIMIT " . (int)$limit . " OFFSET " . (int)$start;
+            $sql .= " ORDER BY loan_contract.applicationdate DESC LIMIT " . (int)$limit . " OFFSET " . (int)$start;
             return $this->enrich_loan_list_lifecycle($this->db->query($sql)->result());
         }
 
         // When status filter is set, get only loan_contract with that status (no beginning balances)
         if ($status !== null && $status !== '') {
-            $sql = "SELECT loan_contract.*,loan_status.name" . $life_select . " FROM loan_contract INNER JOIN members ON members.PID=loan_contract.PID ";
-            $sql .= " INNER JOIN loan_status ON loan_status.code=loan_contract.status WHERE loan_contract.PIN='$pin' AND loan_contract.status=" . $this->db->escape($status);
+            $sql = "SELECT loan_contract.*,loan_status.name,loan_product.name AS product_name" . $life_select . " FROM loan_contract INNER JOIN members ON members.PID=loan_contract.PID ";
+            $sql .= " INNER JOIN loan_status ON loan_status.code=loan_contract.status ";
+            $sql .= " LEFT JOIN loan_product ON loan_product.id=loan_contract.product_type AND loan_product.PIN='$pin' ";
+            $sql .= " WHERE loan_contract.PIN='$pin' AND loan_contract.status=" . $this->db->escape($status);
             if (!is_null($key)) {
                 $sql .= " AND ( loan_contract.LID LIKE '$key%' OR loan_contract.member_id LIKE '$key%' OR members.firstname LIKE '$key%' OR members.lastname LIKE '$key%')";
             }
-            $sql .= " ORDER BY loan_contract.applicationdate ASC LIMIT " . (int)$limit . " OFFSET " . (int)$start;
+            $sql .= " ORDER BY loan_contract.applicationdate DESC LIMIT " . (int)$limit . " OFFSET " . (int)$start;
             return $this->enrich_loan_list_lifecycle($this->db->query($sql)->result());
         }
         
         // Get regular loans from loan_contract
-        $sql = "SELECT loan_contract.*,loan_status.name" . $life_select . " FROM loan_contract INNER JOIN members ON members.PID=loan_contract.PID ";
-        $sql .= " INNER JOIN loan_status ON loan_status.code=loan_contract.status WHERE loan_contract.PIN='$pin'";
+        $sql = "SELECT loan_contract.*,loan_status.name,loan_product.name AS product_name" . $life_select . " FROM loan_contract INNER JOIN members ON members.PID=loan_contract.PID ";
+        $sql .= " INNER JOIN loan_status ON loan_status.code=loan_contract.status ";
+        $sql .= " LEFT JOIN loan_product ON loan_product.id=loan_contract.product_type AND loan_product.PIN='$pin' ";
+        $sql .= " WHERE loan_contract.PIN='$pin'";
 
         if (!is_null($key)) {
             $sql .= "  AND ( loan_contract.LID LIKE '$key%' OR loan_contract.member_id LIKE '$key%' OR members.firstname LIKE '$key%' OR members.lastname LIKE '$key%')";
         }
 
-        $sql.= " ORDER BY loan_contract.applicationdate ASC";
+        $sql.= " ORDER BY loan_contract.applicationdate DESC";
         
         $regular_loans = $this->db->query($sql)->result();
         
@@ -1964,7 +1971,8 @@ class Loan_Model extends CI_Model {
                         loan_beginning_balances.posted as bb_posted,
                         loan_beginning_balances.fiscal_year_id as bb_fiscal_year_id,
                         COALESCE(loan_product.`interval`, 1) as `interval`,
-                        loan_beginning_balances.disbursement_date as applicationdate
+                        loan_beginning_balances.disbursement_date as applicationdate,
+                        loan_product.name as product_name
                     FROM loan_beginning_balances 
                     INNER JOIN members ON members.member_id=loan_beginning_balances.member_id 
                     LEFT JOIN loan_product ON loan_product.id=loan_beginning_balances.loan_product_id AND loan_product.PIN='$pin'
@@ -1977,18 +1985,18 @@ class Loan_Model extends CI_Model {
             $sql_bb .= " AND (loan_beginning_balances.loan_id LIKE '$key%' OR loan_beginning_balances.member_id LIKE '$key%' OR members.firstname LIKE '$key%' OR members.lastname LIKE '$key%')";
         }
         
-        $sql_bb .= " ORDER BY loan_beginning_balances.disbursement_date ASC, loan_beginning_balances.created_at ASC";
+        $sql_bb .= " ORDER BY loan_beginning_balances.disbursement_date DESC, loan_beginning_balances.created_at DESC";
         
         $beginning_balances = $this->db->query($sql_bb)->result();
         
         // Combine results
         $all_results = array_merge($regular_loans, $beginning_balances);
         
-        // Sort by applicationdate
+        // Sort by applicationdate DESC
         usort($all_results, function($a, $b) {
             $dateA = isset($a->applicationdate) ? strtotime($a->applicationdate) : 0;
             $dateB = isset($b->applicationdate) ? strtotime($b->applicationdate) : 0;
-            return $dateA - $dateB;
+            return $dateB - $dateA;
         });
         
         // Apply pagination

@@ -170,6 +170,7 @@ $row_count = is_array($loan_beginning_balances) ? count($loan_beginning_balances
                             <th style="text-align:right;"><?php echo lang('loan_beginning_balance_loan_amount'); ?></th>
                             <th style="text-align:right;"><?php echo lang('loan_beginning_balance_monthly_amort'); ?></th>
                             <th><?php echo lang('loan_beginning_balance_term'); ?></th>
+                            <th><?php echo lang('loan_beginning_balance_disbursement_date'); ?></th>
                             <th><?php echo lang('loan_beginning_balance_last_date_paid'); ?></th>
                             <th style="text-align:right;"><?php echo lang('loan_beginning_balance_principal'); ?></th>
                             <th style="text-align:right;"><?php echo lang('loan_beginning_balance_interest'); ?></th>
@@ -196,6 +197,7 @@ $row_count = is_array($loan_beginning_balances) ? count($loan_beginning_balances
                                     <td class="amount-cell"><?php echo $balance->loan_amount ? number_format($balance->loan_amount, 2) : '-'; ?></td>
                                     <td class="amount-cell"><?php echo $balance->monthly_amort ? number_format($balance->monthly_amort, 2) : '-'; ?></td>
                                     <td><?php echo $balance->term ? htmlspecialchars($balance->term . ' months', ENT_QUOTES, 'UTF-8') : '-'; ?></td>
+                                    <td><?php echo !empty($balance->disbursement_date) ? date('d-m-Y', strtotime($balance->disbursement_date)) : '-'; ?></td>
                                     <td><?php echo $balance->last_date_paid ? date('d-m-Y', strtotime($balance->last_date_paid)) : '-'; ?></td>
                                     <td class="amount-cell"><?php echo number_format($balance->principal_balance, 2); ?></td>
                                     <td class="amount-cell"><?php echo number_format($balance->interest_balance, 2); ?></td>
@@ -255,7 +257,7 @@ $row_count = is_array($loan_beginning_balances) ? count($loan_beginning_balances
                             <?php }
                         } else { ?>
                             <tr>
-                                <td colspan="15">
+                                <td colspan="16">
                                     <div class="empty-state">
                                         <i class="fa fa-list"></i>
                                         <?php echo lang('data_not_found'); ?>

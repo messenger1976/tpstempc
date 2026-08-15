@@ -3514,7 +3514,84 @@ $pin=current_user()->PIN;
         return null;
     }
 
-    function void_savings_deposit_withdrawal_transaction($receipt, $reason = '') {
+    /**
+     * Correct the transaction date on an existing savings void reversing entry
+     * and sync matching GL line / header dates.
+     *
+     * @param string $receipt Void reversing receipt (e.g. SV00002763)
+     * @param string $new_date Date in any strtotime-parseable form
+     * @return array
+     */
+    function update_savings_void_entry_date($receipt, $new_date) {
+        $pin = current_user()->PIN;
+        $receipt = trim((string) $receipt);
+
+        if ($receipt === '') {
+            return array('success' => false, 'message' => 'Invalid receipt');
+        }
+
+        $void_ts = strtotime(trim((string) $new_date));
+        if ($void_ts === false) {
+            return array('success' => false, 'message' => 'Invalid void date');
+        }
+        $void_trans_date = date('Y-m-d', $void_ts);
+
+        $this->db->where('receipt', $receipt);
+        $this->db->where('PIN', $pin);
+        $trans = $this->db->get('savings_transaction')->row();
+        if (!$trans) {
+            return array('success' => false, 'message' => 'Transaction not found');
+        }
+        if (!$this->is_void_entry($trans)) {
+            return array('success' => false, 'message' => 'Only void reversing entries can have their date edited here');
+        }
+
+        $this->db->trans_start();
+
+        $this->db->where('receipt', $receipt);
+        $this->db->where('PIN', $pin);
+        $this->db->update('savings_transaction', array('trans_date' => $void_trans_date));
+
+        $this->db->where('refferenceID', $receipt);
+        $this->db->where('fromtable', 'savings_transaction');
+        $this->db->where('PIN', $pin);
+        $gl_lines = $this->db->get('general_ledger')->result();
+
+        $entry_ids = array();
+        foreach ($gl_lines as $line) {
+            if (!empty($line->entryid)) {
+                $entry_ids[(int) $line->entryid] = true;
+            }
+        }
+
+        if (!empty($gl_lines)) {
+            $this->db->where('refferenceID', $receipt);
+            $this->db->where('fromtable', 'savings_transaction');
+            $this->db->where('PIN', $pin);
+            $this->db->update('general_ledger', array('date' => $void_trans_date));
+        }
+
+        foreach (array_keys($entry_ids) as $entry_id) {
+            $this->db->where('id', $entry_id);
+            $this->db->where('PIN', $pin);
+            $this->db->update('general_ledger_entry', array('date' => $void_trans_date));
+        }
+
+        $this->db->trans_complete();
+
+        if ($this->db->trans_status() === FALSE) {
+            return array('success' => false, 'message' => 'Database error occurred');
+        }
+
+        return array(
+            'success' => true,
+            'message' => 'Void entry date updated successfully',
+            'trans_date' => $void_trans_date,
+            'gl_lines_updated' => count($gl_lines),
+        );
+    }
+
+    function void_savings_deposit_withdrawal_transaction($receipt, $reason = '', $void_date = null) {
         $pin = current_user()->PIN;
         
         // Get original transaction
@@ -3534,6 +3611,17 @@ $pin=current_user()->PIN;
         // Only allow voiding of CR (deposit), DR (withdrawal), or INT (interest) transactions
         if (!in_array($trans->trans_type, array('CR', 'DR', 'INT'))) {
             return array('success' => false, 'message' => 'Only deposit/withdrawal/interest transactions can be voided');
+        }
+
+        // Void date defaults to today; allow backdating to match the original transaction date
+        if ($void_date === null || trim((string) $void_date) === '') {
+            $void_trans_date = date('Y-m-d');
+        } else {
+            $void_ts = strtotime(trim((string) $void_date));
+            if ($void_ts === false) {
+                return array('success' => false, 'message' => 'Invalid void date');
+            }
+            $void_trans_date = date('Y-m-d', $void_ts);
         }
         
         // Begin transaction
@@ -3560,7 +3648,7 @@ $pin=current_user()->PIN;
         $this->db->set('amount', $trans->amount);
         $this->db->set('paymethod', $trans->paymethod);
         $this->db->set('cheque_num', $trans->cheque_num ? $trans->cheque_num : '');
-        $this->db->set('trans_date', date('Y-m-d'));
+        $this->db->set('trans_date', $void_trans_date);
         $this->db->set('comment', $void_comment);
         $this->db->set('system_comment', $void_system_comment);
         $this->db->set('PIN', $pin);
@@ -3610,7 +3698,6 @@ $pin=current_user()->PIN;
         $pid = isset($trans->PID) ? $trans->PID : (($account_info && isset($account_info->RFID)) ? $account_info->RFID : '');
         $customer_name = isset($trans->customer_name) ? $trans->customer_name : '';
         $account_cat = isset($trans->account_cat) ? $trans->account_cat : (($account_info && isset($account_info->account_cat)) ? $account_info->account_cat : '');
-        $void_trans_date = date('Y-m-d');
 
         $gl_posted = $this->post_savings_to_gl(
             $trans->account,

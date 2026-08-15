@@ -36,6 +36,7 @@ $evaluation_histry = $loaninfo ? $this->loan_model->loan_evaluation_history($loa
 $approval_histry = $loaninfo ? $this->loan_model->loan_approval_history($loaninfo->LID)->result() : array();
 $disburse_histry = $loaninfo ? $this->loan_model->loan_disburse_history($loaninfo->LID)->result() : array();
 $can_void_old_disbursement = false;
+$is_bb_activated_loan = false;
 if ($loaninfo && !empty($loaninfo->disburse) && has_role(5, 'void_transaction')) {
     $latest_release = null;
     if (!empty($disburse_histry)) {
@@ -44,6 +45,7 @@ if ($loaninfo && !empty($loaninfo->disburse) && has_role(5, 'void_transaction'))
     $rs = ($latest_release && isset($latest_release->release_status)) ? $latest_release->release_status : null;
     // Old-style: no release_status / pending-null; block new-flow draft/paid.
     $can_void_old_disbursement = !in_array($rs, array('draft', 'paid'), true);
+    $is_bb_activated_loan = $this->loan_model->is_beginning_balance_activated_loan($loaninfo, $latest_release);
 }
 
 $max_loan = 0;
@@ -714,8 +716,8 @@ if ($interval) {
                     <?php if (!empty($can_void_old_disbursement)) { ?>
                     <a href="<?php echo site_url(current_lang() . '/loan/void_loan_disbursement/' . encode_id($loaninfo->LID)); ?>"
                        class="btn btn-danger btn-sm"
-                       onclick="return confirm('<?php echo htmlspecialchars(lang('loan_void_disbursement_confirm'), ENT_QUOTES, 'UTF-8'); ?>');">
-                        <i class="fa fa-undo"></i> <?php echo lang('loan_void_disbursement'); ?>
+                       onclick="return confirm('<?php echo htmlspecialchars(!empty($is_bb_activated_loan) ? lang('loan_void_bb_activation_confirm') : lang('loan_void_disbursement_confirm'), ENT_QUOTES, 'UTF-8'); ?>');">
+                        <i class="fa fa-undo"></i> <?php echo !empty($is_bb_activated_loan) ? lang('loan_void_bb_activation') : lang('loan_void_disbursement'); ?>
                     </a>
                     <?php } ?>
                 </div>

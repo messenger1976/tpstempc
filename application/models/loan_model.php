@@ -3380,19 +3380,19 @@ class Loan_Model extends CI_Model {
             $total_interest = $interest_balance;
         }
 
+        // Application / opening date must come from BB disbursement_date (never "today").
+        // Without it, activate would stamp wrong dates on the loan and schedule.
+        if (empty($balance->disbursement_date) || strtotime($balance->disbursement_date) === FALSE) {
+            return array('success' => false, 'message' => lang('loan_beginning_balance_activate_need_disbursement_date'));
+        }
+        $disburse_date = $balance->disbursement_date;
+
         // First installment due date
-        $startdate = null;
         if (!empty($balance->last_date_paid) && strtotime($balance->last_date_paid) !== FALSE) {
             $startdate = date('Y-m-d', strtotime($balance->last_date_paid . ($interval == 2 ? ' +7 days' : ' +1 month')));
-        } elseif (!empty($balance->disbursement_date) && strtotime($balance->disbursement_date) !== FALSE) {
-            $startdate = date('Y-m-d', strtotime($balance->disbursement_date . ($interval == 2 ? ' +7 days' : ' +1 month')));
         } else {
-            $startdate = date('Y-m-d');
+            $startdate = date('Y-m-d', strtotime($disburse_date . ($interval == 2 ? ' +7 days' : ' +1 month')));
         }
-
-        $disburse_date = (!empty($balance->disbursement_date) && strtotime($balance->disbursement_date) !== FALSE)
-            ? $balance->disbursement_date
-            : $startdate;
 
         $purpose = trim((string) $balance->description);
         if ($purpose === '') {
@@ -3621,6 +3621,126 @@ class Loan_Model extends CI_Model {
     }
 
     /**
+     * Whether a disbursed loan was created via Beginning Balance Activate (no cash GL).
+     */
+    function is_beginning_balance_activated_loan($loan, $release = null) {
+        if ($loan && isset($loan->evaluated) && (string) $loan->evaluated === 'BEGINNING_BALANCE') {
+            return true;
+        }
+        if ($release) {
+            if (isset($release->payment_method) && (string) $release->payment_method === 'BEGINNING_BALANCE') {
+                return true;
+            }
+            if (!empty($release->comment) && stripos($release->comment, 'Beginning Balance - Opening') !== false) {
+                return true;
+            }
+            if (!empty($release->disburse_no) && strpos((string) $release->disburse_no, 'BB-') === 0) {
+                return true;
+            }
+        }
+        if ($loan && !empty($loan->LID)) {
+            $bb = $this->get_beginning_balance_by_loan_id($loan->LID);
+            if ($bb && !empty($bb->posted) && $this->is_loan_beginning_balance_activated($bb)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Undo Activate as Loan: remove contract/schedule/disburse, clear BB.loan_id.
+     * Does not reverse BB opening GL (row stays Posted so it can be re-activated
+     * after correcting dates/terms). Use BB list Void to reverse GL if needed.
+     *
+     * @return array{success:bool,message:string,fiscal_year_id?:int}
+     */
+    function deactivate_loan_beginning_balance_activation($LID, $reason = '') {
+        $pin = current_user()->PIN;
+        $LID = trim((string) $LID);
+        $reason = trim((string) $reason);
+        if ($reason === '') {
+            $reason = 'Undo beginning balance activation';
+        }
+
+        $loan = $this->db->where('LID', $LID)->where('PIN', $pin)->get('loan_contract')->row();
+        if (!$loan || empty($loan->disburse)) {
+            return array('success' => false, 'message' => 'Loan not found or not disbursed.');
+        }
+
+        $release = $this->db->where('LID', $LID)->where('PIN', $pin)
+            ->order_by('id', 'DESC')->limit(1)
+            ->get('loan_contract_disburse')->row();
+        if (!$this->is_beginning_balance_activated_loan($loan, $release)) {
+            return array('success' => false, 'message' => 'This loan is not a beginning-balance activation.');
+        }
+
+        $has_voided_col = $this->db->query("SHOW COLUMNS FROM loan_contract_repayment LIKE 'is_voided'")->row();
+        if ($has_voided_col) {
+            $paid = $this->db->query(
+                "SELECT COUNT(*) AS cnt FROM loan_contract_repayment WHERE LID = ? AND PIN = ? AND (is_voided IS NULL OR is_voided = 0)",
+                array($LID, $pin)
+            )->row();
+        } else {
+            $paid = $this->db->query(
+                "SELECT COUNT(*) AS cnt FROM loan_contract_repayment WHERE LID = ? AND PIN = ?",
+                array($LID, $pin)
+            )->row();
+        }
+        if ($paid && intval($paid->cnt) > 0) {
+            return array('success' => false, 'message' => 'Cannot undo activation while repayments exist. Void repayments first.');
+        }
+
+        $bb = $this->get_beginning_balance_by_loan_id($LID);
+        $bb_needs_link = false;
+        if (!$bb && $loan) {
+            $this->db->where('PIN', $pin);
+            $this->db->where('member_id', $loan->member_id);
+            $this->db->where('loan_product_id', $loan->product_type);
+            $this->db->where('posted', 1);
+            $this->db->limit(1);
+            $bb = $this->db->get('loan_beginning_balances')->row();
+            $bb_needs_link = (bool) $bb;
+        }
+        $fiscal_year_id = $bb ? (int) $bb->fiscal_year_id : null;
+
+        $this->db->trans_start();
+
+        $this->db->where('LID', $LID)->where('PIN', $pin)->delete('loan_contract_repayment_schedule');
+        if ($this->db->table_exists('loan_disbursement_gl_items')) {
+            $this->db->where('LID', $LID)->where('PIN', $pin)->delete('loan_disbursement_gl_items');
+        }
+        $this->db->where('LID', $LID)->where('PIN', $pin)->delete('loan_contract_disburse');
+        if ($this->db->table_exists('loan_contract_evaluation')) {
+            $this->db->where('LID', $LID)->where('PIN', $pin)->delete('loan_contract_evaluation');
+        }
+        if ($this->db->table_exists('loan_contract_approve')) {
+            $this->db->where('LID', $LID)->where('PIN', $pin)->delete('loan_contract_approve');
+        }
+        $this->db->where('LID', $LID)->where('PIN', $pin)->delete('loan_contract');
+
+        // Keep/restore BB.loan_id so re-activate can reuse the same LID. Not-activated = loan_contract gone.
+        if ($bb) {
+            $bb_upd = array('updated_at' => date('Y-m-d H:i:s'));
+            if ($bb_needs_link || empty($bb->loan_id)) {
+                $bb_upd['loan_id'] = $LID;
+            }
+            $this->db->where('id', (int) $bb->id)->where('PIN', $pin)->update('loan_beginning_balances', $bb_upd);
+        }
+
+        $this->db->trans_complete();
+        if ($this->db->trans_status() === FALSE) {
+            return array('success' => false, 'message' => 'Failed to undo beginning balance activation.');
+        }
+
+        return array(
+            'success' => true,
+            'message' => lang('loan_beginning_balance_deactivate_success'),
+            'fiscal_year_id' => $fiscal_year_id,
+            'bb_id' => $bb ? (int) $bb->id : null,
+        );
+    }
+
+    /**
      * Void a loan repayment receipt: reverse GL for each repayment row and reopen schedule(s).
      */
     function void_loan_repayment_receipt($receipt, $reason = '', $options = array()) {
@@ -3779,6 +3899,11 @@ class Loan_Model extends CI_Model {
         }
         if ($paid && intval($paid->cnt) > 0) {
             return array('success' => false, 'message' => 'Cannot void disbursement while repayments exist. Void repayments first.');
+        }
+
+        // Beginning-balance activate posts no cash "Loan Disbursed" GL — undo activation instead.
+        if ($this->is_beginning_balance_activated_loan($loan, $release)) {
+            return $this->deactivate_loan_beginning_balance_activation($LID, $reason);
         }
 
         $this->load->model('finance_model');

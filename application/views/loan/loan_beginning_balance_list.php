@@ -33,6 +33,41 @@
     border-radius: 6px;
     font-weight: 600;
 }
+.member-list-page .panel-head-tools {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex: 1 1 auto;
+    justify-content: flex-end;
+    min-width: 0;
+}
+.member-list-page .table-search-wrap {
+    position: relative;
+    flex: 0 1 280px;
+    max-width: 100%;
+}
+.member-list-page .table-search-wrap .fa-search {
+    position: absolute;
+    left: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #a7b1c2;
+    font-size: 13px;
+    pointer-events: none;
+}
+.member-list-page .table-search-wrap .form-control {
+    height: 34px;
+    padding-left: 34px;
+    padding-right: 12px;
+    border-radius: 6px;
+    border-color: #e5e6e7;
+    box-shadow: none;
+    font-size: 13px;
+}
+.member-list-page .table-search-wrap .form-control:focus {
+    border-color: #1ab394;
+    box-shadow: 0 0 0 2px rgba(26,179,148,0.15);
+}
 .member-list-page .filter-field.wide-select { flex: 1.4 1 220px; }
 .member-list-page .member-table > thead > tr > th,
 .member-list-page .member-table > tbody > tr > td {
@@ -153,13 +188,19 @@ $row_count = is_array($loan_beginning_balances) ? count($loan_beginning_balances
                     <i class="fa fa-list icon-badge"></i>
                     <h4><?php echo lang('loan_beginning_balance_list'); ?></h4>
                 </div>
-                <div class="result-meta">
-                    Showing <strong><?php echo number_format($row_count); ?></strong>
-                    <?php echo $row_count === 1 ? 'record' : 'records'; ?>
+                <div class="panel-head-tools">
+                    <div class="table-search-wrap">
+                        <i class="fa fa-search"></i>
+                        <input type="text" id="bb-table-search" class="form-control" placeholder="Search member, loan ID, product..." autocomplete="off" />
+                    </div>
+                    <div class="result-meta">
+                        Showing <strong id="bb-visible-count"><?php echo number_format($row_count); ?></strong>
+                        <span id="bb-record-label"><?php echo $row_count === 1 ? 'record' : 'records'; ?></span>
+                    </div>
                 </div>
             </div>
             <div class="table-responsive">
-                <table class="table table-striped table-bordered member-table">
+                <table class="table table-striped table-bordered member-table" id="bb-balance-table">
                     <thead>
                         <tr>
                             <th style="text-align:center; width:60px;"><?php echo lang('sno'); ?></th>
@@ -290,6 +331,38 @@ $row_count = is_array($loan_beginning_balances) ? count($loan_beginning_balances
         }
 
         $(document).ready(function() {
+            var $search = $('#bb-table-search');
+            var $rows = $('#bb-balance-table tbody tr').filter(function() {
+                return $(this).find('.empty-state').length === 0;
+            });
+            var $count = $('#bb-visible-count');
+            var $label = $('#bb-record-label');
+            var totalRows = $rows.length;
+
+            function updateVisibleCount(visible) {
+                $count.text(visible.toLocaleString());
+                $label.text(visible === 1 ? 'record' : 'records');
+            }
+
+            $search.on('keyup input', function() {
+                var q = $.trim($(this).val()).toLowerCase();
+                if (!q) {
+                    $rows.show();
+                    updateVisibleCount(totalRows);
+                    return;
+                }
+                var visible = 0;
+                $rows.each(function() {
+                    var text = $(this).text().toLowerCase();
+                    var match = text.indexOf(q) !== -1;
+                    $(this).toggle(match);
+                    if (match) {
+                        visible++;
+                    }
+                });
+                updateVisibleCount(visible);
+            });
+
             $('.btn-delete-balance').click(function() {
                 var balanceId = $(this).data('id');
                 var member = $(this).data('member');

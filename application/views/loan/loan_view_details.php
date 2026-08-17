@@ -37,6 +37,7 @@ $approval_histry = $loaninfo ? $this->loan_model->loan_approval_history($loaninf
 $disburse_histry = $loaninfo ? $this->loan_model->loan_disburse_history($loaninfo->LID)->result() : array();
 $can_void_old_disbursement = false;
 $is_bb_activated_loan = false;
+$can_cancel_pending_release = false;
 if ($loaninfo && !empty($loaninfo->disburse) && has_role(5, 'void_transaction')) {
     $latest_release = null;
     if (!empty($disburse_histry)) {
@@ -46,6 +47,11 @@ if ($loaninfo && !empty($loaninfo->disburse) && has_role(5, 'void_transaction'))
     // Old-style: no release_status / pending-null; block new-flow draft/paid.
     $can_void_old_disbursement = !in_array($rs, array('draft', 'paid'), true);
     $is_bb_activated_loan = $this->loan_model->is_beginning_balance_activated_loan($loaninfo, $latest_release);
+}
+if ($loaninfo && has_role(5, 'void_transaction')) {
+    $loan_status_code = isset($loaninfo->status) ? (string) $loaninfo->status : '';
+    $disburse_zero = ((string) $loaninfo->disburse === '0' || (int) $loaninfo->disburse === 0);
+    $can_cancel_pending_release = in_array($loan_status_code, array('4', '6', '9'), true) && $disburse_zero;
 }
 
 $max_loan = 0;
@@ -699,6 +705,30 @@ if ($interval) {
             </div>
         </div>
     </div>
+
+    <?php if (!empty($can_cancel_pending_release)) { ?>
+    <div class="cbu-panel" id="loan-cancel-panel">
+        <div class="panel-head">
+            <div class="head-left">
+                <i class="fa fa-ban"></i>
+                <h4><?php echo lang('loan_cancel_title'); ?></h4>
+            </div>
+        </div>
+        <div class="panel-body">
+            <p class="text-muted" style="margin-top:0;"><?php echo lang('loan_cancel_help'); ?></p>
+            <?php echo form_open(current_lang() . '/loan/cancel_pending_release_loan/' . encode_id($loaninfo->LID)); ?>
+                <div class="form-group">
+                    <label for="loan_cancel_comment"><?php echo lang('loan_comment'); ?> <span class="text-danger">*</span></label>
+                    <textarea name="comment" id="loan_cancel_comment" class="form-control" rows="3" required><?php echo htmlspecialchars((string) set_value('comment'), ENT_QUOTES, 'UTF-8'); ?></textarea>
+                </div>
+                <button type="submit" class="btn btn-danger btn-sm"
+                        onclick="return confirm('<?php echo htmlspecialchars(lang('loan_cancel_confirm'), ENT_QUOTES, 'UTF-8'); ?>');">
+                    <i class="fa fa-ban"></i> <?php echo lang('loan_cancel'); ?>
+                </button>
+            <?php echo form_close(); ?>
+        </div>
+    </div>
+    <?php } ?>
 
     <div class="cbu-panel">
         <div class="panel-head">

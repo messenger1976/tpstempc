@@ -714,7 +714,12 @@ class Contribution_Model extends CI_Model {
             // Unposting - reverse GL with reversing entry (keep original for audit)
             if (!empty($existing_entry)) {
                 $this->load->model('finance_model');
-                $gl_void = $this->finance_model->void_gl_lines_with_reversal('contribution_settings', $id, 'Unpost CBU beginning balance');
+                $gl_void = $this->finance_model->void_gl_lines_with_reversal(
+                    'contribution_settings',
+                    $id,
+                    'Unpost CBU beginning balance',
+                    array('use_source_date' => true)
+                );
                 return !empty($gl_void['success']);
             }
         }
@@ -967,7 +972,12 @@ class Contribution_Model extends CI_Model {
 
         $this->db->trans_start();
         $this->load->model('finance_model');
-        $gl_void = $this->finance_model->void_gl_lines_with_reversal('contribution_settings', $id, $reason !== '' ? $reason : 'Void CBU beginning balance');
+        $gl_void = $this->finance_model->void_gl_lines_with_reversal(
+            'contribution_settings',
+            $id,
+            $reason !== '' ? $reason : 'Void CBU beginning balance',
+            array('use_source_date' => true)
+        );
         if (empty($gl_void['success'])) {
             $this->db->trans_complete();
             return array('success' => false, 'message' => !empty($gl_void['message']) ? $gl_void['message'] : 'GL reverse failed.');

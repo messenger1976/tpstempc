@@ -567,6 +567,11 @@ $current_status = isset($status_filter) ? $status_filter : '';
                                             if ($value->edit == 0) {
                                                 echo anchor(current_lang() . '/loan/loan_editing/' . encode_id($value->LID), ' <i class="fa fa-edit"></i> ' . lang('button_edit'), 'class="btn btn-default btn-xs" title="' . htmlspecialchars(lang('button_edit'), ENT_QUOTES, 'UTF-8') . '"');
                                             }
+                                            $lifecycle_code = isset($value->lifecycle_code) ? (string) $value->lifecycle_code : '';
+                                            if (has_role(5, 'void_transaction') && in_array($lifecycle_code, array('pending_release', 'released_unposted'), true)) {
+                                                $cancel_url = site_url(current_lang() . '/loan/view_indetail/' . encode_id($value->LID) . '#loan-cancel-panel');
+                                                echo '<a href="' . htmlspecialchars($cancel_url, ENT_QUOTES, 'UTF-8') . '" class="btn btn-danger btn-xs" title="' . htmlspecialchars(lang('loan_cancel'), ENT_QUOTES, 'UTF-8') . '"><i class="fa fa-ban"></i> ' . lang('loan_cancel') . '</a>';
+                                            }
                                             if (isset($value->status) && ((string) $value->status === '4' || (string) $value->status === '5')) {
                                                 $schedule_url = site_url(current_lang() . '/loan/view_repayment_schedule_popup/' . encode_id($value->LID));
                                                 echo '<a href="' . htmlspecialchars($schedule_url) . '" class="btn btn-info btn-xs repayment-schedule-popup" data-schedule-url="' . htmlspecialchars($schedule_url) . '" title="' . htmlspecialchars(lang('loan_view_repayment_schedule'), ENT_QUOTES, 'UTF-8') . '"><i class="fa fa-calendar-check-o"></i> ' . lang('loan_view_repayment_schedule') . '</a>';

@@ -2868,44 +2868,45 @@ $pin = current_user()->PIN;
         
         if ($selected_fiscal_year_id) {
             $this->data['fiscal_year'] = $this->setting_model->fiscal_year_list($selected_fiscal_year_id)->row();
-            $balances = $this->loan_model->loan_beginning_balance_list($selected_fiscal_year_id, null, $selected_loan_product_id)->result();
-            
-            // Pre-fetch member names and product info to avoid N+1 queries
-            $member_names = array();
-            $product_info = array();
-            foreach ($balances as $balance) {
-                if (!isset($member_names[$balance->member_id])) {
-                    try {
-                        $member_names[$balance->member_id] = $this->member_model->member_name($balance->member_id);
-                    } catch (Exception $e) {
-                        $member_names[$balance->member_id] = 'Unknown';
-                    }
-                }
-                if (!isset($product_info[$balance->loan_product_id])) {
-                    $product = $this->setting_model->loanproduct($balance->loan_product_id)->row();
-                    $product_info[$balance->loan_product_id] = $product ? $product->name : '-';
-                }
-            }
-            
-            $this->data['loan_beginning_balances'] = $balances;
-            $this->data['member_names'] = $member_names;
-            $this->data['product_info'] = $product_info;
-
-            // Which balances are already activated into loan_contract
-            $activated_map = array();
-            foreach ($balances as $balance) {
-                $activated_map[$balance->id] = $this->loan_model->is_loan_beginning_balance_activated($balance);
-            }
-            $this->data['activated_map'] = $activated_map;
-        } else {
-            $this->data['loan_beginning_balances'] = array();
-            $this->data['member_names'] = array();
-            $this->data['product_info'] = array();
-            $this->data['activated_map'] = array();
         }
+        $payload = $this->_loan_beginning_balance_list_payload($selected_fiscal_year_id, $selected_loan_product_id);
+        $this->data['loan_beginning_balances'] = $payload['loan_beginning_balances'];
+        $this->data['member_names'] = $payload['member_names'];
+        $this->data['product_info'] = $payload['product_info'];
+        $this->data['activated_map'] = $payload['activated_map'];
         
         $this->data['content'] = 'loan/loan_beginning_balance_list';
         $this->load->view('template', $this->data);
+    }
+
+    /**
+     * AJAX: return beginning-balance table body HTML for the current FY / product filters.
+     */
+    function loan_beginning_balance_table_data() {
+        if (!$this->input->is_ajax_request()) {
+            show_404();
+            return;
+        }
+
+        $selected_fiscal_year_id = $this->input->get_post('fiscal_year_id');
+        $selected_loan_product_id = $this->input->get_post('loan_product_id');
+        if ($selected_fiscal_year_id) {
+            $selected_fiscal_year_id = (int) $selected_fiscal_year_id;
+        }
+        if (!$selected_loan_product_id) {
+            $selected_loan_product_id = 'all';
+        }
+
+        $payload = $this->_loan_beginning_balance_list_payload($selected_fiscal_year_id, $selected_loan_product_id);
+        $html = $this->load->view('loan/loan_beginning_balance_table_body', $payload, true);
+        $count = is_array($payload['loan_beginning_balances']) ? count($payload['loan_beginning_balances']) : 0;
+
+        $this->_loan_beginning_balance_json(true, '', array(
+            'html' => $html,
+            'count' => $count,
+            'fiscal_year_id' => $selected_fiscal_year_id,
+            'loan_product_id' => $selected_loan_product_id,
+        ));
     }
 
     function loan_beginning_balance_create($id = null) {
@@ -3097,10 +3098,15 @@ $pin = current_user()->PIN;
 
     function loan_beginning_balance_delete($id) {
         $id = decode_id($id);
+        $is_ajax = $this->input->is_ajax_request();
         
         $balance = $this->loan_model->loan_beginning_balance_list(null, $id)->row();
         
         if (!$balance) {
+            if ($is_ajax) {
+                $this->_loan_beginning_balance_json(false, lang('loan_beginning_balance_not_found'));
+                return;
+            }
             $this->session->set_flashdata('warning', lang('loan_beginning_balance_not_found'));
             redirect(current_lang() . '/loan/loan_beginning_balance_list', 'refresh');
             return;
@@ -3108,17 +3114,32 @@ $pin = current_user()->PIN;
         
         // Check if already posted
         if ($balance->posted == 1) {
+            if ($is_ajax) {
+                $this->_loan_beginning_balance_json(false, lang('loan_beginning_balance_cannot_delete_posted'), array(
+                    'fiscal_year_id' => $balance->fiscal_year_id,
+                ));
+                return;
+            }
             $this->session->set_flashdata('warning', lang('loan_beginning_balance_cannot_delete_posted'));
             redirect(current_lang() . '/loan/loan_beginning_balance_list?fiscal_year_id=' . $balance->fiscal_year_id, 'refresh');
             return;
         }
         
         $result = $this->loan_model->loan_beginning_balance_delete($id);
+        $success = (bool) $result;
+        $message = $success ? lang('loan_beginning_balance_delete_success') : lang('loan_beginning_balance_delete_fail');
+
+        if ($is_ajax) {
+            $this->_loan_beginning_balance_json($success, $message, array(
+                'fiscal_year_id' => $balance->fiscal_year_id,
+            ));
+            return;
+        }
         
-        if ($result) {
-            $this->session->set_flashdata('message', lang('loan_beginning_balance_delete_success'));
+        if ($success) {
+            $this->session->set_flashdata('message', $message);
         } else {
-            $this->session->set_flashdata('warning', lang('loan_beginning_balance_delete_fail'));
+            $this->session->set_flashdata('warning', $message);
         }
         
         redirect(current_lang() . '/loan/loan_beginning_balance_list?fiscal_year_id=' . $balance->fiscal_year_id, 'refresh');
@@ -3325,30 +3346,109 @@ $pin = current_user()->PIN;
 
     function loan_beginning_balance_post($id) {
         $id = decode_id($id);
+        $is_ajax = $this->input->is_ajax_request();
         
         $balance = $this->loan_model->loan_beginning_balance_list(null, $id)->row();
         
         if (!$balance) {
+            if ($is_ajax) {
+                $this->_loan_beginning_balance_json(false, lang('loan_beginning_balance_not_found'));
+                return;
+            }
             $this->session->set_flashdata('warning', lang('loan_beginning_balance_not_found'));
             redirect(current_lang() . '/loan/loan_beginning_balance_list', 'refresh');
             return;
         }
         
         if ($balance->posted == 1) {
+            if ($is_ajax) {
+                $this->_loan_beginning_balance_json(false, lang('loan_beginning_balance_already_posted'), array(
+                    'fiscal_year_id' => $balance->fiscal_year_id,
+                ));
+                return;
+            }
             $this->session->set_flashdata('warning', lang('loan_beginning_balance_already_posted'));
             redirect(current_lang() . '/loan/loan_beginning_balance_list?fiscal_year_id=' . $balance->fiscal_year_id, 'refresh');
             return;
         }
         
         $result = $this->loan_model->loan_beginning_balance_post_to_ledger($id);
-        
-        if ($result) {
-            $this->session->set_flashdata('message', lang('loan_beginning_balance_post_success'));
-        } else {
-            $this->session->set_flashdata('warning', lang('loan_beginning_balance_post_fail'));
+
+        $success = false;
+        $message = lang('loan_beginning_balance_post_fail');
+        if (is_array($result) && !empty($result['success'])) {
+            $success = true;
+            $message = !empty($result['message']) ? $result['message'] : lang('loan_beginning_balance_post_success');
+        } elseif (is_array($result)) {
+            $message = !empty($result['message']) ? $result['message'] : lang('loan_beginning_balance_post_fail');
+        } elseif ($result) {
+            $success = true;
+            $message = lang('loan_beginning_balance_post_success');
         }
-        
+
+        if ($is_ajax) {
+            $this->_loan_beginning_balance_json($success, $message, array(
+                'fiscal_year_id' => $balance->fiscal_year_id,
+            ));
+            return;
+        }
+
+        if ($success) {
+            $this->session->set_flashdata('message', $message);
+        } else {
+            $this->session->set_flashdata('warning', $message);
+        }
+
         redirect(current_lang() . '/loan/loan_beginning_balance_list?fiscal_year_id=' . $balance->fiscal_year_id, 'refresh');
+    }
+
+    private function _loan_beginning_balance_list_payload($selected_fiscal_year_id, $selected_loan_product_id) {
+        $payload = array(
+            'loan_beginning_balances' => array(),
+            'member_names' => array(),
+            'product_info' => array(),
+            'activated_map' => array(),
+        );
+        if (!$selected_fiscal_year_id) {
+            return $payload;
+        }
+
+        $balances = $this->loan_model->loan_beginning_balance_list($selected_fiscal_year_id, null, $selected_loan_product_id)->result();
+        $member_names = array();
+        $product_info = array();
+        foreach ($balances as $balance) {
+            if (!isset($member_names[$balance->member_id])) {
+                try {
+                    $member_names[$balance->member_id] = $this->member_model->member_name($balance->member_id);
+                } catch (Exception $e) {
+                    $member_names[$balance->member_id] = 'Unknown';
+                }
+            }
+            if (!isset($product_info[$balance->loan_product_id])) {
+                $product = $this->setting_model->loanproduct($balance->loan_product_id)->row();
+                $product_info[$balance->loan_product_id] = $product ? $product->name : '-';
+            }
+        }
+
+        $activated_map = array();
+        foreach ($balances as $balance) {
+            $activated_map[$balance->id] = $this->loan_model->is_loan_beginning_balance_activated($balance);
+        }
+
+        $payload['loan_beginning_balances'] = $balances;
+        $payload['member_names'] = $member_names;
+        $payload['product_info'] = $product_info;
+        $payload['activated_map'] = $activated_map;
+        return $payload;
+    }
+
+    private function _loan_beginning_balance_json($success, $message, $extra = array()) {
+        $payload = array_merge(array(
+            'success' => $success ? 'Y' : 'N',
+            'message' => $message,
+        ), $extra);
+        $this->output->set_content_type('application/json');
+        $this->output->set_output(json_encode($payload));
     }
 
     /**
@@ -3382,22 +3482,40 @@ $pin = current_user()->PIN;
      */
     function loan_beginning_balance_activate($id) {
         $id = decode_id($id);
+        $is_ajax = $this->input->is_ajax_request();
         $balance = $this->loan_model->loan_beginning_balance_list(null, $id)->row();
         if (!$balance) {
+            if ($is_ajax) {
+                $this->_loan_beginning_balance_json(false, lang('loan_beginning_balance_not_found'));
+                return;
+            }
             $this->session->set_flashdata('warning', lang('loan_beginning_balance_not_found'));
             redirect(current_lang() . '/loan/loan_beginning_balance_list', 'refresh');
             return;
         }
 
         $result = $this->loan_model->activate_loan_beginning_balance($id);
-        if (!empty($result['success'])) {
-            $this->session->set_flashdata('message', $result['message']);
+        $success = !empty($result['success']);
+        $message = $success
+            ? (!empty($result['message']) ? $result['message'] : lang('loan_beginning_balance_activate_success'))
+            : (!empty($result['message']) ? $result['message'] : lang('loan_beginning_balance_activate_fail'));
+
+        if ($is_ajax) {
+            $this->_loan_beginning_balance_json($success, $message, array(
+                'fiscal_year_id' => $balance->fiscal_year_id,
+                'LID' => !empty($result['LID']) ? $result['LID'] : '',
+            ));
+            return;
+        }
+
+        if ($success) {
+            $this->session->set_flashdata('message', $message);
             if (!empty($result['LID'])) {
                 redirect(current_lang() . '/loan/view_indetail/' . encode_id($result['LID']), 'refresh');
                 return;
             }
         } else {
-            $this->session->set_flashdata('warning', !empty($result['message']) ? $result['message'] : lang('loan_beginning_balance_activate_fail'));
+            $this->session->set_flashdata('warning', $message);
         }
         redirect(current_lang() . '/loan/loan_beginning_balance_list?fiscal_year_id=' . $balance->fiscal_year_id, 'refresh');
     }
@@ -3467,6 +3585,37 @@ $pin = current_user()->PIN;
             }
         } else {
             $this->session->set_flashdata('warning', !empty($result['message']) ? $result['message'] : 'Void failed');
+        }
+        redirect(current_lang() . '/loan/view_indetail/' . encode_id($LID), 'refresh');
+    }
+
+    /**
+     * Cancel an Accepted / Pending Release loan (not yet disbursed).
+     * Sets status to Accepted && Rejected (8). POST only; requires comment.
+     */
+    function cancel_pending_release_loan($loanid) {
+        if (!has_role(5, 'void_transaction')) {
+            $this->session->set_flashdata('warning', lang('access_denied'));
+            redirect(current_lang() . '/loan/loan_viewlist', 'refresh');
+            return;
+        }
+        $LID = decode_id($loanid);
+        if ($LID === null || $LID === '') {
+            $this->session->set_flashdata('warning', lang('loan_evaluation_error'));
+            redirect(current_lang() . '/loan/loan_viewlist', 'refresh');
+            return;
+        }
+        if (strtoupper((string) $this->input->server('REQUEST_METHOD')) !== 'POST') {
+            $this->session->set_flashdata('warning', lang('loan_cancel_comment_required'));
+            redirect(current_lang() . '/loan/view_indetail/' . encode_id($LID) . '#loan-cancel-panel', 'refresh');
+            return;
+        }
+        $comment = trim((string) $this->input->post('comment'));
+        $result = $this->loan_model->cancel_pending_release_loan($LID, $comment);
+        if (!empty($result['success'])) {
+            $this->session->set_flashdata('message', $result['message']);
+        } else {
+            $this->session->set_flashdata('warning', !empty($result['message']) ? $result['message'] : lang('loan_cancel_fail'));
         }
         redirect(current_lang() . '/loan/view_indetail/' . encode_id($LID), 'refresh');
     }

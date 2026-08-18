@@ -364,7 +364,7 @@ $row_count = is_array($loan_beginning_balances) ? count($loan_beginning_balances
                         title: title,
                         text: message,
                         type: 'success',
-                        timer: 3000,
+                        timer: 2000,
                         showConfirmButton: true
                     });
                 } else {

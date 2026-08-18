@@ -277,7 +277,8 @@ if (!function_exists('get_gl_reference_url')) {
             case 'loan_contract_repayment':
                 return current_lang() . '/loan/view_repayment_schedule/' . $ref;
             case 'loan_beginning_balances':
-                return current_lang() . '/loan/loan_viewlist';
+            case 'loan_beginning_balances_void':
+                return current_lang() . '/loan/loan_beginning_balance_journal_print/' . (is_numeric($ref) || ctype_digit((string) $ref) ? encode_id($ref) : $ref);
             case 'member_registrationfee':
                 return current_lang() . '/report_member/member_report_title/2';
             default:

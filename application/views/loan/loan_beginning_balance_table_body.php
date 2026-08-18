@@ -4,6 +4,7 @@ $member_names = isset($member_names) ? $member_names : array();
 $product_info = isset($product_info) ? $product_info : array();
 $activated_map = isset($activated_map) ? $activated_map : array();
 $remaining_gl_map = isset($remaining_gl_map) ? $remaining_gl_map : array();
+$has_gl_map = isset($has_gl_map) ? $has_gl_map : array();
 $row_count = is_array($loan_beginning_balances) ? count($loan_beginning_balances) : 0;
 ?>
 <?php if ($row_count > 0) {
@@ -13,6 +14,7 @@ $row_count = is_array($loan_beginning_balances) ? count($loan_beginning_balances
         $product_name = isset($product_info[$balance->loan_product_id]) ? $product_info[$balance->loan_product_id] : '-';
         $is_activated = !empty($activated_map[$balance->id]);
         $has_remaining_gl = !empty($remaining_gl_map[$balance->id]);
+        $can_print_journal = ((int) $balance->posted === 1) || $has_remaining_gl || !empty($has_gl_map[$balance->id]);
         ?>
         <tr>
             <td style="text-align:center;"><?php echo $i++; ?></td>
@@ -89,6 +91,11 @@ $row_count = is_array($loan_beginning_balances) ? count($loan_beginning_balances
                             <i class="fa fa-undo"></i> Void
                         </a>
                         <?php } ?>
+                    <?php } ?>
+                    <?php if ($can_print_journal) { ?>
+                        <a class="btn btn-default btn-xs" target="_blank" href="<?php echo site_url(current_lang() . '/loan/loan_beginning_balance_journal_print/' . encode_id($balance->id)); ?>" title="<?php echo htmlspecialchars(lang('loan_beginning_balance_journal'), ENT_QUOTES, 'UTF-8'); ?>">
+                            <i class="fa fa-print"></i> <?php echo lang('loan_print_beginning_balance_journal'); ?>
+                        </a>
                     <?php } ?>
                 </div>
             </td>

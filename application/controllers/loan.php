@@ -2588,6 +2588,49 @@ $pin = current_user()->PIN;
     }
 
     /**
+     * GL lines posted from a loan beginning balance (original + VOID + chart offsets).
+     * @return array{lines:array,entryid:?int,gl_date:?string}
+     */
+    private function _loan_bb_gl_line_items($pin, $bb_id) {
+        $out = array('lines' => array(), 'entryid' => null, 'gl_date' => null);
+        $bb_id = (int) $bb_id;
+        if ($bb_id < 1) {
+            return $out;
+        }
+        $rows = $this->db->query(
+            "SELECT gl.entryid, gl.date, gl.account, gl.debit, gl.credit, gl.description, ac.name as account_name
+             FROM general_ledger gl
+             LEFT JOIN account_chart ac ON ac.account = gl.account AND ac.PIN = gl.PIN
+             WHERE gl.PIN = ?
+               AND gl.fromtable IN (
+                    'loan_beginning_balances',
+                    'loan_beginning_balances_void',
+                    'beginning_balances_loan_offset',
+                    'beginning_balances_loan_offset_void'
+               )
+               AND gl.refferenceID = ?
+             ORDER BY gl.date ASC, gl.id ASC",
+            array($pin, $bb_id)
+        )->result();
+        foreach ($rows as $r) {
+            if ($out['entryid'] === null && !empty($r->entryid)) {
+                $out['entryid'] = $r->entryid;
+            }
+            if ($out['gl_date'] === null && !empty($r->date)) {
+                $out['gl_date'] = $r->date;
+            }
+            $row = new stdClass();
+            $row->account = $r->account;
+            $row->account_name = $r->account_name;
+            $row->description = $r->description;
+            $row->debit = floatval($r->debit);
+            $row->credit = floatval($r->credit);
+            $out['lines'][] = $row;
+        }
+        return $out;
+    }
+
+    /**
      * Load loan disbursement voucher data (latest header + accounting lines).
      * @return array|null
      */
@@ -2609,48 +2652,56 @@ $pin = current_user()->PIN;
             return false;
         }
 
-        // Prefer saved editable lines, otherwise fall back to GL lines
+        $is_bb_journal = $this->loan_model->is_beginning_balance_activated_loan($loaninfo, $disburse);
+
         $line_items = array();
         $ledger_entry_id = null;
 
-        $saved_items = $this->loan_model->get_disbursement_gl_items($LID, $pin);
-        if (!empty($saved_items)) {
-            foreach ($saved_items as $it) {
-                $row = new stdClass();
-                $row->account = isset($it['account']) ? $it['account'] : '';
-                $row->description = isset($it['description']) ? $it['description'] : '';
-                $row->debit = isset($it['debit']) ? floatval($it['debit']) : 0;
-                $row->credit = isset($it['credit']) ? floatval($it['credit']) : 0;
-                $row->account_name = '';
-                if (!empty($row->account)) {
-                    $acc = $this->db->query('SELECT name FROM account_chart WHERE account = ? AND PIN = ? LIMIT 1', array($row->account, $pin))->row();
-                    $row->account_name = $acc ? $acc->name : '';
-                }
-                $line_items[] = $row;
-            }
+        if ($is_bb_journal) {
+            $bb = $this->loan_model->get_beginning_balance_by_loan_id($LID);
+            $bb_gl = $bb ? $this->_loan_bb_gl_line_items($pin, (int) $bb->id) : array('lines' => array(), 'entryid' => null);
+            $line_items = $bb_gl['lines'];
+            $ledger_entry_id = $bb_gl['entryid'];
         } else {
-            $entry = $this->db->query(
-                'SELECT entryid FROM general_ledger WHERE PIN = ? AND journalID = 4 AND LID = ? ORDER BY entryid DESC LIMIT 1',
-                array($pin, $LID)
-            )->row();
-            if ($entry && !empty($entry->entryid)) {
-                $ledger_entry_id = $entry->entryid;
-                $rows = $this->db->query(
-                    'SELECT gl.account, gl.debit, gl.credit, gl.description, ac.name as account_name
-                     FROM general_ledger gl
-                     LEFT JOIN account_chart ac ON ac.account = gl.account AND ac.PIN = gl.PIN
-                     WHERE gl.PIN = ? AND gl.entryid = ?
-                     ORDER BY gl.debit DESC, gl.id ASC',
-                    array($pin, $ledger_entry_id)
-                )->result();
-                foreach ($rows as $r) {
+            $saved_items = $this->loan_model->get_disbursement_gl_items($LID, $pin);
+            if (!empty($saved_items)) {
+                foreach ($saved_items as $it) {
                     $row = new stdClass();
-                    $row->account = $r->account;
-                    $row->account_name = $r->account_name;
-                    $row->description = $r->description;
-                    $row->debit = floatval($r->debit);
-                    $row->credit = floatval($r->credit);
+                    $row->account = isset($it['account']) ? $it['account'] : '';
+                    $row->description = isset($it['description']) ? $it['description'] : '';
+                    $row->debit = isset($it['debit']) ? floatval($it['debit']) : 0;
+                    $row->credit = isset($it['credit']) ? floatval($it['credit']) : 0;
+                    $row->account_name = '';
+                    if (!empty($row->account)) {
+                        $acc = $this->db->query('SELECT name FROM account_chart WHERE account = ? AND PIN = ? LIMIT 1', array($row->account, $pin))->row();
+                        $row->account_name = $acc ? $acc->name : '';
+                    }
                     $line_items[] = $row;
+                }
+            } else {
+                $entry = $this->db->query(
+                    'SELECT entryid FROM general_ledger WHERE PIN = ? AND journalID = 4 AND LID = ? ORDER BY entryid DESC LIMIT 1',
+                    array($pin, $LID)
+                )->row();
+                if ($entry && !empty($entry->entryid)) {
+                    $ledger_entry_id = $entry->entryid;
+                    $rows = $this->db->query(
+                        'SELECT gl.account, gl.debit, gl.credit, gl.description, ac.name as account_name
+                         FROM general_ledger gl
+                         LEFT JOIN account_chart ac ON ac.account = gl.account AND ac.PIN = gl.PIN
+                         WHERE gl.PIN = ? AND gl.entryid = ?
+                         ORDER BY gl.debit DESC, gl.id ASC',
+                        array($pin, $ledger_entry_id)
+                    )->result();
+                    foreach ($rows as $r) {
+                        $row = new stdClass();
+                        $row->account = $r->account;
+                        $row->account_name = $r->account_name;
+                        $row->description = $r->description;
+                        $row->debit = floatval($r->debit);
+                        $row->credit = floatval($r->credit);
+                        $line_items[] = $row;
+                    }
                 }
             }
         }
@@ -2661,6 +2712,9 @@ $pin = current_user()->PIN;
             'disburse' => $disburse,
             'line_items' => $line_items,
             'ledger_entry_id' => $ledger_entry_id,
+            'is_bb_journal' => $is_bb_journal,
+            'document_title' => $is_bb_journal ? lang('loan_beginning_balance_journal') : lang('loan_disbursement_voucher'),
+            'statement_title' => $is_bb_journal ? lang('loan_beginning_balance_journal_statement') : lang('loan_disbursement_statement'),
         );
     }
 
@@ -2681,6 +2735,56 @@ $pin = current_user()->PIN;
     }
 
     /**
+     * Print Loan Beginning Balance Journal from BB id (Account Ledger Ref #).
+     * Works even when the BB is voided and no loan_contract remains.
+     */
+    function loan_beginning_balance_journal_print($id) {
+        $pin = current_user()->PIN;
+        $bb_id = decode_id($id);
+        $balance = $this->loan_model->loan_beginning_balance_list(null, $bb_id)->row();
+        if (!$balance) {
+            show_404();
+            return;
+        }
+
+        $member = $this->member_model->member_basic_info(null, null, $balance->member_id)->row();
+        $pid = $member && !empty($member->PID) ? $member->PID : '';
+        $LID = trim((string) $balance->loan_id);
+        if ($LID === '') {
+            $LID = 'BB-' . (int) $balance->id;
+        }
+
+        $bb_gl = $this->_loan_bb_gl_line_items($pin, (int) $balance->id);
+        $gl_date = !empty($bb_gl['gl_date']) ? $bb_gl['gl_date'] : $balance->disbursement_date;
+
+        $loaninfo = new stdClass();
+        $loaninfo->LID = $LID;
+        $loaninfo->PID = $pid;
+        $loaninfo->member_id = $balance->member_id;
+        $loaninfo->basic_amount = $balance->principal_balance;
+        $loaninfo->PIN = $pin;
+
+        $disburse = new stdClass();
+        $disburse->disburse_no = 'BB-' . (int) $balance->id;
+        $disburse->disbursedate = $gl_date;
+        $disburse->payment_method = 'BEGINNING_BALANCE';
+        $disburse->comment = 'Loan Beginning Balance Journal — GL posting (no cash disbursement).';
+        $disburse->createdby = !empty($balance->posted_by) ? $balance->posted_by : (!empty($balance->created_by) ? $balance->created_by : null);
+
+        $data = array(
+            'loanid' => encode_id($LID),
+            'loaninfo' => $loaninfo,
+            'disburse' => $disburse,
+            'line_items' => $bb_gl['lines'],
+            'ledger_entry_id' => $bb_gl['entryid'],
+            'is_bb_journal' => true,
+            'document_title' => lang('loan_beginning_balance_journal'),
+            'statement_title' => lang('loan_beginning_balance_journal_statement'),
+        );
+        $this->load->view('loan/print/loan_disbursement_print', $data);
+    }
+
+    /**
      * Stream loan disbursement voucher as PDF (for modal / PDF.js viewer).
      */
     function print_loan_disbursement($loanid) {
@@ -2696,6 +2800,8 @@ $pin = current_user()->PIN;
         $disburse = $data['disburse'];
         $line_items = $data['line_items'];
         $ledger_entry_id = $data['ledger_entry_id'];
+        $document_title = isset($data['document_title']) ? $data['document_title'] : lang('loan_disbursement_voucher');
+        $statement_title = isset($data['statement_title']) ? $data['statement_title'] : lang('loan_disbursement_statement');
         include 'pdf/loan_disbursement.php';
     }
 
@@ -3423,6 +3529,7 @@ $pin = current_user()->PIN;
             'product_info' => array(),
             'activated_map' => array(),
             'remaining_gl_map' => array(),
+            'has_gl_map' => array(),
         );
         if (!$selected_fiscal_year_id) {
             return $payload;
@@ -3459,6 +3566,7 @@ $pin = current_user()->PIN;
             $bb_ids[] = (int) $balance->id;
         }
         $payload['remaining_gl_map'] = $this->loan_model->loan_bb_unreversed_gl_ids($bb_ids);
+        $payload['has_gl_map'] = $this->loan_model->loan_bb_has_gl_ids($bb_ids);
         return $payload;
     }
 

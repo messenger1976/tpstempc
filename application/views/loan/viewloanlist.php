@@ -577,7 +577,9 @@ $current_status = isset($status_filter) ? $status_filter : '';
                                                 echo '<a href="' . htmlspecialchars($schedule_url) . '" class="btn btn-info btn-xs repayment-schedule-popup" data-schedule-url="' . htmlspecialchars($schedule_url) . '" title="' . htmlspecialchars(lang('loan_view_repayment_schedule'), ENT_QUOTES, 'UTF-8') . '"><i class="fa fa-calendar-check-o"></i> ' . lang('loan_view_repayment_schedule') . '</a>';
                                                 if (!empty($value->disburse)) {
                                                     $print_disburse_url = site_url(current_lang() . '/loan/loan_disbursement_print/' . encode_id($value->LID));
-                                                    echo '<a href="' . htmlspecialchars($print_disburse_url) . '" class="btn btn-default btn-xs" target="_blank" title="' . htmlspecialchars(lang('loan_print_disbursement'), ENT_QUOTES, 'UTF-8') . '"><i class="fa fa-print"></i> ' . lang('loan_print_disbursement') . '</a>';
+                                                    $is_bb_print = (isset($value->evaluated) && (string) $value->evaluated === 'BEGINNING_BALANCE');
+                                                    $print_disburse_label = $is_bb_print ? lang('loan_print_beginning_balance_journal') : lang('loan_print_disbursement');
+                                                    echo '<a href="' . htmlspecialchars($print_disburse_url) . '" class="btn btn-default btn-xs" target="_blank" title="' . htmlspecialchars($print_disburse_label, ENT_QUOTES, 'UTF-8') . '"><i class="fa fa-print"></i> ' . $print_disburse_label . '</a>';
                                                 }
                                                 $ledger_url = site_url(current_lang() . '/loan/loan_ledger/' . encode_id($value->LID));
                                                 echo '<a href="' . htmlspecialchars($ledger_url) . '" class="btn btn-warning btn-xs" title="' . htmlspecialchars(lang('loan_ledger'), ENT_QUOTES, 'UTF-8') . '"><i class="fa fa-book"></i> ' . lang('loan_ledger') . '</a>';

@@ -3702,6 +3702,42 @@ class Loan_Model extends CI_Model {
         return $out;
     }
 
+    function loan_bb_has_gl_ids($ids) {
+        $pin = current_user()->PIN;
+        $out = array();
+        if (empty($ids) || !is_array($ids)) {
+            return $out;
+        }
+        $clean = array();
+        foreach ($ids as $id) {
+            $id = (int) $id;
+            if ($id > 0) {
+                $clean[$id] = $id;
+            }
+        }
+        if (empty($clean)) {
+            return $out;
+        }
+        $in = implode(',', $clean);
+        $rows = $this->db->query(
+            "SELECT DISTINCT refferenceID
+             FROM general_ledger
+             WHERE PIN = ?
+               AND fromtable IN (
+                    'loan_beginning_balances',
+                    'loan_beginning_balances_void',
+                    'beginning_balances_loan_offset',
+                    'beginning_balances_loan_offset_void'
+               )
+               AND refferenceID IN (" . $in . ")",
+            array($pin)
+        )->result();
+        foreach ($rows as $row) {
+            $out[(int) $row->refferenceID] = true;
+        }
+        return $out;
+    }
+
     function void_loan_beginning_balance($id, $reason = '') {
         $pin = current_user()->PIN;
         $id = (int) $id;

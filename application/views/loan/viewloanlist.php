@@ -487,6 +487,8 @@ $current_product_id = isset($product_id) ? $product_id : 'all';
                         <th><?php echo lang('member_name'); ?></th>
                         <th><?php echo lang('loan_product'); ?></th>
                         <th><?php echo lang('loan_applicationdate'); ?></th>
+                        <th><?php echo lang('loan_encoded_date'); ?></th>
+                        <th><?php echo lang('loan_encoded_by'); ?></th>
                         <th style="text-align:right;"><?php echo lang('loan_applied_amount'); ?></th>
                         <th style="text-align:center;"><?php echo lang('loan_installment'); ?></th>
                         <th style="text-align:right;"><?php echo lang('loan_installment_amount'); ?></th>
@@ -537,6 +539,25 @@ $current_product_id = isset($product_id) ? $product_id : 'all';
                             }
                             $app_date = !empty($value->applicationdate) ? format_date($value->applicationdate, false) : '';
                             $product_name = !empty($value->product_name) ? $value->product_name : '-';
+                            $encoded_on = '';
+                            $encoded_raw = '';
+                            if (!empty($value->encoded_on) && $value->encoded_on !== '0000-00-00 00:00:00') {
+                                $encoded_raw = $value->encoded_on;
+                            } else if (!empty($value->createdon) && $value->createdon !== '0000-00-00 00:00:00') {
+                                $encoded_raw = $value->createdon;
+                            } else if (!empty($value->created_at) && $value->created_at !== '0000-00-00 00:00:00') {
+                                $encoded_raw = $value->created_at;
+                            }
+                            if ($encoded_raw !== '') {
+                                $encoded_on = date('d-m-Y H:i', strtotime($encoded_raw));
+                            }
+                            $encoded_by = isset($value->encoded_by_name) ? trim((string) $value->encoded_by_name) : '';
+                            if ($encoded_by === '' && !empty($value->createdby)) {
+                                $enc_user = $this->db->get_where('users', array('id' => $value->createdby))->row();
+                                if ($enc_user) {
+                                    $encoded_by = trim($enc_user->first_name . ' ' . $enc_user->last_name);
+                                }
+                            }
                             ?>
                             <tr>
                                 <td><span class="member-id-chip"><?php echo htmlspecialchars($value->LID, ENT_QUOTES, 'UTF-8'); ?></span></td>
@@ -548,6 +569,8 @@ $current_product_id = isset($product_id) ? $product_id : 'all';
                                 </td>
                                 <td><?php echo htmlspecialchars($product_name, ENT_QUOTES, 'UTF-8'); ?></td>
                                 <td><?php echo htmlspecialchars($app_date, ENT_QUOTES, 'UTF-8'); ?></td>
+                                <td><?php echo $encoded_on !== '' ? htmlspecialchars($encoded_on, ENT_QUOTES, 'UTF-8') : '-'; ?></td>
+                                <td><?php echo $encoded_by !== '' ? htmlspecialchars($encoded_by, ENT_QUOTES, 'UTF-8') : '-'; ?></td>
                                 <td class="amount-cell"><?php echo number_format($value->basic_amount, 2); ?></td>
                                 <td style="text-align:center;"><?php echo htmlspecialchars($value->number_istallment . ($interval_desc !== '' ? ' ' . $interval_desc : ''), ENT_QUOTES, 'UTF-8'); ?></td>
                                 <td class="amount-cell"><?php echo number_format($value->installment_amount, 2); ?></td>

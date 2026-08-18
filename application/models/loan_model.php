@@ -2053,10 +2053,14 @@ class Loan_Model extends CI_Model {
                         loan_beginning_balances.fiscal_year_id as bb_fiscal_year_id,
                         COALESCE(loan_product.`interval`, 1) as `interval`,
                         loan_beginning_balances.disbursement_date as applicationdate,
-                        loan_product.name as product_name
+                        loan_product.name as product_name,
+                        loan_beginning_balances.created_at as createdon,
+                        loan_beginning_balances.created_by as createdby,
+                        TRIM(CONCAT(IFNULL(users.first_name,''), ' ', IFNULL(users.last_name,''))) as encoded_by_name
                     FROM loan_beginning_balances 
                     INNER JOIN members ON members.member_id=loan_beginning_balances.member_id 
                     LEFT JOIN loan_product ON loan_product.id=loan_beginning_balances.loan_product_id AND loan_product.PIN='$pin'
+                    LEFT JOIN users ON users.id = loan_beginning_balances.created_by
                     WHERE loan_beginning_balances.PIN='$pin' AND members.PIN='$pin'";
             $sql_bb .= " AND (loan_beginning_balances.loan_id IS NULL OR loan_beginning_balances.loan_id NOT IN (SELECT LID FROM loan_contract WHERE PIN='$pin'))";
             $sql_bb .= $this->_loan_list_product_sql($product_id, 'bb');
@@ -2069,9 +2073,11 @@ class Loan_Model extends CI_Model {
 
         // Lifecycle filters
         if ($this->is_loan_lifecycle_filter($status)) {
-            $sql = "SELECT loan_contract.*,loan_status.name,loan_product.name AS product_name" . $life_select . " FROM loan_contract INNER JOIN members ON members.PID=loan_contract.PID ";
+            $sql = "SELECT loan_contract.*,loan_status.name,loan_product.name AS product_name" . $life_select . ", COALESCE(lbb.created_at, loan_contract.createdon) AS encoded_on, TRIM(CONCAT(IFNULL(encoded_user.first_name,''), ' ', IFNULL(encoded_user.last_name,''))) AS encoded_by_name FROM loan_contract INNER JOIN members ON members.PID=loan_contract.PID ";
             $sql .= " INNER JOIN loan_status ON loan_status.code=loan_contract.status ";
             $sql .= " LEFT JOIN loan_product ON loan_product.id=loan_contract.product_type AND loan_product.PIN='$pin' ";
+            $sql .= " LEFT JOIN loan_beginning_balances lbb ON lbb.loan_id = loan_contract.LID AND lbb.PIN = loan_contract.PIN ";
+            $sql .= " LEFT JOIN users encoded_user ON encoded_user.id = COALESCE(lbb.created_by, loan_contract.createdby) ";
             $sql .= " WHERE loan_contract.PIN='$pin' AND (" . $this->_lifecycle_filter_sql($status, 'loan_contract') . ")";
             $sql .= $this->_loan_list_product_sql($product_id, 'contract');
             if (!is_null($key)) {
@@ -2083,9 +2089,11 @@ class Loan_Model extends CI_Model {
 
         // When status filter is set, get only loan_contract with that status (no beginning balances)
         if ($status !== null && $status !== '') {
-            $sql = "SELECT loan_contract.*,loan_status.name,loan_product.name AS product_name" . $life_select . " FROM loan_contract INNER JOIN members ON members.PID=loan_contract.PID ";
+            $sql = "SELECT loan_contract.*,loan_status.name,loan_product.name AS product_name" . $life_select . ", COALESCE(lbb.created_at, loan_contract.createdon) AS encoded_on, TRIM(CONCAT(IFNULL(encoded_user.first_name,''), ' ', IFNULL(encoded_user.last_name,''))) AS encoded_by_name FROM loan_contract INNER JOIN members ON members.PID=loan_contract.PID ";
             $sql .= " INNER JOIN loan_status ON loan_status.code=loan_contract.status ";
             $sql .= " LEFT JOIN loan_product ON loan_product.id=loan_contract.product_type AND loan_product.PIN='$pin' ";
+            $sql .= " LEFT JOIN loan_beginning_balances lbb ON lbb.loan_id = loan_contract.LID AND lbb.PIN = loan_contract.PIN ";
+            $sql .= " LEFT JOIN users encoded_user ON encoded_user.id = COALESCE(lbb.created_by, loan_contract.createdby) ";
             $sql .= " WHERE loan_contract.PIN='$pin' AND loan_contract.status=" . $this->db->escape($status);
             $sql .= $this->_loan_list_product_sql($product_id, 'contract');
             if (!is_null($key)) {
@@ -2096,9 +2104,11 @@ class Loan_Model extends CI_Model {
         }
         
         // Get regular loans from loan_contract
-        $sql = "SELECT loan_contract.*,loan_status.name,loan_product.name AS product_name" . $life_select . " FROM loan_contract INNER JOIN members ON members.PID=loan_contract.PID ";
+        $sql = "SELECT loan_contract.*,loan_status.name,loan_product.name AS product_name" . $life_select . ", COALESCE(lbb.created_at, loan_contract.createdon) AS encoded_on, TRIM(CONCAT(IFNULL(encoded_user.first_name,''), ' ', IFNULL(encoded_user.last_name,''))) AS encoded_by_name FROM loan_contract INNER JOIN members ON members.PID=loan_contract.PID ";
         $sql .= " INNER JOIN loan_status ON loan_status.code=loan_contract.status ";
         $sql .= " LEFT JOIN loan_product ON loan_product.id=loan_contract.product_type AND loan_product.PIN='$pin' ";
+        $sql .= " LEFT JOIN loan_beginning_balances lbb ON lbb.loan_id = loan_contract.LID AND lbb.PIN = loan_contract.PIN ";
+        $sql .= " LEFT JOIN users encoded_user ON encoded_user.id = COALESCE(lbb.created_by, loan_contract.createdby) ";
         $sql .= " WHERE loan_contract.PIN='$pin'";
         $sql .= $this->_loan_list_product_sql($product_id, 'contract');
 
@@ -2129,10 +2139,14 @@ class Loan_Model extends CI_Model {
                         loan_beginning_balances.fiscal_year_id as bb_fiscal_year_id,
                         COALESCE(loan_product.`interval`, 1) as `interval`,
                         loan_beginning_balances.disbursement_date as applicationdate,
-                        loan_product.name as product_name
+                        loan_product.name as product_name,
+                        loan_beginning_balances.created_at as createdon,
+                        loan_beginning_balances.created_by as createdby,
+                        TRIM(CONCAT(IFNULL(users.first_name,''), ' ', IFNULL(users.last_name,''))) as encoded_by_name
                     FROM loan_beginning_balances 
                     INNER JOIN members ON members.member_id=loan_beginning_balances.member_id 
                     LEFT JOIN loan_product ON loan_product.id=loan_beginning_balances.loan_product_id AND loan_product.PIN='$pin'
+                    LEFT JOIN users ON users.id = loan_beginning_balances.created_by
                     WHERE loan_beginning_balances.PIN='$pin' AND members.PIN='$pin'";
         
         // Exclude beginning balances that already have corresponding loan_contract entries

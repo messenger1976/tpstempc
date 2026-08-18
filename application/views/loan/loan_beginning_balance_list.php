@@ -359,7 +359,17 @@ $row_count = is_array($loan_beginning_balances) ? count($loan_beginning_balances
             function finishAction(success, title, message) {
                 actionInProgress = false;
                 showPageAlert(success ? 'success' : 'danger', message);
-                swal(title, message, success ? 'success' : 'error');
+                if (success) {
+                    swal({
+                        title: title,
+                        text: message,
+                        type: 'success',
+                        timer: 3000,
+                        showConfirmButton: true
+                    });
+                } else {
+                    swal(title, message, 'error');
+                }
             }
 
             function runRowAjax(url, progressTitle, progressText, successTitle, failTitle) {

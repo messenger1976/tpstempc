@@ -1955,13 +1955,28 @@ class Loan_Model extends CI_Model {
         return $rows;
     }
 
-    function count_loan($key = null, $status = null) {
+    private function _loan_list_product_sql($product_id, $source = 'contract') {
+        if ($product_id === null || $product_id === '' || $product_id === 'all') {
+            return '';
+        }
+        $id = (int) $product_id;
+        if ($id < 1) {
+            return '';
+        }
+        if ($source === 'bb') {
+            return ' AND loan_beginning_balances.loan_product_id = ' . $id;
+        }
+        return ' AND loan_contract.product_type = ' . $id;
+    }
+
+    function count_loan($key = null, $status = null, $product_id = null) {
         $pin = current_user()->PIN;
         
         // Filter: Beginning Balance only (from loan_beginning_balances)
         if ($status !== null && $status !== '' && (string)$status === 'bb') {
             $sql_bb = "SELECT loan_beginning_balances.id FROM loan_beginning_balances INNER JOIN members ON members.member_id=loan_beginning_balances.member_id WHERE loan_beginning_balances.PIN='$pin' AND members.PIN='$pin'";
             $sql_bb .= " AND (loan_beginning_balances.loan_id IS NULL OR loan_beginning_balances.loan_id NOT IN (SELECT LID FROM loan_contract WHERE PIN='$pin'))";
+            $sql_bb .= $this->_loan_list_product_sql($product_id, 'bb');
             if (!is_null($key)) {
                 $sql_bb .= " AND (loan_beginning_balances.loan_id LIKE " . $this->db->escape($key . '%') . " OR loan_beginning_balances.member_id LIKE " . $this->db->escape($key . '%') . " OR members.firstname LIKE " . $this->db->escape($key . '%') . " OR members.lastname LIKE " . $this->db->escape($key . '%') . ")";
             }
@@ -1971,6 +1986,7 @@ class Loan_Model extends CI_Model {
         // Lifecycle filters (derived from disburse / release / schedule)
         if ($this->is_loan_lifecycle_filter($status)) {
             $sql = "SELECT loan_contract.LID FROM loan_contract INNER JOIN members ON members.PID=loan_contract.PID WHERE loan_contract.PIN='$pin' AND (" . $this->_lifecycle_filter_sql($status, 'loan_contract') . ")";
+            $sql .= $this->_loan_list_product_sql($product_id, 'contract');
             if (!is_null($key)) {
                 $sql .= " AND (loan_contract.LID LIKE " . $this->db->escape($key . '%') . " OR loan_contract.member_id LIKE " . $this->db->escape($key . '%') . " OR members.firstname LIKE " . $this->db->escape($key . '%') . " OR members.lastname LIKE " . $this->db->escape($key . '%') . ")";
             }
@@ -1980,6 +1996,7 @@ class Loan_Model extends CI_Model {
         // When status filter is set, count only loan_contract with that status
         if ($status !== null && $status !== '') {
             $sql = "SELECT loan_contract.LID FROM loan_contract INNER JOIN members ON members.PID=loan_contract.PID WHERE loan_contract.PIN='$pin' AND loan_contract.status=" . $this->db->escape($status);
+            $sql .= $this->_loan_list_product_sql($product_id, 'contract');
             if (!is_null($key)) {
                 $sql .= " AND (loan_contract.LID LIKE " . $this->db->escape($key . '%') . " OR loan_contract.member_id LIKE " . $this->db->escape($key . '%') . " OR members.firstname LIKE " . $this->db->escape($key . '%') . " OR members.lastname LIKE " . $this->db->escape($key . '%') . ")";
             }
@@ -1989,6 +2006,7 @@ class Loan_Model extends CI_Model {
         // Count regular loans from loan_contract
         $sql = "SELECT loan_contract.* FROM loan_contract INNER JOIN members ON members.PID=loan_contract.PID WHERE loan_contract.PIN='$pin'  ";
 
+        $sql .= $this->_loan_list_product_sql($product_id, 'contract');
         if (!is_null($key)) {
             $sql .= "  AND (loan_contract.LID LIKE '$key%' OR loan_contract.member_id LIKE '$key%' OR members.firstname LIKE '$key%' OR members.lastname LIKE '$key%')";
         }
@@ -2000,6 +2018,7 @@ class Loan_Model extends CI_Model {
         
         // Exclude beginning balances that already have corresponding loan_contract entries
         $sql_bb .= " AND (loan_beginning_balances.loan_id IS NULL OR loan_beginning_balances.loan_id NOT IN (SELECT LID FROM loan_contract WHERE PIN='$pin'))";
+        $sql_bb .= $this->_loan_list_product_sql($product_id, 'bb');
         
         if (!is_null($key)) {
             $sql_bb .= " AND (loan_beginning_balances.loan_id LIKE '$key%' OR loan_beginning_balances.member_id LIKE '$key%' OR members.firstname LIKE '$key%' OR members.lastname LIKE '$key%')";
@@ -2010,7 +2029,7 @@ class Loan_Model extends CI_Model {
         return $count + $count_bb;
     }
 
-    function search_loan($key, $limit, $start, $status = null) {
+    function search_loan($key, $limit, $start, $status = null, $product_id = null) {
         $pin = current_user()->PIN;
         $life_select = $this->_lifecycle_select_sql('loan_contract');
         
@@ -2040,6 +2059,7 @@ class Loan_Model extends CI_Model {
                     LEFT JOIN loan_product ON loan_product.id=loan_beginning_balances.loan_product_id AND loan_product.PIN='$pin'
                     WHERE loan_beginning_balances.PIN='$pin' AND members.PIN='$pin'";
             $sql_bb .= " AND (loan_beginning_balances.loan_id IS NULL OR loan_beginning_balances.loan_id NOT IN (SELECT LID FROM loan_contract WHERE PIN='$pin'))";
+            $sql_bb .= $this->_loan_list_product_sql($product_id, 'bb');
             if (!is_null($key)) {
                 $sql_bb .= " AND (loan_beginning_balances.loan_id LIKE '$key%' OR loan_beginning_balances.member_id LIKE '$key%' OR members.firstname LIKE '$key%' OR members.lastname LIKE '$key%')";
             }
@@ -2053,6 +2073,7 @@ class Loan_Model extends CI_Model {
             $sql .= " INNER JOIN loan_status ON loan_status.code=loan_contract.status ";
             $sql .= " LEFT JOIN loan_product ON loan_product.id=loan_contract.product_type AND loan_product.PIN='$pin' ";
             $sql .= " WHERE loan_contract.PIN='$pin' AND (" . $this->_lifecycle_filter_sql($status, 'loan_contract') . ")";
+            $sql .= $this->_loan_list_product_sql($product_id, 'contract');
             if (!is_null($key)) {
                 $sql .= " AND ( loan_contract.LID LIKE '$key%' OR loan_contract.member_id LIKE '$key%' OR members.firstname LIKE '$key%' OR members.lastname LIKE '$key%')";
             }
@@ -2066,6 +2087,7 @@ class Loan_Model extends CI_Model {
             $sql .= " INNER JOIN loan_status ON loan_status.code=loan_contract.status ";
             $sql .= " LEFT JOIN loan_product ON loan_product.id=loan_contract.product_type AND loan_product.PIN='$pin' ";
             $sql .= " WHERE loan_contract.PIN='$pin' AND loan_contract.status=" . $this->db->escape($status);
+            $sql .= $this->_loan_list_product_sql($product_id, 'contract');
             if (!is_null($key)) {
                 $sql .= " AND ( loan_contract.LID LIKE '$key%' OR loan_contract.member_id LIKE '$key%' OR members.firstname LIKE '$key%' OR members.lastname LIKE '$key%')";
             }
@@ -2078,6 +2100,7 @@ class Loan_Model extends CI_Model {
         $sql .= " INNER JOIN loan_status ON loan_status.code=loan_contract.status ";
         $sql .= " LEFT JOIN loan_product ON loan_product.id=loan_contract.product_type AND loan_product.PIN='$pin' ";
         $sql .= " WHERE loan_contract.PIN='$pin'";
+        $sql .= $this->_loan_list_product_sql($product_id, 'contract');
 
         if (!is_null($key)) {
             $sql .= "  AND ( loan_contract.LID LIKE '$key%' OR loan_contract.member_id LIKE '$key%' OR members.firstname LIKE '$key%' OR members.lastname LIKE '$key%')";
@@ -2114,6 +2137,7 @@ class Loan_Model extends CI_Model {
         
         // Exclude beginning balances that already have corresponding loan_contract entries
         $sql_bb .= " AND (loan_beginning_balances.loan_id IS NULL OR loan_beginning_balances.loan_id NOT IN (SELECT LID FROM loan_contract WHERE PIN='$pin'))";
+        $sql_bb .= $this->_loan_list_product_sql($product_id, 'bb');
         
         if (!is_null($key)) {
             $sql_bb .= " AND (loan_beginning_balances.loan_id LIKE '$key%' OR loan_beginning_balances.member_id LIKE '$key%' OR members.firstname LIKE '$key%' OR members.lastname LIKE '$key%')";

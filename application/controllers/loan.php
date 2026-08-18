@@ -1753,12 +1753,22 @@ $pin = current_user()->PIN;
             $status_filter = $_GET['status_filter'];
         }
 
+        $product_id = 'all';
+        if (isset($_POST['product_id']) && $_POST['product_id'] !== '') {
+            $product_id = $_POST['product_id'];
+        } else if (isset($_GET['product_id']) && $_GET['product_id'] !== '') {
+            $product_id = $_GET['product_id'];
+        }
+
         $suffix_array = array();
         if (!is_null($key) && $key !== '') {
             $suffix_array['key'] = $key;
         }
         if ($status_filter !== null && $status_filter !== '') {
             $suffix_array['status_filter'] = $status_filter;
+        }
+        if ($product_id !== null && $product_id !== '' && $product_id !== 'all') {
+            $suffix_array['product_id'] = $product_id;
         }
         if (count($suffix_array) > 0) {
             $query_string = http_build_query($suffix_array, '', '&');
@@ -1767,7 +1777,7 @@ $pin = current_user()->PIN;
         }
 
         $config["base_url"] = site_url(current_lang() . '/loan/loan_viewlist/');
-        $config["total_rows"] = $this->loan_model->count_loan($key, $status_filter);
+        $config["total_rows"] = $this->loan_model->count_loan($key, $status_filter, $product_id);
         $config["uri_segment"] = 4;
 
         $config['full_tag_open'] = '<div class="pagination member-pagination">';
@@ -1804,11 +1814,13 @@ $pin = current_user()->PIN;
         $this->data['page_start'] = (int) $page;
         $this->data['per_page'] = (int) $config["per_page"];
 
-        $this->data['loan_list'] = $this->loan_model->search_loan($key, $config["per_page"], $page, $status_filter);
+        $this->data['loan_list'] = $this->loan_model->search_loan($key, $config["per_page"], $page, $status_filter, $product_id);
         $this->data['search_key'] = $key;
 
         $this->data['status_filter'] = $status_filter;
         $this->data['status_list'] = loan_status();
+        $this->data['product_id'] = $product_id;
+        $this->data['loan_products'] = $this->setting_model->loanproduct()->result();
         $this->data['content'] = 'loan/viewloanlist';
         $this->load->view('template', $this->data);
     }

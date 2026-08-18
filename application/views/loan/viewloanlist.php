@@ -395,6 +395,8 @@
 $search_key = isset($search_key) ? $search_key : (isset($_GET['key']) ? $_GET['key'] : (isset($_POST['key']) ? $_POST['key'] : ''));
 $status_list = isset($status_list) ? $status_list : array();
 $current_status = isset($status_filter) ? $status_filter : '';
+$loan_products = isset($loan_products) ? $loan_products : array();
+$current_product_id = isset($product_id) ? $product_id : 'all';
 ?>
 
 <div class="col-lg-12 member-list-page">
@@ -432,6 +434,17 @@ $current_status = isset($status_filter) ? $status_filter : '';
                                 $sel = ($current_status !== null && $current_status !== '' && (string) $code === (string) $current_status) ? ' selected="selected"' : '';
                                 ?>
                                 <option value="<?php echo htmlspecialchars($code); ?>"<?php echo $sel; ?>><?php echo htmlspecialchars($label); ?></option>
+                            <?php } ?>
+                        </select>
+                    </div>
+                    <div class="filter-field">
+                        <label><?php echo lang('loan_product'); ?></label>
+                        <select name="product_id" class="form-control">
+                            <option value="all"<?php echo ($current_product_id === 'all' || $current_product_id === '' || $current_product_id === null) ? ' selected="selected"' : ''; ?>><?php echo lang('loan_products_all'); ?></option>
+                            <?php foreach ($loan_products as $product) { ?>
+                                <option value="<?php echo (int) $product->id; ?>"<?php echo ((string) $current_product_id === (string) $product->id) ? ' selected="selected"' : ''; ?>>
+                                    <?php echo htmlspecialchars($product->name, ENT_QUOTES, 'UTF-8'); ?>
+                                </option>
                             <?php } ?>
                         </select>
                     </div>

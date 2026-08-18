@@ -3422,6 +3422,7 @@ $pin = current_user()->PIN;
             'member_names' => array(),
             'product_info' => array(),
             'activated_map' => array(),
+            'remaining_gl_map' => array(),
         );
         if (!$selected_fiscal_year_id) {
             return $payload;
@@ -3453,6 +3454,11 @@ $pin = current_user()->PIN;
         $payload['member_names'] = $member_names;
         $payload['product_info'] = $product_info;
         $payload['activated_map'] = $activated_map;
+        $bb_ids = array();
+        foreach ($balances as $balance) {
+            $bb_ids[] = (int) $balance->id;
+        }
+        $payload['remaining_gl_map'] = $this->loan_model->loan_bb_unreversed_gl_ids($bb_ids);
         return $payload;
     }
 
@@ -3469,7 +3475,12 @@ $pin = current_user()->PIN;
      * Void posted loan beginning balance with reversing GL.
      */
     function loan_beginning_balance_void($id) {
+        $is_ajax = $this->input->is_ajax_request();
         if (!has_role(5, 'void_transaction')) {
+            if ($is_ajax) {
+                $this->_loan_beginning_balance_json(false, lang('access_denied'));
+                return;
+            }
             $this->session->set_flashdata('warning', lang('access_denied'));
             redirect(current_lang() . '/loan/loan_beginning_balance_list', 'refresh');
             return;
@@ -3477,15 +3488,27 @@ $pin = current_user()->PIN;
         $id = decode_id($id);
         $balance = $this->loan_model->loan_beginning_balance_list(null, $id)->row();
         if (!$balance) {
+            if ($is_ajax) {
+                $this->_loan_beginning_balance_json(false, lang('loan_beginning_balance_not_found'));
+                return;
+            }
             $this->session->set_flashdata('warning', lang('loan_beginning_balance_not_found'));
             redirect(current_lang() . '/loan/loan_beginning_balance_list', 'refresh');
             return;
         }
         $result = $this->loan_model->void_loan_beginning_balance($id, 'Void from loan beginning balance list');
-        if (!empty($result['success'])) {
-            $this->session->set_flashdata('message', $result['message']);
+        $success = !empty($result['success']);
+        $message = !empty($result['message']) ? $result['message'] : ($success ? 'Loan beginning balance voided with reversing GL entry.' : 'Void failed');
+        if ($is_ajax) {
+            $this->_loan_beginning_balance_json($success, $message, array(
+                'fiscal_year_id' => $balance->fiscal_year_id,
+            ));
+            return;
+        }
+        if ($success) {
+            $this->session->set_flashdata('message', $message);
         } else {
-            $this->session->set_flashdata('warning', !empty($result['message']) ? $result['message'] : 'Void failed');
+            $this->session->set_flashdata('warning', $message);
         }
         redirect(current_lang() . '/loan/loan_beginning_balance_list?fiscal_year_id=' . $balance->fiscal_year_id, 'refresh');
     }

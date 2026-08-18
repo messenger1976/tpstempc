@@ -3665,11 +3665,53 @@ class Loan_Model extends CI_Model {
     /**
      * Void a posted loan beginning balance with reversing GL entry.
      */
+    function loan_bb_unreversed_gl_ids($ids) {
+        $pin = current_user()->PIN;
+        $out = array();
+        if (empty($ids) || !is_array($ids)) {
+            return $out;
+        }
+        $clean = array();
+        foreach ($ids as $id) {
+            $id = (int) $id;
+            if ($id > 0) {
+                $clean[$id] = $id;
+            }
+        }
+        if (empty($clean)) {
+            return $out;
+        }
+        $in = implode(',', $clean);
+        $rows = $this->db->query(
+            "SELECT refferenceID,
+                    SUM(CASE WHEN fromtable = 'loan_beginning_balances' THEN debit - credit ELSE 0 END) AS orig_net,
+                    SUM(CASE WHEN fromtable = 'loan_beginning_balances_void' THEN debit - credit ELSE 0 END) AS void_net
+             FROM general_ledger
+             WHERE PIN = ?
+               AND fromtable IN ('loan_beginning_balances', 'loan_beginning_balances_void')
+               AND refferenceID IN (" . $in . ")
+             GROUP BY refferenceID",
+            array($pin)
+        )->result();
+        foreach ($rows as $row) {
+            $net = round(floatval($row->orig_net) + floatval($row->void_net), 2);
+            if (abs($net) >= 0.01) {
+                $out[(int) $row->refferenceID] = true;
+            }
+        }
+        return $out;
+    }
+
     function void_loan_beginning_balance($id, $reason = '') {
         $pin = current_user()->PIN;
         $id = (int) $id;
         $balance = $this->loan_beginning_balance_list(null, $id)->row();
-        if (!$balance || empty($balance->posted)) {
+        if (!$balance) {
+            return array('success' => false, 'message' => 'Loan beginning balance not found or not posted.');
+        }
+        $remaining = $this->loan_bb_unreversed_gl_ids(array($id));
+        $has_remaining_gl = !empty($remaining[$id]);
+        if (empty($balance->posted) && !$has_remaining_gl) {
             return array('success' => false, 'message' => 'Loan beginning balance not found or not posted.');
         }
         if ($this->is_loan_beginning_balance_activated($balance)) {

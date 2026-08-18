@@ -3,6 +3,7 @@ $loan_beginning_balances = isset($loan_beginning_balances) ? $loan_beginning_bal
 $member_names = isset($member_names) ? $member_names : array();
 $product_info = isset($product_info) ? $product_info : array();
 $activated_map = isset($activated_map) ? $activated_map : array();
+$remaining_gl_map = isset($remaining_gl_map) ? $remaining_gl_map : array();
 $row_count = is_array($loan_beginning_balances) ? count($loan_beginning_balances) : 0;
 ?>
 <?php if ($row_count > 0) {
@@ -11,6 +12,7 @@ $row_count = is_array($loan_beginning_balances) ? count($loan_beginning_balances
         $member_info = isset($member_names[$balance->member_id]) ? $member_names[$balance->member_id] : 'Unknown';
         $product_name = isset($product_info[$balance->loan_product_id]) ? $product_info[$balance->loan_product_id] : '-';
         $is_activated = !empty($activated_map[$balance->id]);
+        $has_remaining_gl = !empty($remaining_gl_map[$balance->id]);
         ?>
         <tr>
             <td style="text-align:center;"><?php echo $i++; ?></td>
@@ -58,6 +60,11 @@ $row_count = is_array($loan_beginning_balances) ? count($loan_beginning_balances
                         <a href="javascript:void(0);" class="btn btn-success btn-xs btn-post-balance" data-id="<?php echo encode_id($balance->id); ?>" data-member="<?php echo htmlspecialchars($balance->member_id, ENT_QUOTES, 'UTF-8'); ?>">
                             <i class="fa fa-check"></i> <?php echo lang('loan_beginning_balance_post'); ?>
                         </a>
+                        <?php if ($has_remaining_gl && has_role(5, 'void_transaction')) { ?>
+                        <a href="javascript:void(0);" class="btn btn-danger btn-xs btn-void-balance" data-id="<?php echo encode_id($balance->id); ?>" data-member="<?php echo htmlspecialchars($balance->member_id, ENT_QUOTES, 'UTF-8'); ?>">
+                            <i class="fa fa-undo"></i> Void
+                        </a>
+                        <?php } ?>
                     <?php } else if ($is_activated) { ?>
                         <a class="btn btn-primary btn-xs" href="<?php echo site_url(current_lang() . '/loan/view_indetail/' . encode_id($balance->loan_id)); ?>">
                             <i class="fa fa-folder-open"></i> <?php echo lang('loan_view_detail'); ?>
@@ -78,7 +85,7 @@ $row_count = is_array($loan_beginning_balances) ? count($loan_beginning_balances
                             <i class="fa fa-play-circle"></i> <?php echo lang('loan_beginning_balance_activate'); ?>
                         </a>
                         <?php if (has_role(5, 'void_transaction')) { ?>
-                        <a class="btn btn-danger btn-xs" href="<?php echo site_url(current_lang() . '/loan/loan_beginning_balance_void/' . encode_id($balance->id)); ?>" onclick="return confirm('Void this loan beginning balance with a reversing GL entry?');">
+                        <a href="javascript:void(0);" class="btn btn-danger btn-xs btn-void-balance" data-id="<?php echo encode_id($balance->id); ?>" data-member="<?php echo htmlspecialchars($balance->member_id, ENT_QUOTES, 'UTF-8'); ?>">
                             <i class="fa fa-undo"></i> Void
                         </a>
                         <?php } ?>

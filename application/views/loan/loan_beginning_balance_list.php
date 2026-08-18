@@ -270,6 +270,7 @@ $row_count = is_array($loan_beginning_balances) ? count($loan_beginning_balances
             var deleteUrlBase = '<?php echo site_url(current_lang() . '/loan/loan_beginning_balance_delete'); ?>';
             var activateUrlBase = '<?php echo site_url(current_lang() . '/loan/loan_beginning_balance_activate'); ?>';
             var deactivateUrlBase = '<?php echo site_url(current_lang() . '/loan/loan_beginning_balance_deactivate'); ?>';
+            var voidUrlBase = '<?php echo site_url(current_lang() . '/loan/loan_beginning_balance_void'); ?>';
             var actionInProgress = false;
 
             function tableRows() {
@@ -489,6 +490,37 @@ $row_count = is_array($loan_beginning_balances) ? count($loan_beginning_balances
                         "<?php echo lang('loan_beginning_balance_activating'); ?>",
                         "<?php echo lang('loan_beginning_balance_activated'); ?>",
                         "<?php echo lang('loan_beginning_balance_activate_fail'); ?>"
+                    );
+                });
+            });
+
+            $page.on('click.bbActions', '.btn-void-balance', function() {
+                var balanceId = $(this).data('id');
+                var member = $(this).data('member');
+                if (actionInProgress || !balanceId) {
+                    return;
+                }
+
+                swal({
+                    title: "<?php echo lang('are_you_sure'); ?>",
+                    text: "<?php echo lang('loan_beginning_balance_void_confirm'); ?>" + (member ? " (Member: " + member + ")" : ""),
+                    type: "warning",
+                    showCancelButton: true,
+                    confirmButtonColor: "#d9534f",
+                    confirmButtonText: "Void",
+                    cancelButtonText: "<?php echo lang('cancel'); ?>",
+                    closeOnConfirm: false,
+                    closeOnCancel: true
+                }, function(isConfirm) {
+                    if (!isConfirm) {
+                        return;
+                    }
+                    runRowAjax(
+                        voidUrlBase + '/' + balanceId,
+                        "Void",
+                        "<?php echo lang('loan_beginning_balance_voiding'); ?>",
+                        "Void",
+                        "<?php echo lang('loan_beginning_balance_void_fail'); ?>"
                     );
                 });
             });

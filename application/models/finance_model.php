@@ -1734,16 +1734,6 @@ class Finance_Model extends CI_Model {
             $void_ref = 'E' . (int) $filters['entryid'];
         }
 
-        $already = $this->db->query(
-            "SELECT id FROM general_ledger
-             WHERE PIN = ? AND fromtable = ? AND refferenceID = ? AND description LIKE 'VOID:%'
-             LIMIT 1",
-            array($pin, $void_from, $void_ref)
-        )->row();
-        if ($already) {
-            return array('success' => false, 'message' => 'This GL posting has already been voided.');
-        }
-
         $sql = "SELECT * FROM general_ledger WHERE PIN = ? AND fromtable = ?";
         $params = array($pin, $from_table);
         if ($reference_id !== '' && $reference_id !== null && empty($filters['ignore_refferenceID'])) {
@@ -1773,6 +1763,40 @@ class Finance_Model extends CI_Model {
             return array('success' => false, 'message' => 'No GL lines found to reverse.');
         }
 
+        $void_sql = "SELECT account, SUM(debit) AS debit, SUM(credit) AS credit
+                     FROM general_ledger
+                     WHERE PIN = ? AND fromtable = ? AND refferenceID = ?
+                     GROUP BY account";
+        $void_rows = $this->db->query($void_sql, array($pin, $void_from, $void_ref))->result();
+        $void_net = array();
+        foreach ($void_rows as $vr) {
+            $acct = (string) $vr->account;
+            $void_net[$acct] = round(floatval($vr->debit) - floatval($vr->credit), 2);
+        }
+
+        $orig_net = array();
+        $template = array();
+        foreach ($lines as $line) {
+            $acct = (string) $line->account;
+            if (!isset($orig_net[$acct])) {
+                $orig_net[$acct] = 0.0;
+                $template[$acct] = $line;
+            }
+            $orig_net[$acct] = round($orig_net[$acct] + floatval($line->debit) - floatval($line->credit), 2);
+        }
+
+        $remaining = array();
+        foreach ($orig_net as $acct => $net) {
+            $prior = isset($void_net[$acct]) ? $void_net[$acct] : 0.0;
+            $left = round($net + $prior, 2);
+            if (abs($left) >= 0.01) {
+                $remaining[$acct] = $left;
+            }
+        }
+        if (empty($remaining)) {
+            return array('success' => false, 'message' => 'This GL posting has already been voided.');
+        }
+
         // Default: today. Pass filters['void_date'] or filters['use_source_date']=true
         // so reversing lines land in the same reporting period as the original (critical for BB).
         $void_date = date('Y-m-d');
@@ -1795,12 +1819,10 @@ class Finance_Model extends CI_Model {
 
         $label = $from_table . ' #' . ($reference_id !== '' && $reference_id !== null ? $reference_id : $void_ref);
         $inserted = 0;
-        foreach ($lines as $line) {
-            $debit = floatval($line->debit);
-            $credit = floatval($line->credit);
-            if ($debit <= 0 && $credit <= 0) {
-                continue;
-            }
+        foreach ($remaining as $acct => $left) {
+            $line = $template[$acct];
+            $debit = $left < 0 ? abs($left) : 0;
+            $credit = $left > 0 ? $left : 0;
             $row = array(
                 'journalID' => isset($line->journalID) ? $line->journalID : 5,
                 'refferenceID' => $void_ref,
@@ -1809,9 +1831,9 @@ class Finance_Model extends CI_Model {
                 'linkto' => isset($line->linkto) ? $line->linkto : ($from_table . '.id'),
                 'fromtable' => $void_from,
                 'PIN' => $pin,
-                'account' => $line->account,
-                'debit' => $credit > 0 ? $credit : 0,
-                'credit' => $debit > 0 ? $debit : 0,
+                'account' => $acct,
+                'debit' => $debit,
+                'credit' => $credit,
                 'description' => 'VOID: ' . $label . ($reason !== '' ? (' — ' . $reason) : ''),
                 'account_type' => isset($line->account_type) ? $line->account_type : null,
                 'sub_account_type' => isset($line->sub_account_type) ? $line->sub_account_type : null,

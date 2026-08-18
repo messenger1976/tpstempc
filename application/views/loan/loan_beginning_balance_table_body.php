@@ -15,8 +15,20 @@ $row_count = is_array($loan_beginning_balances) ? count($loan_beginning_balances
         $is_activated = !empty($activated_map[$balance->id]);
         $has_remaining_gl = !empty($remaining_gl_map[$balance->id]);
         $can_print_journal = ((int) $balance->posted === 1) || $has_remaining_gl || !empty($has_gl_map[$balance->id]);
+        $can_post = !$is_activated && (int) $balance->posted === 0;
+        $can_activate = !$is_activated && (int) $balance->posted === 1;
         ?>
         <tr>
+            <td style="text-align:center;">
+                <?php if ($can_post || $can_activate) { ?>
+                    <input type="checkbox" class="bb-row-check"
+                           value="<?php echo encode_id($balance->id); ?>"
+                           data-can-post="<?php echo $can_post ? '1' : '0'; ?>"
+                           data-can-activate="<?php echo $can_activate ? '1' : '0'; ?>" />
+                <?php } else { ?>
+                    <input type="checkbox" disabled="disabled" />
+                <?php } ?>
+            </td>
             <td style="text-align:center;"><?php echo $i++; ?></td>
             <td><span class="member-id-chip"><?php echo htmlspecialchars($balance->member_id, ENT_QUOTES, 'UTF-8'); ?></span></td>
             <td><?php echo htmlspecialchars($member_info, ENT_QUOTES, 'UTF-8'); ?></td>
@@ -103,7 +115,7 @@ $row_count = is_array($loan_beginning_balances) ? count($loan_beginning_balances
     <?php }
 } else { ?>
     <tr>
-        <td colspan="16">
+        <td colspan="17">
             <div class="empty-state">
                 <i class="fa fa-list"></i>
                 <?php echo lang('data_not_found'); ?>

@@ -3666,6 +3666,125 @@ $pin = current_user()->PIN;
     }
 
     /**
+     * Bulk Post to GL from selected beginning-balance rows.
+     */
+    function loan_beginning_balance_bulk_post() {
+        if (!$this->input->is_ajax_request()) {
+            show_404();
+            return;
+        }
+        $ids = $this->_decode_bb_id_list($this->input->post('ids'));
+        if (empty($ids)) {
+            $this->_loan_beginning_balance_json(false, lang('loan_beginning_balance_bulk_none'));
+            return;
+        }
+        $ok = 0;
+        $fail = 0;
+        $fiscal_year_id = null;
+        $errors = array();
+        foreach ($ids as $id) {
+            $balance = $this->loan_model->loan_beginning_balance_list(null, $id)->row();
+            if ($balance && $fiscal_year_id === null) {
+                $fiscal_year_id = $balance->fiscal_year_id;
+            }
+            if (!$balance) {
+                $fail++;
+                continue;
+            }
+            if (!empty($balance->posted) || $this->loan_model->is_loan_beginning_balance_activated($balance)) {
+                $fail++;
+                continue;
+            }
+            $result = $this->loan_model->loan_beginning_balance_post_to_ledger($id);
+            $success = (is_array($result) && !empty($result['success'])) || (!is_array($result) && $result);
+            if ($success) {
+                $ok++;
+            } else {
+                $fail++;
+                if (is_array($result) && !empty($result['message']) && count($errors) < 5) {
+                    $errors[] = $balance->member_id . ': ' . $result['message'];
+                }
+            }
+        }
+        $message = $ok . ' posted to GL';
+        if ($fail > 0) {
+            $message .= ', ' . $fail . ' skipped or failed';
+            if (!empty($errors)) {
+                $message .= '. ' . implode(' ', $errors);
+            }
+        }
+        $this->_loan_beginning_balance_json($ok > 0, $message, array(
+            'fiscal_year_id' => $fiscal_year_id,
+            'posted' => $ok,
+            'failed' => $fail,
+        ));
+    }
+
+    /**
+     * Bulk Activate as Loan from selected posted beginning-balance rows.
+     */
+    function loan_beginning_balance_bulk_activate() {
+        if (!$this->input->is_ajax_request()) {
+            show_404();
+            return;
+        }
+        $ids = $this->_decode_bb_id_list($this->input->post('ids'));
+        if (empty($ids)) {
+            $this->_loan_beginning_balance_json(false, lang('loan_beginning_balance_bulk_none'));
+            return;
+        }
+        $ok = 0;
+        $fail = 0;
+        $fiscal_year_id = null;
+        $errors = array();
+        foreach ($ids as $id) {
+            $balance = $this->loan_model->loan_beginning_balance_list(null, $id)->row();
+            if ($balance && $fiscal_year_id === null) {
+                $fiscal_year_id = $balance->fiscal_year_id;
+            }
+            if (!$balance || empty($balance->posted) || $this->loan_model->is_loan_beginning_balance_activated($balance)) {
+                $fail++;
+                continue;
+            }
+            $result = $this->loan_model->activate_loan_beginning_balance($id);
+            if (!empty($result['success'])) {
+                $ok++;
+            } else {
+                $fail++;
+                if (!empty($result['message']) && count($errors) < 5) {
+                    $errors[] = $balance->member_id . ': ' . $result['message'];
+                }
+            }
+        }
+        $message = $ok . ' activated as loan';
+        if ($fail > 0) {
+            $message .= ', ' . $fail . ' skipped or failed';
+            if (!empty($errors)) {
+                $message .= '. ' . implode(' ', $errors);
+            }
+        }
+        $this->_loan_beginning_balance_json($ok > 0, $message, array(
+            'fiscal_year_id' => $fiscal_year_id,
+            'activated' => $ok,
+            'failed' => $fail,
+        ));
+    }
+
+    private function _decode_bb_id_list($encoded) {
+        if (!is_array($encoded)) {
+            $encoded = array();
+        }
+        $ids = array();
+        foreach ($encoded as $enc) {
+            $id = decode_id($enc);
+            if ($id !== null && $id !== '') {
+                $ids[] = (int) $id;
+            }
+        }
+        return array_values(array_unique($ids));
+    }
+
+    /**
      * Undo Activate as Loan from the beginning-balance list (AJAX or full page).
      */
     function loan_beginning_balance_deactivate($id) {

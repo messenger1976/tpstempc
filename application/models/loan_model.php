@@ -892,6 +892,140 @@ class Loan_Model extends CI_Model {
         return $this->db->affected_rows() >= 0;
     }
 
+    /**
+     * Ensure loan_status rows used by cancel / mixed rejection labels exist.
+     * Local DB historically had 0–6 only; helper already maps 7/8/9.
+     */
+    function ensure_loan_cancel_status_codes() {
+        if (!$this->db->table_exists('loan_status')) {
+            return;
+        }
+        $needed = array(
+            7 => 'Evaluated && Rejected',
+            8 => 'Accepted && Rejected',
+            9 => 'Accepted && Disbursed',
+        );
+        foreach ($needed as $code => $name) {
+            $exists = $this->db->where('code', $code)->limit(1)->get('loan_status')->row();
+            if (!$exists) {
+                $this->db->insert('loan_status', array('code' => $code, 'name' => $name));
+            }
+        }
+    }
+
+    /**
+     * Cancel an Accepted loan that is not yet disbursed (Pending Release / Released not posted).
+     * Sets status/approval to 8 (Accepted && Rejected). Deletes pending release worksheet if any.
+     * Blocks when release is linked to a Cash Disbursement (draft).
+     *
+     * @return array{success:bool,message:string}
+     */
+    function cancel_pending_release_loan($LID, $comment) {
+        $this->lang->load('loan');
+        $pin = current_user()->PIN;
+        $LID = trim((string) $LID);
+        $comment = trim((string) $comment);
+
+        if ($LID === '') {
+            return array(
+                'success' => false,
+                'message' => $this->_loan_lang_message('loan_evaluation_error', 'Invalid loan.'),
+            );
+        }
+        if ($comment === '') {
+            return array(
+                'success' => false,
+                'message' => $this->_loan_lang_message(
+                    'loan_cancel_comment_required',
+                    'A comment is required to cancel this loan.'
+                ),
+            );
+        }
+
+        $loan = $this->db->where('LID', $LID)->where('PIN', $pin)->get('loan_contract')->row();
+        if (!$loan) {
+            return array(
+                'success' => false,
+                'message' => $this->_loan_lang_message(
+                    'loan_cancel_not_eligible',
+                    'This loan cannot be cancelled. Only accepted, undisbursed loans can be cancelled.'
+                ),
+            );
+        }
+
+        $status = (string) $loan->status;
+        $disburse_zero = ((string) $loan->disburse === '0' || (int) $loan->disburse === 0);
+        if (!in_array($status, array('4', '6', '9'), true) || !$disburse_zero) {
+            return array(
+                'success' => false,
+                'message' => $this->_loan_lang_message(
+                    'loan_cancel_not_eligible',
+                    'This loan cannot be cancelled. Only accepted, undisbursed loans can be cancelled.'
+                ),
+            );
+        }
+
+        $this->ensure_release_workflow_columns();
+        $open_release = $this->get_pending_release($LID, $pin);
+        if ($open_release && isset($open_release->release_status) && $open_release->release_status === 'draft') {
+            $cd_note = !empty($open_release->cash_disbursement_id)
+                ? (' (Cash Disbursement ID ' . (int) $open_release->cash_disbursement_id . ')')
+                : '';
+            return array(
+                'success' => false,
+                'message' => $this->_loan_lang_message(
+                    'loan_cancel_cd_linked',
+                    'This loan release is linked to a Cash Disbursement. Delete the unposted Cash Disbursement in Finance first, then cancel the loan.'
+                ) . $cd_note,
+            );
+        }
+
+        $this->ensure_loan_cancel_status_codes();
+        $this->db->trans_start();
+
+        if ($open_release && isset($open_release->release_status) && $open_release->release_status === 'pending') {
+            if ($this->db->table_exists('loan_disbursement_gl_items')) {
+                $this->db->where('LID', $LID)->where('PIN', $pin)->delete('loan_disbursement_gl_items');
+            }
+            $this->db->where('LID', $LID)
+                ->where('PIN', $pin)
+                ->where('release_status', 'pending')
+                ->delete('loan_contract_disburse');
+        }
+
+        $this->db->insert('loan_contract_approve', array(
+            'LID' => $LID,
+            'status' => 8,
+            'comment' => $comment,
+            'createdby' => current_user()->id,
+            'PIN' => $pin,
+        ));
+
+        $this->db->where('LID', $LID)->where('PIN', $pin)->update('loan_contract', array(
+            'status' => 8,
+            'approval' => 8,
+        ));
+
+        $this->db->trans_complete();
+        if ($this->db->trans_status() === FALSE) {
+            return array(
+                'success' => false,
+                'message' => $this->_loan_lang_message(
+                    'loan_cancel_fail',
+                    'Failed to cancel the loan. Please try again.'
+                ),
+            );
+        }
+
+        return array(
+            'success' => true,
+            'message' => $this->_loan_lang_message(
+                'loan_cancel_success',
+                'Loan cancelled. Status is now Accepted && Rejected.'
+            ),
+        );
+    }
+
     function get_member_pending_releases($pid) {
         $pin = current_user()->PIN;
         $this->ensure_release_workflow_columns();
@@ -1899,7 +2033,8 @@ class Loan_Model extends CI_Model {
                         loan_beginning_balances.posted as bb_posted,
                         loan_beginning_balances.fiscal_year_id as bb_fiscal_year_id,
                         COALESCE(loan_product.`interval`, 1) as `interval`,
-                        loan_beginning_balances.disbursement_date as applicationdate
+                        loan_beginning_balances.disbursement_date as applicationdate,
+                        loan_product.name as product_name
                     FROM loan_beginning_balances 
                     INNER JOIN members ON members.member_id=loan_beginning_balances.member_id 
                     LEFT JOIN loan_product ON loan_product.id=loan_beginning_balances.loan_product_id AND loan_product.PIN='$pin'
@@ -1908,41 +2043,47 @@ class Loan_Model extends CI_Model {
             if (!is_null($key)) {
                 $sql_bb .= " AND (loan_beginning_balances.loan_id LIKE '$key%' OR loan_beginning_balances.member_id LIKE '$key%' OR members.firstname LIKE '$key%' OR members.lastname LIKE '$key%')";
             }
-            $sql_bb .= " ORDER BY loan_beginning_balances.disbursement_date ASC, loan_beginning_balances.created_at ASC LIMIT " . (int)$limit . " OFFSET " . (int)$start;
+            $sql_bb .= " ORDER BY loan_beginning_balances.disbursement_date DESC, loan_beginning_balances.created_at DESC LIMIT " . (int)$limit . " OFFSET " . (int)$start;
             return $this->enrich_loan_list_lifecycle($this->db->query($sql_bb)->result());
         }
 
         // Lifecycle filters
         if ($this->is_loan_lifecycle_filter($status)) {
-            $sql = "SELECT loan_contract.*,loan_status.name" . $life_select . " FROM loan_contract INNER JOIN members ON members.PID=loan_contract.PID ";
-            $sql .= " INNER JOIN loan_status ON loan_status.code=loan_contract.status WHERE loan_contract.PIN='$pin' AND (" . $this->_lifecycle_filter_sql($status, 'loan_contract') . ")";
+            $sql = "SELECT loan_contract.*,loan_status.name,loan_product.name AS product_name" . $life_select . " FROM loan_contract INNER JOIN members ON members.PID=loan_contract.PID ";
+            $sql .= " INNER JOIN loan_status ON loan_status.code=loan_contract.status ";
+            $sql .= " LEFT JOIN loan_product ON loan_product.id=loan_contract.product_type AND loan_product.PIN='$pin' ";
+            $sql .= " WHERE loan_contract.PIN='$pin' AND (" . $this->_lifecycle_filter_sql($status, 'loan_contract') . ")";
             if (!is_null($key)) {
                 $sql .= " AND ( loan_contract.LID LIKE '$key%' OR loan_contract.member_id LIKE '$key%' OR members.firstname LIKE '$key%' OR members.lastname LIKE '$key%')";
             }
-            $sql .= " ORDER BY loan_contract.applicationdate ASC LIMIT " . (int)$limit . " OFFSET " . (int)$start;
+            $sql .= " ORDER BY loan_contract.applicationdate DESC LIMIT " . (int)$limit . " OFFSET " . (int)$start;
             return $this->enrich_loan_list_lifecycle($this->db->query($sql)->result());
         }
 
         // When status filter is set, get only loan_contract with that status (no beginning balances)
         if ($status !== null && $status !== '') {
-            $sql = "SELECT loan_contract.*,loan_status.name" . $life_select . " FROM loan_contract INNER JOIN members ON members.PID=loan_contract.PID ";
-            $sql .= " INNER JOIN loan_status ON loan_status.code=loan_contract.status WHERE loan_contract.PIN='$pin' AND loan_contract.status=" . $this->db->escape($status);
+            $sql = "SELECT loan_contract.*,loan_status.name,loan_product.name AS product_name" . $life_select . " FROM loan_contract INNER JOIN members ON members.PID=loan_contract.PID ";
+            $sql .= " INNER JOIN loan_status ON loan_status.code=loan_contract.status ";
+            $sql .= " LEFT JOIN loan_product ON loan_product.id=loan_contract.product_type AND loan_product.PIN='$pin' ";
+            $sql .= " WHERE loan_contract.PIN='$pin' AND loan_contract.status=" . $this->db->escape($status);
             if (!is_null($key)) {
                 $sql .= " AND ( loan_contract.LID LIKE '$key%' OR loan_contract.member_id LIKE '$key%' OR members.firstname LIKE '$key%' OR members.lastname LIKE '$key%')";
             }
-            $sql .= " ORDER BY loan_contract.applicationdate ASC LIMIT " . (int)$limit . " OFFSET " . (int)$start;
+            $sql .= " ORDER BY loan_contract.applicationdate DESC LIMIT " . (int)$limit . " OFFSET " . (int)$start;
             return $this->enrich_loan_list_lifecycle($this->db->query($sql)->result());
         }
         
         // Get regular loans from loan_contract
-        $sql = "SELECT loan_contract.*,loan_status.name" . $life_select . " FROM loan_contract INNER JOIN members ON members.PID=loan_contract.PID ";
-        $sql .= " INNER JOIN loan_status ON loan_status.code=loan_contract.status WHERE loan_contract.PIN='$pin'";
+        $sql = "SELECT loan_contract.*,loan_status.name,loan_product.name AS product_name" . $life_select . " FROM loan_contract INNER JOIN members ON members.PID=loan_contract.PID ";
+        $sql .= " INNER JOIN loan_status ON loan_status.code=loan_contract.status ";
+        $sql .= " LEFT JOIN loan_product ON loan_product.id=loan_contract.product_type AND loan_product.PIN='$pin' ";
+        $sql .= " WHERE loan_contract.PIN='$pin'";
 
         if (!is_null($key)) {
             $sql .= "  AND ( loan_contract.LID LIKE '$key%' OR loan_contract.member_id LIKE '$key%' OR members.firstname LIKE '$key%' OR members.lastname LIKE '$key%')";
         }
 
-        $sql.= " ORDER BY loan_contract.applicationdate ASC";
+        $sql.= " ORDER BY loan_contract.applicationdate DESC";
         
         $regular_loans = $this->db->query($sql)->result();
         
@@ -1964,7 +2105,8 @@ class Loan_Model extends CI_Model {
                         loan_beginning_balances.posted as bb_posted,
                         loan_beginning_balances.fiscal_year_id as bb_fiscal_year_id,
                         COALESCE(loan_product.`interval`, 1) as `interval`,
-                        loan_beginning_balances.disbursement_date as applicationdate
+                        loan_beginning_balances.disbursement_date as applicationdate,
+                        loan_product.name as product_name
                     FROM loan_beginning_balances 
                     INNER JOIN members ON members.member_id=loan_beginning_balances.member_id 
                     LEFT JOIN loan_product ON loan_product.id=loan_beginning_balances.loan_product_id AND loan_product.PIN='$pin'
@@ -1977,18 +2119,18 @@ class Loan_Model extends CI_Model {
             $sql_bb .= " AND (loan_beginning_balances.loan_id LIKE '$key%' OR loan_beginning_balances.member_id LIKE '$key%' OR members.firstname LIKE '$key%' OR members.lastname LIKE '$key%')";
         }
         
-        $sql_bb .= " ORDER BY loan_beginning_balances.disbursement_date ASC, loan_beginning_balances.created_at ASC";
+        $sql_bb .= " ORDER BY loan_beginning_balances.disbursement_date DESC, loan_beginning_balances.created_at DESC";
         
         $beginning_balances = $this->db->query($sql_bb)->result();
         
         // Combine results
         $all_results = array_merge($regular_loans, $beginning_balances);
         
-        // Sort by applicationdate
+        // Sort by applicationdate DESC
         usort($all_results, function($a, $b) {
             $dateA = isset($a->applicationdate) ? strtotime($a->applicationdate) : 0;
             $dateB = isset($b->applicationdate) ? strtotime($b->applicationdate) : 0;
-            return $dateA - $dateB;
+            return $dateB - $dateA;
         });
         
         // Apply pagination
@@ -3027,6 +3169,12 @@ class Loan_Model extends CI_Model {
 
     function loan_beginning_balance_update($data, $id) {
         $pin = current_user()->PIN;
+        $id = (int) $id;
+        // Confirm row exists for this PIN (CI update() can return TRUE with 0 matches).
+        $exists = $this->db->where('id', $id)->where('PIN', $pin)->count_all_results('loan_beginning_balances');
+        if ($exists < 1) {
+            return false;
+        }
         $this->db->where('id', $id);
         $this->db->where('PIN', $pin);
         return $this->db->update('loan_beginning_balances', $data);
@@ -3053,26 +3201,35 @@ class Loan_Model extends CI_Model {
         return $result;
     }
 
+    /**
+     * Post loan beginning balance to GL (product receivable Drs) and offset
+     * matching Finance chart beginning_balances when present.
+     *
+     * @return array{success:bool,message:string}
+     */
     function loan_beginning_balance_post_to_ledger($id) {
         $pin = current_user()->PIN;
         $balance = $this->loan_beginning_balance_list(null, $id)->row();
         
-        if (!$balance || $balance->posted == 1) {
-            return false; // Already posted or doesn't exist
+        if (!$balance) {
+            return array('success' => false, 'message' => lang('loan_beginning_balance_not_found'));
+        }
+        if ($balance->posted == 1) {
+            return array('success' => false, 'message' => lang('loan_beginning_balance_already_posted'));
         }
         
         // Get fiscal year info
         $fiscal_year = $this->db->where('id', $balance->fiscal_year_id)->get('fiscal_year')->row();
         if (!$fiscal_year) {
-            return false;
+            return array('success' => false, 'message' => lang('loan_beginning_balance_post_fail'));
         }
         
         // Get loan product info
         $product = $this->db->where('id', $balance->loan_product_id)->where('PIN', $pin)->get('loan_product')->row();
         if (!$product) {
-            return false;
+            return array('success' => false, 'message' => lang('loan_beginning_balance_product_not_found'));
         }
-        
+
         $this->db->trans_start();
         
         // Create ledger entry header
@@ -3088,7 +3245,7 @@ class Loan_Model extends CI_Model {
         if (!$ledger_entry_result || $ledger_entry_affected != 1 || !$ledger_entry_id || $ledger_entry_id == 0) {
             log_message('error', 'Failed to create general_ledger_entry header for loan beginning balance ID: ' . $id);
             $this->db->trans_complete();
-            return false;
+            return array('success' => false, 'message' => lang('loan_beginning_balance_post_fail'));
         }
         
         // Use LAST_INSERT_ID() as fallback if needed
@@ -3099,7 +3256,7 @@ class Loan_Model extends CI_Model {
             } else {
                 log_message('error', 'Failed to get ledger_entry_id for loan beginning balance ID: ' . $id);
                 $this->db->trans_complete();
-                return false;
+                return array('success' => false, 'message' => lang('loan_beginning_balance_post_fail'));
             }
         }
         
@@ -3129,7 +3286,7 @@ class Loan_Model extends CI_Model {
             } else {
                 log_message('error', 'Account not found for principal: ' . $product->loan_principle_account);
                 $this->db->trans_complete();
-                return false;
+                return array('success' => false, 'message' => lang('loan_beginning_balance_post_fail'));
             }
             
             $insert_result = $this->db->insert('general_ledger', $ledger);
@@ -3138,7 +3295,7 @@ class Loan_Model extends CI_Model {
             if (!$insert_result || $insert_affected != 1) {
                 log_message('error', 'Failed to insert principal ledger entry for loan beginning balance ID: ' . $id);
                 $this->db->trans_complete();
-                return false;
+                return array('success' => false, 'message' => lang('loan_beginning_balance_post_fail'));
             }
             $ledger_items_inserted++;
         }
@@ -3167,7 +3324,7 @@ class Loan_Model extends CI_Model {
             } else {
                 log_message('error', 'Account not found for interest: ' . $product->loan_interest_account);
                 $this->db->trans_complete();
-                return false;
+                return array('success' => false, 'message' => lang('loan_beginning_balance_post_fail'));
             }
             
             $insert_result = $this->db->insert('general_ledger', $ledger);
@@ -3176,7 +3333,7 @@ class Loan_Model extends CI_Model {
             if (!$insert_result || $insert_affected != 1) {
                 log_message('error', 'Failed to insert interest ledger entry for loan beginning balance ID: ' . $id);
                 $this->db->trans_complete();
-                return false;
+                return array('success' => false, 'message' => lang('loan_beginning_balance_post_fail'));
             }
             $ledger_items_inserted++;
         }
@@ -3205,7 +3362,7 @@ class Loan_Model extends CI_Model {
             } else {
                 log_message('error', 'Account not found for penalty: ' . $product->loan_penalt_account);
                 $this->db->trans_complete();
-                return false;
+                return array('success' => false, 'message' => lang('loan_beginning_balance_post_fail'));
             }
             
             $insert_result = $this->db->insert('general_ledger', $ledger);
@@ -3214,7 +3371,7 @@ class Loan_Model extends CI_Model {
             if (!$insert_result || $insert_affected != 1) {
                 log_message('error', 'Failed to insert penalty ledger entry for loan beginning balance ID: ' . $id);
                 $this->db->trans_complete();
-                return false;
+                return array('success' => false, 'message' => lang('loan_beginning_balance_post_fail'));
             }
             $ledger_items_inserted++;
         }
@@ -3228,14 +3385,36 @@ class Loan_Model extends CI_Model {
         if ($expected_items > 0 && $ledger_items_inserted != $expected_items) {
             log_message('error', 'Loan beginning balance ID ' . $id . ': Expected ' . $expected_items . ' ledger items, but inserted ' . $ledger_items_inserted);
             $this->db->trans_complete();
-            return false;
+            return array('success' => false, 'message' => lang('loan_beginning_balance_post_fail'));
         }
         
-        // Check transaction status before updating posted status
+        // Check transaction status before chart BB offset / posted update
         if ($this->db->_trans_status === FALSE) {
             log_message('error', 'Transaction status is FALSE before updating posted status for loan beginning balance ID: ' . $id);
             $this->db->trans_complete();
-            return false;
+            return array('success' => false, 'message' => lang('loan_beginning_balance_post_fail'));
+        }
+
+        // Offset Finance chart beginning balances (same product GLs) when present
+        $this->load->model('finance_model');
+        $offset = $this->finance_model->deduct_chart_bb_for_loan_bb($balance, $product);
+        if (empty($offset['success'])) {
+            log_message('error', 'Loan BB #' . $id . ' chart BB offset failed: ' . (!empty($offset['message']) ? $offset['message'] : ''));
+            $offset_message = lang('loan_beginning_balance_chart_bb_offset_fail');
+            if (!empty($offset['code']) && $offset['code'] === 'insufficient') {
+                $offset_message = sprintf(
+                    lang('loan_beginning_balance_chart_bb_insufficient'),
+                    $offset['account'],
+                    number_format($offset['available'], 2),
+                    number_format($offset['required'], 2)
+                );
+            } elseif (!empty($offset['message'])) {
+                $offset_message = $offset['message'];
+            }
+            // Force rollback of receivable Drs already inserted in this transaction
+            $this->db->_trans_status = FALSE;
+            $this->db->trans_complete();
+            return array('success' => false, 'message' => $offset_message);
         }
         
         // Update loan beginning balance as posted
@@ -3252,7 +3431,7 @@ class Loan_Model extends CI_Model {
         if (!$update_result || $update_affected != 1) {
             log_message('error', 'Failed to update loan beginning balance as posted for ID: ' . $id);
             $this->db->trans_complete();
-            return false;
+            return array('success' => false, 'message' => lang('loan_beginning_balance_post_fail'));
         }
         
         $this->db->trans_complete();
@@ -3261,12 +3440,13 @@ class Loan_Model extends CI_Model {
         
         if ($transaction_status === FALSE) {
             log_message('error', 'Loan beginning balance post to ledger failed - transaction rolled back for ID: ' . $id);
-            return false;
+            return array('success' => false, 'message' => lang('loan_beginning_balance_post_fail'));
         }
         
-        log_message('info', 'Loan beginning balance ID ' . $id . ' posted to general ledger successfully with ' . $ledger_items_inserted . ' ledger entries');
+        log_message('info', 'Loan beginning balance ID ' . $id . ' posted to general ledger successfully with ' . $ledger_items_inserted . ' ledger entries'
+            . (!empty($offset['offsets']) ? (' and ' . $offset['offsets'] . ' chart BB offset(s)') : ''));
         
-        return true;
+        return array('success' => true, 'message' => lang('loan_beginning_balance_post_success'));
     }
 
     /**
@@ -3372,19 +3552,19 @@ class Loan_Model extends CI_Model {
             $total_interest = $interest_balance;
         }
 
+        // Application / opening date must come from BB disbursement_date (never "today").
+        // Without it, activate would stamp wrong dates on the loan and schedule.
+        if (empty($balance->disbursement_date) || strtotime($balance->disbursement_date) === FALSE) {
+            return array('success' => false, 'message' => lang('loan_beginning_balance_activate_need_disbursement_date'));
+        }
+        $disburse_date = $balance->disbursement_date;
+
         // First installment due date
-        $startdate = null;
         if (!empty($balance->last_date_paid) && strtotime($balance->last_date_paid) !== FALSE) {
             $startdate = date('Y-m-d', strtotime($balance->last_date_paid . ($interval == 2 ? ' +7 days' : ' +1 month')));
-        } elseif (!empty($balance->disbursement_date) && strtotime($balance->disbursement_date) !== FALSE) {
-            $startdate = date('Y-m-d', strtotime($balance->disbursement_date . ($interval == 2 ? ' +7 days' : ' +1 month')));
         } else {
-            $startdate = date('Y-m-d');
+            $startdate = date('Y-m-d', strtotime($disburse_date . ($interval == 2 ? ' +7 days' : ' +1 month')));
         }
-
-        $disburse_date = (!empty($balance->disbursement_date) && strtotime($balance->disbursement_date) !== FALSE)
-            ? $balance->disbursement_date
-            : $startdate;
 
         $purpose = trim((string) $balance->description);
         if ($purpose === '') {
@@ -3485,11 +3665,53 @@ class Loan_Model extends CI_Model {
     /**
      * Void a posted loan beginning balance with reversing GL entry.
      */
+    function loan_bb_unreversed_gl_ids($ids) {
+        $pin = current_user()->PIN;
+        $out = array();
+        if (empty($ids) || !is_array($ids)) {
+            return $out;
+        }
+        $clean = array();
+        foreach ($ids as $id) {
+            $id = (int) $id;
+            if ($id > 0) {
+                $clean[$id] = $id;
+            }
+        }
+        if (empty($clean)) {
+            return $out;
+        }
+        $in = implode(',', $clean);
+        $rows = $this->db->query(
+            "SELECT refferenceID,
+                    SUM(CASE WHEN fromtable = 'loan_beginning_balances' THEN debit - credit ELSE 0 END) AS orig_net,
+                    SUM(CASE WHEN fromtable = 'loan_beginning_balances_void' THEN debit - credit ELSE 0 END) AS void_net
+             FROM general_ledger
+             WHERE PIN = ?
+               AND fromtable IN ('loan_beginning_balances', 'loan_beginning_balances_void')
+               AND refferenceID IN (" . $in . ")
+             GROUP BY refferenceID",
+            array($pin)
+        )->result();
+        foreach ($rows as $row) {
+            $net = round(floatval($row->orig_net) + floatval($row->void_net), 2);
+            if (abs($net) >= 0.01) {
+                $out[(int) $row->refferenceID] = true;
+            }
+        }
+        return $out;
+    }
+
     function void_loan_beginning_balance($id, $reason = '') {
         $pin = current_user()->PIN;
         $id = (int) $id;
         $balance = $this->loan_beginning_balance_list(null, $id)->row();
-        if (!$balance || empty($balance->posted)) {
+        if (!$balance) {
+            return array('success' => false, 'message' => 'Loan beginning balance not found or not posted.');
+        }
+        $remaining = $this->loan_bb_unreversed_gl_ids(array($id));
+        $has_remaining_gl = !empty($remaining[$id]);
+        if (empty($balance->posted) && !$has_remaining_gl) {
             return array('success' => false, 'message' => 'Loan beginning balance not found or not posted.');
         }
         if ($this->is_loan_beginning_balance_activated($balance)) {
@@ -3500,10 +3722,25 @@ class Loan_Model extends CI_Model {
         }
         $this->load->model('finance_model');
         $this->db->trans_start();
-        $gl = $this->finance_model->void_gl_lines_with_reversal('loan_beginning_balances', $id, $reason !== '' ? $reason : 'Void loan beginning balance');
+        // Use original BB GL date so FY reports net to zero (void dated "today" leaves opening balance in prior FY).
+        $gl = $this->finance_model->void_gl_lines_with_reversal(
+            'loan_beginning_balances',
+            $id,
+            $reason !== '' ? $reason : 'Void loan beginning balance',
+            array('use_source_date' => true)
+        );
         if (empty($gl['success'])) {
             $this->db->trans_complete();
             return array('success' => false, 'message' => !empty($gl['message']) ? $gl['message'] : 'GL reverse failed.');
+        }
+        $restore = $this->finance_model->restore_chart_bb_for_loan_bb($id);
+        if (empty($restore['success'])) {
+            $this->db->_trans_status = FALSE;
+            $this->db->trans_complete();
+            return array(
+                'success' => false,
+                'message' => !empty($restore['message']) ? $restore['message'] : 'Failed to restore chart beginning balance offsets.',
+            );
         }
         $this->db->where('id', $id)->where('PIN', $pin)->update('loan_beginning_balances', array(
             'posted' => 0,
@@ -3610,6 +3847,126 @@ class Loan_Model extends CI_Model {
             )
         )->row();
         return $found ? (int) $found->id : $insert_id;
+    }
+
+    /**
+     * Whether a disbursed loan was created via Beginning Balance Activate (no cash GL).
+     */
+    function is_beginning_balance_activated_loan($loan, $release = null) {
+        if ($loan && isset($loan->evaluated) && (string) $loan->evaluated === 'BEGINNING_BALANCE') {
+            return true;
+        }
+        if ($release) {
+            if (isset($release->payment_method) && (string) $release->payment_method === 'BEGINNING_BALANCE') {
+                return true;
+            }
+            if (!empty($release->comment) && stripos($release->comment, 'Beginning Balance - Opening') !== false) {
+                return true;
+            }
+            if (!empty($release->disburse_no) && strpos((string) $release->disburse_no, 'BB-') === 0) {
+                return true;
+            }
+        }
+        if ($loan && !empty($loan->LID)) {
+            $bb = $this->get_beginning_balance_by_loan_id($loan->LID);
+            if ($bb && !empty($bb->posted) && $this->is_loan_beginning_balance_activated($bb)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Undo Activate as Loan: remove contract/schedule/disburse, clear BB.loan_id.
+     * Does not reverse BB opening GL (row stays Posted so it can be re-activated
+     * after correcting dates/terms). Use BB list Void to reverse GL if needed.
+     *
+     * @return array{success:bool,message:string,fiscal_year_id?:int}
+     */
+    function deactivate_loan_beginning_balance_activation($LID, $reason = '') {
+        $pin = current_user()->PIN;
+        $LID = trim((string) $LID);
+        $reason = trim((string) $reason);
+        if ($reason === '') {
+            $reason = 'Undo beginning balance activation';
+        }
+
+        $loan = $this->db->where('LID', $LID)->where('PIN', $pin)->get('loan_contract')->row();
+        if (!$loan || empty($loan->disburse)) {
+            return array('success' => false, 'message' => 'Loan not found or not disbursed.');
+        }
+
+        $release = $this->db->where('LID', $LID)->where('PIN', $pin)
+            ->order_by('id', 'DESC')->limit(1)
+            ->get('loan_contract_disburse')->row();
+        if (!$this->is_beginning_balance_activated_loan($loan, $release)) {
+            return array('success' => false, 'message' => 'This loan is not a beginning-balance activation.');
+        }
+
+        $has_voided_col = $this->db->query("SHOW COLUMNS FROM loan_contract_repayment LIKE 'is_voided'")->row();
+        if ($has_voided_col) {
+            $paid = $this->db->query(
+                "SELECT COUNT(*) AS cnt FROM loan_contract_repayment WHERE LID = ? AND PIN = ? AND (is_voided IS NULL OR is_voided = 0)",
+                array($LID, $pin)
+            )->row();
+        } else {
+            $paid = $this->db->query(
+                "SELECT COUNT(*) AS cnt FROM loan_contract_repayment WHERE LID = ? AND PIN = ?",
+                array($LID, $pin)
+            )->row();
+        }
+        if ($paid && intval($paid->cnt) > 0) {
+            return array('success' => false, 'message' => 'Cannot undo activation while repayments exist. Void repayments first.');
+        }
+
+        $bb = $this->get_beginning_balance_by_loan_id($LID);
+        $bb_needs_link = false;
+        if (!$bb && $loan) {
+            $this->db->where('PIN', $pin);
+            $this->db->where('member_id', $loan->member_id);
+            $this->db->where('loan_product_id', $loan->product_type);
+            $this->db->where('posted', 1);
+            $this->db->limit(1);
+            $bb = $this->db->get('loan_beginning_balances')->row();
+            $bb_needs_link = (bool) $bb;
+        }
+        $fiscal_year_id = $bb ? (int) $bb->fiscal_year_id : null;
+
+        $this->db->trans_start();
+
+        $this->db->where('LID', $LID)->where('PIN', $pin)->delete('loan_contract_repayment_schedule');
+        if ($this->db->table_exists('loan_disbursement_gl_items')) {
+            $this->db->where('LID', $LID)->where('PIN', $pin)->delete('loan_disbursement_gl_items');
+        }
+        $this->db->where('LID', $LID)->where('PIN', $pin)->delete('loan_contract_disburse');
+        if ($this->db->table_exists('loan_contract_evaluation')) {
+            $this->db->where('LID', $LID)->where('PIN', $pin)->delete('loan_contract_evaluation');
+        }
+        if ($this->db->table_exists('loan_contract_approve')) {
+            $this->db->where('LID', $LID)->where('PIN', $pin)->delete('loan_contract_approve');
+        }
+        $this->db->where('LID', $LID)->where('PIN', $pin)->delete('loan_contract');
+
+        // Keep/restore BB.loan_id so re-activate can reuse the same LID. Not-activated = loan_contract gone.
+        if ($bb) {
+            $bb_upd = array('updated_at' => date('Y-m-d H:i:s'));
+            if ($bb_needs_link || empty($bb->loan_id)) {
+                $bb_upd['loan_id'] = $LID;
+            }
+            $this->db->where('id', (int) $bb->id)->where('PIN', $pin)->update('loan_beginning_balances', $bb_upd);
+        }
+
+        $this->db->trans_complete();
+        if ($this->db->trans_status() === FALSE) {
+            return array('success' => false, 'message' => 'Failed to undo beginning balance activation.');
+        }
+
+        return array(
+            'success' => true,
+            'message' => lang('loan_beginning_balance_deactivate_success'),
+            'fiscal_year_id' => $fiscal_year_id,
+            'bb_id' => $bb ? (int) $bb->id : null,
+        );
     }
 
     /**
@@ -3771,6 +4128,11 @@ class Loan_Model extends CI_Model {
         }
         if ($paid && intval($paid->cnt) > 0) {
             return array('success' => false, 'message' => 'Cannot void disbursement while repayments exist. Void repayments first.');
+        }
+
+        // Beginning-balance activate posts no cash "Loan Disbursed" GL — undo activation instead.
+        if ($this->is_beginning_balance_activated_loan($loan, $release)) {
+            return $this->deactivate_loan_beginning_balance_activation($LID, $reason);
         }
 
         $this->load->model('finance_model');

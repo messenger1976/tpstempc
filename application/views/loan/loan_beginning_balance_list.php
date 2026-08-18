@@ -33,6 +33,41 @@
     border-radius: 6px;
     font-weight: 600;
 }
+.member-list-page .panel-head-tools {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex: 1 1 auto;
+    justify-content: flex-end;
+    min-width: 0;
+}
+.member-list-page .table-search-wrap {
+    position: relative;
+    flex: 0 1 280px;
+    max-width: 100%;
+}
+.member-list-page .table-search-wrap .fa-search {
+    position: absolute;
+    left: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #a7b1c2;
+    font-size: 13px;
+    pointer-events: none;
+}
+.member-list-page .table-search-wrap .form-control {
+    height: 34px;
+    padding-left: 34px;
+    padding-right: 12px;
+    border-radius: 6px;
+    border-color: #e5e6e7;
+    box-shadow: none;
+    font-size: 13px;
+}
+.member-list-page .table-search-wrap .form-control:focus {
+    border-color: #1ab394;
+    box-shadow: 0 0 0 2px rgba(26,179,148,0.15);
+}
 .member-list-page .filter-field.wide-select { flex: 1.4 1 220px; }
 .member-list-page .member-table > thead > tr > th,
 .member-list-page .member-table > tbody > tr > td {
@@ -47,6 +82,19 @@
 }
 .member-list-page .member-table > tbody > tr:hover td {
     box-shadow: none;
+}
+.member-list-page .member-table-panel {
+    position: relative;
+}
+.member-list-page .member-table-panel.is-loading:after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(255,255,255,0.55);
+    z-index: 5;
 }
 </style>
 
@@ -153,13 +201,19 @@ $row_count = is_array($loan_beginning_balances) ? count($loan_beginning_balances
                     <i class="fa fa-list icon-badge"></i>
                     <h4><?php echo lang('loan_beginning_balance_list'); ?></h4>
                 </div>
-                <div class="result-meta">
-                    Showing <strong><?php echo number_format($row_count); ?></strong>
-                    <?php echo $row_count === 1 ? 'record' : 'records'; ?>
+                <div class="panel-head-tools">
+                    <div class="table-search-wrap">
+                        <i class="fa fa-search"></i>
+                        <input type="text" id="bb-table-search" class="form-control" placeholder="Search member, loan ID, product..." autocomplete="off" />
+                    </div>
+                    <div class="result-meta">
+                        Showing <strong id="bb-visible-count"><?php echo number_format($row_count); ?></strong>
+                        <span id="bb-record-label"><?php echo $row_count === 1 ? 'record' : 'records'; ?></span>
+                    </div>
                 </div>
             </div>
             <div class="table-responsive">
-                <table class="table table-striped table-bordered member-table">
+                <table class="table table-striped table-bordered member-table" id="bb-balance-table">
                     <thead>
                         <tr>
                             <th style="text-align:center; width:60px;"><?php echo lang('sno'); ?></th>
@@ -170,6 +224,7 @@ $row_count = is_array($loan_beginning_balances) ? count($loan_beginning_balances
                             <th style="text-align:right;"><?php echo lang('loan_beginning_balance_loan_amount'); ?></th>
                             <th style="text-align:right;"><?php echo lang('loan_beginning_balance_monthly_amort'); ?></th>
                             <th><?php echo lang('loan_beginning_balance_term'); ?></th>
+                            <th><?php echo lang('loan_beginning_balance_disbursement_date'); ?></th>
                             <th><?php echo lang('loan_beginning_balance_last_date_paid'); ?></th>
                             <th style="text-align:right;"><?php echo lang('loan_beginning_balance_principal'); ?></th>
                             <th style="text-align:right;"><?php echo lang('loan_beginning_balance_interest'); ?></th>
@@ -180,89 +235,7 @@ $row_count = is_array($loan_beginning_balances) ? count($loan_beginning_balances
                         </tr>
                     </thead>
                     <tbody>
-                        <?php if ($row_count > 0) {
-                            $i = 1;
-                            foreach ($loan_beginning_balances as $balance) {
-                                $member_info = isset($member_names[$balance->member_id]) ? $member_names[$balance->member_id] : 'Unknown';
-                                $product_name = isset($product_info[$balance->loan_product_id]) ? $product_info[$balance->loan_product_id] : '-';
-                                $is_activated = !empty($activated_map[$balance->id]);
-                                ?>
-                                <tr>
-                                    <td style="text-align:center;"><?php echo $i++; ?></td>
-                                    <td><span class="member-id-chip"><?php echo htmlspecialchars($balance->member_id, ENT_QUOTES, 'UTF-8'); ?></span></td>
-                                    <td><?php echo htmlspecialchars($member_info, ENT_QUOTES, 'UTF-8'); ?></td>
-                                    <td><?php echo htmlspecialchars($product_name, ENT_QUOTES, 'UTF-8'); ?></td>
-                                    <td><?php echo $balance->loan_id ? htmlspecialchars($balance->loan_id, ENT_QUOTES, 'UTF-8') : '-'; ?></td>
-                                    <td class="amount-cell"><?php echo $balance->loan_amount ? number_format($balance->loan_amount, 2) : '-'; ?></td>
-                                    <td class="amount-cell"><?php echo $balance->monthly_amort ? number_format($balance->monthly_amort, 2) : '-'; ?></td>
-                                    <td><?php echo $balance->term ? htmlspecialchars($balance->term . ' months', ENT_QUOTES, 'UTF-8') : '-'; ?></td>
-                                    <td><?php echo $balance->last_date_paid ? date('d-m-Y', strtotime($balance->last_date_paid)) : '-'; ?></td>
-                                    <td class="amount-cell"><?php echo number_format($balance->principal_balance, 2); ?></td>
-                                    <td class="amount-cell"><?php echo number_format($balance->interest_balance, 2); ?></td>
-                                    <td class="amount-cell"><?php echo number_format($balance->penalty_balance, 2); ?></td>
-                                    <td class="amount-cell"><?php echo number_format($balance->total_balance, 2); ?></td>
-                                    <td>
-                                        <?php if ($is_activated) { ?>
-                                            <span class="status-pill activated"><?php echo lang('loan_beginning_balance_activated'); ?></span>
-                                            <?php if ($balance->loan_id) { ?>
-                                                <span class="status-sub">
-                                                    <a href="<?php echo site_url(current_lang() . '/loan/view_indetail/' . encode_id($balance->loan_id)); ?>">
-                                                        <?php echo htmlspecialchars($balance->loan_id, ENT_QUOTES, 'UTF-8'); ?>
-                                                    </a>
-                                                </span>
-                                            <?php } ?>
-                                        <?php } else if ((int) $balance->posted === 1) { ?>
-                                            <span class="status-pill posted"><?php echo lang('loan_beginning_balance_posted'); ?></span>
-                                            <?php if ($balance->posted_date) { ?>
-                                                <span class="status-sub"><?php echo date('M d, Y H:i', strtotime($balance->posted_date)); ?></span>
-                                            <?php } ?>
-                                        <?php } else { ?>
-                                            <span class="status-pill not-posted"><?php echo lang('loan_beginning_balance_not_posted'); ?></span>
-                                        <?php } ?>
-                                    </td>
-                                    <td>
-                                        <div class="action-btns">
-                                            <?php if ((int) $balance->posted === 0) { ?>
-                                                <a class="btn btn-primary btn-xs" href="<?php echo site_url(current_lang() . '/loan/loan_beginning_balance_create/' . encode_id($balance->id)); ?>">
-                                                    <i class="fa fa-edit"></i> <?php echo lang('button_edit'); ?>
-                                                </a>
-                                                <a href="javascript:void(0);" class="btn btn-danger btn-xs btn-delete-balance" data-id="<?php echo encode_id($balance->id); ?>" data-member="<?php echo htmlspecialchars($balance->member_id, ENT_QUOTES, 'UTF-8'); ?>">
-                                                    <i class="fa fa-trash"></i> <?php echo lang('button_delete'); ?>
-                                                </a>
-                                                <a href="javascript:void(0);" class="btn btn-success btn-xs btn-post-balance" data-id="<?php echo encode_id($balance->id); ?>" data-member="<?php echo htmlspecialchars($balance->member_id, ENT_QUOTES, 'UTF-8'); ?>">
-                                                    <i class="fa fa-check"></i> <?php echo lang('loan_beginning_balance_post'); ?>
-                                                </a>
-                                            <?php } else if ($is_activated) { ?>
-                                                <a class="btn btn-primary btn-xs" href="<?php echo site_url(current_lang() . '/loan/view_indetail/' . encode_id($balance->loan_id)); ?>">
-                                                    <i class="fa fa-folder-open"></i> <?php echo lang('loan_view_detail'); ?>
-                                                </a>
-                                                <a class="btn btn-default btn-xs" href="<?php echo site_url(current_lang() . '/loan/loan_ledger/' . encode_id($balance->loan_id)); ?>">
-                                                    <i class="fa fa-book"></i> <?php echo lang('loan_ledger'); ?>
-                                                </a>
-                                            <?php } else { ?>
-                                                <a href="javascript:void(0);" class="btn btn-info btn-xs btn-activate-balance" data-id="<?php echo encode_id($balance->id); ?>" data-member="<?php echo htmlspecialchars($balance->member_id, ENT_QUOTES, 'UTF-8'); ?>">
-                                                    <i class="fa fa-play-circle"></i> <?php echo lang('loan_beginning_balance_activate'); ?>
-                                                </a>
-                                                <?php if (has_role(5, 'void_transaction')) { ?>
-                                                <a class="btn btn-danger btn-xs" href="<?php echo site_url(current_lang() . '/loan/loan_beginning_balance_void/' . encode_id($balance->id)); ?>" onclick="return confirm('Void this loan beginning balance with a reversing GL entry?');">
-                                                    <i class="fa fa-undo"></i> Void
-                                                </a>
-                                                <?php } ?>
-                                            <?php } ?>
-                                        </div>
-                                    </td>
-                                </tr>
-                            <?php }
-                        } else { ?>
-                            <tr>
-                                <td colspan="15">
-                                    <div class="empty-state">
-                                        <i class="fa fa-list"></i>
-                                        <?php echo lang('data_not_found'); ?>
-                                    </div>
-                                </td>
-                            </tr>
-                        <?php } ?>
+                        <?php $this->load->view('loan/loan_beginning_balance_table_body'); ?>
                     </tbody>
                 </table>
             </div>
@@ -288,10 +261,152 @@ $row_count = is_array($loan_beginning_balances) ? count($loan_beginning_balances
         }
 
         $(document).ready(function() {
-            $('.btn-delete-balance').click(function() {
+            var $page = $('.member-list-page');
+            var $search = $('#bb-table-search');
+            var $count = $('#bb-visible-count');
+            var $label = $('#bb-record-label');
+            var postUrlBase = '<?php echo site_url(current_lang() . '/loan/loan_beginning_balance_post'); ?>';
+            var tableDataUrl = '<?php echo site_url(current_lang() . '/loan/loan_beginning_balance_table_data'); ?>';
+            var deleteUrlBase = '<?php echo site_url(current_lang() . '/loan/loan_beginning_balance_delete'); ?>';
+            var activateUrlBase = '<?php echo site_url(current_lang() . '/loan/loan_beginning_balance_activate'); ?>';
+            var deactivateUrlBase = '<?php echo site_url(current_lang() . '/loan/loan_beginning_balance_deactivate'); ?>';
+            var voidUrlBase = '<?php echo site_url(current_lang() . '/loan/loan_beginning_balance_void'); ?>';
+            var actionInProgress = false;
+
+            function tableRows() {
+                return $('#bb-balance-table tbody tr').filter(function() {
+                    return $(this).find('.empty-state').length === 0;
+                });
+            }
+
+            function updateVisibleCount(visible) {
+                $count.text(visible.toLocaleString());
+                $label.text(visible === 1 ? 'record' : 'records');
+            }
+
+            function applySearchFilter() {
+                var $rows = tableRows();
+                var q = $.trim($search.val()).toLowerCase();
+                if (!q) {
+                    $rows.show();
+                    updateVisibleCount($rows.length);
+                    return;
+                }
+                var visible = 0;
+                $rows.each(function() {
+                    var match = $(this).text().toLowerCase().indexOf(q) !== -1;
+                    $(this).toggle(match);
+                    if (match) {
+                        visible++;
+                    }
+                });
+                updateVisibleCount(visible);
+            }
+
+            function currentFilters() {
+                return {
+                    fiscal_year_id: $('#fiscal_year_id').val() || '',
+                    loan_product_id: $('#loan_product_id').val() || 'all'
+                };
+            }
+
+            function showPageAlert(type, message) {
+                var cls = type === 'success' ? 'success' : 'danger';
+                var $alert = $('<div class="member-alert displaymessage"></div>')
+                    .addClass(cls)
+                    .text(message || '');
+                var $existing = $page.children('.member-alert');
+                if ($existing.length) {
+                    $existing.replaceWith($alert);
+                } else {
+                    $page.prepend($alert);
+                }
+            }
+
+            function reloadBalanceTable(filters) {
+                var deferred = $.Deferred();
+                var $panel = $('.member-table-panel').first();
+                filters = filters || currentFilters();
+                if (!filters.fiscal_year_id) {
+                    deferred.resolve({ success: false, count: 0 });
+                    return deferred.promise();
+                }
+
+                $panel.addClass('is-loading');
+                $.ajax({
+                    url: tableDataUrl,
+                    type: 'GET',
+                    dataType: 'json',
+                    cache: false,
+                    data: filters
+                }).done(function(resp) {
+                    if (resp && resp.success === 'Y') {
+                        $('#bb-balance-table tbody').html(resp.html || '');
+                        applySearchFilter();
+                        deferred.resolve(resp);
+                    } else {
+                        deferred.reject(resp);
+                    }
+                }).fail(function(xhr) {
+                    deferred.reject(xhr);
+                }).always(function() {
+                    $panel.removeClass('is-loading');
+                });
+
+                return deferred.promise();
+            }
+
+            function finishAction(success, title, message) {
+                actionInProgress = false;
+                showPageAlert(success ? 'success' : 'danger', message);
+                swal(title, message, success ? 'success' : 'error');
+            }
+
+            function runRowAjax(url, progressTitle, progressText, successTitle, failTitle) {
+                if (actionInProgress) {
+                    return;
+                }
+                actionInProgress = true;
+                swal({
+                    title: progressTitle,
+                    text: progressText,
+                    type: 'info',
+                    showConfirmButton: false
+                });
+                $.ajax({
+                    url: url,
+                    type: 'POST',
+                    dataType: 'json',
+                    data: currentFilters()
+                }).done(function(json) {
+                    if (json && json.success === 'Y') {
+                        var filters = currentFilters();
+                        if (!filters.fiscal_year_id && json.fiscal_year_id) {
+                            filters.fiscal_year_id = json.fiscal_year_id;
+                            $('#fiscal_year_id').val(json.fiscal_year_id);
+                        }
+                        reloadBalanceTable(filters).always(function() {
+                            finishAction(true, successTitle, json.message);
+                        });
+                    } else {
+                        var failMsg = (json && json.message) ? json.message : failTitle;
+                        finishAction(false, failTitle, failMsg);
+                    }
+                }).fail(function() {
+                    finishAction(false, failTitle, failTitle);
+                });
+            }
+
+            $search.on('keyup input', applySearchFilter);
+
+            $page.off('click.bbActions');
+
+            $page.on('click.bbActions', '.btn-delete-balance', function() {
                 var balanceId = $(this).data('id');
                 var member = $(this).data('member');
-                var deleteUrl = '<?php echo site_url(current_lang() . '/loan/loan_beginning_balance_delete/'); ?>/' + balanceId;
+                if (actionInProgress || !balanceId) {
+                    return;
+                }
 
                 swal({
                     title: "<?php echo lang('are_you_sure'); ?>",
@@ -304,16 +419,25 @@ $row_count = is_array($loan_beginning_balances) ? count($loan_beginning_balances
                     closeOnConfirm: false,
                     closeOnCancel: true
                 }, function(isConfirm) {
-                    if (isConfirm) {
-                        window.location.href = deleteUrl;
+                    if (!isConfirm) {
+                        return;
                     }
+                    runRowAjax(
+                        deleteUrlBase + '/' + balanceId,
+                        "<?php echo lang('button_delete'); ?>",
+                        "<?php echo lang('loan_beginning_balance_deleting'); ?>",
+                        "<?php echo lang('loan_beginning_balance_deleted'); ?>",
+                        "<?php echo lang('loan_beginning_balance_delete_fail'); ?>"
+                    );
                 });
             });
 
-            $('.btn-post-balance').click(function() {
+            $page.on('click.bbActions', '.btn-post-balance', function() {
                 var balanceId = $(this).data('id');
                 var member = $(this).data('member');
-                var postUrl = '<?php echo site_url(current_lang() . '/loan/loan_beginning_balance_post/'); ?>/' + balanceId;
+                if (actionInProgress || !balanceId) {
+                    return;
+                }
 
                 swal({
                     title: "<?php echo lang('are_you_sure'); ?>",
@@ -326,16 +450,25 @@ $row_count = is_array($loan_beginning_balances) ? count($loan_beginning_balances
                     closeOnConfirm: false,
                     closeOnCancel: true
                 }, function(isConfirm) {
-                    if (isConfirm) {
-                        window.location.href = postUrl;
+                    if (!isConfirm) {
+                        return;
                     }
+                    runRowAjax(
+                        postUrlBase + '/' + balanceId,
+                        "<?php echo lang('loan_beginning_balance_post'); ?>",
+                        "<?php echo lang('loan_beginning_balance_posting'); ?>",
+                        "<?php echo lang('loan_beginning_balance_posted'); ?>",
+                        "<?php echo lang('loan_beginning_balance_post_fail'); ?>"
+                    );
                 });
             });
 
-            $('.btn-activate-balance').click(function() {
+            $page.on('click.bbActions', '.btn-activate-balance', function() {
                 var balanceId = $(this).data('id');
                 var member = $(this).data('member');
-                var activateUrl = '<?php echo site_url(current_lang() . '/loan/loan_beginning_balance_activate/'); ?>/' + balanceId;
+                if (actionInProgress || !balanceId) {
+                    return;
+                }
 
                 swal({
                     title: "<?php echo lang('are_you_sure'); ?>",
@@ -348,9 +481,78 @@ $row_count = is_array($loan_beginning_balances) ? count($loan_beginning_balances
                     closeOnConfirm: false,
                     closeOnCancel: true
                 }, function(isConfirm) {
-                    if (isConfirm) {
-                        window.location.href = activateUrl;
+                    if (!isConfirm) {
+                        return;
                     }
+                    runRowAjax(
+                        activateUrlBase + '/' + balanceId,
+                        "<?php echo lang('loan_beginning_balance_activate'); ?>",
+                        "<?php echo lang('loan_beginning_balance_activating'); ?>",
+                        "<?php echo lang('loan_beginning_balance_activated'); ?>",
+                        "<?php echo lang('loan_beginning_balance_activate_fail'); ?>"
+                    );
+                });
+            });
+
+            $page.on('click.bbActions', '.btn-void-balance', function() {
+                var balanceId = $(this).data('id');
+                var member = $(this).data('member');
+                if (actionInProgress || !balanceId) {
+                    return;
+                }
+
+                swal({
+                    title: "<?php echo lang('are_you_sure'); ?>",
+                    text: "<?php echo lang('loan_beginning_balance_void_confirm'); ?>" + (member ? " (Member: " + member + ")" : ""),
+                    type: "warning",
+                    showCancelButton: true,
+                    confirmButtonColor: "#d9534f",
+                    confirmButtonText: "Void",
+                    cancelButtonText: "<?php echo lang('cancel'); ?>",
+                    closeOnConfirm: false,
+                    closeOnCancel: true
+                }, function(isConfirm) {
+                    if (!isConfirm) {
+                        return;
+                    }
+                    runRowAjax(
+                        voidUrlBase + '/' + balanceId,
+                        "Void",
+                        "<?php echo lang('loan_beginning_balance_voiding'); ?>",
+                        "Void",
+                        "<?php echo lang('loan_beginning_balance_void_fail'); ?>"
+                    );
+                });
+            });
+
+            $page.on('click.bbActions', '.btn-deactivate-balance', function() {
+                var balanceId = $(this).data('id');
+                var member = $(this).data('member');
+                if (actionInProgress || !balanceId) {
+                    return;
+                }
+
+                swal({
+                    title: "<?php echo lang('are_you_sure'); ?>",
+                    text: "<?php echo lang('loan_void_bb_activation_confirm'); ?>" + (member ? " (Member: " + member + ")" : ""),
+                    type: "warning",
+                    showCancelButton: true,
+                    confirmButtonColor: "#d9534f",
+                    confirmButtonText: "<?php echo lang('loan_void_bb_activation'); ?>",
+                    cancelButtonText: "<?php echo lang('cancel'); ?>",
+                    closeOnConfirm: false,
+                    closeOnCancel: true
+                }, function(isConfirm) {
+                    if (!isConfirm) {
+                        return;
+                    }
+                    runRowAjax(
+                        deactivateUrlBase + '/' + balanceId,
+                        "<?php echo lang('loan_void_bb_activation'); ?>",
+                        "<?php echo lang('loan_beginning_balance_deactivating'); ?>",
+                        "<?php echo lang('loan_void_bb_activation'); ?>",
+                        "<?php echo lang('loan_beginning_balance_deactivate_fail'); ?>"
+                    );
                 });
             });
         });

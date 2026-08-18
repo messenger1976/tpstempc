@@ -428,6 +428,204 @@ class Report extends CI_Controller {
         $this->export_to_pdf($html, 'Trial_balance', $reportinfo->page ? $reportinfo->page : 'A4', false);
     }
 
+    /**
+     * Export Trial Balance to Excel (same layout/totals as ledger_trial_balance_view).
+     */
+    function ledger_trial_balance_export($link, $id) {
+        if (!is_null($id)) {
+            $id = decode_id($id);
+        }
+        $reportinfo = $this->report_model->report_list($id)->row();
+        if (!$reportinfo) {
+            $this->session->set_flashdata('error', 'Report not found.');
+            redirect(current_lang() . '/report/general_leger_transaction/' . $link);
+            return;
+        }
+
+        $transaction = $this->report_model->create_ledger_trans_summary($reportinfo->fromdate, $reportinfo->todate);
+        $total_credit = 0;
+        $total_debit = 0;
+        $net_prfit_credit = 0;
+        $net_prfit_debit = 0;
+        $check_exp_inc = 0;
+        $as_at = !empty($reportinfo->todate) ? strtoupper(date('F d, Y', strtotime($reportinfo->todate))) : '';
+
+        if (ob_get_level()) {
+            ob_end_clean();
+        }
+        while (@ob_end_clean());
+        $this->load->library('excel');
+        $objPHPExcel = new PHPExcel();
+        $objPHPExcel->getProperties()->setCreator(company_info()->name)
+            ->setTitle('Trial Balance')
+            ->setSubject('Trial Balance');
+        $sheet = $objPHPExcel->setActiveSheetIndex(0);
+        $sheet->setTitle('Trial Balance');
+
+        $row = 1;
+        $sheet->setCellValue('A' . $row, company_info()->name);
+        $sheet->getStyle('A' . $row)->getFont()->setBold(true);
+        $row++;
+        $sheet->setCellValue('A' . $row, 'TRIAL BALANCE');
+        $sheet->getStyle('A' . $row)->getFont()->setBold(true);
+        $row++;
+        $sheet->setCellValue('A' . $row, 'As at ' . $as_at);
+        $row += 2;
+
+        $header_row = $row;
+        $sheet->setCellValue('A' . $row, '');
+        $sheet->setCellValue('B' . $row, 'Debit');
+        $sheet->setCellValue('C' . $row, 'Credit');
+        $sheet->getStyle('A' . $row . ':C' . $row)->getFont()->setBold(true);
+        $sheet->getStyle('A' . $row . ':C' . $row)->getFill()->setFillType(PHPExcel_Style_Fill::FILL_SOLID);
+        $sheet->getStyle('A' . $row . ':C' . $row)->getFill()->getStartColor()->setRGB('E0E0E0');
+        $row++;
+        $data_start = $row;
+
+        if (array_key_exists(4, $transaction)) {
+            $check_exp_inc = 1;
+            $sheet->setCellValue('A' . $row, 'Income');
+            $sheet->getStyle('A' . $row)->getFont()->setBold(true);
+            $row++;
+            foreach ($transaction[4] as $key1 => $value1) {
+                $account_info = $this->finance_model->account_chart(null, $key1)->row();
+                if (!$account_info) {
+                    continue;
+                }
+                $debit = 0;
+                $credit = 0;
+                if (!empty($value1['current']) && is_object($value1['current'])) {
+                    $debit = floatval($value1['current']->debit);
+                    $credit = floatval($value1['current']->credit);
+                    $net_prfit_debit += $debit;
+                    $net_prfit_credit += $credit;
+                    $total_debit += $debit;
+                    $total_credit += $credit;
+                }
+                $sheet->setCellValue('A' . $row, $account_info->name);
+                if ($debit > 0) {
+                    $sheet->setCellValue('B' . $row, $debit);
+                }
+                if ($credit > 0) {
+                    $sheet->setCellValue('C' . $row, $credit);
+                }
+                $row++;
+            }
+            unset($transaction[4]);
+        }
+
+        if (array_key_exists(5, $transaction)) {
+            $check_exp_inc = 1;
+            $sheet->setCellValue('A' . $row, 'Expenses');
+            $sheet->getStyle('A' . $row)->getFont()->setBold(true);
+            $row++;
+            foreach ($transaction[5] as $key1 => $value1) {
+                $account_info = $this->finance_model->account_chart(null, $key1)->row();
+                if (!$account_info) {
+                    continue;
+                }
+                $debit = 0;
+                $credit = 0;
+                if (!empty($value1['current']) && is_object($value1['current'])) {
+                    $debit = floatval($value1['current']->debit);
+                    $credit = floatval($value1['current']->credit);
+                    $net_prfit_debit += $debit;
+                    $net_prfit_credit += $credit;
+                    $total_debit += $debit;
+                    $total_credit += $credit;
+                }
+                $sheet->setCellValue('A' . $row, $account_info->name);
+                if ($debit > 0) {
+                    $sheet->setCellValue('B' . $row, $debit);
+                }
+                if ($credit > 0) {
+                    $sheet->setCellValue('C' . $row, $credit);
+                }
+                $row++;
+            }
+            unset($transaction[5]);
+        }
+
+        $close_balance = $net_prfit_debit - $net_prfit_credit;
+        $balance_credit = 0;
+        $balance_debit = 0;
+        if ($close_balance > 0) {
+            $balance_credit += $close_balance;
+            $total_credit += $close_balance;
+        } else if ($close_balance < 0) {
+            $balance_debit += (-1 * $close_balance);
+            $total_debit += (-1 * $close_balance);
+        }
+        if ($check_exp_inc == 1) {
+            $row++;
+        }
+
+        $sheet->setCellValue('A' . $row, 'Net Surplus (Loss)');
+        $sheet->setCellValue('B' . $row, $balance_debit);
+        $sheet->setCellValue('C' . $row, $balance_credit);
+        $sheet->getStyle('A' . $row . ':C' . $row)->getFont()->setBold(true);
+        $row += 2;
+
+        foreach ($transaction as $key => $value) {
+            $type_account = $this->finance_model->account_typelist($key)->row();
+            if (!$type_account) {
+                continue;
+            }
+            $sheet->setCellValue('A' . $row, $type_account->name);
+            $sheet->getStyle('A' . $row)->getFont()->setBold(true);
+            $row++;
+            foreach ($value as $key1 => $value1) {
+                $account_info = $this->finance_model->account_chart(null, $key1)->row();
+                if (!$account_info) {
+                    continue;
+                }
+                $sub_credit = 0;
+                $sub_debit = 0;
+                $open_balance = isset($value1['balance']) ? floatval($value1['balance']) : 0;
+                if ($open_balance > 0) {
+                    $sub_debit += $open_balance;
+                    $total_debit += $open_balance;
+                } else if ($open_balance < 0) {
+                    $sub_credit += (-1 * $open_balance);
+                    $total_credit += (-1 * $open_balance);
+                }
+                if (!empty($value1['current']) && is_object($value1['current'])) {
+                    $sub_credit += floatval($value1['current']->credit);
+                    $sub_debit += floatval($value1['current']->debit);
+                    $total_debit += floatval($value1['current']->debit);
+                    $total_credit += floatval($value1['current']->credit);
+                }
+                $sheet->setCellValue('A' . $row, $account_info->name);
+                if ($sub_debit > 0) {
+                    $sheet->setCellValue('B' . $row, $sub_debit);
+                }
+                if ($sub_credit > 0) {
+                    $sheet->setCellValue('C' . $row, $sub_credit);
+                }
+                $row++;
+            }
+        }
+
+        $sheet->setCellValue('A' . $row, 'Totals');
+        $sheet->setCellValue('B' . $row, $total_debit);
+        $sheet->setCellValue('C' . $row, $total_credit);
+        $sheet->getStyle('A' . $row . ':C' . $row)->getFont()->setBold(true);
+
+        $sheet->getStyle('B' . $data_start . ':C' . $row)->getNumberFormat()->setFormatCode('#,##0.00');
+        $sheet->getStyle('B' . $header_row . ':C' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_RIGHT);
+        foreach (range('A', 'C') as $c) {
+            $sheet->getColumnDimension($c)->setAutoSize(true);
+        }
+
+        $filename = 'Trial_Balance_' . date('Y-m-d_His') . '.xls';
+        header('Content-Type: application/vnd.ms-excel');
+        header('Content-Disposition: attachment;filename="' . $filename . '"');
+        header('Cache-Control: max-age=0');
+        $objWriter = PHPExcel_IOFactory::createWriter($objPHPExcel, 'Excel5');
+        $objWriter->save('php://output');
+        exit;
+    }
+
     function ledger_trans_print($link, $id) {
 
         $this->data['link_cat'] = $link;

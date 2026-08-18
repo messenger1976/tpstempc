@@ -583,10 +583,20 @@ $account_type_filter = isset($account_type_filter) && $account_type_filter !== '
                                                     <i class="fa fa-check-circle"></i> VOIDED
                                                 </span>
                                             <?php } else { ?>
-                                                <a href="<?php echo site_url(current_lang() . '/saving/void_transaction/' . $value->receipt); ?>" class="btn btn-danger btn-xs void-transaction" data-receipt="<?php echo htmlspecialchars($value->receipt, ENT_QUOTES, 'UTF-8'); ?>" title="<?php echo lang('saving_void_transaction'); ?>">
+                                                <a href="<?php echo site_url(current_lang() . '/saving/void_transaction/' . $value->receipt); ?>" class="btn btn-danger btn-xs void-transaction" data-receipt="<?php echo htmlspecialchars($value->receipt, ENT_QUOTES, 'UTF-8'); ?>" data-trans-date="<?php echo (!empty($value->trans_date) ? htmlspecialchars(date('Y-m-d', strtotime($value->trans_date)), ENT_QUOTES, 'UTF-8') : ''); ?>" title="<?php echo lang('saving_void_transaction'); ?>">
                                                     <i class="fa fa-ban"></i> <?php echo lang('void_link'); ?>
                                                 </a>
                                             <?php } ?>
+                                        <?php } ?>
+                                        <?php if (has_role(3, 'void_transaction') && !empty($value->is_void_entry)) { ?>
+                                            <a href="<?php echo site_url(current_lang() . '/saving/edit_void_date/' . $value->receipt); ?>"
+                                               class="btn btn-warning btn-xs edit-void-date"
+                                               data-receipt="<?php echo htmlspecialchars($value->receipt, ENT_QUOTES, 'UTF-8'); ?>"
+                                               data-current-date="<?php echo (!empty($value->trans_date) ? htmlspecialchars(date('Y-m-d', strtotime($value->trans_date)), ENT_QUOTES, 'UTF-8') : ''); ?>"
+                                               data-orig-date="<?php echo (!empty($value->original_trans_date) ? htmlspecialchars($value->original_trans_date, ENT_QUOTES, 'UTF-8') : ''); ?>"
+                                               title="<?php echo lang('saving_edit_void_date'); ?>">
+                                                <i class="fa fa-calendar"></i> <?php echo lang('saving_edit_void_date'); ?>
+                                            </a>
                                         <?php } ?>
                                     </div>
                                 </td>
@@ -776,26 +786,135 @@ $account_type_filter = isset($account_type_filter) && $account_type_filter !== '
                 e.preventDefault();
                 var voidUrl = $(this).attr('href');
                 var receipt = $(this).data('receipt');
+                var transDate = $(this).attr('data-trans-date') || '';
+                var today = (function() {
+                    var d = new Date();
+                    var m = ('0' + (d.getMonth() + 1)).slice(-2);
+                    var day = ('0' + d.getDate()).slice(-2);
+                    return d.getFullYear() + '-' + m + '-' + day;
+                })();
                 var warning = <?php echo json_encode(lang('saving_void_transaction_warning')); ?>;
+                var dateHelp = <?php echo json_encode(lang('saving_void_date_help')); ?>;
+                var dateLabel = <?php echo json_encode(lang('saving_void_date')); ?>;
+                var dateRequired = <?php echo json_encode(lang('saving_void_date_required')); ?>;
+                var transDateLabel = <?php echo json_encode(lang('saving_void_trans_date_label')); ?>;
+                var promptText = warning + (receipt ? ' (#' + receipt + ')' : '');
+                if (transDate) {
+                    promptText += '\n\n' + transDateLabel + ': ' + transDate;
+                }
+                promptText += '\n\n' + dateHelp;
+
+                function submitVoid(voidDate) {
+                    var form = document.createElement('form');
+                    form.method = 'POST';
+                    form.action = voidUrl;
+                    var dateField = document.createElement('input');
+                    dateField.type = 'hidden';
+                    dateField.name = 'void_date';
+                    dateField.value = voidDate;
+                    form.appendChild(dateField);
+                    document.body.appendChild(form);
+                    form.submit();
+                }
+
                 if (typeof swal !== 'function') {
-                    if (window.confirm(warning)) {
-                        window.location.href = voidUrl;
+                    var chosen = window.prompt(promptText + '\n\n' + dateLabel + ' (YYYY-MM-DD):', today);
+                    if (chosen !== null && String(chosen).trim() !== '') {
+                        submitVoid(String(chosen).trim());
                     }
                     return;
                 }
                 swal({
                     title: <?php echo json_encode(lang('saving_void_transaction')); ?>,
-                    text: warning + (receipt ? ' (#' + receipt + ')' : ''),
-                    type: "warning",
+                    text: promptText,
+                    type: "input",
+                    inputType: "date",
+                    inputValue: today,
+                    inputPlaceholder: dateLabel,
                     showCancelButton: true,
                     confirmButtonColor: "#DD6B55",
                     confirmButtonText: "Yes, void it!",
                     cancelButtonText: "Cancel",
                     closeOnConfirm: false
-                }, function(isConfirm) {
-                    if (isConfirm) {
-                        window.location.href = voidUrl;
+                }, function(inputValue) {
+                    if (inputValue === false) {
+                        return false;
                     }
+                    if (!inputValue || String(inputValue).trim() === '') {
+                        swal.showInputError(dateRequired);
+                        return false;
+                    }
+                    submitVoid(String(inputValue).trim());
+                });
+            });
+
+            $(document).on('click', '.edit-void-date', function(e) {
+                e.preventDefault();
+                var editUrl = $(this).attr('href');
+                var receipt = $(this).data('receipt');
+                var currentDate = $(this).attr('data-current-date') || '';
+                var origDate = $(this).attr('data-orig-date') || '';
+                var today = (function() {
+                    var d = new Date();
+                    var m = ('0' + (d.getMonth() + 1)).slice(-2);
+                    var day = ('0' + d.getDate()).slice(-2);
+                    return d.getFullYear() + '-' + m + '-' + day;
+                })();
+                var defaultDate = currentDate || today;
+                var help = <?php echo json_encode(lang('saving_edit_void_date_help')); ?>;
+                var dateLabel = <?php echo json_encode(lang('saving_void_date')); ?>;
+                var dateRequired = <?php echo json_encode(lang('saving_void_date_required')); ?>;
+                var transDateLabel = <?php echo json_encode(lang('saving_void_trans_date_label')); ?>;
+                var currentLabel = <?php echo json_encode(lang('saving_current_void_date')); ?>;
+                var promptText = help + (receipt ? ' (#' + receipt + ')' : '');
+                if (currentDate) {
+                    promptText += '\n\n' + currentLabel + ': ' + currentDate;
+                }
+                if (origDate) {
+                    promptText += '\n' + transDateLabel + ': ' + origDate;
+                }
+
+                function submitEditDate(voidDate) {
+                    var form = document.createElement('form');
+                    form.method = 'POST';
+                    form.action = editUrl;
+                    var dateField = document.createElement('input');
+                    dateField.type = 'hidden';
+                    dateField.name = 'void_date';
+                    dateField.value = voidDate;
+                    form.appendChild(dateField);
+                    document.body.appendChild(form);
+                    form.submit();
+                }
+
+                if (typeof swal !== 'function') {
+                    var chosen = window.prompt(promptText + '\n\n' + dateLabel + ' (YYYY-MM-DD):', defaultDate);
+                    if (chosen !== null && String(chosen).trim() !== '') {
+                        submitEditDate(String(chosen).trim());
+                    }
+                    return;
+                }
+                swal({
+                    title: <?php echo json_encode(lang('saving_edit_void_date')); ?>,
+                    text: promptText,
+                    type: "input",
+                    inputType: "date",
+                    inputValue: defaultDate,
+                    inputPlaceholder: dateLabel,
+                    showCancelButton: true,
+                    confirmButtonColor: "#f8ac59",
+                    confirmButtonText: "Save date",
+                    cancelButtonText: "Cancel",
+                    closeOnConfirm: false
+                }, function(inputValue) {
+                    if (inputValue === false) {
+                        return false;
+                    }
+                    if (!inputValue || String(inputValue).trim() === '') {
+                        swal.showInputError(dateRequired);
+                        return false;
+                    }
+                    submitEditDate(String(inputValue).trim());
                 });
             });
 

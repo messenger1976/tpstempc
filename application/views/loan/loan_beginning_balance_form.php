@@ -4,23 +4,36 @@ $balance = isset($balance) ? $balance : null;
 $encoded_id = isset($encoded_id) ? $encoded_id : '';
 $fiscal_years = isset($fiscal_years) ? $fiscal_years : array();
 $loan_products = isset($loan_products) ? $loan_products : array();
+$posted_unlocked = !empty($posted_unlocked);
 $is_edit = !empty($balance);
 $form_action = current_lang() . '/loan/loan_beginning_balance_create' . ($encoded_id !== '' ? '/' . $encoded_id : '');
 
-$member_id_value = $is_edit ? $balance->member_id : set_value('member_id');
-$fiscal_year_value = $is_edit ? $balance->fiscal_year_id : set_value('fiscal_year_id');
-$product_value = $is_edit ? $balance->loan_product_id : set_value('loan_product_id');
-$loan_id_value = $is_edit ? $balance->loan_id : set_value('loan_id');
-$principal_value = $is_edit ? number_format($balance->principal_balance, 2) : set_value('principal_balance', '0.00');
-$interest_value = $is_edit ? number_format($balance->interest_balance, 2) : set_value('interest_balance', '0.00');
-$penalty_value = $is_edit ? number_format($balance->penalty_balance, 2) : set_value('penalty_balance', '0.00');
-$total_value = $is_edit ? number_format($balance->total_balance, 2) : '0.00';
-$disbursement_value = ($is_edit && $balance->disbursement_date) ? date('d-m-Y', strtotime($balance->disbursement_date)) : set_value('disbursement_date');
-$loan_amount_value = ($is_edit && $balance->loan_amount) ? number_format($balance->loan_amount, 2) : set_value('loan_amount', '');
-$monthly_amort_value = ($is_edit && $balance->monthly_amort) ? number_format($balance->monthly_amort, 2) : set_value('monthly_amort', '');
-$last_date_paid_value = ($is_edit && $balance->last_date_paid) ? date('d-m-Y', strtotime($balance->last_date_paid)) : set_value('last_date_paid');
-$term_value = $is_edit ? $balance->term : set_value('term', '');
-$description_value = $is_edit ? $balance->description : set_value('description');
+$member_id_value = set_value('member_id', $is_edit ? $balance->member_id : '');
+$fiscal_year_value = set_value('fiscal_year_id', $is_edit ? $balance->fiscal_year_id : '');
+$product_value = set_value('loan_product_id', $is_edit ? $balance->loan_product_id : '');
+$loan_id_value = set_value('loan_id', $is_edit ? $balance->loan_id : '');
+$principal_value = set_value('principal_balance', $is_edit ? number_format((float) $balance->principal_balance, 2, '.', '') : '0.00');
+$interest_value = set_value('interest_balance', $is_edit ? number_format((float) $balance->interest_balance, 2, '.', '') : '0.00');
+$penalty_value = set_value('penalty_balance', $is_edit ? number_format((float) $balance->penalty_balance, 2, '.', '') : '0.00');
+$total_value = $is_edit
+    ? number_format((float) $balance->principal_balance + (float) $balance->interest_balance + (float) $balance->penalty_balance, 2, '.', '')
+    : '0.00';
+if ($this->input->post('principal_balance') !== FALSE) {
+    $total_value = number_format(
+        (float) str_replace(',', '', (string) set_value('principal_balance', 0))
+        + (float) str_replace(',', '', (string) set_value('interest_balance', 0))
+        + (float) str_replace(',', '', (string) set_value('penalty_balance', 0)),
+        2,
+        '.',
+        ''
+    );
+}
+$disbursement_value = set_value('disbursement_date', ($is_edit && $balance->disbursement_date) ? date('d-m-Y', strtotime($balance->disbursement_date)) : '');
+$loan_amount_value = set_value('loan_amount', ($is_edit && $balance->loan_amount) ? number_format((float) $balance->loan_amount, 2, '.', '') : '');
+$monthly_amort_value = set_value('monthly_amort', ($is_edit && $balance->monthly_amort) ? number_format((float) $balance->monthly_amort, 2, '.', '') : '');
+$last_date_paid_value = set_value('last_date_paid', ($is_edit && $balance->last_date_paid) ? date('d-m-Y', strtotime($balance->last_date_paid)) : '');
+$term_value = set_value('term', $is_edit ? $balance->term : '');
+$description_value = set_value('description', $is_edit ? $balance->description : '');
 $list_url = site_url(current_lang() . '/loan/loan_beginning_balance_list' . ($is_edit && !empty($balance->fiscal_year_id) ? '?fiscal_year_id=' . (int) $balance->fiscal_year_id : ''));
 ?>
 
@@ -347,6 +360,9 @@ $list_url = site_url(current_lang() . '/loan/loan_beginning_balance_list' . ($is
     } else if ($this->session->flashdata('warning') != '') {
         echo '<div class="cbu-alert danger displaymessage">' . $this->session->flashdata('warning') . '</div>';
     }
+    if (validation_errors()) {
+        echo '<div class="cbu-alert danger displaymessage">' . validation_errors() . '</div>';
+    }
     ?>
 
     <div class="row">
@@ -362,6 +378,12 @@ $list_url = site_url(current_lang() . '/loan/loan_beginning_balance_list' . ($is
                     </a>
                 </div>
                 <div class="panel-body">
+                    <?php if ($posted_unlocked) { ?>
+                        <div class="cbu-alert" style="background:#fff8e6;color:#8a6d3b;border:1px solid #faebcc;margin-bottom:16px;">
+                            <?php echo lang('loan_beginning_balance_edit_posted_hint'); ?>
+                        </div>
+                    <?php } ?>
+
                     <div class="section-divider">
                         <i class="fa fa-user"></i>Member &amp; Product
                     </div>

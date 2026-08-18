@@ -1,7 +1,8 @@
 <?php
 /**
  * Add Journal Entry List permissions to Module 6 (Finance)
- * Run once: http://your-domain/add_journal_entry_list_permissions.php
+ * Local/dev only. Production: run sql/add_journal_entry_list_permissions.sql in phpMyAdmin.
+ * This PHP script enables the new roles for EVERY group (allow=1). Do not run it on production.
  * SECURITY: Delete or restrict access after use!
  */
 
@@ -76,9 +77,7 @@ foreach ($permissions as $permission_name) {
 }
 
 echo "<div class='section'>";
-echo "<h3>Manual SQL (if needed)</h3>";
-echo "<pre>INSERT INTO access_level (group_id, Module, link, allow) VALUES (1, 6, 'View_journal_entry', 1);\n";
-echo "INSERT INTO access_level (group_id, Module, link, allow) VALUES (1, 6, 'Edit_journal_entry', 1);\n";
-echo "INSERT INTO access_level (group_id, Module, link, allow) VALUES (1, 6, 'Delete_journal_entry', 1);</pre>";
+echo "<h3>Production</h3>";
+echo "<p>Do not use this PHP script on production. Run <code>sql/add_journal_entry_list_permissions.sql</code> in phpMyAdmin instead (View/Edit only for groups that already have Journal_entry; Delete defaults off; all other groups seeded allow=0).</p>";
 echo "<p>Existing <strong>Journal_entry</strong> permission is still used for creating entries via Finance → Journal Entry. Users with <strong>Journal_entry</strong> can also edit drafts until <strong>Edit_journal_entry</strong> is assigned.</p>";
 echo "</div>";

@@ -1734,16 +1734,6 @@ class Finance_Model extends CI_Model {
             $void_ref = 'E' . (int) $filters['entryid'];
         }
 
-        $already = $this->db->query(
-            "SELECT id FROM general_ledger
-             WHERE PIN = ? AND fromtable = ? AND refferenceID = ? AND description LIKE 'VOID:%'
-             LIMIT 1",
-            array($pin, $void_from, $void_ref)
-        )->row();
-        if ($already) {
-            return array('success' => false, 'message' => 'This GL posting has already been voided.');
-        }
-
         $sql = "SELECT * FROM general_ledger WHERE PIN = ? AND fromtable = ?";
         $params = array($pin, $from_table);
         if ($reference_id !== '' && $reference_id !== null && empty($filters['ignore_refferenceID'])) {
@@ -1773,7 +1763,54 @@ class Finance_Model extends CI_Model {
             return array('success' => false, 'message' => 'No GL lines found to reverse.');
         }
 
+        $void_sql = "SELECT account, SUM(debit) AS debit, SUM(credit) AS credit
+                     FROM general_ledger
+                     WHERE PIN = ? AND fromtable = ? AND refferenceID = ?
+                     GROUP BY account";
+        $void_rows = $this->db->query($void_sql, array($pin, $void_from, $void_ref))->result();
+        $void_net = array();
+        foreach ($void_rows as $vr) {
+            $acct = (string) $vr->account;
+            $void_net[$acct] = round(floatval($vr->debit) - floatval($vr->credit), 2);
+        }
+
+        $orig_net = array();
+        $template = array();
+        foreach ($lines as $line) {
+            $acct = (string) $line->account;
+            if (!isset($orig_net[$acct])) {
+                $orig_net[$acct] = 0.0;
+                $template[$acct] = $line;
+            }
+            $orig_net[$acct] = round($orig_net[$acct] + floatval($line->debit) - floatval($line->credit), 2);
+        }
+
+        $remaining = array();
+        foreach ($orig_net as $acct => $net) {
+            $prior = isset($void_net[$acct]) ? $void_net[$acct] : 0.0;
+            $left = round($net + $prior, 2);
+            if (abs($left) >= 0.01) {
+                $remaining[$acct] = $left;
+            }
+        }
+        if (empty($remaining)) {
+            return array('success' => false, 'message' => 'This GL posting has already been voided.');
+        }
+
+        // Default: today. Pass filters['void_date'] or filters['use_source_date']=true
+        // so reversing lines land in the same reporting period as the original (critical for BB).
         $void_date = date('Y-m-d');
+        if (!empty($filters['void_date'])) {
+            $void_ts = strtotime(trim((string) $filters['void_date']));
+            if ($void_ts !== false) {
+                $void_date = date('Y-m-d', $void_ts);
+            }
+        } elseif (!empty($filters['use_source_date']) && !empty($lines[0]->date)) {
+            $src_ts = strtotime($lines[0]->date);
+            if ($src_ts !== false) {
+                $void_date = date('Y-m-d', $src_ts);
+            }
+        }
         $this->db->insert('general_ledger_entry', array('date' => $void_date, 'PIN' => $pin));
         $ledger_entry_id = $this->db->insert_id();
         if (!$ledger_entry_id) {
@@ -1782,12 +1819,10 @@ class Finance_Model extends CI_Model {
 
         $label = $from_table . ' #' . ($reference_id !== '' && $reference_id !== null ? $reference_id : $void_ref);
         $inserted = 0;
-        foreach ($lines as $line) {
-            $debit = floatval($line->debit);
-            $credit = floatval($line->credit);
-            if ($debit <= 0 && $credit <= 0) {
-                continue;
-            }
+        foreach ($remaining as $acct => $left) {
+            $line = $template[$acct];
+            $debit = $left < 0 ? abs($left) : 0;
+            $credit = $left > 0 ? $left : 0;
             $row = array(
                 'journalID' => isset($line->journalID) ? $line->journalID : 5,
                 'refferenceID' => $void_ref,
@@ -1796,9 +1831,9 @@ class Finance_Model extends CI_Model {
                 'linkto' => isset($line->linkto) ? $line->linkto : ($from_table . '.id'),
                 'fromtable' => $void_from,
                 'PIN' => $pin,
-                'account' => $line->account,
-                'debit' => $credit > 0 ? $credit : 0,
-                'credit' => $debit > 0 ? $debit : 0,
+                'account' => $acct,
+                'debit' => $debit,
+                'credit' => $credit,
                 'description' => 'VOID: ' . $label . ($reason !== '' ? (' — ' . $reason) : ''),
                 'account_type' => isset($line->account_type) ? $line->account_type : null,
                 'sub_account_type' => isset($line->sub_account_type) ? $line->sub_account_type : null,
@@ -3514,7 +3549,84 @@ $pin=current_user()->PIN;
         return null;
     }
 
-    function void_savings_deposit_withdrawal_transaction($receipt, $reason = '') {
+    /**
+     * Correct the transaction date on an existing savings void reversing entry
+     * and sync matching GL line / header dates.
+     *
+     * @param string $receipt Void reversing receipt (e.g. SV00002763)
+     * @param string $new_date Date in any strtotime-parseable form
+     * @return array
+     */
+    function update_savings_void_entry_date($receipt, $new_date) {
+        $pin = current_user()->PIN;
+        $receipt = trim((string) $receipt);
+
+        if ($receipt === '') {
+            return array('success' => false, 'message' => 'Invalid receipt');
+        }
+
+        $void_ts = strtotime(trim((string) $new_date));
+        if ($void_ts === false) {
+            return array('success' => false, 'message' => 'Invalid void date');
+        }
+        $void_trans_date = date('Y-m-d', $void_ts);
+
+        $this->db->where('receipt', $receipt);
+        $this->db->where('PIN', $pin);
+        $trans = $this->db->get('savings_transaction')->row();
+        if (!$trans) {
+            return array('success' => false, 'message' => 'Transaction not found');
+        }
+        if (!$this->is_void_entry($trans)) {
+            return array('success' => false, 'message' => 'Only void reversing entries can have their date edited here');
+        }
+
+        $this->db->trans_start();
+
+        $this->db->where('receipt', $receipt);
+        $this->db->where('PIN', $pin);
+        $this->db->update('savings_transaction', array('trans_date' => $void_trans_date));
+
+        $this->db->where('refferenceID', $receipt);
+        $this->db->where('fromtable', 'savings_transaction');
+        $this->db->where('PIN', $pin);
+        $gl_lines = $this->db->get('general_ledger')->result();
+
+        $entry_ids = array();
+        foreach ($gl_lines as $line) {
+            if (!empty($line->entryid)) {
+                $entry_ids[(int) $line->entryid] = true;
+            }
+        }
+
+        if (!empty($gl_lines)) {
+            $this->db->where('refferenceID', $receipt);
+            $this->db->where('fromtable', 'savings_transaction');
+            $this->db->where('PIN', $pin);
+            $this->db->update('general_ledger', array('date' => $void_trans_date));
+        }
+
+        foreach (array_keys($entry_ids) as $entry_id) {
+            $this->db->where('id', $entry_id);
+            $this->db->where('PIN', $pin);
+            $this->db->update('general_ledger_entry', array('date' => $void_trans_date));
+        }
+
+        $this->db->trans_complete();
+
+        if ($this->db->trans_status() === FALSE) {
+            return array('success' => false, 'message' => 'Database error occurred');
+        }
+
+        return array(
+            'success' => true,
+            'message' => 'Void entry date updated successfully',
+            'trans_date' => $void_trans_date,
+            'gl_lines_updated' => count($gl_lines),
+        );
+    }
+
+    function void_savings_deposit_withdrawal_transaction($receipt, $reason = '', $void_date = null) {
         $pin = current_user()->PIN;
         
         // Get original transaction
@@ -3534,6 +3646,17 @@ $pin=current_user()->PIN;
         // Only allow voiding of CR (deposit), DR (withdrawal), or INT (interest) transactions
         if (!in_array($trans->trans_type, array('CR', 'DR', 'INT'))) {
             return array('success' => false, 'message' => 'Only deposit/withdrawal/interest transactions can be voided');
+        }
+
+        // Void date defaults to today; allow backdating to match the original transaction date
+        if ($void_date === null || trim((string) $void_date) === '') {
+            $void_trans_date = date('Y-m-d');
+        } else {
+            $void_ts = strtotime(trim((string) $void_date));
+            if ($void_ts === false) {
+                return array('success' => false, 'message' => 'Invalid void date');
+            }
+            $void_trans_date = date('Y-m-d', $void_ts);
         }
         
         // Begin transaction
@@ -3560,7 +3683,7 @@ $pin=current_user()->PIN;
         $this->db->set('amount', $trans->amount);
         $this->db->set('paymethod', $trans->paymethod);
         $this->db->set('cheque_num', $trans->cheque_num ? $trans->cheque_num : '');
-        $this->db->set('trans_date', date('Y-m-d'));
+        $this->db->set('trans_date', $void_trans_date);
         $this->db->set('comment', $void_comment);
         $this->db->set('system_comment', $void_system_comment);
         $this->db->set('PIN', $pin);
@@ -3610,7 +3733,6 @@ $pin=current_user()->PIN;
         $pid = isset($trans->PID) ? $trans->PID : (($account_info && isset($account_info->RFID)) ? $account_info->RFID : '');
         $customer_name = isset($trans->customer_name) ? $trans->customer_name : '';
         $account_cat = isset($trans->account_cat) ? $trans->account_cat : (($account_info && isset($account_info->account_cat)) ? $account_info->account_cat : '');
-        $void_trans_date = date('Y-m-d');
 
         $gl_posted = $this->post_savings_to_gl(
             $trans->account,
@@ -4691,7 +4813,13 @@ $pin=current_user()->PIN;
             return array('success' => false, 'message' => 'Beginning balance not found or not posted.');
         }
         $this->db->trans_start();
-        $gl = $this->void_gl_lines_with_reversal('beginning_balances', $id, $reason !== '' ? $reason : 'Void chart beginning balance');
+        // Reversal must use original BB GL date (FY start), not today — otherwise TB/FS for that FY still show the opening balance.
+        $gl = $this->void_gl_lines_with_reversal(
+            'beginning_balances',
+            $id,
+            $reason !== '' ? $reason : 'Void chart beginning balance',
+            array('use_source_date' => true)
+        );
         if (empty($gl['success'])) {
             $this->db->trans_complete();
             return array('success' => false, 'message' => !empty($gl['message']) ? $gl['message'] : 'GL reverse failed.');
@@ -4715,6 +4843,247 @@ $pin=current_user()->PIN;
         $this->db->where('account', $account);
         $result = $this->db->get('beginning_balances');
         return $result->num_rows() > 0;
+    }
+
+    /**
+     * Ensure audit table exists for loan BB ↔ chart BB offsets.
+     */
+    function ensure_loan_bb_chart_offsets_table() {
+        $this->db->query("CREATE TABLE IF NOT EXISTS `loan_bb_chart_offsets` (
+          `id` int(11) NOT NULL AUTO_INCREMENT,
+          `loan_bb_id` int(11) NOT NULL COMMENT 'loan_beginning_balances.id',
+          `beginning_balance_id` int(11) NOT NULL COMMENT 'beginning_balances.id',
+          `account` varchar(50) NOT NULL COMMENT 'GL account number',
+          `amount` decimal(15,2) NOT NULL DEFAULT 0.00 COMMENT 'Amount deducted from chart BB debit',
+          `side` varchar(10) NOT NULL DEFAULT 'debit' COMMENT 'Column reduced on beginning_balances',
+          `gl_posted` tinyint(1) NOT NULL DEFAULT 0 COMMENT '1 if offset credit lines were written to general_ledger',
+          `PIN` varchar(20) NOT NULL,
+          `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+          PRIMARY KEY (`id`),
+          UNIQUE KEY `unique_loan_bb_account` (`PIN`, `loan_bb_id`, `account`),
+          KEY `idx_loan_bb` (`loan_bb_id`),
+          KEY `idx_beginning_balance` (`beginning_balance_id`),
+          KEY `idx_pin` (`PIN`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8 COMMENT='Loan BB post offsets against Finance chart beginning_balances'");
+    }
+
+    /**
+     * On loan BB post: reduce matching Finance chart beginning_balances.debit and
+     * credit the same loan product GLs so opening totals are not double-counted.
+     * Must run inside the caller's DB transaction. Missing chart BB rows are skipped.
+     *
+     * @param object $loan_bb loan_beginning_balances row
+     * @param object $product loan_product row
+     * @return array{success:bool,message:string,offsets?:int}
+     */
+    function deduct_chart_bb_for_loan_bb($loan_bb, $product) {
+        $pin = current_user()->PIN;
+        $loan_bb_id = (int) $loan_bb->id;
+        $fiscal_year_id = (int) $loan_bb->fiscal_year_id;
+
+        $this->ensure_loan_bb_chart_offsets_table();
+
+        $existing = $this->db->where('PIN', $pin)->where('loan_bb_id', $loan_bb_id)
+            ->get('loan_bb_chart_offsets')->num_rows();
+        if ($existing > 0) {
+            return array('success' => false, 'message' => 'Chart beginning balance offsets already exist for this loan beginning balance.');
+        }
+
+        $fiscal_year = $this->db->where('id', $fiscal_year_id)->get('fiscal_year')->row();
+        if (!$fiscal_year) {
+            return array('success' => false, 'message' => 'Fiscal year not found for chart beginning balance offset.');
+        }
+
+        $components = array(
+            array('amount' => floatval($loan_bb->principal_balance), 'account' => isset($product->loan_principle_account) ? $product->loan_principle_account : ''),
+            array('amount' => floatval($loan_bb->interest_balance), 'account' => isset($product->loan_interest_account) ? $product->loan_interest_account : ''),
+            array('amount' => floatval($loan_bb->penalty_balance), 'account' => isset($product->loan_penalt_account) ? $product->loan_penalt_account : ''),
+        );
+
+        $planned = array();
+        foreach ($components as $comp) {
+            $amount = round($comp['amount'], 2);
+            $account = trim((string) $comp['account']);
+            if ($amount <= 0 || $account === '') {
+                continue;
+            }
+
+            $chart = $this->db->where('PIN', $pin)
+                ->where('fiscal_year_id', $fiscal_year_id)
+                ->where('account', $account)
+                ->get('beginning_balances')->row();
+
+            if (!$chart) {
+                log_message('info', 'Loan BB #' . $loan_bb_id . ': no chart beginning_balances row for account ' . $account . ' — skip offset');
+                continue;
+            }
+
+            $available = round(floatval($chart->debit), 2);
+            if ($available + 0.00001 < $amount) {
+                return array(
+                    'success' => false,
+                    'code' => 'insufficient',
+                    'account' => $account,
+                    'available' => $available,
+                    'required' => $amount,
+                    'message' => 'Insufficient Finance Beginning Balance debit for account ' . $account
+                        . ' (available ' . number_format($available, 2) . ', required ' . number_format($amount, 2) . ').',
+                );
+            }
+
+            $planned[] = array(
+                'chart' => $chart,
+                'account' => $account,
+                'amount' => $amount,
+            );
+        }
+
+        if (empty($planned)) {
+            return array('success' => true, 'message' => 'No chart beginning balances to offset.', 'offsets' => 0);
+        }
+
+        $need_gl = false;
+        foreach ($planned as $p) {
+            if (!empty($p['chart']->posted)) {
+                $need_gl = true;
+                break;
+            }
+        }
+
+        $ledger_entry_id = null;
+        if ($need_gl) {
+            $this->db->insert('general_ledger_entry', array(
+                'date' => $fiscal_year->start_date,
+                'PIN' => $pin,
+            ));
+            $ledger_entry_id = $this->db->insert_id();
+            if (!$ledger_entry_id) {
+                return array('success' => false, 'message' => 'Failed to create GL header for chart BB offset.');
+            }
+        }
+
+        $member_id = isset($loan_bb->member_id) ? $loan_bb->member_id : null;
+        $offsets = 0;
+
+        foreach ($planned as $p) {
+            $chart = $p['chart'];
+            $amount = $p['amount'];
+            $account = $p['account'];
+            $new_debit = round(floatval($chart->debit) - $amount, 2);
+            if ($new_debit < 0) {
+                $new_debit = 0;
+            }
+
+            $upd = $this->db->where('id', $chart->id)->where('PIN', $pin)
+                ->update('beginning_balances', array('debit' => $new_debit));
+            if (!$upd) {
+                return array('success' => false, 'message' => 'Failed to update Finance Beginning Balance debit.');
+            }
+
+            $gl_posted = 0;
+            if (!empty($chart->posted) && $ledger_entry_id) {
+                $infoaccount = account_row_info($account);
+                if (!$infoaccount) {
+                    return array('success' => false, 'message' => 'Account not found for chart BB offset: ' . $account);
+                }
+                $ledger = array(
+                    'journalID' => 8,
+                    'refferenceID' => $loan_bb_id,
+                    'entryid' => $ledger_entry_id,
+                    'date' => $fiscal_year->start_date,
+                    'description' => 'Loan BB offset chart BB - ' . $member_id . ' - ' . $account,
+                    'linkto' => 'loan_beginning_balances.id',
+                    'fromtable' => 'beginning_balances_loan_offset',
+                    'account' => $account,
+                    'debit' => 0,
+                    'credit' => $amount,
+                    'member_id' => $member_id,
+                    'account_type' => $infoaccount->account_type,
+                    'sub_account_type' => isset($infoaccount->sub_account_type) ? $infoaccount->sub_account_type : null,
+                    'PIN' => $pin,
+                );
+                $ins = $this->db->insert('general_ledger', $ledger);
+                if (!$ins || $this->db->affected_rows() != 1) {
+                    return array('success' => false, 'message' => 'Failed to insert chart BB offset GL credit.');
+                }
+                $gl_posted = 1;
+            }
+
+            $this->db->insert('loan_bb_chart_offsets', array(
+                'loan_bb_id' => $loan_bb_id,
+                'beginning_balance_id' => (int) $chart->id,
+                'account' => $account,
+                'amount' => $amount,
+                'side' => 'debit',
+                'gl_posted' => $gl_posted,
+                'PIN' => $pin,
+            ));
+            if ($this->db->affected_rows() != 1) {
+                return array('success' => false, 'message' => 'Failed to record chart BB offset audit row.');
+            }
+            $offsets++;
+        }
+
+        return array('success' => true, 'message' => 'Chart beginning balances offset.', 'offsets' => $offsets);
+    }
+
+    /**
+     * Restore chart BB debits and reverse offset GL after loan BB void.
+     * Must run inside the caller's DB transaction.
+     *
+     * @return array{success:bool,message:string}
+     */
+    function restore_chart_bb_for_loan_bb($loan_bb_id) {
+        $pin = current_user()->PIN;
+        $loan_bb_id = (int) $loan_bb_id;
+        $this->ensure_loan_bb_chart_offsets_table();
+
+        $rows = $this->db->where('PIN', $pin)->where('loan_bb_id', $loan_bb_id)
+            ->get('loan_bb_chart_offsets')->result();
+        if (empty($rows)) {
+            return array('success' => true, 'message' => 'No chart BB offsets to restore.');
+        }
+
+        $had_gl = false;
+        foreach ($rows as $row) {
+            if (!empty($row->gl_posted)) {
+                $had_gl = true;
+            }
+            $chart = $this->db->where('id', (int) $row->beginning_balance_id)->where('PIN', $pin)
+                ->get('beginning_balances')->row();
+            if ($chart) {
+                $restored = round(floatval($chart->debit) + floatval($row->amount), 2);
+                $this->db->where('id', $chart->id)->where('PIN', $pin)
+                    ->update('beginning_balances', array('debit' => $restored));
+            } else {
+                log_message('warning', 'Loan BB #' . $loan_bb_id . ': chart BB id ' . $row->beginning_balance_id . ' missing on restore');
+            }
+        }
+
+        if ($had_gl) {
+            $gl_check = $this->db->query(
+                "SELECT id FROM general_ledger WHERE PIN = ? AND fromtable = ? AND refferenceID = ? LIMIT 1",
+                array($pin, 'beginning_balances_loan_offset', $loan_bb_id)
+            )->row();
+            if ($gl_check) {
+                $gl = $this->void_gl_lines_with_reversal(
+                    'beginning_balances_loan_offset',
+                    $loan_bb_id,
+                    'Restore chart BB after void loan beginning balance',
+                    array('use_source_date' => true)
+                );
+                if (empty($gl['success'])) {
+                    return array(
+                        'success' => false,
+                        'message' => !empty($gl['message']) ? $gl['message'] : 'Failed to reverse chart BB offset GL.',
+                    );
+                }
+            }
+        }
+
+        $this->db->where('PIN', $pin)->where('loan_bb_id', $loan_bb_id)->delete('loan_bb_chart_offsets');
+
+        return array('success' => true, 'message' => 'Chart beginning balances restored.');
     }
 
     /* =====================================================================

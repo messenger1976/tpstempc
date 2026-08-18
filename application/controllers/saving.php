@@ -1028,10 +1028,17 @@ class Saving extends CI_Controller {
                 $trans->is_gl_posted = (!empty($receipt)) ? $this->finance_model->is_savings_receipt_posted_to_gl($receipt) : false;
                 $trans->transaction_source = $this->finance_model->savings_transaction_source($trans);
                 $trans->void_original_method = '';
+                $trans->original_trans_date = '';
                 $system_comment = isset($trans->system_comment) ? (string) $trans->system_comment : '';
                 if ($trans->is_void_entry && $system_comment !== '') {
                     if (preg_match('/ORIG_METHOD:([^|]+)/', $system_comment, $matches)) {
                         $trans->void_original_method = trim($matches[1]);
+                    }
+                }
+                if ($trans->is_void_entry && !empty($trans->voided_receipt)) {
+                    $orig = $this->finance_model->get_transaction($trans->voided_receipt);
+                    if ($orig && !empty($orig->trans_date)) {
+                        $trans->original_trans_date = date('Y-m-d', strtotime($orig->trans_date));
                     }
                 }
             }
@@ -1089,12 +1096,52 @@ class Saving extends CI_Controller {
             return;
         }
 
-        // Process void
+        // Process void (void_date defaults to today in the model when empty)
         $reason = $this->input->post('void_reason') ? $this->input->post('void_reason') : 'Transaction voided by user';
-        $result = $this->finance_model->void_savings_deposit_withdrawal_transaction($receipt, $reason);
+        $void_date = $this->input->post('void_date');
+        if ($void_date === FALSE || $void_date === null || trim((string) $void_date) === '') {
+            $void_date = $this->input->get('void_date');
+        }
+        $result = $this->finance_model->void_savings_deposit_withdrawal_transaction($receipt, $reason, $void_date);
 
         if ($result['success']) {
             $this->session->set_flashdata('message', isset($result['message']) ? $result['message'] : lang('saving_void_success'));
+        } else {
+            $this->session->set_flashdata('warning', isset($result['message']) ? $result['message'] : lang('transaction_fail'));
+        }
+
+        redirect(current_lang() . '/saving/transaction_search', 'refresh');
+    }
+
+    /**
+     * Correct the date on an existing savings void reversing entry (and its GL dates).
+     */
+    function edit_void_date($receipt = null) {
+        if (!$this->ion_auth->logged_in()) {
+            redirect('auth/login', 'refresh');
+        }
+
+        if (!has_role(3, 'void_transaction')) {
+            $this->session->set_flashdata('warning', lang('access_denied'));
+            redirect(current_lang() . '/saving/transaction_search', 'refresh');
+            return;
+        }
+
+        if (!$receipt) {
+            $this->session->set_flashdata('warning', lang('invalid_receipt'));
+            redirect(current_lang() . '/saving/transaction_search', 'refresh');
+            return;
+        }
+
+        $void_date = $this->input->post('void_date');
+        if ($void_date === FALSE || $void_date === null || trim((string) $void_date) === '') {
+            $void_date = $this->input->get('void_date');
+        }
+
+        $result = $this->finance_model->update_savings_void_entry_date($receipt, $void_date);
+
+        if (!empty($result['success'])) {
+            $this->session->set_flashdata('message', isset($result['message']) ? $result['message'] : lang('saving_void_date_updated'));
         } else {
             $this->session->set_flashdata('warning', isset($result['message']) ? $result['message'] : lang('transaction_fail'));
         }

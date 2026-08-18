@@ -65,6 +65,11 @@ $row_count = is_array($loan_beginning_balances) ? count($loan_beginning_balances
                         <a class="btn btn-default btn-xs" href="<?php echo site_url(current_lang() . '/loan/loan_ledger/' . encode_id($balance->loan_id)); ?>">
                             <i class="fa fa-book"></i> <?php echo lang('loan_ledger'); ?>
                         </a>
+                        <?php if (has_role(5, 'void_transaction')) { ?>
+                        <a href="javascript:void(0);" class="btn btn-danger btn-xs btn-deactivate-balance" data-id="<?php echo encode_id($balance->id); ?>" data-member="<?php echo htmlspecialchars($balance->member_id, ENT_QUOTES, 'UTF-8'); ?>">
+                            <i class="fa fa-undo"></i> <?php echo lang('loan_void_bb_activation'); ?>
+                        </a>
+                        <?php } ?>
                     <?php } else { ?>
                         <a class="btn btn-default btn-xs" href="<?php echo site_url(current_lang() . '/loan/loan_beginning_balance_create/' . encode_id($balance->id)); ?>">
                             <i class="fa fa-edit"></i> <?php echo lang('button_edit'); ?>

@@ -200,12 +200,14 @@ if (!function_exists('decode_id')) {
             }
         }
         
-        $exp = explode('_', $str);
-        if (count($exp) == 3) {
-            return $exp[1];
-        } else {
-            return NULL;
+        // encode_id wraps as {prefix}_{id}_{suffix}. Use first/last '_' so LIDs that
+        // contain underscores (or extra segments) still decode to the original id.
+        $first = strpos($str, '_');
+        $last = strrpos($str, '_');
+        if ($first !== false && $last !== false && $last > $first) {
+            return substr($str, $first + 1, $last - $first - 1);
         }
+        return NULL;
     }
 
 }

@@ -1817,25 +1817,39 @@ $pin = current_user()->PIN;
         $this->data['title'] = lang('loan_viewdetails');
         $this->data['loanid'] = $loanid;
         $LID = decode_id($loanid);
-        $loaninfo = $this->loan_model->loan_info($LID)->row();
-        if (!$loaninfo) {
-            // Loan List also shows unactivated beginning balances; send those to BB management.
+        if (is_string($LID) && preg_match('/^[0-9]{3}/', $LID) && strpos($LID, '_') !== false) {
+            $retry = decode_id($LID);
+            if ($retry !== null && $retry !== '') {
+                $LID = $retry;
+            }
+        }
+        if (is_string($LID)) {
+            $LID = trim($LID);
+        }
+        $loaninfo = ($LID !== null && $LID !== '') ? $this->loan_model->loan_info($LID)->row() : null;
+        $bb = null;
+        if ($LID !== null && $LID !== '') {
             $bb = $this->loan_model->get_beginning_balance_by_loan_id($LID);
-            if ($bb) {
+        }
+        if (!$bb && is_string($LID) && preg_match('/^BB-(\d+)$/', $LID, $m)) {
+            $bb = $this->loan_model->loan_beginning_balance_list(null, (int) $m[1])->row();
+        }
+        if (!$loaninfo && $bb && !empty($bb->loan_id) && trim((string) $bb->loan_id) !== (string) $LID) {
+            $loaninfo = $this->loan_model->loan_info(trim((string) $bb->loan_id))->row();
+        }
+        if (!$loaninfo) {
+            // Unactivated BB rows on Loan List have no loan_contract yet.
+            if ($bb && !$this->loan_model->is_loan_beginning_balance_activated($bb)) {
                 $this->session->set_flashdata('warning', lang('loan_beginning_balance_detail_redirect'));
                 $fy = !empty($bb->fiscal_year_id) ? ('?fiscal_year_id=' . (int) $bb->fiscal_year_id) : '';
                 redirect(current_lang() . '/loan/loan_beginning_balance_list' . $fy, 'refresh');
                 return;
             }
-            // Synthetic BB-{id} LIDs from the list when loan_id is empty
-            if (is_string($LID) && preg_match('/^BB-(\d+)$/', $LID, $m)) {
-                $bb_by_id = $this->loan_model->loan_beginning_balance_list(null, (int) $m[1])->row();
-                if ($bb_by_id) {
-                    $this->session->set_flashdata('warning', lang('loan_beginning_balance_detail_redirect'));
-                    $fy = !empty($bb_by_id->fiscal_year_id) ? ('?fiscal_year_id=' . (int) $bb_by_id->fiscal_year_id) : '';
-                    redirect(current_lang() . '/loan/loan_beginning_balance_list' . $fy, 'refresh');
-                    return;
-                }
+            if ($bb) {
+                $this->session->set_flashdata('warning', lang('loan_beginning_balance_detail_missing_contract'));
+                $fy = !empty($bb->fiscal_year_id) ? ('?fiscal_year_id=' . (int) $bb->fiscal_year_id) : '';
+                redirect(current_lang() . '/loan/loan_beginning_balance_list' . $fy, 'refresh');
+                return;
             }
             show_404();
             return;
@@ -3514,6 +3528,67 @@ $pin = current_user()->PIN;
                 redirect(current_lang() . '/loan/view_indetail/' . encode_id($result['LID']), 'refresh');
                 return;
             }
+        } else {
+            $this->session->set_flashdata('warning', $message);
+        }
+        redirect(current_lang() . '/loan/loan_beginning_balance_list?fiscal_year_id=' . $balance->fiscal_year_id, 'refresh');
+    }
+
+    /**
+     * Undo Activate as Loan from the beginning-balance list (AJAX or full page).
+     */
+    function loan_beginning_balance_deactivate($id) {
+        if (!has_role(5, 'void_transaction')) {
+            if ($this->input->is_ajax_request()) {
+                $this->_loan_beginning_balance_json(false, lang('access_denied'));
+                return;
+            }
+            $this->session->set_flashdata('warning', lang('access_denied'));
+            redirect(current_lang() . '/loan/loan_beginning_balance_list', 'refresh');
+            return;
+        }
+
+        $id = decode_id($id);
+        $is_ajax = $this->input->is_ajax_request();
+        $balance = $this->loan_model->loan_beginning_balance_list(null, $id)->row();
+        if (!$balance) {
+            if ($is_ajax) {
+                $this->_loan_beginning_balance_json(false, lang('loan_beginning_balance_not_found'));
+                return;
+            }
+            $this->session->set_flashdata('warning', lang('loan_beginning_balance_not_found'));
+            redirect(current_lang() . '/loan/loan_beginning_balance_list', 'refresh');
+            return;
+        }
+
+        $LID = trim((string) $balance->loan_id);
+        if ($LID === '') {
+            if ($is_ajax) {
+                $this->_loan_beginning_balance_json(false, lang('loan_beginning_balance_deactivate_fail'), array(
+                    'fiscal_year_id' => $balance->fiscal_year_id,
+                ));
+                return;
+            }
+            $this->session->set_flashdata('warning', lang('loan_beginning_balance_deactivate_fail'));
+            redirect(current_lang() . '/loan/loan_beginning_balance_list?fiscal_year_id=' . $balance->fiscal_year_id, 'refresh');
+            return;
+        }
+
+        $result = $this->loan_model->deactivate_loan_beginning_balance_activation($LID, 'Undo activation from loan beginning balance list');
+        $success = !empty($result['success']);
+        $message = $success
+            ? (!empty($result['message']) ? $result['message'] : lang('loan_beginning_balance_deactivate_success'))
+            : (!empty($result['message']) ? $result['message'] : lang('loan_beginning_balance_deactivate_fail'));
+
+        if ($is_ajax) {
+            $this->_loan_beginning_balance_json($success, $message, array(
+                'fiscal_year_id' => $balance->fiscal_year_id,
+            ));
+            return;
+        }
+
+        if ($success) {
+            $this->session->set_flashdata('message', $message);
         } else {
             $this->session->set_flashdata('warning', $message);
         }

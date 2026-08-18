@@ -296,6 +296,9 @@ $lang['loan_beginning_balance_edit_dates'] = 'Edit Dates / Terms';
 $lang['loan_beginning_balance_edit_posted_hint'] = 'This beginning balance is already posted to the General Ledger. You can edit all fields here, but changing amounts or accounts does not automatically reverse or re-post GL. Void and re-post if the ledger must match.';
 $lang['loan_beginning_balance_manage'] = 'Open Beginning Balance';
 $lang['loan_beginning_balance_detail_redirect'] = 'This loan ID is a beginning balance that has not been activated yet. Open it from Loan Beginning Balances, then Activate as Loan to use Details / Ledger.';
+$lang['loan_beginning_balance_detail_missing_contract'] = 'This beginning balance is marked activated, but the loan record could not be opened. Use Undo Activation on Loan Beginning Balances, then Void if you need to reverse the GL.';
+$lang['loan_beginning_balance_deactivating'] = 'Undoing activation...';
+$lang['loan_beginning_balance_deactivate_fail'] = 'Failed to undo beginning balance activation';
 $lang['loan_ledger_beginning_balance'] = 'Beginning Balance (Opening)';
 $lang['export_to_excel'] = 'Export to Excel';
 

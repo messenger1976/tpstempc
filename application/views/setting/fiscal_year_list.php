@@ -9,6 +9,21 @@
         (<?php echo date('M d, Y', strtotime($active_fiscal_year->start_date)); ?> - <?php echo date('M d, Y', strtotime($active_fiscal_year->end_date)); ?>)
     </div>
     <?php endif; ?>
+    <?php
+    $gl_closed = isset($closed_as_of) ? $closed_as_of : (function_exists('gl_books_closed_as_of') ? gl_books_closed_as_of() : null);
+    if ($gl_closed) {
+        echo '<div class="alert alert-warning" style="width: 90%; margin: 10px auto;">'
+            . '<i class="fa fa-lock"></i> Books are closed through <strong>' . date('M d, Y', strtotime($gl_closed)) . '</strong>. ';
+        if (function_exists('can_close_books') && can_close_books()) {
+            echo '<a href="' . site_url(current_lang() . '/finance/close_books') . '">Change close date</a>';
+        }
+        echo '</div>';
+    } elseif (function_exists('can_close_books') && can_close_books()) {
+        echo '<div class="alert alert-info" style="width: 90%; margin: 10px auto;">'
+            . 'GL is not period-locked. <a href="' . site_url(current_lang() . '/finance/close_books') . '">Close Books</a>'
+            . '</div>';
+    }
+    ?>
 
     <table class="table table-bordered table-striped">
         <thead>

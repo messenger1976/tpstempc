@@ -324,8 +324,15 @@ class Finance_Model extends CI_Model {
             $this->load->model('cash_receipt_model');
             $this->cash_receipt_model->ensure_received_from_columns();
         }
-        $this->db->trans_start();
         $entry_date = isset($entry->entry_date) ? $entry->entry_date : date('Y-m-d');
+        if (function_exists('gl_reject_closed_date')) {
+            $lock_msg = gl_reject_closed_date($entry_date);
+            if ($lock_msg) {
+                $this->last_post_error = $lock_msg;
+                return false;
+            }
+        }
+        $this->db->trans_start();
         $ledger_entry = array('date' => $entry_date, 'PIN' => $pin);
         $this->db->insert('general_ledger_entry', $ledger_entry);
         $ledger_entry_id = $this->db->insert_id();
@@ -467,6 +474,17 @@ class Finance_Model extends CI_Model {
         if (empty($unposted_entries)) {
             $this->db->trans_complete();
             return false;
+        }
+        if (function_exists('gl_reject_closed_date')) {
+            foreach ($unposted_entries as $precheck) {
+                $pre_date = isset($precheck->entrydate) ? $precheck->entrydate : '';
+                $lock_msg = gl_reject_closed_date($pre_date);
+                if ($lock_msg) {
+                    $this->last_post_error = $lock_msg;
+                    $this->db->trans_complete();
+                    return false;
+                }
+            }
         }
         foreach ($unposted_entries as $entry) {
             if (!isset($entry->entryid)) {
@@ -1797,6 +1815,15 @@ class Finance_Model extends CI_Model {
             return array('success' => false, 'message' => 'This GL posting has already been voided.');
         }
 
+        if (function_exists('gl_reject_closed_date')) {
+            foreach ($lines as $lock_line) {
+                $lock_msg = gl_reject_closed_date(isset($lock_line->date) ? $lock_line->date : '');
+                if ($lock_msg) {
+                    return array('success' => false, 'message' => $lock_msg);
+                }
+            }
+        }
+
         // Default: today. Pass filters['void_date'] or filters['use_source_date']=true
         // so reversing lines land in the same reporting period as the original (critical for BB).
         $void_date = date('Y-m-d');
@@ -1809,6 +1836,12 @@ class Finance_Model extends CI_Model {
             $src_ts = strtotime($lines[0]->date);
             if ($src_ts !== false) {
                 $void_date = date('Y-m-d', $src_ts);
+            }
+        }
+        if (function_exists('gl_reject_closed_date')) {
+            $lock_msg = gl_reject_closed_date($void_date);
+            if ($lock_msg) {
+                return array('success' => false, 'message' => $lock_msg);
             }
         }
         $this->db->insert('general_ledger_entry', array('date' => $void_date, 'PIN' => $pin));
@@ -3581,6 +3614,19 @@ $pin=current_user()->PIN;
             return array('success' => false, 'message' => 'Only void reversing entries can have their date edited here');
         }
 
+        if (function_exists('gl_reject_closed_date')) {
+            $lock_msg = gl_reject_closed_date($void_trans_date);
+            if ($lock_msg) {
+                return array('success' => false, 'message' => $lock_msg);
+            }
+            if (!empty($trans->trans_date)) {
+                $lock_old = gl_reject_closed_date($trans->trans_date);
+                if ($lock_old) {
+                    return array('success' => false, 'message' => $lock_old);
+                }
+            }
+        }
+
         $this->db->trans_start();
 
         $this->db->where('receipt', $receipt);
@@ -4693,6 +4739,14 @@ $pin=current_user()->PIN;
         $fiscal_year = $this->db->where('id', $balance->fiscal_year_id)->get('fiscal_year')->row();
         if (!$fiscal_year) {
             return false;
+        }
+        if (function_exists('gl_reject_closed_date')) {
+            $lock_msg = gl_reject_closed_date($fiscal_year->start_date);
+            if ($lock_msg) {
+                log_message('error', 'beginning_balance_post_to_ledger blocked: ' . $lock_msg);
+                $this->last_post_error = $lock_msg;
+                return false;
+            }
         }
         
         // Get account info

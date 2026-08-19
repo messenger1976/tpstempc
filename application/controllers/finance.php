@@ -424,7 +424,10 @@ class Finance extends CI_Controller {
             $summ_credit = $this->input->post('summation_credit');
             $summ_debit = $this->input->post('summation_debit');
 
-            if ($summ_credit == $summ_debit) {
+            $lock_msg = function_exists('gl_reject_closed_date') ? gl_reject_closed_date($date) : false;
+            if ($lock_msg) {
+                $this->data['warning'] = $lock_msg;
+            } else if ($summ_credit == $summ_debit) {
                 for ($i = 0; $i < $act; $i++) {
                     $account_code = $account[$i];
                     $credit_amount = str_replace(',','',$credit[$i]);
@@ -585,7 +588,10 @@ class Finance extends CI_Controller {
             $summ_credit = $this->input->post('summation_credit');
             $summ_debit = $this->input->post('summation_debit');
 
-            if ($summ_credit == $summ_debit && $act > 0) {
+            $lock_msg = function_exists('gl_reject_closed_date') ? gl_reject_closed_date($date) : false;
+            if ($lock_msg) {
+                $this->data['warning'] = $lock_msg;
+            } else if ($summ_credit == $summ_debit && $act > 0) {
                 for ($i = 0; $i < $act; $i++) {
                     $account_code = $account[$i];
                     $credit_amount = str_replace(',', '', $credit[$i]);
@@ -1085,7 +1091,10 @@ class Finance extends CI_Controller {
         if ($result) {
             $this->session->set_flashdata('message', 'Journal Entry #' . $id . ' has been approved and posted to General Ledger successfully.');
         } else {
-            $this->session->set_flashdata('warning', 'Failed to post journal entry. Please check error logs.');
+            $detail = !empty($this->finance_model->last_post_error)
+                ? $this->finance_model->last_post_error
+                : 'Please check error logs.';
+            $this->session->set_flashdata('warning', 'Failed to post journal entry. ' . $detail);
         }
         
         redirect(current_lang() . '/finance/journal_entry_review', 'refresh');
@@ -1662,13 +1671,26 @@ class Finance extends CI_Controller {
             redirect(current_lang() . '/finance/beginning_balance_list?fiscal_year_id=' . $balance->fiscal_year_id, 'refresh');
             return;
         }
+
+        $fiscal_year = $this->setting_model->fiscal_year_list($balance->fiscal_year_id)->row();
+        if ($fiscal_year && function_exists('gl_reject_closed_date')) {
+            $lock_msg = gl_reject_closed_date($fiscal_year->start_date);
+            if ($lock_msg) {
+                $this->session->set_flashdata('warning', $lock_msg);
+                redirect(current_lang() . '/finance/beginning_balance_list?fiscal_year_id=' . $balance->fiscal_year_id, 'refresh');
+                return;
+            }
+        }
         
         $result = $this->finance_model->beginning_balance_post_to_ledger($id);
         
         if ($result) {
             $this->session->set_flashdata('message', lang('beginning_balance_post_success'));
         } else {
-            $this->session->set_flashdata('warning', lang('beginning_balance_post_fail'));
+            $detail = !empty($this->finance_model->last_post_error)
+                ? $this->finance_model->last_post_error
+                : lang('beginning_balance_post_fail');
+            $this->session->set_flashdata('warning', $detail);
         }
         
         redirect(current_lang() . '/finance/beginning_balance_list?fiscal_year_id=' . $balance->fiscal_year_id, 'refresh');
@@ -1697,6 +1719,66 @@ class Finance extends CI_Controller {
             $this->session->set_flashdata('warning', !empty($result['message']) ? $result['message'] : 'Void failed');
         }
         redirect(current_lang() . '/finance/beginning_balance_list?fiscal_year_id=' . $balance->fiscal_year_id, 'refresh');
+    }
+
+    /**
+     * Close / reopen GL books as of a date (or through a fiscal year end).
+     */
+    function close_books() {
+        $this->data['title'] = lang('gl_close_books');
+        if (!can_close_books()) {
+            $this->session->set_flashdata('warning', lang('access_denied'));
+            redirect(current_lang() . '/dashboard', 'refresh');
+            return;
+        }
+
+        if ($this->input->post('save_close_books')) {
+            $action = trim((string) $this->input->post('close_action'));
+            $note = trim((string) $this->input->post('note'));
+            $result = array('success' => false, 'message' => 'Nothing saved.');
+
+            if ($action === 'clear') {
+                $result = gl_save_books_close(null, 'clear', null, $note);
+            } elseif ($action === 'close_fy') {
+                $fy_id = (int) $this->input->post('fiscal_year_id');
+                $fy = $this->setting_model->fiscal_year_list($fy_id)->row();
+                if (!$fy) {
+                    $result = array('success' => false, 'message' => lang('fiscal_year_not_found'));
+                } else {
+                    $result = gl_save_books_close($fy->end_date, 'close_fy', $fy_id, $note !== '' ? $note : ('Close through ' . $fy->name));
+                }
+            } else {
+                $raw = trim((string) $this->input->post('closed_as_of'));
+                $normalized = function_exists('gl_books_close_normalize_date') ? gl_books_close_normalize_date($raw) : null;
+                if ($raw !== '' && $normalized === null) {
+                    $result = array('success' => false, 'message' => lang('gl_close_books_invalid_date'));
+                } else {
+                    $result = gl_save_books_close($normalized, 'set', null, $note);
+                }
+            }
+
+            if (!empty($result['success'])) {
+                $this->session->set_flashdata('message', $result['message']);
+            } else {
+                $this->session->set_flashdata('warning', !empty($result['message']) ? $result['message'] : lang('gl_close_books_fail'));
+            }
+            redirect(current_lang() . '/finance/close_books', 'refresh');
+            return;
+        }
+
+        $this->data['closed_as_of'] = gl_books_closed_as_of();
+        $this->data['fiscal_years'] = $this->setting_model->fiscal_year_list()->result();
+        $history = array();
+        if (function_exists('gl_books_close_ensure_table') && gl_books_close_ensure_table()) {
+            $pin = current_user()->PIN;
+            $history = $this->db->query(
+                'SELECT * FROM gl_books_close WHERE PIN = ? ORDER BY id DESC LIMIT 20',
+                array($pin)
+            )->result();
+        }
+        $this->data['close_history'] = $history;
+        $this->data['content'] = 'finance/close_books';
+        $this->load->view('template', $this->data);
     }
 
 }

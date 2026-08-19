@@ -275,7 +275,18 @@ class Cash_disbursement extends CI_Controller {
             $this->form_validation->set_rules('account[]', lang('cash_disbursement_account'), 'required');
         }
 
-        if ($this->form_validation->run() == TRUE) {
+        $gl_lock_block = false;
+        if ($this->input->post('disburse_date')) {
+            $lock_msg = function_exists('gl_reject_closed_date')
+                ? gl_reject_closed_date(date('Y-m-d', strtotime($this->input->post('disburse_date'))))
+                : false;
+            if ($lock_msg) {
+                $this->data['warning'] = $lock_msg;
+                $gl_lock_block = true;
+            }
+        }
+
+        if ($this->form_validation->run() == TRUE && !$gl_lock_block) {
             $paid_to_type = $this->_normalize_paid_to_type($this->input->post('paid_to_type'));
             $loan_release_lid = '';
             if ($paid_to_type === 'loan_release') {
@@ -459,7 +470,18 @@ class Cash_disbursement extends CI_Controller {
             $this->form_validation->set_rules('account[]', lang('cash_disbursement_account'), 'required');
         }
 
-        if ($this->form_validation->run() == TRUE) {
+        $gl_lock_block = false;
+        if ($this->input->post('disburse_date')) {
+            $lock_msg = function_exists('gl_reject_closed_date')
+                ? gl_reject_closed_date(date('Y-m-d', strtotime($this->input->post('disburse_date'))))
+                : false;
+            if ($lock_msg) {
+                $this->data['warning'] = $lock_msg;
+                $gl_lock_block = true;
+            }
+        }
+
+        if ($this->form_validation->run() == TRUE && !$gl_lock_block) {
             $paid_to_type = $this->_normalize_paid_to_type($this->input->post('paid_to_type'));
             $loan_release_lid = '';
             if ($paid_to_type === 'loan_release') {

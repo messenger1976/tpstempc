@@ -19,6 +19,11 @@ class MY_DB_mysqli_driver extends CI_DB_mysqli_driver {
      * Track if we're currently logging to prevent infinite loops
      */
     private $_logging_enabled = true;
+
+    /**
+     * Skip re-entry while reading existing GL dates for the books-close check.
+     */
+    private $_gl_lock_checking = false;
     
     /**
      * Tables to exclude from logging (system tables and frequently updated tables)
@@ -43,6 +48,10 @@ class MY_DB_mysqli_driver extends CI_DB_mysqli_driver {
         if ($actual_table == '' && isset($this->ar_from[0])) {
             $actual_table = $this->ar_from[0];
         }
+
+        if ($this->_gl_books_lock_blocks($actual_table, $set, 'insert')) {
+            return FALSE;
+        }
         
         $result = parent::insert($table, $set);
         
@@ -60,6 +69,9 @@ class MY_DB_mysqli_driver extends CI_DB_mysqli_driver {
      * Override update method to log activities
      */
     public function update($table = '', $set = NULL, $where = NULL, $limit = NULL) {
+        if ($this->_gl_books_lock_blocks($table, $set, 'update')) {
+            return FALSE;
+        }
         $result = parent::update($table, $set, $where, $limit);
         
         // Check if update was successful (result is object or TRUE)
@@ -146,6 +158,11 @@ class MY_DB_mysqli_driver extends CI_DB_mysqli_driver {
             $this->_logging_enabled = true;
         }
         
+        if ($this->_gl_books_lock_blocks($table, null, 'delete')) {
+            $this->_logging_enabled = true;
+            return FALSE;
+        }
+
         // Now perform the actual delete
         $result = parent::delete($table, $where, $limit, $reset_data);
         
@@ -470,6 +487,107 @@ class MY_DB_mysqli_driver extends CI_DB_mysqli_driver {
             unset($this->_excluded_tables[$key]);
             $this->_excluded_tables = array_values($this->_excluded_tables);
         }
+    }
+
+    /**
+     * Block GL writes dated on or before the books-close date.
+     */
+    private function _gl_books_lock_blocks($table, $set, $operation) {
+        if (!empty($this->_gl_lock_checking)) {
+            return false;
+        }
+        $table = strtolower(trim(str_replace('`', '', (string) $table)));
+        if ($table !== 'general_ledger' && $table !== 'general_ledger_entry') {
+            return false;
+        }
+        if (!function_exists('gl_reject_closed_date')) {
+            return false;
+        }
+
+        $dates = array();
+        $payload_date = $this->_gl_payload_date($set);
+        if ($payload_date) {
+            $dates[] = $payload_date;
+        }
+
+        if ($operation === 'update' || $operation === 'delete') {
+            $existing = $this->_gl_existing_dates($table);
+            if (!empty($existing)) {
+                $dates = array_merge($dates, $existing);
+            }
+        }
+
+        foreach ($dates as $date) {
+            $err = gl_reject_closed_date($date);
+            if ($err) {
+                if (function_exists('log_message')) {
+                    log_message('error', 'GL books close blocked ' . $operation . ' on ' . $table . ': ' . $err);
+                }
+                if (function_exists('get_instance')) {
+                    $CI =& get_instance();
+                    if ($CI) {
+                        $CI->gl_books_lock_error = $err;
+                    }
+                }
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private function _gl_payload_date($set) {
+        $candidates = array();
+        if (is_array($set)) {
+            $candidates = $set;
+        }
+        if (!empty($this->ar_set) && is_array($this->ar_set)) {
+            foreach ($this->ar_set as $k => $v) {
+                $clean = strtolower(trim($k, " `"));
+                $val = $v;
+                if (is_string($val) && strlen($val) >= 2 && ($val[0] === "'" || $val[0] === '"')) {
+                    $val = substr($val, 1, -1);
+                }
+                $candidates[$clean] = $val;
+            }
+        }
+        foreach ($candidates as $key => $val) {
+            $k = strtolower(trim((string) $key, ' `'));
+            if ($k === 'date' || $k === 'entrydate') {
+                if ($val !== '' && $val !== null) {
+                    return $val;
+                }
+            }
+        }
+        return null;
+    }
+
+    private function _gl_existing_dates($table) {
+        if (empty($this->conn_id) || empty($this->ar_where) || !is_array($this->ar_where)) {
+            return array();
+        }
+        $where_sql = implode(' ', $this->ar_where);
+        $where_sql = trim($where_sql);
+        if ($where_sql === '') {
+            return array();
+        }
+        if (stripos($where_sql, 'AND') === 0) {
+            $where_sql = trim(substr($where_sql, 3));
+        }
+        $table_esc = str_replace('`', '', $table);
+        $sql = 'SELECT `date` FROM `' . $table_esc . '` WHERE ' . $where_sql . ' LIMIT 50';
+        $this->_gl_lock_checking = true;
+        $dates = array();
+        $result = @mysqli_query($this->conn_id, $sql);
+        if ($result) {
+            while ($row = mysqli_fetch_assoc($result)) {
+                if (!empty($row['date'])) {
+                    $dates[] = $row['date'];
+                }
+            }
+            mysqli_free_result($result);
+        }
+        $this->_gl_lock_checking = false;
+        return $dates;
     }
 }
 

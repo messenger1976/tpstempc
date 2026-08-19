@@ -3261,6 +3261,12 @@ class Loan_Model extends CI_Model {
         if (!$fiscal_year) {
             return array('success' => false, 'message' => lang('loan_beginning_balance_post_fail'));
         }
+        if (function_exists('gl_reject_closed_date')) {
+            $lock_msg = gl_reject_closed_date($fiscal_year->start_date);
+            if ($lock_msg) {
+                return array('success' => false, 'message' => $lock_msg);
+            }
+        }
         
         // Get loan product info
         $product = $this->db->where('id', $balance->loan_product_id)->where('PIN', $pin)->get('loan_product')->row();

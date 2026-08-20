@@ -879,12 +879,18 @@ class Report_Saving extends CI_Controller {
     private function _build_current_saving_ledger_data($account) {
         $account_info = $this->finance_model->saving_account_balance($account);
         $first_date = '';
-        $this->db->select('trans_date');
-        $this->db->where('account', $account);
-        $this->db->where('PIN', current_user()->PIN);
-        $this->db->order_by('trans_date', 'ASC');
-        $this->db->limit(1);
-        $first_tx = $this->db->get('savings_transaction')->row();
+        $pin = current_user()->PIN;
+        $first_tx = $this->db
+            ->query(
+                "SELECT trans_date
+                 FROM savings_transaction
+                 WHERE account = ?
+                   AND PIN = ?
+                 ORDER BY trans_date ASC
+                 LIMIT 1",
+                array($account, $pin)
+            )
+            ->row();
         if (!empty($first_tx) && !empty($first_tx->trans_date)) {
             $first_date = date('Y-m-d', strtotime($first_tx->trans_date));
         } else if (!empty($account_info) && !empty($account_info->createdon)) {

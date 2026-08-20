@@ -6,9 +6,7 @@ $display_acct = (!empty($account_info) && !empty($account_info->old_members_acct
     ? $account_info->old_members_acct
     : $account;
 $acct_name = $this->finance_model->saving_account_name($account);
-$avail = !empty($account_info) ? floatval($account_info->balance) : 0;
-$maint = !empty($account_info) ? floatval($account_info->virtual_balance) : 0;
-$total_bal = $avail + $maint;
+$period_end_balance = isset($period_end_balance) ? floatval($period_end_balance) : 0;
 $transaction = isset($transaction) ? $transaction : array();
 
 $logo_src = '';
@@ -55,9 +53,8 @@ if (!empty($company->logo)) {
     <div style="font-size:10px; margin-bottom:6px;">
         <strong>Account No:</strong> <?php echo htmlspecialchars($display_acct); ?>
         &nbsp;|&nbsp; <strong>Account Name:</strong> <?php echo htmlspecialchars($acct_name); ?><br/>
-        <strong>Available:</strong> <?php echo number_format($avail, 2); ?>
-        &nbsp;|&nbsp; <strong>Maintaining:</strong> <?php echo number_format($maint, 2); ?>
-        &nbsp;|&nbsp; <strong>Total:</strong> <?php echo number_format($total_bal, 2); ?>
+        <strong>Balance as of <?php echo htmlspecialchars(format_date($reportinfo->todate, false)); ?>:</strong>
+        <?php echo number_format($period_end_balance, 2); ?>
     </div>
 
     <table style="width:100%; border-collapse:collapse; font-size:9px;">

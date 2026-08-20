@@ -1,3 +1,4 @@
+<link href="<?php echo base_url(); ?>media/css/plugins/datapicker/datepicker3.css?v=20260801" rel="stylesheet">
 <?php
 $company = company_info();
 $embed = !empty($embed);
@@ -15,18 +16,45 @@ if (!empty($account_info)) {
         $member_id = $account_info->member_id;
     }
 }
-$avail = !empty($account_info) ? floatval($account_info->balance) : 0;
-$maint = !empty($account_info) ? floatval($account_info->virtual_balance) : 0;
-$total_bal = $avail + $maint;
-$print_url = site_url(current_lang() . '/report_saving/new_saving_account_statement_print/' . $link_cat . '/' . $id . '/' . encode_id($account));
-$export_url = site_url(current_lang() . '/report_saving/new_saving_account_statement_export/' . $link_cat . '/' . $id . '/' . encode_id($account));
+$period_end_balance = isset($period_end_balance) ? floatval($period_end_balance) : 0;
+$print_url = isset($print_url) ? $print_url : site_url(current_lang() . '/report_saving/new_saving_account_statement_print/' . $link_cat . '/' . $id . '/' . encode_id($account));
+$export_url = isset($export_url) ? $export_url : site_url(current_lang() . '/report_saving/new_saving_account_statement_export/' . $link_cat . '/' . $id . '/' . encode_id($account));
+$back_url = isset($back_url) ? $back_url : site_url(current_lang() . '/report_saving/saving_account_accountlist_view/' . $link_cat . '/' . $id);
+$show_process_balances = isset($show_process_balances) ? (bool) $show_process_balances : true;
 $transaction = isset($transaction) ? $transaction : array();
+$filter_params = array(
+    'fromdate' => format_date($reportinfo->fromdate, false),
+    'todate' => format_date($reportinfo->todate, false),
+);
+$query_suffix = '?' . http_build_query($filter_params);
+$print_url .= (strpos($print_url, '?') === false ? $query_suffix : '&' . http_build_query($filter_params));
+$export_url .= (strpos($export_url, '?') === false ? $query_suffix : '&' . http_build_query($filter_params));
 
 $request_url = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https://' : 'http://')
     . (isset($_SERVER['HTTP_HOST']) ? $_SERVER['HTTP_HOST'] : '')
     . (isset($_SERVER['REQUEST_URI']) ? $_SERVER['REQUEST_URI'] : '');
 ?>
 <div class="sal-ledger-wrap" style="padding: <?php echo $embed ? '12px 14px' : '20px 8px'; ?>; margin: auto; max-width: 1100px;">
+    <?php if (!$embed) { ?>
+    <form method="get" action="" class="form-inline" style="margin-bottom:14px;">
+        <div class="form-group" style="margin-right:10px;">
+            <label style="margin-right:6px;">Start Date:</label>
+            <div class="input-group date" id="sal-fromdate-picker" style="width:170px;">
+                <input type="text" name="fromdate" value="<?php echo htmlspecialchars($filter_params['fromdate']); ?>" class="form-control" placeholder="dd-mm-yyyy">
+                <span class="input-group-addon"><span class="fa fa-calendar"></span></span>
+            </div>
+        </div>
+        <div class="form-group" style="margin-right:10px;">
+            <label style="margin-right:6px;">End Date:</label>
+            <div class="input-group date" id="sal-todate-picker" style="width:170px;">
+                <input type="text" name="todate" value="<?php echo htmlspecialchars($filter_params['todate']); ?>" class="form-control" placeholder="dd-mm-yyyy">
+                <span class="input-group-addon"><span class="fa fa-calendar"></span></span>
+            </div>
+        </div>
+        <button type="submit" class="btn btn-primary">Filter</button>
+    </form>
+    <?php } ?>
+
     <table style="width:100%; margin-bottom: 8px;">
         <tr>
             <td style="width:70px; vertical-align:top;">
@@ -62,9 +90,8 @@ $request_url = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https:
         <tr>
             <td style="padding:3px 0;"><strong>Account Name:</strong> <?php echo htmlspecialchars($acct_name); ?></td>
             <td style="padding:3px 0;">
-                <strong>Available:</strong> <?php echo number_format($avail, 2); ?>
-                &nbsp;|&nbsp; <strong>Maintaining:</strong> <?php echo number_format($maint, 2); ?>
-                &nbsp;|&nbsp; <strong>Total:</strong> <?php echo number_format($total_bal, 2); ?>
+                <strong>Balance as of <?php echo htmlspecialchars(format_date($reportinfo->todate, false)); ?>:</strong>
+                <?php echo number_format($period_end_balance, 2); ?>
             </td>
         </tr>
     </table>
@@ -232,29 +259,44 @@ $request_url = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https:
             <button type="button" class="btn btn-default" onclick="if (window.parent && window.parent.closeSavingLedgerPopup) { window.parent.closeSavingLedgerPopup(); }">Close</button>
         <?php } else { ?>
             &nbsp;
-            <a href="<?php echo site_url(current_lang() . '/report_saving/saving_account_accountlist_view/' . $link_cat . '/' . $id); ?>" class="btn btn-default">Back</a>
-            &nbsp;
-            <?php echo anchor('#', 'Process Balances', 'class="btn btn-warning" id="btnprocessbalances"'); ?>
+            <a href="<?php echo $back_url; ?>" class="btn btn-default">Back</a>
+            <?php if ($show_process_balances) { ?>
+                &nbsp;
+                <?php echo anchor('#', 'Process Balances', 'class="btn btn-warning" id="btnprocessbalances"'); ?>
+            <?php } ?>
         <?php } ?>
     </div>
 </div>
 
 <?php if (!$embed) { ?>
+<script src="<?php echo base_url(); ?>media/js/script/moment.js"></script>
+<script src="<?php echo base_url(); ?>media/js/plugins/datapicker/bootstrap-datepicker.js"></script>
 <script>
 (function () {
     function initScripts() {
-        if (typeof jQuery === 'undefined') {
+        if (typeof jQuery === 'undefined' || typeof moment === 'undefined' || typeof jQuery.fn.datetimepicker === 'undefined') {
             setTimeout(initScripts, 50);
             return;
         }
         jQuery(function ($) {
+            $('#sal-fromdate-picker').datetimepicker({
+                pickTime: false,
+                format: 'DD-MM-YYYY'
+            });
+            $('#sal-todate-picker').datetimepicker({
+                pickTime: false,
+                format: 'DD-MM-YYYY'
+            });
+            <?php if ($show_process_balances) { ?>
             $('#btnprocessbalances').on('click', function (e) {
                 e.preventDefault();
                 $('#ibox-main').children('.ibox-content').addClass('sk-loading');
                 $('body').css('cursor', 'wait');
                 recomputebalances();
             });
+            <?php } ?>
         });
+        <?php if ($show_process_balances) { ?>
         async function recomputebalances() {
             let response = await fetch('<?php echo site_url(current_lang() . '/report_saving/recomputebalancesindividual/' . $account . '/' . $balance); ?>');
             let totalrecdata = await response.json();
@@ -268,6 +310,7 @@ $request_url = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https:
             }
             return true;
         }
+        <?php } ?>
     }
     initScripts();
 })();

@@ -645,17 +645,8 @@ if (!empty($export_params)) {
                                 <td>
                                     <div class="action-btns">
                                         <?php
-                                        $this->db->where('PIN', current_user()->PIN);
-                                        $this->db->where('link', 1);
-                                        if (!empty($value->account_cat)) {
-                                            $this->db->where('account_type', $value->account_cat);
-                                        }
-                                        $this->db->order_by('id', 'DESC');
-                                        $this->db->limit(1);
-                                        $report = $this->db->get('report_table_saving')->row();
-
-                                        if ($report && !empty($value->account)) {
-                                            $ledger_url = current_lang() . "/report_saving/new_saving_account_statement_view/1/" . encode_id($report->id) . "/" . encode_id($value->account);
+                                        if (!empty($value->account)) {
+                                            $ledger_url = current_lang() . "/report_saving/current_saving_account_statement_view/" . encode_id($value->account);
                                             echo anchor($ledger_url, ' <i class="fa fa-th-list"></i> Ledger', 'class="btn btn-info btn-xs" target="_blank"');
                                         }
                                         if ($can_post) {

@@ -443,8 +443,14 @@ class Report_Saving extends CI_Controller {
         $this->data['account_info'] = $account_info;
         
         $reportinfo = $this->report_model->report_saving($id,$link)->row();
+        if ($reportinfo) {
+            $dates = $this->_resolve_ledger_dates($reportinfo->fromdate, $reportinfo->todate);
+            $reportinfo->fromdate = $dates['fromdate'];
+            $reportinfo->todate = $dates['todate'];
+        }
         $this->data['reportinfo'] = $reportinfo;
         $this->data['transaction'] = $this->report_model->account_saving_statement($reportinfo->fromdate, $reportinfo->todate, $account);
+        $this->data['period_end_balance'] = $this->report_model->account_saving_balance_as_of($reportinfo->todate, $account);
 
         $this->data['embed'] = ($this->input->get('embed') === '1');
         if (!empty($this->data['embed'])) {
@@ -473,8 +479,14 @@ class Report_Saving extends CI_Controller {
         $this->data['account_info'] = $account_info;
         
         $reportinfo = $this->report_model->report_saving($id,$link)->row();
+        if ($reportinfo) {
+            $dates = $this->_resolve_ledger_dates($reportinfo->fromdate, $reportinfo->todate);
+            $reportinfo->fromdate = $dates['fromdate'];
+            $reportinfo->todate = $dates['todate'];
+        }
         $this->data['reportinfo'] = $reportinfo;
         $this->data['transaction'] = $this->report_model->account_saving_statement($reportinfo->fromdate, $reportinfo->todate, $account);
+        $this->data['period_end_balance'] = $this->report_model->account_saving_balance_as_of($reportinfo->todate, $account);
 
         $html = $this->load->view('report/saving/print/account_saving_statement_ledger_print', $this->data, true);
         $this->export_to_pdf($html, 'Savings_Account_Ledger', $reportinfo->page ? $reportinfo->page : 'A4-L', false);
@@ -509,6 +521,11 @@ class Report_Saving extends CI_Controller {
         $account_info = $this->finance_model->saving_account_balance($account);
         
         $reportinfo = $this->report_model->report_saving($id,$link)->row();
+        if ($reportinfo) {
+            $dates = $this->_resolve_ledger_dates($reportinfo->fromdate, $reportinfo->todate);
+            $reportinfo->fromdate = $dates['fromdate'];
+            $reportinfo->todate = $dates['todate'];
+        }
         $transaction = $this->report_model->account_saving_statement($reportinfo->fromdate, $reportinfo->todate, $account);
         
         // Check if we have data
@@ -695,6 +712,237 @@ class Report_Saving extends CI_Controller {
         
         // Exit immediately to prevent any further output
         exit();
+    }
+
+    function current_saving_account_statement_view($account) {
+        $this->data['title'] = lang('saving_account_statement');
+        $this->data['link_cat'] = 1;
+        $this->data['id'] = '';
+        $account = !is_null($account) ? decode_id($account) : null;
+        $ledger = $this->_build_current_saving_ledger_data($account);
+        $this->data = array_merge($this->data, $ledger);
+        $this->data['embed'] = ($this->input->get('embed') === '1');
+
+        if (!empty($this->data['embed'])) {
+            $this->load->view('report/saving/account_saving_statement_ledger_embed', $this->data);
+            return;
+        }
+
+        $this->data['content'] = 'report/saving/account_saving_statement_ledger';
+        $this->load->view('template', $this->data);
+    }
+
+    function current_saving_account_statement_print($account) {
+        $this->data['title'] = lang('saving_account_statement');
+        $this->data['link_cat'] = 1;
+        $this->data['id'] = '';
+        $account = !is_null($account) ? decode_id($account) : null;
+        $ledger = $this->_build_current_saving_ledger_data($account);
+        $this->data = array_merge($this->data, $ledger);
+
+        $html = $this->load->view('report/saving/print/account_saving_statement_ledger_print', $this->data, true);
+        $this->export_to_pdf($html, 'Savings_Account_Ledger', !empty($this->data['reportinfo']->page) ? $this->data['reportinfo']->page : 'A4-L', false);
+    }
+
+    function current_saving_account_statement_export($account) {
+        if (ob_get_level()) {
+            ob_end_clean();
+        }
+        while (@ob_end_clean());
+
+        $this->output->enable_profiler(FALSE);
+        $this->output->set_output('');
+        $this->load->library('excel');
+
+        $encoded_account = $account;
+        $account = !is_null($account) ? decode_id($account) : null;
+        $ledger = $this->_build_current_saving_ledger_data($account);
+        $account_info = $ledger['account_info'];
+        $reportinfo = $ledger['reportinfo'];
+        $transaction = $ledger['transaction'];
+
+        if (empty($transaction) || !is_array($transaction) || count($transaction) == 0) {
+            if (ob_get_level()) {
+                ob_end_clean();
+            }
+            $this->session->set_flashdata('warning', 'No data available to export');
+            redirect(current_lang() . '/report_saving/current_saving_account_statement_view/' . $encoded_account, 'refresh');
+            exit();
+        }
+
+        $objPHPExcel = new PHPExcel();
+        $objPHPExcel->getProperties()->setCreator(company_info()->name)
+                                     ->setTitle("Account Statement")
+                                     ->setSubject("Account Statement Export")
+                                     ->setDescription("Account Statement exported from " . company_info()->name);
+
+        $objPHPExcel->setActiveSheetIndex(0);
+        $sheet = $objPHPExcel->getActiveSheet();
+        $sheet->setTitle('Account Statement');
+        $sheet->setCellValue('A1', company_info()->name);
+        $sheet->mergeCells('A1:E1');
+        $sheet->getStyle('A1')->getFont()->setBold(true)->setSize(14);
+        $sheet->getStyle('A1')->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_CENTER);
+
+        $sheet->setCellValue('A2', 'Account Statement');
+        $sheet->mergeCells('A2:E2');
+        $sheet->getStyle('A2')->getFont()->setBold(true)->setSize(12);
+        $sheet->getStyle('A2')->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_CENTER);
+
+        $sheet->setCellValue('A3', 'For the period from ' . format_date($reportinfo->fromdate, false) . ' to ' . format_date($reportinfo->todate, false));
+        $sheet->mergeCells('A3:E3');
+        $sheet->getStyle('A3')->getFont()->setSize(10);
+        $sheet->getStyle('A3')->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_CENTER);
+
+        $account_number = !empty($account_info) && !empty($account_info->old_members_acct) ? $account_info->old_members_acct : $account;
+        $account_name = $this->finance_model->saving_account_name($account);
+        $sheet->setCellValue('A4', 'Account Number: ' . $account_number);
+        $sheet->setCellValue('A5', 'Account Name: ' . $account_name);
+        $sheet->setCellValue('A7', 'Date');
+        $sheet->setCellValue('B7', 'Description');
+        $sheet->setCellValue('C7', 'Debit [DR]');
+        $sheet->setCellValue('D7', 'Credit [CR]');
+        $sheet->setCellValue('E7', 'Balance');
+
+        $headerStyle = array(
+            'font' => array('bold' => true, 'color' => array('rgb' => 'FFFFFF')),
+            'fill' => array('type' => PHPExcel_Style_Fill::FILL_SOLID, 'color' => array('rgb' => '4472C4')),
+            'alignment' => array('horizontal' => PHPExcel_Style_Alignment::HORIZONTAL_CENTER),
+            'borders' => array('allborders' => array('style' => PHPExcel_Style_Border::BORDER_THIN)),
+        );
+        $sheet->getStyle('A7:E7')->applyFromArray($headerStyle);
+        $sheet->getColumnDimension('A')->setWidth(15);
+        $sheet->getColumnDimension('B')->setWidth(40);
+        $sheet->getColumnDimension('C')->setWidth(15);
+        $sheet->getColumnDimension('D')->setWidth(15);
+        $sheet->getColumnDimension('E')->setWidth(15);
+
+        $row = 8;
+        $balance = 0;
+        $credit = 0;
+        $debit = 0;
+
+        if (count($transaction) > 0) {
+            $balance = $transaction[0]->credit_total - $transaction[0]->debit_total;
+            $sheet->setCellValue('B' . $row, 'BROUGHT FORWARD BALANCE');
+            $sheet->setCellValue('E' . $row, number_format($balance, 2));
+            $sheet->getStyle('A' . $row . ':E' . $row)->applyFromArray(array(
+                'borders' => array('allborders' => array('style' => PHPExcel_Style_Border::BORDER_THIN))
+            ));
+            $row++;
+        }
+
+        foreach ($transaction as $value) {
+            $dt = explode(' ', $value->trans_date);
+            if ($value->debit > 0) {
+                $balance -= $value->debit;
+                $debit += $value->debit;
+            } else if ($value->credit > 0) {
+                $balance += $value->credit;
+                $credit += $value->credit;
+            }
+
+            $sheet->setCellValue('A' . $row, format_date($dt[0], FALSE));
+            $sheet->setCellValue('B' . $row, $value->system_comment . ' [' . $value->paymethod . '] ' . $value->comment);
+            $sheet->setCellValue('C' . $row, $value->debit > 0 ? number_format($value->debit, 2) : '');
+            $sheet->setCellValue('D' . $row, $value->credit > 0 ? number_format($value->credit, 2) : '');
+            $sheet->setCellValue('E' . $row, number_format($balance, 2));
+            $sheet->getStyle('A' . $row . ':E' . $row)->applyFromArray(array(
+                'borders' => array('allborders' => array('style' => PHPExcel_Style_Border::BORDER_THIN))
+            ));
+            $row++;
+        }
+
+        $sheet->setCellValue('C' . $row, number_format($debit, 2));
+        $sheet->setCellValue('D' . $row, number_format($credit, 2));
+        $sheet->setCellValue('E' . $row, number_format($balance, 2));
+        $sheet->getStyle('A' . $row . ':E' . $row)->applyFromArray(array(
+            'borders' => array('allborders' => array('style' => PHPExcel_Style_Border::BORDER_THIN)),
+            'font' => array('bold' => true)
+        ));
+
+        $filename = 'Account_Statement_' . date('Y-m-d_His') . '.xls';
+        if (ob_get_level()) {
+            ob_end_clean();
+        }
+        while (@ob_end_clean());
+        header('Content-Type: application/vnd.ms-excel');
+        header('Content-Disposition: attachment;filename="' . $filename . '"');
+        header('Cache-Control: must-revalidate, post-check=0, pre-check=0');
+        header('Pragma: public');
+        header('Expires: 0');
+        $objWriter = PHPExcel_IOFactory::createWriter($objPHPExcel, 'Excel5');
+        $objWriter->save('php://output');
+        exit();
+    }
+
+    private function _build_current_saving_ledger_data($account) {
+        $account_info = $this->finance_model->saving_account_balance($account);
+        $first_date = '';
+        $this->db->select('trans_date');
+        $this->db->where('account', $account);
+        $this->db->where('PIN', current_user()->PIN);
+        $this->db->order_by('trans_date', 'ASC');
+        $this->db->limit(1);
+        $first_tx = $this->db->get('savings_transaction')->row();
+        if (!empty($first_tx) && !empty($first_tx->trans_date)) {
+            $first_date = date('Y-m-d', strtotime($first_tx->trans_date));
+        } else if (!empty($account_info) && !empty($account_info->createdon)) {
+            $first_date = date('Y-m-d', strtotime($account_info->createdon));
+        } else {
+            $first_date = date('Y-m-d');
+        }
+
+        $dates = $this->_resolve_ledger_dates($first_date, date('Y-m-d'));
+        $reportinfo = (object) array(
+            'fromdate' => $dates['fromdate'],
+            'todate' => $dates['todate'],
+            'page' => 'A4-L'
+        );
+
+        return array(
+            'account' => $account,
+            'account_info' => $account_info,
+            'reportinfo' => $reportinfo,
+            'transaction' => $this->report_model->account_saving_statement($reportinfo->fromdate, $reportinfo->todate, $account),
+            'period_end_balance' => $this->report_model->account_saving_balance_as_of($reportinfo->todate, $account),
+            'print_url' => site_url(current_lang() . '/report_saving/current_saving_account_statement_print/' . encode_id($account)),
+            'export_url' => site_url(current_lang() . '/report_saving/current_saving_account_statement_export/' . encode_id($account)),
+            'back_url' => site_url(current_lang() . '/saving/saving_account_listing'),
+            'show_process_balances' => false,
+        );
+    }
+
+    private function _resolve_ledger_dates($default_from, $default_to) {
+        $from = $default_from;
+        $to = $default_to;
+
+        $from_input = trim((string) $this->input->get('fromdate'));
+        $to_input = trim((string) $this->input->get('todate'));
+
+        if ($from_input !== '') {
+            $parsed = format_date($from_input);
+            if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $parsed)) {
+                $from = $parsed;
+            }
+        }
+        if ($to_input !== '') {
+            $parsed = format_date($to_input);
+            if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $parsed)) {
+                $to = $parsed;
+            }
+        }
+
+        if (strtotime($from) > strtotime($to)) {
+            $swap = $from;
+            $from = $to;
+            $to = $swap;
+        }
+
+        return array(
+            'fromdate' => $from,
+            'todate' => $to,
+        );
     }
    
       function saving_account_statement_print($link, $id) {

@@ -1,3 +1,4 @@
+<link href="<?php echo base_url(); ?>media/css/plugins/datapicker/datepicker3.css?v=20260801" rel="stylesheet"/>
 <style>
 .member-list-page { margin-top: 4px; }
 .member-list-page .member-alert {
@@ -8,6 +9,7 @@
     font-size: 13px;
     font-weight: 600;
 }
+.member-list-page .bootstrap-datetimepicker-widget { z-index: 1060 !important; }
 .member-list-page .member-alert.success {
     background: #e8f8f5;
     color: #0e7c69;
@@ -433,6 +435,8 @@ $search_key = isset($jxy['key']) ? $jxy['key'] : (isset($_GET['key']) ? $_GET['k
 $account_type_filter = isset($account_type_filter) && $account_type_filter !== '' && $account_type_filter !== null ? $account_type_filter : (isset($_GET['account_type_filter']) ? $_GET['account_type_filter'] : 'all');
 $gl_posted_filter = isset($gl_posted_filter) && $gl_posted_filter !== '' && $gl_posted_filter !== null ? $gl_posted_filter : (isset($_GET['gl_posted_filter']) ? $_GET['gl_posted_filter'] : 'all');
 $status_filter = isset($status_filter) ? $status_filter : (isset($_GET['status_filter']) ? $_GET['status_filter'] : '1');
+$as_of_display = isset($as_of_display) ? $as_of_display : (isset($_GET['as_of']) ? $_GET['as_of'] : '');
+$as_of_date = isset($as_of_date) ? $as_of_date : '';
 
 $export_url = current_lang() . '/saving/saving_account_list_export';
 $export_params = array();
@@ -449,6 +453,9 @@ if (isset($status_filter) && $status_filter != '') {
     $export_params['status_filter'] = $status_filter;
 } else {
     $export_params['status_filter'] = '1';
+}
+if (!empty($as_of_display)) {
+    $export_params['as_of'] = $as_of_display;
 }
 if (!empty($export_params)) {
     $export_url .= '?' . http_build_query($export_params);
@@ -511,6 +518,13 @@ if (!empty($export_params)) {
                             <option value="0" <?php echo ($status_filter == '0' ? 'selected="selected"' : ''); ?>><?php echo lang('account_status_inactive'); ?></option>
                         </select>
                     </div>
+                    <div class="filter-field">
+                        <label>As of Date</label>
+                        <div class="input-group date" id="as_of_picker">
+                            <input type="text" name="as_of" value="<?php echo htmlspecialchars($as_of_display, ENT_QUOTES, 'UTF-8'); ?>" class="form-control" placeholder="dd-mm-yyyy" autocomplete="off"/>
+                            <span class="input-group-addon"><span class="fa fa-calendar"></span></span>
+                        </div>
+                    </div>
                     <div class="filter-actions">
                         <a href="<?php echo site_url(current_lang() . '/saving/saving_account_listing'); ?>" class="btn btn-default btn-clear-filter">
                             <i class="fa fa-undo"></i> Clear
@@ -525,7 +539,12 @@ if (!empty($export_params)) {
     </div>
 
     <div class="total-banner">
-        <span class="lbl"><?php echo lang('total_savings_amount'); ?></span>
+        <span class="lbl">
+            <?php echo lang('total_savings_amount'); ?>
+            <?php if (!empty($as_of_display)) { ?>
+                <small style="font-weight:normal; text-transform:none; letter-spacing:0;">(as of <?php echo htmlspecialchars($as_of_display, ENT_QUOTES, 'UTF-8'); ?>)</small>
+            <?php } ?>
+        </span>
         <span class="val"><?php echo number_format(isset($total_savings_amount) ? $total_savings_amount : 0, 2, '.', ','); ?></span>
     </div>
 
@@ -534,6 +553,7 @@ if (!empty($export_params)) {
     <?php if (!empty($account_type_filter) && $account_type_filter != 'all') { ?><input type="hidden" name="redirect_account_type_filter" value="<?php echo htmlspecialchars($account_type_filter, ENT_QUOTES, 'UTF-8'); ?>"/><?php } ?>
     <?php if (!empty($gl_posted_filter) && $gl_posted_filter != 'all') { ?><input type="hidden" name="redirect_gl_posted_filter" value="<?php echo htmlspecialchars($gl_posted_filter, ENT_QUOTES, 'UTF-8'); ?>"/><?php } ?>
     <?php if (isset($status_filter) && $status_filter !== '') { ?><input type="hidden" name="redirect_status_filter" value="<?php echo htmlspecialchars($status_filter, ENT_QUOTES, 'UTF-8'); ?>"/><?php } ?>
+    <?php if (!empty($as_of_display)) { ?><input type="hidden" name="redirect_as_of" value="<?php echo htmlspecialchars($as_of_display, ENT_QUOTES, 'UTF-8'); ?>"/><?php } ?>
 
     <div class="member-table-panel">
         <div class="panel-head">
@@ -647,6 +667,9 @@ if (!empty($export_params)) {
                                         <?php
                                         if (!empty($value->account)) {
                                             $ledger_url = current_lang() . "/report_saving/current_saving_account_statement_view/" . encode_id($value->account);
+                                            if (!empty($as_of_display)) {
+                                                $ledger_url .= '?todate=' . rawurlencode($as_of_display);
+                                            }
                                             echo anchor($ledger_url, ' <i class="fa fa-th-list"></i> Ledger', 'class="btn btn-info btn-xs" target="_blank"');
                                         }
                                         if ($can_post) {
@@ -679,6 +702,8 @@ if (!empty($export_params)) {
     <?php echo form_close(); ?>
 </div>
 
+<script src="<?php echo base_url(); ?>media/js/script/moment.js"></script>
+<script src="<?php echo base_url(); ?>media/js/plugins/datapicker/bootstrap-datepicker.js"></script>
 <script>
 (function() {
     function escapeHtml(str) {
@@ -688,6 +713,20 @@ if (!empty($export_params)) {
             .replace(/>/g, '&gt;')
             .replace(/"/g, '&quot;')
             .replace(/'/g, '&#39;');
+    }
+
+    function initAsOfDatePicker() {
+        if (typeof jQuery === 'undefined' || typeof moment === 'undefined' || typeof jQuery.fn.datetimepicker === 'undefined') {
+            setTimeout(initAsOfDatePicker, 50);
+            return;
+        }
+        var $picker = jQuery('#as_of_picker');
+        if ($picker.length && !$picker.data('DateTimePicker')) {
+            $picker.datetimepicker({
+                pickTime: false,
+                format: 'DD-MM-YYYY'
+            });
+        }
     }
 
     function initMemberSuggest() {
@@ -966,6 +1005,7 @@ if (!empty($export_params)) {
         });
     });
 
+    initAsOfDatePicker();
     initMemberSuggest();
 })();
 </script>

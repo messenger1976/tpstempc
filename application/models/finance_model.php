@@ -1201,10 +1201,14 @@ class Finance_Model extends CI_Model {
         return $entries;
     }
 
-    function get_total_savings_amount($key=null, $account_type_filter=null, $status_filter=null, $gl_posted_filter=null) {
+    function get_total_savings_amount($key=null, $account_type_filter=null, $status_filter=null, $gl_posted_filter=null, $as_of_date=null) {
         $pin = current_user()->PIN;
         $pin_esc = $this->db->escape($pin);
-        $this->db->select_sum('ma.balance');
+        if (!empty($as_of_date) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $as_of_date)) {
+            $this->db->select('SUM(' . $this->_savings_balance_as_of_expr($as_of_date) . ') AS balance', FALSE);
+        } else {
+            $this->db->select_sum('ma.balance');
+        }
         $this->db->from('members_account ma');
         $this->db->join('saving_account_type sat', 'ma.account_cat = sat.account AND sat.PIN = ' . $pin_esc, 'left');
         $this->db->where('ma.PIN', $pin);
@@ -4465,10 +4469,36 @@ $pin=current_user()->PIN;
         return $this->db->count_all_results();
     }
 
-    function search_saving_account($key=null, $limit=40, $start=0, $account_type_filter=null, $status_filter=null, $gl_posted_filter=null) {
+    /**
+     * SQL expression: reconstructed savings balance as of a date for the outer ma.account row.
+     */
+    private function _savings_balance_as_of_expr($as_of_date) {
+        $until = $this->db->escape_str($as_of_date);
+        return "(
+            SELECT COALESCE(SUM(CASE WHEN st.trans_type = 'CR' THEN st.amount ELSE 0 END), 0)
+                 - COALESCE(SUM(CASE WHEN st.trans_type = 'DR' THEN st.amount ELSE 0 END), 0)
+            FROM savings_transaction st
+            WHERE st.account = ma.account
+              AND st.PIN = ma.PIN
+              AND st.trans_date <= '{$until} 23:59:59'
+              AND (st.comment IS NULL OR st.comment NOT LIKE 'VOID-%')
+              AND st.receipt NOT IN (
+                  SELECT SUBSTRING_INDEX(SUBSTRING_INDEX(vt.comment, ' ', 1), 'VOID-', -1)
+                  FROM savings_transaction vt
+                  WHERE vt.account = ma.account
+                    AND vt.PIN = ma.PIN
+                    AND vt.comment LIKE 'VOID-%'
+              )
+        )";
+    }
+
+    function search_saving_account($key=null, $limit=40, $start=0, $account_type_filter=null, $status_filter=null, $gl_posted_filter=null, $as_of_date=null) {
         $pin = current_user()->PIN;
         $pin_esc = $this->db->escape($pin);
         $this->db->select('ma.*, m.firstname, m.middlename, m.lastname, m.member_id as member_id_display, mg.name as group_name, sat.description as account_type_name, sat.account as account_type_code, sat.name as account_type_name_display');
+        if (!empty($as_of_date) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $as_of_date)) {
+            $this->db->select($this->_savings_balance_as_of_expr($as_of_date) . ' AS balance', FALSE);
+        }
         $this->db->select("(SELECT COUNT(DISTINCT gl.id) FROM savings_transaction st INNER JOIN general_ledger gl ON gl.fromtable = 'savings_transaction' AND gl.refferenceID = st.receipt AND gl.PIN = st.PIN WHERE st.account = ma.account AND st.PIN = " . $pin_esc . ") AS gl_posted_count", FALSE);
         $this->db->select("(SELECT COUNT(*) FROM savings_transaction st LEFT JOIN general_ledger gl ON gl.fromtable = 'savings_transaction' AND gl.refferenceID = st.receipt AND gl.PIN = st.PIN WHERE st.account = ma.account AND st.PIN = " . $pin_esc . " AND gl.id IS NULL) AS unposted_count", FALSE);
         $this->db->from('members_account ma');

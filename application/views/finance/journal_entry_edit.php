@@ -12,6 +12,9 @@ if (!function_exists('journal_edit_link_entity')) {
         if ($type === 'loan' || !empty($item->LID)) {
             return !empty($item->LID) ? $item->LID : '';
         }
+        if ($type === 'savings' || !empty($item->savings_account)) {
+            return !empty($item->savings_account) ? $item->savings_account : '';
+        }
         if ($type === 'cbu' || (!empty($item->PID) && empty($item->LID) && empty($item->customerid) && empty($item->supplierid))) {
             return !empty($item->PID) ? $item->PID : '';
         }
@@ -32,6 +35,9 @@ if (!function_exists('journal_edit_link_type')) {
         }
         if (!empty($item->LID)) {
             return 'loan';
+        }
+        if (!empty($item->savings_account)) {
+            return 'savings';
         }
         if (!empty($item->PID)) {
             return 'cbu';
@@ -145,6 +151,48 @@ if (isset($message) && !empty($message)) {
                     $loanlist = isset($loanlist) ? $loanlist : array();
                     $cbulist = isset($cbulist) ? $cbulist : array();
                     $cbu_account = isset($cbu_account) ? $cbu_account : '';
+                    $savings_coa_list = isset($savings_coa_list) ? $savings_coa_list : array();
+                    $savings_member_accounts = isset($savings_member_accounts) ? $savings_member_accounts : array();
+                    $loan_receivable_coa_list = isset($loan_receivable_coa_list) ? $loan_receivable_coa_list : array();
+                    $savings_accounts_by_coa_type = array();
+                    if (!empty($savings_member_accounts)) {
+                        foreach ($savings_member_accounts as $sa) {
+                            $coa_key = isset($sa->coa_account) ? trim((string) $sa->coa_account) : '';
+                            if ($coa_key === '') {
+                                continue;
+                            }
+                            $type_name = !empty($sa->account_type_name) ? trim((string) $sa->account_type_name) : 'Savings';
+                            if (!isset($savings_accounts_by_coa_type[$coa_key])) {
+                                $savings_accounts_by_coa_type[$coa_key] = array();
+                            }
+                            if (!isset($savings_accounts_by_coa_type[$coa_key][$type_name])) {
+                                $savings_accounts_by_coa_type[$coa_key][$type_name] = array();
+                            }
+                            $savings_accounts_by_coa_type[$coa_key][$type_name][] = $sa;
+                        }
+                    }
+                    $loans_by_coa_product = array();
+                    $loans_by_product = array();
+                    if (!empty($loanlist)) {
+                        foreach ($loanlist as $loan) {
+                            $product_name = !empty($loan->product_name) ? trim((string) $loan->product_name) : 'Loan Product';
+                            if (!isset($loans_by_product[$product_name])) {
+                                $loans_by_product[$product_name] = array();
+                            }
+                            $loans_by_product[$product_name][] = $loan;
+                            $coa_key = isset($loan->coa_account) ? trim((string) $loan->coa_account) : '';
+                            if ($coa_key === '') {
+                                continue;
+                            }
+                            if (!isset($loans_by_coa_product[$coa_key])) {
+                                $loans_by_coa_product[$coa_key] = array();
+                            }
+                            if (!isset($loans_by_coa_product[$coa_key][$product_name])) {
+                                $loans_by_coa_product[$coa_key][$product_name] = array();
+                            }
+                            $loans_by_coa_product[$coa_key][$product_name][] = $loan;
+                        }
+                    }
                     $row_n = 0;
                     foreach ($line_items as $item) {
                         $row_n++;
@@ -155,6 +203,8 @@ if (isset($message) && !empty($message)) {
                         $desc_val = isset($item->description) ? $item->description : '';
                         $acct_val = isset($item->account) ? $item->account : '';
                         $show_cbu_link = ($cbu_account !== '' && (string) $acct_val === (string) $cbu_account);
+                        $show_savings_link = (!$show_cbu_link && in_array((string) $acct_val, array_map('strval', $savings_coa_list), true));
+                        $is_loan_receivable_row = in_array((string) $acct_val, array_map('strval', $loan_receivable_coa_list), true);
                     ?>
                     <tr>
                         <td>
@@ -178,6 +228,9 @@ if (isset($message) && !empty($message)) {
                                 <?php if ($show_cbu_link || $lt === 'cbu') { ?>
                                 <option value="cbu" <?php echo ($lt === 'cbu') ? 'selected="selected"' : ''; ?>><?php echo lang('journalentry_link_cbu'); ?></option>
                                 <?php } ?>
+                                <?php if ($show_savings_link || $lt === 'savings') { ?>
+                                <option value="savings" <?php echo ($lt === 'savings') ? 'selected="selected"' : ''; ?>><?php echo lang('journalentry_link_savings'); ?></option>
+                                <?php } ?>
                             </select>
                         </td>
                         <td>
@@ -192,11 +245,18 @@ if (isset($message) && !empty($message)) {
                                         <option value="<?php echo htmlspecialchars($s->supplierid); ?>" <?php echo ($le == $s->supplierid) ? 'selected="selected"' : ''; ?>><?php echo htmlspecialchars($s->supplierid . ' : ' . $s->name); ?></option>
                                     <?php }
                                 } elseif ($lt === 'loan' && !empty($loanlist)) {
-                                    foreach ($loanlist as $loan) {
-                                        $loan_label = $loan->LID . ' : ' . (isset($loan->member_id) ? $loan->member_id . ' - ' : '')
-                                            . trim((isset($loan->firstname) ? $loan->firstname : '') . ' ' . (isset($loan->lastname) ? $loan->lastname : ''));
-                                        ?>
-                                        <option value="<?php echo htmlspecialchars($loan->LID); ?>" <?php echo ($le == $loan->LID) ? 'selected="selected"' : ''; ?>><?php echo htmlspecialchars($loan_label); ?></option>
+                                    $loan_groups = ($is_loan_receivable_row && !empty($loans_by_coa_product[$acct_val]))
+                                        ? $loans_by_coa_product[$acct_val]
+                                        : $loans_by_product;
+                                    foreach ($loan_groups as $product_name => $group_loans) { ?>
+                                        <optgroup label="<?php echo htmlspecialchars($product_name); ?>">
+                                        <?php foreach ($group_loans as $loan) {
+                                            $loan_label = $loan->LID . ' : ' . (isset($loan->member_id) ? $loan->member_id . ' - ' : '')
+                                                . trim((isset($loan->firstname) ? $loan->firstname : '') . ' ' . (isset($loan->lastname) ? $loan->lastname : ''));
+                                            ?>
+                                            <option value="<?php echo htmlspecialchars($loan->LID); ?>" <?php echo ($le == $loan->LID) ? 'selected="selected"' : ''; ?>><?php echo htmlspecialchars($loan_label); ?></option>
+                                        <?php } ?>
+                                        </optgroup>
                                     <?php }
                                 } elseif ($lt === 'cbu' && !empty($cbulist)) {
                                     foreach ($cbulist as $cbu) {
@@ -204,6 +264,19 @@ if (isset($message) && !empty($message)) {
                                             . trim((isset($cbu->firstname) ? $cbu->firstname : '') . ' ' . (isset($cbu->middlename) ? $cbu->middlename : '') . ' ' . (isset($cbu->lastname) ? $cbu->lastname : ''));
                                         ?>
                                         <option value="<?php echo htmlspecialchars($cbu->PID); ?>" <?php echo ((string) $le === (string) $cbu->PID) ? 'selected="selected"' : ''; ?>><?php echo htmlspecialchars($cbu_label); ?></option>
+                                    <?php }
+                                } elseif ($lt === 'savings' && !empty($savings_accounts_by_coa_type[$acct_val])) {
+                                    foreach ($savings_accounts_by_coa_type[$acct_val] as $type_name => $type_accounts) { ?>
+                                        <optgroup label="<?php echo htmlspecialchars($type_name); ?>">
+                                        <?php foreach ($type_accounts as $sa) {
+                                            $display_acct = !empty($sa->old_members_acct) ? ($sa->old_members_acct . ' / ' . $sa->account) : $sa->account;
+                                            $sa_label = (isset($sa->member_id) ? $sa->member_id . ' - ' : '')
+                                                . trim((isset($sa->firstname) ? $sa->firstname : '') . ' ' . (isset($sa->middlename) ? $sa->middlename : '') . ' ' . (isset($sa->lastname) ? $sa->lastname : ''))
+                                                . ' [' . $display_acct . ']';
+                                            ?>
+                                            <option value="<?php echo htmlspecialchars($sa->account); ?>" <?php echo ((string) $le === (string) $sa->account) ? 'selected="selected"' : ''; ?>><?php echo htmlspecialchars($sa_label); ?></option>
+                                        <?php } ?>
+                                        </optgroup>
                                     <?php }
                                 } ?>
                             </select>
@@ -257,6 +330,7 @@ $link_type_options_html = '<option value="">' . htmlspecialchars(lang('journalen
     . '<option value="supplier">' . htmlspecialchars(lang('journalentry_link_supplier'), ENT_QUOTES) . '</option>'
     . '<option value="loan">' . htmlspecialchars(lang('journalentry_link_loan'), ENT_QUOTES) . '</option>';
 $link_type_cbu_option_html = '<option value="cbu">' . htmlspecialchars(lang('journalentry_link_cbu'), ENT_QUOTES) . '</option>';
+$link_type_savings_option_html = '<option value="savings">' . htmlspecialchars(lang('journalentry_link_savings'), ENT_QUOTES) . '</option>';
 
 $empty_entity_html = '<option value="">' . htmlspecialchars(lang('journalentry_link_select'), ENT_QUOTES) . '</option>';
 
@@ -275,12 +349,49 @@ if (!empty($supplierlist)) {
     }
 }
 $loan_options_html = $empty_entity_html;
+$loan_options_by_coa = array();
+$loan_options_by_product = array();
 if (!empty($loanlist)) {
     foreach ($loanlist as $loan) {
         $loan_label = $loan->LID . ' : ' . (isset($loan->member_id) ? $loan->member_id . ' - ' : '')
             . trim((isset($loan->firstname) ? $loan->firstname : '') . ' ' . (isset($loan->lastname) ? $loan->lastname : ''));
-        $loan_options_html .= '<option value="' . htmlspecialchars($loan->LID, ENT_QUOTES) . '">'
+        $loan_opt = '<option value="' . htmlspecialchars($loan->LID, ENT_QUOTES) . '">'
             . htmlspecialchars($loan_label, ENT_QUOTES) . '</option>';
+        $product_name = !empty($loan->product_name) ? trim((string) $loan->product_name) : 'Loan Product';
+        if (!isset($loan_options_by_product[$product_name])) {
+            $loan_options_by_product[$product_name] = '';
+        }
+        $loan_options_by_product[$product_name] .= $loan_opt;
+
+        $coa_key = isset($loan->coa_account) ? trim((string) $loan->coa_account) : '';
+        if ($coa_key !== '') {
+            if (!isset($loan_options_by_coa[$coa_key])) {
+                $loan_options_by_coa[$coa_key] = array();
+            }
+            if (!isset($loan_options_by_coa[$coa_key][$product_name])) {
+                $loan_options_by_coa[$coa_key][$product_name] = '';
+            }
+            $loan_options_by_coa[$coa_key][$product_name] .= $loan_opt;
+        }
+    }
+    foreach ($loan_options_by_product as $product_name => $opts) {
+        $loan_options_html .= '<optgroup label="' . htmlspecialchars($product_name, ENT_QUOTES) . '">' . $opts . '</optgroup>';
+    }
+}
+foreach ($loan_options_by_coa as $coa_key => $by_product) {
+    $html = $empty_entity_html;
+    foreach ($by_product as $product_name => $opts) {
+        $html .= '<optgroup label="' . htmlspecialchars($product_name, ENT_QUOTES) . '">' . $opts . '</optgroup>';
+    }
+    $loan_options_by_coa[$coa_key] = $html;
+}
+$loan_receivable_coa_list = isset($loan_receivable_coa_list) ? $loan_receivable_coa_list : array();
+if (!empty($loan_receivable_coa_list)) {
+    foreach ($loan_receivable_coa_list as $coa_code) {
+        $coa_code = trim((string) $coa_code);
+        if ($coa_code !== '' && !isset($loan_options_by_coa[$coa_code])) {
+            $loan_options_by_coa[$coa_code] = $empty_entity_html;
+        }
     }
 }
 $cbu_options_html = $empty_entity_html;
@@ -290,6 +401,47 @@ if (!empty($cbulist)) {
             . trim((isset($cbu->firstname) ? $cbu->firstname : '') . ' ' . (isset($cbu->middlename) ? $cbu->middlename : '') . ' ' . (isset($cbu->lastname) ? $cbu->lastname : ''));
         $cbu_options_html .= '<option value="' . htmlspecialchars($cbu->PID, ENT_QUOTES) . '">'
             . htmlspecialchars($cbu_label, ENT_QUOTES) . '</option>';
+    }
+}
+
+$savings_coa_list = isset($savings_coa_list) ? $savings_coa_list : array();
+$savings_member_accounts = isset($savings_member_accounts) ? $savings_member_accounts : array();
+$savings_options_by_coa = array();
+$savings_grouped = array();
+if (!empty($savings_member_accounts)) {
+    foreach ($savings_member_accounts as $sa) {
+        $coa_key = isset($sa->coa_account) ? trim((string) $sa->coa_account) : '';
+        if ($coa_key === '') {
+            continue;
+        }
+        $type_name = !empty($sa->account_type_name) ? trim((string) $sa->account_type_name) : 'Savings';
+        if (!isset($savings_grouped[$coa_key])) {
+            $savings_grouped[$coa_key] = array();
+        }
+        if (!isset($savings_grouped[$coa_key][$type_name])) {
+            $savings_grouped[$coa_key][$type_name] = '';
+        }
+        $display_acct = !empty($sa->old_members_acct) ? ($sa->old_members_acct . ' / ' . $sa->account) : $sa->account;
+        $sa_label = (isset($sa->member_id) ? $sa->member_id . ' - ' : '')
+            . trim((isset($sa->firstname) ? $sa->firstname : '') . ' ' . (isset($sa->middlename) ? $sa->middlename : '') . ' ' . (isset($sa->lastname) ? $sa->lastname : ''))
+            . ' [' . $display_acct . ']';
+        $savings_grouped[$coa_key][$type_name] .= '<option value="' . htmlspecialchars($sa->account, ENT_QUOTES) . '">'
+            . htmlspecialchars($sa_label, ENT_QUOTES) . '</option>';
+    }
+}
+foreach ($savings_grouped as $coa_key => $by_type) {
+    $html = $empty_entity_html;
+    foreach ($by_type as $type_name => $opts) {
+        $html .= '<optgroup label="' . htmlspecialchars($type_name, ENT_QUOTES) . '">' . $opts . '</optgroup>';
+    }
+    $savings_options_by_coa[$coa_key] = $html;
+}
+if (!empty($savings_coa_list)) {
+    foreach ($savings_coa_list as $coa_code) {
+        $coa_code = trim((string) $coa_code);
+        if ($coa_code !== '' && !isset($savings_options_by_coa[$coa_code])) {
+            $savings_options_by_coa[$coa_code] = $empty_entity_html;
+        }
     }
 }
 ?>
@@ -330,7 +482,11 @@ if (!empty($cbulist)) {
             function initMainScript() {
                 var diff = 0;
                 var cbuAccount = <?php echo json_encode((string) $cbu_account); ?>;
+                var savingsCoaList = <?php echo json_encode(array_map('strval', $savings_coa_list)); ?>;
+                var loanReceivableCoaList = <?php echo json_encode(array_map('strval', $loan_receivable_coa_list)); ?>;
                 var cbuLinkOptionHtml = <?php echo json_encode($link_type_cbu_option_html); ?>;
+                var savingsLinkOptionHtml = <?php echo json_encode($link_type_savings_option_html); ?>;
+                var emptyEntityHtml = <?php echo json_encode($empty_entity_html); ?>;
                 var entityOptions = {
                     '': <?php echo json_encode($empty_entity_html); ?>,
                     customer: <?php echo json_encode($customer_options_html); ?>,
@@ -338,12 +494,38 @@ if (!empty($cbulist)) {
                     loan: <?php echo json_encode($loan_options_html); ?>,
                     cbu: <?php echo json_encode($cbu_options_html); ?>
                 };
+                var savingsOptionsByCoa = <?php echo json_encode($savings_options_by_coa); ?>;
+                var loanOptionsByCoa = <?php echo json_encode($loan_options_by_coa); ?>;
+
+                function listIncludes(list, account) {
+                    var acct = String(account || '');
+                    if (!acct || !list || !list.length) { return false; }
+                    for (var i = 0; i < list.length; i++) {
+                        if (String(list[i]) === acct) { return true; }
+                    }
+                    return false;
+                }
+
+                function isSavingsCoa(account) {
+                    return listIncludes(savingsCoaList, account);
+                }
+
+                function isLoanReceivableCoa(account) {
+                    return listIncludes(loanReceivableCoaList, account);
+                }
 
                 window.refreshLinkEntity = function($row, selected) {
                     var type = $row.find('select.link-type').val() || '';
+                    var account = $row.find('select.journal-account').val() || '';
                     var $entity = $row.find('select.link-entity');
                     var keep = (typeof selected !== 'undefined') ? selected : ($entity.data('selected') || $entity.val() || '');
-                    $entity.html(entityOptions[type] || entityOptions['']);
+                    var html = entityOptions[type] || entityOptions[''];
+                    if (type === 'savings') {
+                        html = savingsOptionsByCoa[String(account)] || emptyEntityHtml;
+                    } else if (type === 'loan' && isLoanReceivableCoa(account)) {
+                        html = loanOptionsByCoa[String(account)] || emptyEntityHtml;
+                    }
+                    $entity.html(html);
                     if (type === '') {
                         $entity.prop('disabled', true).val('');
                     } else {
@@ -352,23 +534,77 @@ if (!empty($cbulist)) {
                             $entity.val(String(keep));
                         }
                     }
+                    $entity.removeData('selected');
                 };
 
-                window.syncCbuLinkOption = function($row) {
+                window.syncMemberSubledgerLink = function($row, autoSelect) {
+                    if (typeof autoSelect === 'undefined') { autoSelect = true; }
                     var account = $row.find('select.journal-account').val() || '';
                     var $linkType = $row.find('select.link-type');
+                    var current = $linkType.val() || '';
                     var $cbuOpt = $linkType.find('option[value="cbu"]');
+                    var $savOpt = $linkType.find('option[value="savings"]');
                     var isCbuAccount = (cbuAccount !== '' && String(account) === String(cbuAccount));
+                    var isSavingsAccount = isSavingsCoa(account) && !isCbuAccount;
+                    var isLoanReceivable = isLoanReceivableCoa(account) && !isCbuAccount && !isSavingsAccount;
+                    var keepEntity = $row.find('select.link-entity').data('selected') || $row.find('select.link-entity').val() || '';
+
                     if (isCbuAccount) {
                         if ($cbuOpt.length === 0) {
                             $linkType.append(cbuLinkOptionHtml);
                         }
+                        if ($savOpt.length) {
+                            $savOpt.remove();
+                        }
+                        if (autoSelect && (current === '' || current === 'savings' || current === 'loan')) {
+                            $linkType.val('cbu');
+                            window.refreshLinkEntity($row, keepEntity);
+                            return;
+                        }
+                        if (current === 'cbu') {
+                            window.refreshLinkEntity($row, keepEntity);
+                        }
                     } else if ($cbuOpt.length) {
-                        if ($linkType.val() === 'cbu') {
+                        if (current === 'cbu') {
                             $linkType.val('');
+                            current = '';
                             window.refreshLinkEntity($row, '');
                         }
                         $cbuOpt.remove();
+                    }
+
+                    if (isSavingsAccount) {
+                        if ($linkType.find('option[value="savings"]').length === 0) {
+                            $linkType.append(savingsLinkOptionHtml);
+                        }
+                        if (autoSelect && (current === '' || current === 'cbu' || current === 'loan')) {
+                            $linkType.val('savings');
+                            window.refreshLinkEntity($row, keepEntity);
+                            return;
+                        }
+                        if ($linkType.val() === 'savings') {
+                            window.refreshLinkEntity($row, keepEntity);
+                        }
+                    } else if ($linkType.find('option[value="savings"]').length) {
+                        if ($linkType.val() === 'savings') {
+                            $linkType.val('');
+                            current = '';
+                            window.refreshLinkEntity($row, '');
+                        }
+                        $linkType.find('option[value="savings"]').remove();
+                    }
+
+                    if (isLoanReceivable) {
+                        if (autoSelect && (current === '' || current === 'cbu' || current === 'savings')) {
+                            $linkType.val('loan');
+                            window.refreshLinkEntity($row, keepEntity);
+                            return;
+                        }
+                        if ($linkType.val() === 'loan') {
+                            window.refreshLinkEntity($row, keepEntity);
+                        }
+                    } else if ($linkType.val() === 'loan') {
+                        window.refreshLinkEntity($row, keepEntity);
                     }
                 };
 
@@ -447,7 +683,7 @@ if (!empty($cbulist)) {
                     });
 
                     $(document).on('change', 'select.journal-account', function() {
-                        window.syncCbuLinkOption($(this).closest('tr'));
+                        window.syncMemberSubledgerLink($(this).closest('tr'), true);
                     });
 
                     $("#submitdata").click(function() {
@@ -469,12 +705,12 @@ if (!empty($cbulist)) {
                         var rowindex = ($('#quotetable tbody tr').eq(-1).index() + 1);
                         var accountOptionsHtml = <?php echo json_encode($account_options_html); ?>;
                         var linkTypeOptionsHtml = <?php echo json_encode($link_type_options_html); ?>;
-                        var emptyEntityHtml = <?php echo json_encode($empty_entity_html); ?>;
+                        var emptyEntityHtmlLocal = <?php echo json_encode($empty_entity_html); ?>;
                         var newRow = '<tr><td><select class="form-control journal-account" name="account[]">';
                         newRow += accountOptionsHtml;
                         newRow += '</select></td>';
                         newRow += '<td><select class="form-control link-type" name="link_type[]">' + linkTypeOptionsHtml + '</select></td>';
-                        newRow += '<td><select class="form-control link-entity" name="link_entity[]" disabled="disabled">' + emptyEntityHtml + '</select></td>';
+                        newRow += '<td><select class="form-control link-entity" name="link_entity[]" disabled="disabled">' + emptyEntityHtmlLocal + '</select></td>';
                         newRow += '<td><input type="text" name="description[]" class="form-control" /></td>';
                         newRow += '<td><input onchange="debit_sum(this,' + rowindex + ')" onkeyup="debit_sum(this, ' + rowindex + ')" type="text" name="debit[]" class="form-control amountformat debit" /></td>';
                         newRow += '<td><input onchange="credit_sum(this,' + rowindex + ')" onkeyup="credit_sum(this, ' + rowindex + ')" type="text" name="credit[]" class="form-control amountformat credit" /></td>';
@@ -499,7 +735,7 @@ if (!empty($cbulist)) {
                     $('#quotetable tbody tr').each(function() {
                         var $row = $(this);
                         if ($row.find('select.journal-account').length) {
-                            window.syncCbuLinkOption($row);
+                            window.syncMemberSubledgerLink($row, false);
                         }
                     });
                 });

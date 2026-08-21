@@ -589,6 +589,29 @@ class Finance_Model extends CI_Model {
                         $this->db->_trans_status = FALSE;
                     }
                 }
+
+                // Savings-linked lines update member savings sub-ledger (no second GL post)
+                if ($link_type === 'savings' && !empty($item->savings_account)) {
+                    $sav_comment = isset($item->description) ? trim($item->description) : '';
+                    if ($sav_comment === '' && !empty($entry->description)) {
+                        $sav_comment = $entry->description;
+                    }
+                    if (!empty($entry->reference_no)) {
+                        $sav_comment = trim($sav_comment . ' [' . $entry->reference_no . ']');
+                    }
+                    $sav_date = !empty($entry->entrydate) ? $entry->entrydate : date('Y-m-d');
+                    $sav_receipt = $this->journal_savings_subledger(
+                        $item->savings_account,
+                        floatval($item->debit),
+                        floatval($item->credit),
+                        $sav_comment,
+                        $sav_date
+                    );
+                    if (!$sav_receipt) {
+                        log_message('error', 'Failed to post savings sub-ledger for journal entry ' . $entry->id . ' account=' . $item->savings_account);
+                        $this->db->_trans_status = FALSE;
+                    }
+                }
             }
         }
         $this->db->trans_complete();
@@ -643,7 +666,7 @@ class Finance_Model extends CI_Model {
     }
 
     /**
-     * Ensure general_journal has sub-ledger link columns (Customer/Supplier/Loan).
+     * Ensure general_journal has sub-ledger link columns (Customer/Supplier/Loan/CBU/Savings).
      */
     function ensure_general_journal_link_columns() {
         static $done = false;
@@ -658,6 +681,7 @@ class Finance_Model extends CI_Model {
             'PID' => "BIGINT NULL DEFAULT NULL",
             'member_id' => "VARCHAR(50) NULL DEFAULT NULL",
             'invoiceid' => "INT NULL DEFAULT NULL",
+            'savings_account' => "VARCHAR(50) NULL DEFAULT NULL",
         );
         foreach ($columns as $col => $definition) {
             $exists = $this->db->query("SHOW COLUMNS FROM general_journal LIKE '" . $this->db->escape_str($col) . "'")->row();
@@ -687,11 +711,159 @@ class Finance_Model extends CI_Model {
     }
 
     /**
-     * Resolve posted link_type + entity into general_journal link fields.
-     * Does not update invoice balances, loan schedules, or CBU balances.
+     * Chart of Account codes configured as savings liability accounts (MSO, Special, etc.).
      *
-     * @param string $link_type customer|supplier|loan|cbu|empty
-     * @param string $entity_id customerid, supplierid, LID, or member PID (for cbu)
+     * @return array List of account_setup COA codes
+     */
+    function savings_coa_list() {
+        $pin = current_user()->PIN;
+        $sql = "SELECT DISTINCT account_setup
+                FROM saving_account_type
+                WHERE PIN = ?
+                  AND account_setup IS NOT NULL
+                  AND TRIM(account_setup) != ''
+                ORDER BY account_setup ASC";
+        $rows = $this->db->query($sql, array($pin))->result();
+        $out = array();
+        foreach ($rows as $row) {
+            $coa = trim((string) $row->account_setup);
+            if ($coa !== '' && !in_array($coa, $out, true)) {
+                $out[] = $coa;
+            }
+        }
+        return $out;
+    }
+
+    /**
+     * Active member savings accounts for a savings liability COA (account_setup).
+     *
+     * @param string|null $coa_account Chart account code; null = all savings COAs
+     * @return array
+     */
+    function savings_member_account_list($coa_account = null) {
+        $pin = current_user()->PIN;
+        $sql = "SELECT ma.account, ma.member_id, ma.RFID AS PID, ma.balance, ma.account_cat,
+                       ma.old_members_acct,
+                       COALESCE(NULLIF(sat.name, ''), sat.description, '') AS account_type_name,
+                       sat.account_setup AS coa_account,
+                       m.firstname, m.middlename, m.lastname
+                FROM members_account ma
+                INNER JOIN saving_account_type sat
+                    ON sat.account = ma.account_cat AND sat.PIN = ma.PIN
+                LEFT JOIN members m
+                    ON m.PID = ma.RFID AND m.PIN = ma.PIN
+                WHERE ma.PIN = ?
+                  AND sat.account_setup IS NOT NULL
+                  AND TRIM(sat.account_setup) != ''
+                  AND (ma.status = '1' OR ma.status IS NULL)";
+        $params = array($pin);
+        if ($coa_account !== null && trim((string) $coa_account) !== '') {
+            $sql .= " AND sat.account_setup = ?";
+            $params[] = trim((string) $coa_account);
+        }
+        $sql .= " ORDER BY account_type_name ASC, m.firstname ASC, m.lastname ASC, ma.member_id ASC, ma.account ASC";
+        return $this->db->query($sql, $params)->result();
+    }
+
+    /**
+     * Chart of Account codes used as loan principal receivable on loan products.
+     *
+     * @return array
+     */
+    function loan_receivable_coa_list() {
+        $pin = current_user()->PIN;
+        $sql = "SELECT DISTINCT loan_principle_account
+                FROM loan_product
+                WHERE PIN = ?
+                  AND loan_principle_account IS NOT NULL
+                  AND TRIM(loan_principle_account) != ''
+                ORDER BY loan_principle_account ASC";
+        $rows = $this->db->query($sql, array($pin))->result();
+        $out = array();
+        foreach ($rows as $row) {
+            $coa = trim((string) $row->loan_principle_account);
+            if ($coa !== '' && !in_array($coa, $out, true)) {
+                $out[] = $coa;
+            }
+        }
+        return $out;
+    }
+
+    /**
+     * Released loans for journal Link To → Member Loan.
+     * Optionally filtered by loan product principal receivable COA.
+     *
+     * @param string|null $coa_account loan_product.loan_principle_account
+     * @return array
+     */
+    function loan_journal_link_list($coa_account = null) {
+        $pin = current_user()->PIN;
+        $sql = "SELECT lc.LID, lc.PID, lc.member_id, lc.product_type,
+                       m.firstname, m.middlename, m.lastname,
+                       COALESCE(NULLIF(lp.name, ''), 'Loan Product') AS product_name,
+                       lp.loan_principle_account AS coa_account
+                FROM loan_contract lc
+                INNER JOIN members m ON m.PID = lc.PID AND m.PIN = lc.PIN
+                LEFT JOIN loan_product lp ON lp.id = lc.product_type AND lp.PIN = lc.PIN
+                WHERE lc.PIN = ?
+                  AND lc.status = 4
+                  AND lc.disburse = 1";
+        $params = array($pin);
+        if ($coa_account !== null && trim((string) $coa_account) !== '') {
+            $sql .= " AND lp.loan_principle_account = ?";
+            $params[] = trim((string) $coa_account);
+        }
+        $sql .= " ORDER BY product_name ASC, lc.LID ASC";
+        return $this->db->query($sql, $params)->result();
+    }
+
+    /**
+     * Update member savings balance + savings_transaction from a journal line.
+     * Does not post to GL (journal posting already writes the GL lines).
+     * Credit on savings COA → CR (increase); Debit → DR (decrease).
+     *
+     * @return string|false receipt number
+     */
+    function journal_savings_subledger($savings_account, $debit, $credit, $comment = '', $date = '') {
+        $savings_account = trim((string) $savings_account);
+        $debit = floatval($debit);
+        $credit = floatval($credit);
+        if ($savings_account === '' || ($credit <= 0 && $debit <= 0)) {
+            return false;
+        }
+        $account_info = $this->saving_account_balance($savings_account);
+        if (!$account_info) {
+            log_message('error', 'journal_savings_subledger: members_account not found for ' . $savings_account);
+            return false;
+        }
+        if ($credit > 0) {
+            $trans_type = 'CR';
+            $amount = $credit;
+        } else {
+            $trans_type = 'DR';
+            $amount = $debit;
+        }
+        $comment = trim($comment) !== '' ? $comment : 'Journal Entry';
+        $systemcomment = 'JOURNAL ENTRY';
+        $paymethod = 'JOURNAL';
+        $posted_date = $date !== '' ? $date : date('Y-m-d');
+        if (strlen($posted_date) > 10) {
+            $posted_date = substr($posted_date, 0, 10);
+        }
+        $pid = isset($account_info->RFID) ? $account_info->RFID : null;
+        $customer_name = '';
+        if ($trans_type === 'CR') {
+            return $this->credit($savings_account, $amount, $paymethod, $comment, '', $customer_name, $pid, $systemcomment, 0, $posted_date, '');
+        }
+        return $this->debit($savings_account, $amount, $paymethod, $comment, '', $customer_name, $systemcomment, $pid, $posted_date, '');
+    }
+
+    /**
+     * Resolve posted link_type + entity into general_journal link fields.
+     * Does not update invoice balances, loan schedules, CBU, or savings balances (those run on Approve).
+     *
+     * @param string $link_type customer|supplier|loan|cbu|savings|empty
+     * @param string $entity_id customerid, supplierid, LID, member PID (cbu), or members_account.account (savings)
      * @return array Fields to merge into journal line
      */
     function resolve_journal_line_link($link_type, $entity_id) {
@@ -704,10 +876,11 @@ class Finance_Model extends CI_Model {
             'PID' => null,
             'member_id' => null,
             'invoiceid' => null,
+            'savings_account' => null,
         );
         $link_type = strtolower(trim((string) $link_type));
         $entity_id = trim((string) $entity_id);
-        if ($entity_id === '' || !in_array($link_type, array('customer', 'supplier', 'loan', 'cbu'), true)) {
+        if ($entity_id === '' || !in_array($link_type, array('customer', 'supplier', 'loan', 'cbu', 'savings'), true)) {
             return $out;
         }
 
@@ -735,6 +908,17 @@ class Finance_Model extends CI_Model {
                 $out['link_type'] = 'cbu';
                 $out['PID'] = $cbu->PID;
                 $out['member_id'] = isset($cbu->member_id) ? $cbu->member_id : null;
+            }
+            return $out;
+        }
+
+        if ($link_type === 'savings') {
+            $ma = $this->saving_account_balance($entity_id);
+            if ($ma) {
+                $out['link_type'] = 'savings';
+                $out['savings_account'] = $ma->account;
+                $out['PID'] = isset($ma->RFID) ? $ma->RFID : null;
+                $out['member_id'] = isset($ma->member_id) ? $ma->member_id : null;
             }
             return $out;
         }
@@ -778,7 +962,7 @@ class Finance_Model extends CI_Model {
             $name = $s ? $s->name : $sid;
             return 'Supplier: ' . $sid . ' — ' . $name;
         }
-        if ($type === 'loan' || (!empty($item->LID) && $type !== 'cbu')) {
+        if ($type === 'loan' || (!empty($item->LID) && $type !== 'cbu' && $type !== 'savings')) {
             $lid = !empty($item->LID) ? $item->LID : '';
             if ($lid === '') {
                 return '';
@@ -791,7 +975,35 @@ class Finance_Model extends CI_Model {
             }
             return $label;
         }
-        if ($type === 'cbu' || (!empty($item->PID) && empty($item->LID) && empty($item->customerid) && empty($item->supplierid))) {
+        if ($type === 'savings' || !empty($item->savings_account)) {
+            $acct = !empty($item->savings_account) ? $item->savings_account : '';
+            if ($acct === '') {
+                return '';
+            }
+            $ma = $this->saving_account_balance($acct);
+            $member = isset($item->member_id) ? $item->member_id : (isset($ma->member_id) ? $ma->member_id : '');
+            $name = '';
+            $pid = isset($item->PID) ? $item->PID : (isset($ma->RFID) ? $ma->RFID : '');
+            if ($pid !== '') {
+                $m = $this->db->where('PIN', $pin)->where('PID', $pid)->get('members')->row();
+                if ($m) {
+                    $name = trim((isset($m->firstname) ? $m->firstname : '') . ' ' . (isset($m->lastname) ? $m->lastname : ''));
+                }
+            }
+            $display_acct = $acct;
+            if ($ma && !empty($ma->old_members_acct)) {
+                $display_acct = $ma->old_members_acct . ' (' . $acct . ')';
+            }
+            $label = 'Savings: ' . $display_acct;
+            if ($member !== '') {
+                $label .= ' — Member ' . $member;
+            }
+            if ($name !== '') {
+                $label .= ' — ' . $name;
+            }
+            return $label;
+        }
+        if ($type === 'cbu' || (!empty($item->PID) && empty($item->LID) && empty($item->customerid) && empty($item->supplierid) && empty($item->savings_account))) {
             $pid = !empty($item->PID) ? $item->PID : '';
             if ($pid === '') {
                 return '';
@@ -1000,7 +1212,7 @@ class Finance_Model extends CI_Model {
                 $value['createdby'] = current_user()->id;
             }
 
-            $link_keys = array('link_type', 'customerid', 'supplierid', 'LID', 'PID', 'member_id', 'invoiceid');
+            $link_keys = array('link_type', 'customerid', 'supplierid', 'LID', 'PID', 'member_id', 'invoiceid', 'savings_account');
             foreach ($link_keys as $lk) {
                 if (!array_key_exists($lk, $value) || $value[$lk] === null || $value[$lk] === '') {
                     unset($value[$lk]);
@@ -1419,6 +1631,9 @@ class Finance_Model extends CI_Model {
             }
             if (!empty($item->invoiceid)) {
                 $tmp['invoiceid'] = $item->invoiceid;
+            }
+            if (!empty($item->savings_account)) {
+                $tmp['savings_account'] = $item->savings_account;
             }
             $array_items[] = $tmp;
         }
@@ -4241,7 +4456,7 @@ $pin=current_user()->PIN;
             }
 
             // Sanitize optional sub-ledger link fields (avoid empty string on numeric cols)
-            $link_keys = array('link_type', 'customerid', 'supplierid', 'LID', 'PID', 'member_id', 'invoiceid');
+            $link_keys = array('link_type', 'customerid', 'supplierid', 'LID', 'PID', 'member_id', 'invoiceid', 'savings_account');
             foreach ($link_keys as $lk) {
                 if (!array_key_exists($lk, $value) || $value[$lk] === null || $value[$lk] === '') {
                     unset($value[$lk]);
@@ -5003,22 +5218,25 @@ $pin=current_user()->PIN;
             }
 
             $available = round(floatval($chart->debit), 2);
-            if ($available + 0.00001 < $amount) {
-                return array(
-                    'success' => false,
-                    'code' => 'insufficient',
-                    'account' => $account,
-                    'available' => $available,
-                    'required' => $amount,
-                    'message' => 'Insufficient Finance Beginning Balance debit for account ' . $account
-                        . ' (available ' . number_format($available, 2) . ', required ' . number_format($amount, 2) . ').',
-                );
+            // Offset only what remains on the Finance chart BB (partial allowed).
+            // Still post the full loan receivable; shortfall means chart opening was lower
+            // than the sum of loan openings for this account.
+            $offset_amount = min($available, $amount);
+            if ($offset_amount <= 0.009) {
+                log_message('info', 'Loan BB #' . $loan_bb_id . ': chart BB account ' . $account
+                    . ' has no remaining debit to offset — skip offset');
+                continue;
+            }
+            if ($offset_amount + 0.00001 < $amount) {
+                log_message('info', 'Loan BB #' . $loan_bb_id . ': partial chart BB offset for account '
+                    . $account . ' (available ' . number_format($offset_amount, 2)
+                    . ', loan ' . number_format($amount, 2) . ')');
             }
 
             $planned[] = array(
                 'chart' => $chart,
                 'account' => $account,
-                'amount' => $amount,
+                'amount' => $offset_amount,
             );
         }
 

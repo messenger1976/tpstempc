@@ -282,6 +282,7 @@ $lang['loan_beginning_balance_delete_confirm'] = 'Are you sure you want to delet
 $lang['loan_beginning_balance_deleting'] = 'Deleting beginning balance...';
 $lang['loan_beginning_balance_no_edit'] = 'Already posted - Cannot edit';
 $lang['loan_beginning_balance_already_posted'] = 'This loan beginning balance has already been posted to the General Ledger';
+$lang['loan_beginning_balance_unreversed_gl'] = 'This loan beginning balance still has unreversed General Ledger lines. Void the existing GL posting first, then post again.';
 $lang['loan_beginning_balance_cannot_delete_posted'] = 'Cannot delete a loan beginning balance that has been posted to the General Ledger';
 $lang['loan_beginning_balance_select_fiscal_year'] = 'Please select a fiscal year to view loan beginning balances';
 $lang['loan_beginning_balance_member_not_found'] = 'Member not found';

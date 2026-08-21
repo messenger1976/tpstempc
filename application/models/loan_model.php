@@ -3255,6 +3255,15 @@ class Loan_Model extends CI_Model {
         if ($balance->posted == 1) {
             return array('success' => false, 'message' => lang('loan_beginning_balance_already_posted'));
         }
+        // Block re-post when unreversed GL already exists (posted flag can be 0 after a failed
+        // update / partial void, which previously allowed duplicate receivable Drs).
+        $remaining_gl = $this->loan_bb_unreversed_gl_ids(array((int) $id));
+        if (!empty($remaining_gl[(int) $id])) {
+            return array(
+                'success' => false,
+                'message' => lang('loan_beginning_balance_unreversed_gl'),
+            );
+        }
         
         // Get fiscal year info
         $fiscal_year = $this->db->where('id', $balance->fiscal_year_id)->get('fiscal_year')->row();

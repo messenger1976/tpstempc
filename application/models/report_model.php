@@ -728,6 +728,32 @@ FROM
         return $this->db->query($sql)->result();
     }
 
+    function account_saving_balance_as_of($until, $account) {
+        $pin = current_user()->PIN;
+        $account = $this->db->escape_str($account);
+        $until = $this->db->escape_str($until);
+        $sql = "SELECT
+COALESCE(SUM(CASE WHEN trans_type = 'CR' THEN amount ELSE 0 END), 0) AS credit_total,
+COALESCE(SUM(CASE WHEN trans_type = 'DR' THEN amount ELSE 0 END), 0) AS debit_total
+FROM savings_transaction
+WHERE account='$account'
+  AND PIN='$pin'
+  AND trans_date <= '$until 23:59:59'
+  AND comment NOT LIKE 'VOID-%'
+  AND receipt NOT IN (
+      SELECT SUBSTRING_INDEX(SUBSTRING_INDEX(vt.comment, ' ', 1), 'VOID-', -1)
+      FROM savings_transaction vt
+      WHERE vt.account='$account'
+        AND vt.PIN='$pin'
+        AND vt.comment LIKE 'VOID-%'
+  )";
+        $row = $this->db->query($sql)->row();
+        if (!$row) {
+            return 0;
+        }
+        return floatval($row->credit_total) - floatval($row->debit_total);
+    }
+
     function contribution_statement($fromdate, $until, $member_id) {
         $pin = current_user()->PIN;
         $member_id = $this->db->escape_str($member_id);

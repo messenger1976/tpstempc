@@ -395,6 +395,8 @@
 $search_key = isset($search_key) ? $search_key : (isset($_GET['key']) ? $_GET['key'] : (isset($_POST['key']) ? $_POST['key'] : ''));
 $status_list = isset($status_list) ? $status_list : array();
 $current_status = isset($status_filter) ? $status_filter : '';
+$loan_products = isset($loan_products) ? $loan_products : array();
+$current_product_id = isset($product_id) ? $product_id : 'all';
 ?>
 
 <div class="col-lg-12 member-list-page">
@@ -432,6 +434,17 @@ $current_status = isset($status_filter) ? $status_filter : '';
                                 $sel = ($current_status !== null && $current_status !== '' && (string) $code === (string) $current_status) ? ' selected="selected"' : '';
                                 ?>
                                 <option value="<?php echo htmlspecialchars($code); ?>"<?php echo $sel; ?>><?php echo htmlspecialchars($label); ?></option>
+                            <?php } ?>
+                        </select>
+                    </div>
+                    <div class="filter-field">
+                        <label><?php echo lang('loan_product'); ?></label>
+                        <select name="product_id" class="form-control">
+                            <option value="all"<?php echo ($current_product_id === 'all' || $current_product_id === '' || $current_product_id === null) ? ' selected="selected"' : ''; ?>><?php echo lang('loan_products_all'); ?></option>
+                            <?php foreach ($loan_products as $product) { ?>
+                                <option value="<?php echo (int) $product->id; ?>"<?php echo ((string) $current_product_id === (string) $product->id) ? ' selected="selected"' : ''; ?>>
+                                    <?php echo htmlspecialchars($product->name, ENT_QUOTES, 'UTF-8'); ?>
+                                </option>
                             <?php } ?>
                         </select>
                     </div>
@@ -474,6 +487,8 @@ $current_status = isset($status_filter) ? $status_filter : '';
                         <th><?php echo lang('member_name'); ?></th>
                         <th><?php echo lang('loan_product'); ?></th>
                         <th><?php echo lang('loan_applicationdate'); ?></th>
+                        <th><?php echo lang('loan_encoded_date'); ?></th>
+                        <th><?php echo lang('loan_encoded_by'); ?></th>
                         <th style="text-align:right;"><?php echo lang('loan_applied_amount'); ?></th>
                         <th style="text-align:center;"><?php echo lang('loan_installment'); ?></th>
                         <th style="text-align:right;"><?php echo lang('loan_installment_amount'); ?></th>
@@ -524,6 +539,25 @@ $current_status = isset($status_filter) ? $status_filter : '';
                             }
                             $app_date = !empty($value->applicationdate) ? format_date($value->applicationdate, false) : '';
                             $product_name = !empty($value->product_name) ? $value->product_name : '-';
+                            $encoded_on = '';
+                            $encoded_raw = '';
+                            if (!empty($value->encoded_on) && $value->encoded_on !== '0000-00-00 00:00:00') {
+                                $encoded_raw = $value->encoded_on;
+                            } else if (!empty($value->createdon) && $value->createdon !== '0000-00-00 00:00:00') {
+                                $encoded_raw = $value->createdon;
+                            } else if (!empty($value->created_at) && $value->created_at !== '0000-00-00 00:00:00') {
+                                $encoded_raw = $value->created_at;
+                            }
+                            if ($encoded_raw !== '') {
+                                $encoded_on = date('d-m-Y H:i', strtotime($encoded_raw));
+                            }
+                            $encoded_by = isset($value->encoded_by_name) ? trim((string) $value->encoded_by_name) : '';
+                            if ($encoded_by === '' && !empty($value->createdby)) {
+                                $enc_user = $this->db->get_where('users', array('id' => $value->createdby))->row();
+                                if ($enc_user) {
+                                    $encoded_by = trim($enc_user->first_name . ' ' . $enc_user->last_name);
+                                }
+                            }
                             ?>
                             <tr>
                                 <td><span class="member-id-chip"><?php echo htmlspecialchars($value->LID, ENT_QUOTES, 'UTF-8'); ?></span></td>
@@ -535,6 +569,8 @@ $current_status = isset($status_filter) ? $status_filter : '';
                                 </td>
                                 <td><?php echo htmlspecialchars($product_name, ENT_QUOTES, 'UTF-8'); ?></td>
                                 <td><?php echo htmlspecialchars($app_date, ENT_QUOTES, 'UTF-8'); ?></td>
+                                <td><?php echo $encoded_on !== '' ? htmlspecialchars($encoded_on, ENT_QUOTES, 'UTF-8') : '-'; ?></td>
+                                <td><?php echo $encoded_by !== '' ? htmlspecialchars($encoded_by, ENT_QUOTES, 'UTF-8') : '-'; ?></td>
                                 <td class="amount-cell"><?php echo number_format($value->basic_amount, 2); ?></td>
                                 <td style="text-align:center;"><?php echo htmlspecialchars($value->number_istallment . ($interval_desc !== '' ? ' ' . $interval_desc : ''), ENT_QUOTES, 'UTF-8'); ?></td>
                                 <td class="amount-cell"><?php echo number_format($value->installment_amount, 2); ?></td>
@@ -577,7 +613,9 @@ $current_status = isset($status_filter) ? $status_filter : '';
                                                 echo '<a href="' . htmlspecialchars($schedule_url) . '" class="btn btn-info btn-xs repayment-schedule-popup" data-schedule-url="' . htmlspecialchars($schedule_url) . '" title="' . htmlspecialchars(lang('loan_view_repayment_schedule'), ENT_QUOTES, 'UTF-8') . '"><i class="fa fa-calendar-check-o"></i> ' . lang('loan_view_repayment_schedule') . '</a>';
                                                 if (!empty($value->disburse)) {
                                                     $print_disburse_url = site_url(current_lang() . '/loan/loan_disbursement_print/' . encode_id($value->LID));
-                                                    echo '<a href="' . htmlspecialchars($print_disburse_url) . '" class="btn btn-default btn-xs" target="_blank" title="' . htmlspecialchars(lang('loan_print_disbursement'), ENT_QUOTES, 'UTF-8') . '"><i class="fa fa-print"></i> ' . lang('loan_print_disbursement') . '</a>';
+                                                    $is_bb_print = (isset($value->evaluated) && (string) $value->evaluated === 'BEGINNING_BALANCE');
+                                                    $print_disburse_label = $is_bb_print ? lang('loan_print_beginning_balance_journal') : lang('loan_print_disbursement');
+                                                    echo '<a href="' . htmlspecialchars($print_disburse_url) . '" class="btn btn-default btn-xs" target="_blank" title="' . htmlspecialchars($print_disburse_label, ENT_QUOTES, 'UTF-8') . '"><i class="fa fa-print"></i> ' . $print_disburse_label . '</a>';
                                                 }
                                                 $ledger_url = site_url(current_lang() . '/loan/loan_ledger/' . encode_id($value->LID));
                                                 echo '<a href="' . htmlspecialchars($ledger_url) . '" class="btn btn-warning btn-xs" title="' . htmlspecialchars(lang('loan_ledger'), ENT_QUOTES, 'UTF-8') . '"><i class="fa fa-book"></i> ' . lang('loan_ledger') . '</a>';

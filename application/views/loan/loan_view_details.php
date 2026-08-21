@@ -741,7 +741,7 @@ if ($interval) {
             <?php if ($loaninfo && !empty($loaninfo->disburse)) { ?>
                 <div class="disburse-actions">
                     <a href="<?php echo site_url(current_lang() . '/loan/loan_disbursement_print/' . encode_id($loaninfo->LID)); ?>" class="btn btn-primary btn-sm" target="_blank">
-                        <i class="fa fa-print"></i> <?php echo lang('loan_print_disbursement'); ?>
+                        <i class="fa fa-print"></i> <?php echo !empty($is_bb_activated_loan) ? lang('loan_print_beginning_balance_journal') : lang('loan_print_disbursement'); ?>
                     </a>
                     <?php if (!empty($can_void_old_disbursement)) { ?>
                     <a href="<?php echo site_url(current_lang() . '/loan/void_loan_disbursement/' . encode_id($loaninfo->LID)); ?>"

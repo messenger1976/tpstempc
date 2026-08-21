@@ -50,6 +50,11 @@ $print_url = site_url(current_lang() . '/report/account_ledger_print/' . $accoun
     . (!empty($back_id) ? '/' . $back_id : '/0')
     . '?fromdate=' . rawurlencode(format_date($fromdate, false))
     . '&todate=' . rawurlencode(format_date($todate, false)));
+$export_url = site_url(current_lang() . '/report/account_ledger_export/' . $account_enc
+    . (!empty($back_link) ? '/' . $back_link : '/0')
+    . (!empty($back_id) ? '/' . $back_id : '/0')
+    . '?fromdate=' . rawurlencode(format_date($fromdate, false))
+    . '&todate=' . rawurlencode(format_date($todate, false)));
 ?>
 <link href="<?php echo base_url(); ?>media/css/plugins/datapicker/datepicker3.css?v=20260801" rel="stylesheet">
 
@@ -220,6 +225,10 @@ $print_url = site_url(current_lang() . '/report/account_ledger_print/' . $accoun
                 </button>
                 &nbsp;&nbsp;
                 <a href="<?php echo $print_url; ?>" class="btn btn-primary">Print</a>
+                &nbsp;&nbsp;
+                <a href="<?php echo $export_url; ?>" class="btn btn-success">
+                    <i class="fa fa-file-excel-o"></i> <?php echo lang('export_excel'); ?>
+                </a>
                 &nbsp;&nbsp;
                 <a href="<?php echo $back_url; ?>" class="btn btn-default">Back</a>
             </div>

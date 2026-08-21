@@ -272,6 +272,80 @@
         .dash-home .status-pill.pending { background: #fef6eb; color: #d68910; }
         .dash-home .status-pill.review { background: #eef3fb; color: #1c84c6; }
         .dash-home .status-pill.approved { background: #e8f8f5; color: #1ab394; }
+        .dash-home .pipeline-summary {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 16px;
+        }
+        .dash-home .pipeline-chip {
+            flex: 1 1 140px;
+            min-width: 130px;
+            border: 1px solid #e7eaec;
+            border-radius: 8px;
+            padding: 10px 12px;
+            background: #fafbfc;
+            text-decoration: none !important;
+            color: inherit;
+            transition: border-color .15s ease, box-shadow .15s ease;
+        }
+        .dash-home .pipeline-chip:hover {
+            border-color: #cfd6dc;
+            box-shadow: 0 1px 4px rgba(0,0,0,.06);
+        }
+        .dash-home .pipeline-chip .chip-label {
+            display: block;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: .02em;
+            color: #888;
+            font-weight: 700;
+        }
+        .dash-home .pipeline-chip .chip-value {
+            display: block;
+            margin-top: 4px;
+            font-size: 20px;
+            font-weight: 700;
+            line-height: 1.1;
+        }
+        .dash-home .pipeline-chip.tone-pending .chip-value { color: #d68910; }
+        .dash-home .pipeline-chip.tone-review .chip-value { color: #1c84c6; }
+        .dash-home .pipeline-chip.tone-approved .chip-value { color: #1ab394; }
+        .dash-home .pipeline-chip.tone-cash .chip-value { color: #ed5565; }
+        .dash-home .loan-pipeline-table td a.loan-link {
+            color: #1c84c6;
+            font-weight: 600;
+        }
+        .dash-home .loan-pipeline-table tr.pipeline-row {
+            cursor: pointer;
+        }
+        .dash-home .loan-pipeline-table tr.pipeline-row:hover td {
+            background: #f8fafb;
+        }
+        .dash-home .pipeline-empty {
+            text-align: center;
+            padding: 28px 12px;
+            color: #777;
+        }
+        .dash-home .pipeline-empty i {
+            font-size: 28px;
+            color: #c5ccd1;
+            margin-bottom: 8px;
+        }
+        .dash-home .pipeline-footer {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+            padding-top: 12px;
+            margin-top: 8px;
+            border-top: 1px solid #e7eaec;
+        }
+        .dash-home .pipeline-footer .listed-amount {
+            color: #676a6c;
+            font-size: 13px;
+        }
         .dash-home .btn-primary {
             background: #1ab394;
             border-color: #1ab394;
@@ -813,7 +887,7 @@
                     </div>
 
                     <div class="col-lg-8">
-                        <!-- Pending Loan Applications -->
+                        <!-- Pending Loan Applications (live pipeline) -->
                         <div class="row">
                             <div class="col-lg-12">
                                 <div class="ibox float-e-margins">
@@ -826,47 +900,98 @@
                                         </div>
                                     </div>
                                     <div class="ibox-content">
-                                        <table class="table table-hover no-margins">
-                                            <thead>
-                                            <tr>
-                                                <th>Status</th>
-                                                <th>Member ID</th>
-                                                <th>Member Name</th>
-                                                <th>Loan Amount</th>
-                                                <th>Application Date</th>
-                                            </tr>
-                                            </thead>
-                                            <tbody>
-                                            <tr>
-                                                <td><span class="status-pill pending">Pending</span></td>
-                                                <td>M-00123</td>
-                                                <td>Sample Member</td>
-                                                <td class="text-navy">₱ 50,000.00</td>
-                                                <td><i class="fa fa-clock-o"></i> <?php echo date('M d, Y'); ?></td>
-                                            </tr>
-                                            <tr>
-                                                <td><span class="status-pill review">Under Review</span></td>
-                                                <td>M-00124</td>
-                                                <td>Sample Member 2</td>
-                                                <td class="text-navy">₱ 75,000.00</td>
-                                                <td><i class="fa fa-clock-o"></i> <?php echo date('M d, Y', strtotime('-1 day')); ?></td>
-                                            </tr>
-                                            <tr>
-                                                <td><span class="status-pill pending">Pending</span></td>
-                                                <td>M-00125</td>
-                                                <td>Sample Member 3</td>
-                                                <td class="text-navy">₱ 30,000.00</td>
-                                                <td><i class="fa fa-clock-o"></i> <?php echo date('M d, Y', strtotime('-2 days')); ?></td>
-                                            </tr>
-                                            <tr>
-                                                <td><span class="status-pill approved">Approved</span></td>
-                                                <td>M-00120</td>
-                                                <td>Sample Member 4</td>
-                                                <td class="text-success">₱ 100,000.00</td>
-                                                <td><i class="fa fa-check-circle"></i> <?php echo date('M d, Y', strtotime('-3 days')); ?></td>
-                                            </tr>
-                                            </tbody>
-                                        </table>
+                                        <?php
+                                        $pipeline_summary = isset($loan_pipeline_summary) && is_array($loan_pipeline_summary) ? $loan_pipeline_summary : array();
+                                        $pipeline_items = isset($loan_pipeline_items) && is_array($loan_pipeline_items) ? $loan_pipeline_items : array();
+                                        $cnt_eval = isset($pipeline_summary['awaiting_evaluation']) ? (int) $pipeline_summary['awaiting_evaluation'] : 0;
+                                        $cnt_approval = isset($pipeline_summary['awaiting_approval']) ? (int) $pipeline_summary['awaiting_approval'] : 0;
+                                        $cnt_release = isset($pipeline_summary['ready_to_release']) ? (int) $pipeline_summary['ready_to_release'] : 0;
+                                        $cnt_cash = isset($pipeline_summary['pending_cash_release']) ? (int) $pipeline_summary['pending_cash_release'] : 0;
+                                        $listed_amount = isset($pipeline_summary['listed_amount']) ? floatval($pipeline_summary['listed_amount']) : 0;
+                                        ?>
+                                        <div class="pipeline-summary">
+                                            <a class="pipeline-chip tone-pending" href="<?php echo site_url(current_lang() . '/loan/loan_evaluation'); ?>">
+                                                <span class="chip-label">Awaiting Evaluation</span>
+                                                <span class="chip-value"><?php echo number_format($cnt_eval); ?></span>
+                                            </a>
+                                            <a class="pipeline-chip tone-review" href="<?php echo site_url(current_lang() . '/loan/loan_approval'); ?>">
+                                                <span class="chip-label">Awaiting Approval</span>
+                                                <span class="chip-value"><?php echo number_format($cnt_approval); ?></span>
+                                            </a>
+                                            <a class="pipeline-chip tone-approved" href="<?php echo site_url(current_lang() . '/loan/loan_disbursement'); ?>">
+                                                <span class="chip-label">Ready to Release</span>
+                                                <span class="chip-value"><?php echo number_format($cnt_release); ?></span>
+                                            </a>
+                                            <a class="pipeline-chip tone-cash" href="<?php echo site_url(current_lang() . '/loan/loan_disbursement'); ?>">
+                                                <span class="chip-label">Pending Cash Release</span>
+                                                <span class="chip-value"><?php echo number_format($cnt_cash); ?></span>
+                                            </a>
+                                        </div>
+
+                                        <div class="table-responsive">
+                                            <table class="table table-hover no-margins loan-pipeline-table">
+                                                <thead>
+                                                <tr>
+                                                    <th>Status</th>
+                                                    <th>Loan ID</th>
+                                                    <th>Member</th>
+                                                    <th>Product</th>
+                                                    <th class="text-right">Amount</th>
+                                                    <th>Applied</th>
+                                                    <th></th>
+                                                </tr>
+                                                </thead>
+                                                <tbody>
+                                                <?php if (!empty($pipeline_items)): ?>
+                                                    <?php foreach ($pipeline_items as $item): ?>
+                                                        <?php
+                                                        $action_url = isset($item['action_url']) ? $item['action_url'] : '#';
+                                                        $pill = isset($item['pill']) ? $item['pill'] : 'pending';
+                                                        $status_label = isset($item['status_label']) ? $item['status_label'] : 'Pending';
+                                                        $applied = !empty($item['applicationdate']) ? date('M d, Y', strtotime($item['applicationdate'])) : '—';
+                                                        $member_label = trim((isset($item['member_id']) ? $item['member_id'] : '') . ' · ' . (isset($item['member_name']) ? $item['member_name'] : ''), ' ·');
+                                                        ?>
+                                                        <tr class="pipeline-row" onclick="window.location='<?php echo htmlspecialchars($action_url, ENT_QUOTES, 'UTF-8'); ?>';">
+                                                            <td><span class="status-pill <?php echo htmlspecialchars($pill, ENT_QUOTES, 'UTF-8'); ?>"><?php echo htmlspecialchars($status_label, ENT_QUOTES, 'UTF-8'); ?></span></td>
+                                                            <td><a class="loan-link" href="<?php echo htmlspecialchars($action_url, ENT_QUOTES, 'UTF-8'); ?>" onclick="event.stopPropagation();"><?php echo htmlspecialchars(isset($item['LID']) ? $item['LID'] : '', ENT_QUOTES, 'UTF-8'); ?></a></td>
+                                                            <td><?php echo htmlspecialchars($member_label !== '' ? $member_label : '—', ENT_QUOTES, 'UTF-8'); ?></td>
+                                                            <td><?php echo htmlspecialchars(!empty($item['product_name']) ? $item['product_name'] : '—', ENT_QUOTES, 'UTF-8'); ?></td>
+                                                            <td class="text-right text-navy">₱ <?php echo number_format(isset($item['amount']) ? $item['amount'] : 0, 2); ?></td>
+                                                            <td><i class="fa fa-clock-o"></i> <?php echo htmlspecialchars($applied, ENT_QUOTES, 'UTF-8'); ?></td>
+                                                            <td class="text-right">
+                                                                <a href="<?php echo htmlspecialchars($action_url, ENT_QUOTES, 'UTF-8'); ?>" class="btn btn-xs btn-primary" onclick="event.stopPropagation();">Open</a>
+                                                            </td>
+                                                        </tr>
+                                                    <?php endforeach; ?>
+                                                <?php else: ?>
+                                                    <tr>
+                                                        <td colspan="7">
+                                                            <div class="pipeline-empty">
+                                                                <div><i class="fa fa-check-circle"></i></div>
+                                                                <p style="margin:0;">No loans waiting for evaluation or approval right now.</p>
+                                                                <small>Accepted loans ready for release appear above when available.</small>
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                <?php endif; ?>
+                                                </tbody>
+                                            </table>
+                                        </div>
+
+                                        <div class="pipeline-footer">
+                                            <span class="listed-amount">
+                                                <?php if (!empty($pipeline_items)): ?>
+                                                    Showing <?php echo count($pipeline_items); ?> actionable loan(s) · ₱ <?php echo number_format($listed_amount, 2); ?>
+                                                <?php else: ?>
+                                                    Queue clear for evaluation / approval
+                                                <?php endif; ?>
+                                            </span>
+                                            <span>
+                                                <a href="<?php echo site_url(current_lang() . '/loan/loan_evaluation'); ?>" class="btn btn-sm btn-default">Evaluation</a>
+                                                <a href="<?php echo site_url(current_lang() . '/loan/loan_approval'); ?>" class="btn btn-sm btn-default">Approval</a>
+                                                <a href="<?php echo site_url(current_lang() . '/loan/loan_disbursement'); ?>" class="btn btn-sm btn-primary">Release Queue</a>
+                                            </span>
+                                        </div>
                                     </div>
                                 </div>
                             </div>

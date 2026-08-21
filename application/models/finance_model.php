@@ -324,8 +324,15 @@ class Finance_Model extends CI_Model {
             $this->load->model('cash_receipt_model');
             $this->cash_receipt_model->ensure_received_from_columns();
         }
-        $this->db->trans_start();
         $entry_date = isset($entry->entry_date) ? $entry->entry_date : date('Y-m-d');
+        if (function_exists('gl_reject_closed_date')) {
+            $lock_msg = gl_reject_closed_date($entry_date);
+            if ($lock_msg) {
+                $this->last_post_error = $lock_msg;
+                return false;
+            }
+        }
+        $this->db->trans_start();
         $ledger_entry = array('date' => $entry_date, 'PIN' => $pin);
         $this->db->insert('general_ledger_entry', $ledger_entry);
         $ledger_entry_id = $this->db->insert_id();
@@ -467,6 +474,17 @@ class Finance_Model extends CI_Model {
         if (empty($unposted_entries)) {
             $this->db->trans_complete();
             return false;
+        }
+        if (function_exists('gl_reject_closed_date')) {
+            foreach ($unposted_entries as $precheck) {
+                $pre_date = isset($precheck->entrydate) ? $precheck->entrydate : '';
+                $lock_msg = gl_reject_closed_date($pre_date);
+                if ($lock_msg) {
+                    $this->last_post_error = $lock_msg;
+                    $this->db->trans_complete();
+                    return false;
+                }
+            }
         }
         foreach ($unposted_entries as $entry) {
             if (!isset($entry->entryid)) {
@@ -1183,10 +1201,14 @@ class Finance_Model extends CI_Model {
         return $entries;
     }
 
-    function get_total_savings_amount($key=null, $account_type_filter=null, $status_filter=null, $gl_posted_filter=null) {
+    function get_total_savings_amount($key=null, $account_type_filter=null, $status_filter=null, $gl_posted_filter=null, $as_of_date=null) {
         $pin = current_user()->PIN;
         $pin_esc = $this->db->escape($pin);
-        $this->db->select_sum('ma.balance');
+        if (!empty($as_of_date) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $as_of_date)) {
+            $this->db->select('SUM(' . $this->_savings_balance_as_of_expr($as_of_date) . ') AS balance', FALSE);
+        } else {
+            $this->db->select_sum('ma.balance');
+        }
         $this->db->from('members_account ma');
         $this->db->join('saving_account_type sat', 'ma.account_cat = sat.account AND sat.PIN = ' . $pin_esc, 'left');
         $this->db->where('ma.PIN', $pin);
@@ -1797,6 +1819,15 @@ class Finance_Model extends CI_Model {
             return array('success' => false, 'message' => 'This GL posting has already been voided.');
         }
 
+        if (function_exists('gl_reject_closed_date')) {
+            foreach ($lines as $lock_line) {
+                $lock_msg = gl_reject_closed_date(isset($lock_line->date) ? $lock_line->date : '');
+                if ($lock_msg) {
+                    return array('success' => false, 'message' => $lock_msg);
+                }
+            }
+        }
+
         // Default: today. Pass filters['void_date'] or filters['use_source_date']=true
         // so reversing lines land in the same reporting period as the original (critical for BB).
         $void_date = date('Y-m-d');
@@ -1809,6 +1840,12 @@ class Finance_Model extends CI_Model {
             $src_ts = strtotime($lines[0]->date);
             if ($src_ts !== false) {
                 $void_date = date('Y-m-d', $src_ts);
+            }
+        }
+        if (function_exists('gl_reject_closed_date')) {
+            $lock_msg = gl_reject_closed_date($void_date);
+            if ($lock_msg) {
+                return array('success' => false, 'message' => $lock_msg);
             }
         }
         $this->db->insert('general_ledger_entry', array('date' => $void_date, 'PIN' => $pin));
@@ -3581,6 +3618,19 @@ $pin=current_user()->PIN;
             return array('success' => false, 'message' => 'Only void reversing entries can have their date edited here');
         }
 
+        if (function_exists('gl_reject_closed_date')) {
+            $lock_msg = gl_reject_closed_date($void_trans_date);
+            if ($lock_msg) {
+                return array('success' => false, 'message' => $lock_msg);
+            }
+            if (!empty($trans->trans_date)) {
+                $lock_old = gl_reject_closed_date($trans->trans_date);
+                if ($lock_old) {
+                    return array('success' => false, 'message' => $lock_old);
+                }
+            }
+        }
+
         $this->db->trans_start();
 
         $this->db->where('receipt', $receipt);
@@ -4419,10 +4469,36 @@ $pin=current_user()->PIN;
         return $this->db->count_all_results();
     }
 
-    function search_saving_account($key=null, $limit=40, $start=0, $account_type_filter=null, $status_filter=null, $gl_posted_filter=null) {
+    /**
+     * SQL expression: reconstructed savings balance as of a date for the outer ma.account row.
+     */
+    private function _savings_balance_as_of_expr($as_of_date) {
+        $until = $this->db->escape_str($as_of_date);
+        return "(
+            SELECT COALESCE(SUM(CASE WHEN st.trans_type = 'CR' THEN st.amount ELSE 0 END), 0)
+                 - COALESCE(SUM(CASE WHEN st.trans_type = 'DR' THEN st.amount ELSE 0 END), 0)
+            FROM savings_transaction st
+            WHERE st.account = ma.account
+              AND st.PIN = ma.PIN
+              AND st.trans_date <= '{$until} 23:59:59'
+              AND (st.comment IS NULL OR st.comment NOT LIKE 'VOID-%')
+              AND st.receipt NOT IN (
+                  SELECT SUBSTRING_INDEX(SUBSTRING_INDEX(vt.comment, ' ', 1), 'VOID-', -1)
+                  FROM savings_transaction vt
+                  WHERE vt.account = ma.account
+                    AND vt.PIN = ma.PIN
+                    AND vt.comment LIKE 'VOID-%'
+              )
+        )";
+    }
+
+    function search_saving_account($key=null, $limit=40, $start=0, $account_type_filter=null, $status_filter=null, $gl_posted_filter=null, $as_of_date=null) {
         $pin = current_user()->PIN;
         $pin_esc = $this->db->escape($pin);
         $this->db->select('ma.*, m.firstname, m.middlename, m.lastname, m.member_id as member_id_display, mg.name as group_name, sat.description as account_type_name, sat.account as account_type_code, sat.name as account_type_name_display');
+        if (!empty($as_of_date) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $as_of_date)) {
+            $this->db->select($this->_savings_balance_as_of_expr($as_of_date) . ' AS balance', FALSE);
+        }
         $this->db->select("(SELECT COUNT(DISTINCT gl.id) FROM savings_transaction st INNER JOIN general_ledger gl ON gl.fromtable = 'savings_transaction' AND gl.refferenceID = st.receipt AND gl.PIN = st.PIN WHERE st.account = ma.account AND st.PIN = " . $pin_esc . ") AS gl_posted_count", FALSE);
         $this->db->select("(SELECT COUNT(*) FROM savings_transaction st LEFT JOIN general_ledger gl ON gl.fromtable = 'savings_transaction' AND gl.refferenceID = st.receipt AND gl.PIN = st.PIN WHERE st.account = ma.account AND st.PIN = " . $pin_esc . " AND gl.id IS NULL) AS unposted_count", FALSE);
         $this->db->from('members_account ma');
@@ -4693,6 +4769,14 @@ $pin=current_user()->PIN;
         $fiscal_year = $this->db->where('id', $balance->fiscal_year_id)->get('fiscal_year')->row();
         if (!$fiscal_year) {
             return false;
+        }
+        if (function_exists('gl_reject_closed_date')) {
+            $lock_msg = gl_reject_closed_date($fiscal_year->start_date);
+            if ($lock_msg) {
+                log_message('error', 'beginning_balance_post_to_ledger blocked: ' . $lock_msg);
+                $this->last_post_error = $lock_msg;
+                return false;
+            }
         }
         
         // Get account info

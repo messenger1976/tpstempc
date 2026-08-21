@@ -94,4 +94,13 @@ $lang['loan_release_loan'] = 'Loan Release';
 $lang['cash_disbursement_loan_release_required'] = 'Tafadhali chagua loan release inayosubiri.';
 $lang['cash_disbursement_no_pending_releases'] = 'Hakuna loan release zinazosubiri.';
 
+$lang['gl_close_books'] = 'Close Books';
+$lang['gl_close_books_help'] = 'Lock the general ledger through a date. Journal entries, cash receipts/disbursements, beginning balances, and voids dated on or before that date are rejected.';
+$lang['gl_close_books_as_of'] = 'Closed through';
+$lang['gl_close_books_save'] = 'Save close date';
+$lang['gl_close_books_clear'] = 'Remove lock';
+$lang['gl_close_books_status_open'] = 'Books are open';
+$lang['gl_books_closed_block'] = 'Books are closed through {date}. You cannot post, void, or change GL transactions on or before that date.';
+$lang['gl_books_closed_banner'] = 'Books are closed through {date}. Dates on or before this cannot be posted, voided, or changed.';
+
 ?>

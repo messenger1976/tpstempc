@@ -210,6 +210,8 @@ $review_url = site_url(current_lang() . '/finance/journal_entry_review');
     }
     ?>
 
+    <?php if (function_exists('gl_books_close_alert_html')) { echo gl_books_close_alert_html(); } ?>
+
     <div class="cbu-alert info">
         <i class="fa fa-info-circle"></i>
         <strong>Note:</strong> Journal entries require approval before being posted to General Ledger.

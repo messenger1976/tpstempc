@@ -110,9 +110,106 @@ class Dashboard extends CI_Controller {
         $this->data['member_map_locations'] = $this->member_model->get_member_map_locations();
         $this->data['member_map_stats'] = $this->member_model->get_member_map_stats();
         $this->data['office_map_location'] = $this->member_model->get_office_map_location();
+
+        // Live loan application / release pipeline for dashboard widget
+        $loan_pipeline = $this->get_loan_pipeline(8);
+        $this->data['loan_pipeline_items'] = $loan_pipeline['items'];
+        $this->data['loan_pipeline_summary'] = $loan_pipeline['summary'];
         
         $this->data['content'] = 'dashboard';
         $this->load->view('dashboard', $this->data);
+    }
+
+    /**
+     * Build actionable loan pipeline rows for the dashboard.
+     * Priority: awaiting evaluation → awaiting approval → ready to release.
+     */
+    private function get_loan_pipeline($limit = 8) {
+        $limit = max(1, (int) $limit);
+        $awaiting_eval = (int) $this->loan_model->count_loan_wait_evaluation();
+        $awaiting_approval = (int) $this->loan_model->count_loan_wait_approval();
+        $ready_release = (int) $this->loan_model->count_loan_wait_disburse();
+        $pin = current_user()->PIN;
+        $pending_cash_row = $this->db->query(
+            "SELECT COUNT(*) AS total
+             FROM loan_contract_disburse
+             WHERE PIN = ?
+               AND release_status = 'pending'",
+            array($pin)
+        )->row();
+        $pending_cash = $pending_cash_row ? (int) $pending_cash_row->total : 0;
+
+        $items = array();
+        $seen = array();
+
+        $push_rows = function ($rows, $stage, $pill, $label, $action_path) use (&$items, &$seen, $limit) {
+            foreach ($rows as $row) {
+                if (count($items) >= $limit) {
+                    break;
+                }
+                $lid = isset($row->LID) ? (string) $row->LID : '';
+                if ($lid === '' || isset($seen[$lid])) {
+                    continue;
+                }
+                $seen[$lid] = true;
+                $name = trim(implode(' ', array_filter(array(
+                    isset($row->firstname) ? $row->firstname : '',
+                    isset($row->middlename) ? $row->middlename : '',
+                    isset($row->lastname) ? $row->lastname : '',
+                ))));
+                $items[] = array(
+                    'LID' => $lid,
+                    'member_id' => isset($row->member_id) ? $row->member_id : '',
+                    'member_name' => $name !== '' ? $name : '—',
+                    'product_name' => !empty($row->product_name) ? $row->product_name : (!empty($row->loan_product_name) ? $row->loan_product_name : ''),
+                    'amount' => isset($row->basic_amount) ? floatval($row->basic_amount) : 0,
+                    'applicationdate' => !empty($row->applicationdate) ? $row->applicationdate : null,
+                    'stage' => $stage,
+                    'pill' => $pill,
+                    'status_label' => $label,
+                    'action_url' => site_url(current_lang() . $action_path . $lid),
+                );
+            }
+        };
+
+        $push_rows(
+            $this->loan_model->loan_wait_evaluation(null, $limit, 0),
+            'evaluation',
+            'pending',
+            'Awaiting Evaluation',
+            '/loan/loan_evaluation_action/'
+        );
+        $push_rows(
+            $this->loan_model->loan_wait_approval(null, null, null, null, $limit, 0),
+            'approval',
+            'review',
+            'Awaiting Approval',
+            '/loan/loan_approval_action/'
+        );
+        $push_rows(
+            $this->loan_model->loan_wait_disburse(null, null, null, null, $limit, 0),
+            'release',
+            'approved',
+            'Ready to Release',
+            '/loan/loan_disburse_entry/'
+        );
+
+        $amount_total = 0.0;
+        foreach ($items as $item) {
+            $amount_total += $item['amount'];
+        }
+
+        return array(
+            'items' => $items,
+            'summary' => array(
+                'awaiting_evaluation' => $awaiting_eval,
+                'awaiting_approval' => $awaiting_approval,
+                'ready_to_release' => $ready_release,
+                'pending_cash_release' => $pending_cash,
+                'queue_total' => $awaiting_eval + $awaiting_approval + $ready_release,
+                'listed_amount' => $amount_total,
+            ),
+        );
     }
     
     /**
@@ -246,17 +343,30 @@ class Dashboard extends CI_Controller {
     }
     
     /**
-     * Get total share capital
+     * Get total share capital (Paid-Up Share Capital).
+     * Prefer the member share sub-ledger. When it has no rows (TAPSTEMCO share
+     * balances were never migrated into members_share), fall back to GL 30130.
+     * CBU beginning-balance postings (fromtable = contribution_settings) debit
+     * 30130 by mistake and are excluded so they do not wipe out share capital.
      */
     private function get_total_share_capital() {
         $pin = current_user()->PIN;
-        
-        $sql = "SELECT COALESCE(SUM(amount + remainbalance), 0) as total
+
+        $sql = "SELECT COUNT(*) AS cnt, COALESCE(SUM(amount + remainbalance), 0) AS total
                 FROM members_share
-                WHERE PIN = '$pin'";
-        
-        $result = $this->db->query($sql)->row();
-        return floatval($result->total);
+                WHERE PIN = ?";
+        $result = $this->db->query($sql, array($pin))->row();
+        if ($result && intval($result->cnt) > 0) {
+            return floatval($result->total);
+        }
+
+        $sql = "SELECT COALESCE(SUM(credit) - SUM(debit), 0) AS total
+                FROM general_ledger
+                WHERE PIN = ?
+                AND account = '30130'
+                AND (fromtable IS NULL OR fromtable <> 'contribution_settings')";
+        $result = $this->db->query($sql, array($pin))->row();
+        return $result ? floatval($result->total) : 0;
     }
     
     /**

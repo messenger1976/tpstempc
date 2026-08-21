@@ -252,6 +252,9 @@ $current_member_id = ($current_user_data && isset($current_user_data->member_id)
                         <?php } ?>
                         <?php if (has_role(6, 'Void_transactions')) { ?>
                             <li class="<?php echo ($activefunction == 'void_transactions' ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/finance/void_transactions'); ?>"><i class="fa fa-undo"></i> <?php echo lang('void_transactions'); ?></a></li>
+                            <?php if (has_role(6, 'Close_books') || $this->ion_auth->is_admin()) { ?>
+                            <li class="<?php echo ($activefunction == 'close_books' ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/finance/close_books'); ?>"><i class="fa fa-lock"></i> <?php echo lang('gl_close_books'); ?></a></li>
+                            <?php } ?>
                         <?php } ?>
                     </ul>
                 </li>

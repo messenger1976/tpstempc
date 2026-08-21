@@ -370,6 +370,7 @@ $lang['journal_entry_status_posted'] = 'Posted';
 $lang['journal_entry_status_draft'] = 'Draft';
 $lang['journal_entry_review'] = 'Journal Entry Review & Approval';
 $lang['void_transactions'] = 'Void Transactions';
+$lang['gl_close_books'] = 'Close Books';
 $lang['journal_entry_delete_success'] = 'Journal entry deleted successfully';
 $lang['journal_entry_delete_fail'] = 'Failed to delete journal entry';
 $lang['journal_entry_update_success'] = 'Journal entry updated successfully';

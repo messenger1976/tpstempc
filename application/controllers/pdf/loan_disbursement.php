@@ -18,6 +18,8 @@ $disburse_no = isset($disburse->disburse_no) ? trim((string) $disburse->disburse
 $payment_method = isset($disburse->payment_method) ? trim((string) $disburse->payment_method) : '';
 $disburse_date = isset($disburse->disbursedate) ? date('d-m-Y', strtotime($disburse->disbursedate)) : '';
 $member_id = $member ? $member->member_id : '';
+$document_title = isset($document_title) ? $document_title : lang('loan_disbursement_voucher');
+$statement_title = isset($statement_title) ? $statement_title : lang('loan_disbursement_statement');
 
 $html = '<table style="border-bottom:1px solid #000; width:100%;">
         <tr>
@@ -27,14 +29,14 @@ $html = '<table style="border-bottom:1px solid #000; width:100%;">
             <td style="width:1800px; text-align:center"><b>
                <div style="font-size:180px;">' . htmlspecialchars($company->name) . '</div>
                 P.O.Box ' . strtoupper($company->box) . ' , ' . strtoupper(lang('clientaccount_label_phone')) . ':' . $company->mobile . '<br/>
-      ' . strtoupper(lang('loan_disbursement_voucher')) . '
+      ' . strtoupper($document_title) . '
 </b>
             </td>
         </tr>
     </table><br/>';
 
 $html .= '<div style="text-align:center; font-size:140px; font-weight:bold; margin-bottom:10px;">'
-    . htmlspecialchars(lang('loan_disbursement_statement'))
+    . htmlspecialchars($statement_title)
     . '<br/><span style="font-size:110px; font-weight:normal;">' . date('F d, Y') . '</span></div><br/>';
 
 $html .= '<table cellpadding="4" style="width:100%;">

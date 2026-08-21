@@ -256,6 +256,9 @@ $paid_to_types = array(
     } else if ($this->session->flashdata('warning') != '') {
         echo '<div class="cbu-alert danger displaymessage">' . $this->session->flashdata('warning') . '</div>';
     }
+    if (function_exists('gl_books_close_alert_html')) {
+        echo gl_books_close_alert_html();
+    }
     ?>
 
     <div class="cbu-panel">

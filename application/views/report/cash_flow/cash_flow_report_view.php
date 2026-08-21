@@ -165,6 +165,10 @@ $indent_px = array(0 => 0, 1 => 18, 2 => 36, 3 => 54, 4 => 72);
                 <i class="fa fa-print"></i> Print
             </button>
             &nbsp; &nbsp; &nbsp; &nbsp;
+            <a href="<?php echo site_url(current_lang() . '/report/cash_flow_report_export/' . $id); ?>" class="btn btn-success">
+                <i class="fa fa-file-excel-o"></i> <?php echo lang('export_excel'); ?>
+            </a>
+            &nbsp; &nbsp; &nbsp; &nbsp;
             <a href="<?php echo site_url(current_lang() . '/report/create_cash_flow_report/' . $id); ?>" class="btn btn-primary">Edit</a>
             &nbsp; &nbsp; &nbsp; &nbsp;
             <a href="<?php echo site_url(current_lang() . '/report/cash_flow_report'); ?>" class="btn btn-default">Back</a>

@@ -121,6 +121,9 @@ $row_count = is_array($loan_beginning_balances) ? count($loan_beginning_balances
     } else if ($this->session->flashdata('warning') != '') {
         echo '<div class="member-alert danger displaymessage">' . $this->session->flashdata('warning') . '</div>';
     }
+    if (function_exists('gl_books_close_alert_html')) {
+        echo gl_books_close_alert_html();
+    }
     ?>
 
     <div class="member-filter-panel">
@@ -202,6 +205,12 @@ $row_count = is_array($loan_beginning_balances) ? count($loan_beginning_balances
                     <h4><?php echo lang('loan_beginning_balance_list'); ?></h4>
                 </div>
                 <div class="panel-head-tools">
+                    <button type="button" class="btn btn-success btn-sm" id="bb-bulk-post">
+                        <i class="fa fa-check"></i> <?php echo lang('loan_beginning_balance_bulk_post'); ?>
+                    </button>
+                    <button type="button" class="btn btn-info btn-sm" id="bb-bulk-activate">
+                        <i class="fa fa-play-circle"></i> <?php echo lang('loan_beginning_balance_bulk_activate'); ?>
+                    </button>
                     <div class="table-search-wrap">
                         <i class="fa fa-search"></i>
                         <input type="text" id="bb-table-search" class="form-control" placeholder="Search member, loan ID, product..." autocomplete="off" />
@@ -216,6 +225,9 @@ $row_count = is_array($loan_beginning_balances) ? count($loan_beginning_balances
                 <table class="table table-striped table-bordered member-table" id="bb-balance-table">
                     <thead>
                         <tr>
+                            <th style="text-align:center; width:36px;">
+                                <input type="checkbox" id="bb-select-all" title="Select all eligible rows" />
+                            </th>
                             <th style="text-align:center; width:60px;"><?php echo lang('sno'); ?></th>
                             <th><?php echo lang('loan_beginning_balance_member_id'); ?></th>
                             <th><?php echo lang('member_name'); ?></th>
@@ -271,6 +283,8 @@ $row_count = is_array($loan_beginning_balances) ? count($loan_beginning_balances
             var activateUrlBase = '<?php echo site_url(current_lang() . '/loan/loan_beginning_balance_activate'); ?>';
             var deactivateUrlBase = '<?php echo site_url(current_lang() . '/loan/loan_beginning_balance_deactivate'); ?>';
             var voidUrlBase = '<?php echo site_url(current_lang() . '/loan/loan_beginning_balance_void'); ?>';
+            var bulkPostUrl = '<?php echo site_url(current_lang() . '/loan/loan_beginning_balance_bulk_post'); ?>';
+            var bulkActivateUrl = '<?php echo site_url(current_lang() . '/loan/loan_beginning_balance_bulk_activate'); ?>';
             var actionInProgress = false;
 
             function tableRows() {
@@ -342,6 +356,7 @@ $row_count = is_array($loan_beginning_balances) ? count($loan_beginning_balances
                 }).done(function(resp) {
                     if (resp && resp.success === 'Y') {
                         $('#bb-balance-table tbody').html(resp.html || '');
+                        $('#bb-select-all').prop('checked', false);
                         applySearchFilter();
                         deferred.resolve(resp);
                     } else {
@@ -359,7 +374,17 @@ $row_count = is_array($loan_beginning_balances) ? count($loan_beginning_balances
             function finishAction(success, title, message) {
                 actionInProgress = false;
                 showPageAlert(success ? 'success' : 'danger', message);
-                swal(title, message, success ? 'success' : 'error');
+                if (success) {
+                    swal({
+                        title: title,
+                        text: message,
+                        type: 'success',
+                        timer: 2000,
+                        showConfirmButton: true
+                    });
+                } else {
+                    swal(title, message, 'error');
+                }
             }
 
             function runRowAjax(url, progressTitle, progressText, successTitle, failTitle) {
@@ -397,9 +422,129 @@ $row_count = is_array($loan_beginning_balances) ? count($loan_beginning_balances
                 });
             }
 
+            function selectedEligibleIds(flag) {
+                var ids = [];
+                $('#bb-balance-table tbody tr:visible .bb-row-check:checked').each(function() {
+                    if (String($(this).attr(flag)) === '1') {
+                        ids.push($(this).val());
+                    }
+                });
+                return ids;
+            }
+
+            function runBulkAjax(url, ids, progressTitle, progressText, successTitle, failTitle) {
+                if (actionInProgress || !ids.length) {
+                    return;
+                }
+                actionInProgress = true;
+                swal({
+                    title: progressTitle,
+                    text: progressText,
+                    type: 'info',
+                    showConfirmButton: false
+                });
+                var postData = currentFilters();
+                postData.ids = ids;
+                $.ajax({
+                    url: url,
+                    type: 'POST',
+                    dataType: 'json',
+                    data: postData
+                }).done(function(json) {
+                    var filters = currentFilters();
+                    if (json && json.fiscal_year_id && !filters.fiscal_year_id) {
+                        filters.fiscal_year_id = json.fiscal_year_id;
+                        $('#fiscal_year_id').val(json.fiscal_year_id);
+                    }
+                    reloadBalanceTable(filters).always(function() {
+                        if (json && json.success === 'Y') {
+                            finishAction(true, successTitle, json.message);
+                        } else {
+                            finishAction(false, failTitle, (json && json.message) ? json.message : failTitle);
+                        }
+                    });
+                }).fail(function() {
+                    finishAction(false, failTitle, failTitle);
+                });
+            }
+
             $search.on('keyup input', applySearchFilter);
 
             $page.off('click.bbActions');
+            $page.off('change.bbSelect');
+
+            $page.on('change.bbSelect', '#bb-select-all', function() {
+                var checked = $(this).prop('checked');
+                $('#bb-balance-table tbody tr:visible .bb-row-check').prop('checked', checked);
+            });
+
+            $page.on('change.bbSelect', '.bb-row-check', function() {
+                var $visible = $('#bb-balance-table tbody tr:visible .bb-row-check');
+                var $checked = $visible.filter(':checked');
+                $('#bb-select-all').prop('checked', $visible.length > 0 && $checked.length === $visible.length);
+            });
+
+            $page.on('click.bbActions', '#bb-bulk-post', function() {
+                var ids = selectedEligibleIds('data-can-post');
+                if (!ids.length) {
+                    swal("<?php echo lang('loan_beginning_balance_bulk_none'); ?>", "Only Not Posted rows can be posted to GL.", "warning");
+                    return;
+                }
+                swal({
+                    title: "<?php echo lang('are_you_sure'); ?>",
+                    text: "<?php echo lang('loan_beginning_balance_bulk_post_confirm'); ?> (" + ids.length + ")",
+                    type: "warning",
+                    showCancelButton: true,
+                    confirmButtonColor: "#5cb85c",
+                    confirmButtonText: "<?php echo lang('loan_beginning_balance_bulk_post'); ?>",
+                    cancelButtonText: "<?php echo lang('cancel'); ?>",
+                    closeOnConfirm: false,
+                    closeOnCancel: true
+                }, function(isConfirm) {
+                    if (!isConfirm) {
+                        return;
+                    }
+                    runBulkAjax(
+                        bulkPostUrl,
+                        ids,
+                        "<?php echo lang('loan_beginning_balance_post'); ?>",
+                        "<?php echo lang('loan_beginning_balance_bulk_posting'); ?>",
+                        "<?php echo lang('loan_beginning_balance_bulk_post_done'); ?>",
+                        "<?php echo lang('loan_beginning_balance_post_fail'); ?>"
+                    );
+                });
+            });
+
+            $page.on('click.bbActions', '#bb-bulk-activate', function() {
+                var ids = selectedEligibleIds('data-can-activate');
+                if (!ids.length) {
+                    swal("<?php echo lang('loan_beginning_balance_bulk_none'); ?>", "Only Posted (not yet Activated) rows can be activated.", "warning");
+                    return;
+                }
+                swal({
+                    title: "<?php echo lang('are_you_sure'); ?>",
+                    text: "<?php echo lang('loan_beginning_balance_bulk_activate_confirm'); ?> (" + ids.length + ")",
+                    type: "warning",
+                    showCancelButton: true,
+                    confirmButtonColor: "#0275d8",
+                    confirmButtonText: "<?php echo lang('loan_beginning_balance_bulk_activate'); ?>",
+                    cancelButtonText: "<?php echo lang('cancel'); ?>",
+                    closeOnConfirm: false,
+                    closeOnCancel: true
+                }, function(isConfirm) {
+                    if (!isConfirm) {
+                        return;
+                    }
+                    runBulkAjax(
+                        bulkActivateUrl,
+                        ids,
+                        "<?php echo lang('loan_beginning_balance_activate'); ?>",
+                        "<?php echo lang('loan_beginning_balance_bulk_activating'); ?>",
+                        "<?php echo lang('loan_beginning_balance_bulk_activate_done'); ?>",
+                        "<?php echo lang('loan_beginning_balance_activate_fail'); ?>"
+                    );
+                });
+            });
 
             $page.on('click.bbActions', '.btn-delete-balance', function() {
                 var balanceId = $(this).data('id');

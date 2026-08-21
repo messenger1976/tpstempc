@@ -112,7 +112,18 @@ class Cash_receipt extends CI_Controller {
             $this->form_validation->set_rules('account[]', lang('cash_receipt_account'), 'required');
         }
 
-        if ($this->form_validation->run() == TRUE) {
+        $gl_lock_block = false;
+        if ($this->input->post('receipt_date')) {
+            $lock_msg = function_exists('gl_reject_closed_date')
+                ? gl_reject_closed_date(date('Y-m-d', strtotime($this->input->post('receipt_date'))))
+                : false;
+            if ($lock_msg) {
+                $this->data['warning'] = $lock_msg;
+                $gl_lock_block = true;
+            }
+        }
+
+        if ($this->form_validation->run() == TRUE && !$gl_lock_block) {
             $received_from_type = $this->_normalize_received_from_type($this->input->post('received_from_type'));
             $loan_repayment_lid = '';
             if ($received_from_type === 'loan_repayment') {
@@ -247,7 +258,18 @@ class Cash_receipt extends CI_Controller {
             $this->form_validation->set_rules('account[]', lang('cash_receipt_account'), 'required');
         }
 
-        if ($this->form_validation->run() == TRUE) {
+        $gl_lock_block = false;
+        if ($this->input->post('receipt_date')) {
+            $lock_msg = function_exists('gl_reject_closed_date')
+                ? gl_reject_closed_date(date('Y-m-d', strtotime($this->input->post('receipt_date'))))
+                : false;
+            if ($lock_msg) {
+                $this->data['warning'] = $lock_msg;
+                $gl_lock_block = true;
+            }
+        }
+
+        if ($this->form_validation->run() == TRUE && !$gl_lock_block) {
             $received_from_type = $this->_normalize_received_from_type($this->input->post('received_from_type'));
             $loan_repayment_lid = '';
             if ($received_from_type === 'loan_repayment') {

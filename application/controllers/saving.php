@@ -114,6 +114,20 @@ class Saving extends CI_Controller {
         } else if (isset($_GET['status_filter']) && $_GET['status_filter'] != '') {
             $status_filter = $_GET['status_filter'];
         }
+
+        $as_of_date = null;
+        $as_of_input = '';
+        if (isset($_POST['as_of']) && $_POST['as_of'] != '') {
+            $as_of_input = trim($_POST['as_of']);
+        } else if (isset($_GET['as_of']) && $_GET['as_of'] != '') {
+            $as_of_input = trim($_GET['as_of']);
+        }
+        if ($as_of_input !== '') {
+            $parsed = format_date($as_of_input);
+            if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $parsed)) {
+                $as_of_date = $parsed;
+            }
+        }
         
         $suffix_array = array();
 
@@ -132,11 +146,17 @@ class Saving extends CI_Controller {
         if ($status_filter != '') {
             $suffix_array['status_filter'] = $status_filter;
         }
+
+        if (!empty($as_of_date)) {
+            $suffix_array['as_of'] = format_date($as_of_date, false);
+        }
         
         $this->data['jxy'] = $suffix_array;
         $this->data['account_type_filter'] = $account_type_filter;
         $this->data['gl_posted_filter'] = $gl_posted_filter;
         $this->data['status_filter'] = $status_filter;
+        $this->data['as_of_date'] = $as_of_date;
+        $this->data['as_of_display'] = !empty($as_of_date) ? format_date($as_of_date, false) : '';
         if (count($suffix_array) > 0) {
             $query_string = http_build_query($suffix_array, '', '&');
             $config['suffix'] = '?' . $query_string;
@@ -184,8 +204,8 @@ class Saving extends CI_Controller {
         $this->data['page_start'] = $page;
         $this->data['per_page'] = $config["per_page"];
         
-        $this->data['saving_accounts'] = $this->finance_model->search_saving_account($key, $config["per_page"], $page, $account_type_filter, $status_filter, $gl_posted_filter);
-        $this->data['total_savings_amount'] = $this->finance_model->get_total_savings_amount($key, $account_type_filter, $status_filter, $gl_posted_filter);
+        $this->data['saving_accounts'] = $this->finance_model->search_saving_account($key, $config["per_page"], $page, $account_type_filter, $status_filter, $gl_posted_filter, $as_of_date);
+        $this->data['total_savings_amount'] = $this->finance_model->get_total_savings_amount($key, $account_type_filter, $status_filter, $gl_posted_filter, $as_of_date);
         
         $this->data['content'] = 'saving/saving_account_listing';
         $this->load->view('template', $this->data);
@@ -242,6 +262,14 @@ class Saving extends CI_Controller {
         if (isset($_GET['status_filter']) && $_GET['status_filter'] != '') {
             $status_filter = $_GET['status_filter'];
         }
+
+        $as_of_date = null;
+        if (isset($_GET['as_of']) && $_GET['as_of'] != '') {
+            $parsed = format_date(trim($_GET['as_of']));
+            if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $parsed)) {
+                $as_of_date = $parsed;
+            }
+        }
         
         // Get total count first to use as limit for export (get all records)
         $total_count = $this->finance_model->count_saving_account($key, $account_type_filter, $status_filter, $gl_posted_filter);
@@ -249,8 +277,8 @@ class Saving extends CI_Controller {
         // Get all accounts (use total count + 1000 as limit to ensure we get all records)
         // If total_count is 0, use a reasonable default limit
         $limit = ($total_count > 0) ? $total_count + 1000 : 10000;
-        $saving_accounts = $this->finance_model->search_saving_account($key, $limit, 0, $account_type_filter, $status_filter, $gl_posted_filter);
-        $total_savings_amount = $this->finance_model->get_total_savings_amount($key, $account_type_filter, $status_filter, $gl_posted_filter);
+        $saving_accounts = $this->finance_model->search_saving_account($key, $limit, 0, $account_type_filter, $status_filter, $gl_posted_filter, $as_of_date);
+        $total_savings_amount = $this->finance_model->get_total_savings_amount($key, $account_type_filter, $status_filter, $gl_posted_filter, $as_of_date);
         
         // Check if we have data
         if (!$saving_accounts || !is_array($saving_accounts) || count($saving_accounts) == 0) {

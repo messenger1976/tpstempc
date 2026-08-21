@@ -186,4 +186,29 @@ $lang['cash_disbursement_no_pending_releases'] = 'No Loan Release Pending record
 // Loan beginning balances (referenced in finance views)
 $lang['loan_beginning_balance_list'] = 'Loan Beginning Balances';
 
+$lang['gl_close_books'] = 'Close Books';
+$lang['gl_close_books_help'] = 'Lock the general ledger through a date. Journal entries, cash receipts/disbursements, beginning balances, and voids dated on or before that date are rejected. To reopen a period, move the close date backward or clear the lock.';
+$lang['gl_close_books_as_of'] = 'Closed through';
+$lang['gl_close_books_as_of_hint'] = 'Inclusive. Leave blank and save to fully reopen (or use Remove lock).';
+$lang['gl_close_books_note'] = 'Note';
+$lang['gl_close_books_note_hint'] = 'Optional reason (shown in history)';
+$lang['gl_close_books_save'] = 'Save close date';
+$lang['gl_close_books_clear'] = 'Remove lock';
+$lang['gl_close_books_clear_confirm'] = 'Remove the books close date and allow posting to all dates again?';
+$lang['gl_close_books_status_closed'] = 'Closed through %s';
+$lang['gl_close_books_status_open'] = 'Books are open';
+$lang['gl_close_books_by_fiscal_year'] = 'Close by fiscal year';
+$lang['gl_close_books_by_fiscal_year_help'] = 'Sets the close date to that fiscal year’s end date. Later years stay open until you close them too.';
+$lang['gl_close_books_close_year'] = 'Close through year end';
+$lang['gl_close_books_year_closed'] = 'Closed';
+$lang['gl_close_books_year_open'] = 'Open';
+$lang['gl_close_books_fy_confirm'] = 'Close books through %s (%s)? Posting and voids on or before that date will be blocked.';
+$lang['gl_close_books_history'] = 'Recent close changes';
+$lang['gl_close_books_action'] = 'Action';
+$lang['gl_close_books_when'] = 'When';
+$lang['gl_close_books_invalid_date'] = 'Please enter a valid close date.';
+$lang['gl_close_books_fail'] = 'Failed to save books close date.';
+$lang['gl_books_closed_block'] = 'Books are closed through {date}. You cannot post, void, or change GL transactions on or before that date. A user with Close Books permission can reopen by moving the close date back.';
+$lang['gl_books_closed_banner'] = 'Books are closed through {date}. Dates on or before this cannot be posted, voided, or changed.';
+
 ?>

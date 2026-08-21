@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <?php $company = function_exists('company_info_detail') ? company_info_detail() : null; $company_name = ($company && isset($company->name) && $company->name !== '') ? $company->name : 'Cooperative'; ?>
-    <title><?php echo htmlspecialchars($company_name); ?> | <?php echo lang('loan_disbursement_print'); ?></title>
+    <title><?php echo htmlspecialchars($company_name); ?> | <?php echo htmlspecialchars(isset($document_title) ? $document_title : lang('loan_disbursement_print'), ENT_QUOTES, 'UTF-8'); ?></title>
 
     <style>
         body { font-family: Arial, sans-serif; margin: 0; padding: 0; background-color: #fff; }
@@ -47,12 +47,12 @@
             <?php endif; ?>
             <div class="company-name"><?php echo htmlspecialchars($company_name); ?></div>
             <div class="company-info">
-                <div><?php echo lang('loan_disbursement_statement'); ?></div>
+                <div><?php echo htmlspecialchars(isset($statement_title) ? $statement_title : lang('loan_disbursement_statement'), ENT_QUOTES, 'UTF-8'); ?></div>
                 <div><?php echo date('F d, Y'); ?></div>
             </div>
         </div>
 
-        <div class="document-title"><?php echo lang('loan_disbursement_voucher'); ?></div>
+        <div class="document-title"><?php echo htmlspecialchars(isset($document_title) ? $document_title : lang('loan_disbursement_voucher'), ENT_QUOTES, 'UTF-8'); ?></div>
 
         <?php
         $member = $this->member_model->member_basic_info(null, $loaninfo->PID)->row();

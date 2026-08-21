@@ -33,6 +33,13 @@ $saving = $loaninfo ? $this->finance_model->saving_account_balance_PID($loaninfo
 $print_pdf_url = site_url(current_lang() . '/loan/print_repayment_schedule/' . $loanid);
 $disburse_pdf_url = site_url(current_lang() . '/loan/print_loan_disbursement/' . $loanid);
 $pdf_viewer_base = base_url() . 'assets/pdf_viewer_embed.html?file=';
+$is_bb_journal = false;
+if ($loaninfo) {
+    $latest_disburse = $this->loan_model->loan_disburse_history($loaninfo->LID)->row();
+    $is_bb_journal = $this->loan_model->is_beginning_balance_activated_loan($loaninfo, $latest_disburse);
+}
+$print_disburse_label = $is_bb_journal ? lang('loan_print_beginning_balance_journal') : lang('loan_print_disbursement');
+$print_disburse_title = $is_bb_journal ? lang('loan_beginning_balance_journal') : lang('loan_disbursement_voucher');
 ?>
 
 <style type="text/css">
@@ -493,7 +500,7 @@ $pdf_viewer_base = base_url() . 'assets/pdf_viewer_embed.html?file=';
                     <i class="fa fa-print"></i> <?php echo lang('print'); ?>
                 </button>
                 <button type="button" class="btn btn-info" id="btnPrintDisbursement">
-                    <i class="fa fa-file-text-o"></i> <?php echo lang('loan_print_disbursement'); ?>
+                    <i class="fa fa-file-text-o"></i> <?php echo $print_disburse_label; ?>
                 </button>
                 <a class="btn btn-success" href="<?php echo site_url(current_lang() . '/loan/export_repayment_schedule/' . $loanid); ?>">
                     <i class="fa fa-file-excel-o"></i> <?php echo lang('export_to_excel'); ?>
@@ -530,7 +537,7 @@ $pdf_viewer_base = base_url() . 'assets/pdf_viewer_embed.html?file=';
     var schedulePdfUrl = <?php echo json_encode($print_pdf_url); ?>;
     var disbursePdfUrl = <?php echo json_encode($disburse_pdf_url); ?>;
     var scheduleTitle = <?php echo json_encode(lang('loan_view_repayment_schedule') . ' - PDF'); ?>;
-    var disburseTitle = <?php echo json_encode(lang('loan_disbursement_voucher') . ' - PDF'); ?>;
+    var disburseTitle = <?php echo json_encode($print_disburse_title . ' - PDF'); ?>;
     var currentPdfUrl = schedulePdfUrl;
     var printHideTimer = null;
 

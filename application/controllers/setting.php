@@ -1061,6 +1061,7 @@ class Setting extends CI_Controller {
         $this->data['title'] = lang('fiscal_year_list');
         $this->data['fiscal_years'] = $this->setting_model->fiscal_year_list()->result();
         $this->data['active_fiscal_year'] = $this->setting_model->get_active_fiscal_year();
+        $this->data['closed_as_of'] = function_exists('gl_books_closed_as_of') ? gl_books_closed_as_of() : null;
         $this->data['content'] = 'setting/fiscal_year_list';
         $this->load->view('template', $this->data);
     }

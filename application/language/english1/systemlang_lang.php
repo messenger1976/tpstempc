@@ -278,6 +278,7 @@ $lang['ledger_trial_balance'] = 'Trial Balance';
 //Journal Entry
 $lang['journalentry'] = 'Journal Entry';
 $lang['void_transactions'] = 'Void Transactions';
+$lang['gl_close_books'] = 'Close Books';
 $lang['client_account'] = 'Client Account';
 $lang['reseller_account_list'] = 'Reseller Account List';
 

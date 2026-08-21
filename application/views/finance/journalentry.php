@@ -581,6 +581,22 @@ if (!empty($savings_coa_list)) {
             }
         }
 
+        function destroyLinkEntitySelect($el) {
+            if ($el && $el.length && $el.hasClass('select2-hidden-accessible')) {
+                $el.select2('destroy');
+            }
+        }
+
+        function initLinkEntitySelect($el) {
+            if (!$el || !$el.length || !$.fn.select2) { return; }
+            destroyLinkEntitySelect($el);
+            $el.select2({
+                width: '100%',
+                placeholder: <?php echo json_encode(lang('journalentry_link_select')); ?>,
+                allowClear: true
+            });
+        }
+
         function makeAccountSelectHtml(selectedAccount) {
             var $tmp = $('<select/>').html($('#coaOptionsSource').html());
             if (selectedAccount) {
@@ -625,6 +641,7 @@ if (!empty($savings_coa_list)) {
             } else if (type === 'loan' && isLoanReceivableCoa(account)) {
                 html = loanOptionsByCoa[String(account)] || emptyEntityHtml;
             }
+            destroyLinkEntitySelect($entity);
             $entity.html(html);
             if (type === '') {
                 $entity.prop('disabled', true).val('');
@@ -634,6 +651,7 @@ if (!empty($savings_coa_list)) {
                     $entity.val(String(keep));
                 }
             }
+            initLinkEntitySelect($entity);
         }
 
         function syncMemberSubledgerLink($row, autoSelect) {
@@ -814,6 +832,7 @@ if (!empty($savings_coa_list)) {
 
         ensureBootstrapDP(initPicker);
         $('.account-select').each(function(){ initAccountSelect($(this)); });
+        $('select.link-entity').each(function(){ initLinkEntitySelect($(this)); });
         updateRemoveButtons();
 
         $(document).on('change', 'select.link-type', function() {
@@ -845,6 +864,7 @@ if (!empty($savings_coa_list)) {
             var $row = $(html);
             $('#quotetable tbody').append($row);
             initAccountSelect($row.find('.account-select'));
+            initLinkEntitySelect($row.find('select.link-entity'));
             updateRemoveButtons();
             return false;
         });
@@ -855,6 +875,7 @@ if (!empty($savings_coa_list)) {
             }
             var $row = $(this).closest('tr');
             destroyAccountSelect($row.find('.account-select'));
+            destroyLinkEntitySelect($row.find('select.link-entity'));
             $row.remove();
             updateRemoveButtons();
             $("input.debit").first().trigger('change');
@@ -866,7 +887,11 @@ if (!empty($savings_coa_list)) {
             var credit1 = $("#open_credit").val();
             if (!isNaN(credit1) && credit1.length !== 0 && !isNaN(debit1) && debit1.length !== 0) {
                 if (diff == 0) {
-                    $('#quotetable select.link-entity:disabled').prop('disabled', false);
+                    $('#quotetable select.link-entity').each(function() {
+                        var $el = $(this);
+                        destroyLinkEntitySelect($el);
+                        $el.prop('disabled', false);
+                    });
                     return true;
                 }
                 alert('Journal not balanced');

@@ -1219,18 +1219,18 @@ class Report extends CI_Controller {
         $row = 1;
         $sheet->setCellValue('A' . $row, company_info()->name);
         $sheet->getStyle('A' . $row)->getFont()->setBold(true)->setSize(14);
-        $sheet->mergeCells('A' . $row . ':G' . $row);
+        $sheet->mergeCells('A' . $row . ':I' . $row);
         $row++;
         $sheet->setCellValue('A' . $row, 'ACCOUNT LEDGER');
         $sheet->getStyle('A' . $row)->getFont()->setBold(true)->setSize(12);
-        $sheet->mergeCells('A' . $row . ':G' . $row);
+        $sheet->mergeCells('A' . $row . ':I' . $row);
         $row++;
         $sheet->setCellValue('A' . $row, $acc->account . ' — ' . $acc->name);
         $sheet->getStyle('A' . $row)->getFont()->setBold(true);
-        $sheet->mergeCells('A' . $row . ':G' . $row);
+        $sheet->mergeCells('A' . $row . ':I' . $row);
         $row++;
         $sheet->setCellValue('A' . $row, 'For the period from ' . format_date($from, false) . ' to ' . format_date($until, false));
-        $sheet->mergeCells('A' . $row . ':G' . $row);
+        $sheet->mergeCells('A' . $row . ':I' . $row);
         $row += 2;
 
         $sheet->setCellValue('A' . $row, 'Balance Forwarded');
@@ -1249,78 +1249,74 @@ class Report extends CI_Controller {
         $row += 2;
 
         $header_row = $row;
-        $headers = array('Date', 'Type', 'Ref #', 'Description / Person', 'Debit', 'Credit', 'Balance');
+        $headers = array('Date', 'Type', 'Ref #', 'Description', 'Cust/Supp/Member ID', 'Person', 'Debit', 'Credit', 'Balance');
         $col = 'A';
         foreach ($headers as $h) {
             $sheet->setCellValue($col . $row, $h);
             $col++;
         }
-        $sheet->getStyle('A' . $row . ':G' . $row)->getFont()->setBold(true);
-        $sheet->getStyle('A' . $row . ':G' . $row)->getFill()->setFillType(PHPExcel_Style_Fill::FILL_SOLID);
-        $sheet->getStyle('A' . $row . ':G' . $row)->getFill()->getStartColor()->setRGB('E0E0E0');
+        $sheet->getStyle('A' . $row . ':I' . $row)->getFont()->setBold(true);
+        $sheet->getStyle('A' . $row . ':I' . $row)->getFill()->setFillType(PHPExcel_Style_Fill::FILL_SOLID);
+        $sheet->getStyle('A' . $row . ':I' . $row)->getFill()->getStartColor()->setRGB('E0E0E0');
         $row++;
         $data_start = $row;
 
         $sheet->setCellValue('A' . $row, 'Balance Forwarded');
-        $sheet->mergeCells('A' . $row . ':D' . $row);
+        $sheet->mergeCells('A' . $row . ':F' . $row);
         if (floatval($ledger['opening_debit']) > 0) {
-            $sheet->setCellValue('E' . $row, floatval($ledger['opening_debit']));
+            $sheet->setCellValue('G' . $row, floatval($ledger['opening_debit']));
         }
         if (floatval($ledger['opening_credit']) > 0) {
-            $sheet->setCellValue('F' . $row, floatval($ledger['opening_credit']));
+            $sheet->setCellValue('H' . $row, floatval($ledger['opening_credit']));
         }
-        $sheet->setCellValue('G' . $row, floatval($ledger['opening_balance']));
-        $sheet->getStyle('A' . $row . ':G' . $row)->getFont()->setBold(true);
+        $sheet->setCellValue('I' . $row, floatval($ledger['opening_balance']));
+        $sheet->getStyle('A' . $row . ':I' . $row)->getFont()->setBold(true);
         $row++;
 
         if (empty($transactions)) {
             $sheet->setCellValue('A' . $row, 'No transactions found for this account in the selected date range.');
-            $sheet->mergeCells('A' . $row . ':G' . $row);
+            $sheet->mergeCells('A' . $row . ':I' . $row);
             $row++;
         } else {
             foreach ($transactions as $t) {
                 $journal_type = isset($t->trans_comment) ? $t->trans_comment : '';
                 $ref_no = (isset($t->invoiceid) && $t->invoiceid > 0) ? $t->invoiceid : (isset($t->refferenceID) ? $t->refferenceID : '');
                 $desc = isset($t->description) ? $t->description : '';
+                $party_id = isset($t->related_entity_party_id) ? $t->related_entity_party_id : '';
                 $rel = isset($t->related_entity_name) ? $t->related_entity_name : '';
-                $desc_parts = array();
-                if ($desc !== '') {
-                    $desc_parts[] = $desc;
-                }
-                if ($rel !== '') {
-                    $desc_parts[] = $rel;
-                }
 
                 $sheet->setCellValue('A' . $row, format_date($t->date, false));
                 $sheet->setCellValue('B' . $row, $journal_type !== '' ? $journal_type : '—');
                 $sheet->setCellValue('C' . $row, ($ref_no !== '' && $ref_no !== null) ? ('#' . $ref_no) : '—');
-                $sheet->setCellValue('D' . $row, !empty($desc_parts) ? implode(' — ', $desc_parts) : '—');
+                $sheet->setCellValue('D' . $row, $desc !== '' ? $desc : '—');
+                $sheet->setCellValue('E' . $row, $party_id !== '' ? $party_id : '—');
+                $sheet->setCellValue('F' . $row, $rel !== '' ? $rel : '—');
                 if (floatval($t->debit) > 0) {
-                    $sheet->setCellValue('E' . $row, floatval($t->debit));
+                    $sheet->setCellValue('G' . $row, floatval($t->debit));
                 }
                 if (floatval($t->credit) > 0) {
-                    $sheet->setCellValue('F' . $row, floatval($t->credit));
+                    $sheet->setCellValue('H' . $row, floatval($t->credit));
                 }
-                $sheet->setCellValue('G' . $row, floatval($t->running_balance));
+                $sheet->setCellValue('I' . $row, floatval($t->running_balance));
                 $row++;
             }
         }
 
         $sheet->setCellValue('A' . $row, 'Period Totals');
-        $sheet->mergeCells('A' . $row . ':D' . $row);
-        $sheet->setCellValue('E' . $row, floatval($ledger['period_debit']));
-        $sheet->setCellValue('F' . $row, floatval($ledger['period_credit']));
-        $sheet->getStyle('A' . $row . ':G' . $row)->getFont()->setBold(true);
+        $sheet->mergeCells('A' . $row . ':F' . $row);
+        $sheet->setCellValue('G' . $row, floatval($ledger['period_debit']));
+        $sheet->setCellValue('H' . $row, floatval($ledger['period_credit']));
+        $sheet->getStyle('A' . $row . ':I' . $row)->getFont()->setBold(true);
         $row++;
         $sheet->setCellValue('A' . $row, 'Ending Balance');
-        $sheet->mergeCells('A' . $row . ':F' . $row);
-        $sheet->setCellValue('G' . $row, floatval($ledger['ending_balance']));
-        $sheet->getStyle('A' . $row . ':G' . $row)->getFont()->setBold(true);
+        $sheet->mergeCells('A' . $row . ':H' . $row);
+        $sheet->setCellValue('I' . $row, floatval($ledger['ending_balance']));
+        $sheet->getStyle('A' . $row . ':I' . $row)->getFont()->setBold(true);
 
         $sheet->getStyle('B5:B8')->getNumberFormat()->setFormatCode('#,##0.00;(#,##0.00);"-"');
-        $sheet->getStyle('E' . $data_start . ':G' . $row)->getNumberFormat()->setFormatCode('#,##0.00;(#,##0.00);"-"');
-        $sheet->getStyle('E' . $header_row . ':G' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_RIGHT);
-        foreach (range('A', 'G') as $c) {
+        $sheet->getStyle('G' . $data_start . ':I' . $row)->getNumberFormat()->setFormatCode('#,##0.00;(#,##0.00);"-"');
+        $sheet->getStyle('G' . $header_row . ':I' . $row)->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_RIGHT);
+        foreach (range('A', 'I') as $c) {
             $sheet->getColumnDimension($c)->setAutoSize(true);
         }
 

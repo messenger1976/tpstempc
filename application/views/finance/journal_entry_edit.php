@@ -1,4 +1,18 @@
 <link href="<?php echo base_url(); ?>media/css/plugins/datapicker/datepicker3.css?v=20260801" rel="stylesheet">
+<link href="<?php echo base_url(); ?>assets/css/plugins/select2/select2.min.css" rel="stylesheet">
+<style type="text/css">
+.select2-container{width:100%!important;}
+#quotetable .select2-container .select2-selection--single {
+    height: 34px;
+    border-radius: 4px;
+}
+#quotetable .select2-container--default .select2-selection--single .select2-selection__rendered {
+    line-height: 32px;
+}
+#quotetable .select2-container--default .select2-selection--single .select2-selection__arrow {
+    height: 32px;
+}
+</style>
 <?php
 if (!function_exists('journal_edit_link_entity')) {
     function journal_edit_link_entity($item) {
@@ -446,6 +460,7 @@ if (!empty($savings_coa_list)) {
 }
 ?>
 
+<script src="<?php echo base_url(); ?>assets/js/plugins/select2/select2.full.min.js"></script>
 <script src="<?php echo base_url() ?>media/js/script/moment.js"></script>
 <script type="text/javascript">
     (function() {
@@ -514,6 +529,22 @@ if (!empty($savings_coa_list)) {
                     return listIncludes(loanReceivableCoaList, account);
                 }
 
+                function destroyLinkEntitySelect($el) {
+                    if ($el && $el.length && $el.hasClass('select2-hidden-accessible')) {
+                        $el.select2('destroy');
+                    }
+                }
+
+                function initLinkEntitySelect($el) {
+                    if (!$el || !$el.length || !$.fn.select2) { return; }
+                    destroyLinkEntitySelect($el);
+                    $el.select2({
+                        width: '100%',
+                        placeholder: <?php echo json_encode(lang('journalentry_link_select')); ?>,
+                        allowClear: true
+                    });
+                }
+
                 window.refreshLinkEntity = function($row, selected) {
                     var type = $row.find('select.link-type').val() || '';
                     var account = $row.find('select.journal-account').val() || '';
@@ -525,6 +556,7 @@ if (!empty($savings_coa_list)) {
                     } else if (type === 'loan' && isLoanReceivableCoa(account)) {
                         html = loanOptionsByCoa[String(account)] || emptyEntityHtml;
                     }
+                    destroyLinkEntitySelect($entity);
                     $entity.html(html);
                     if (type === '') {
                         $entity.prop('disabled', true).val('');
@@ -535,6 +567,7 @@ if (!empty($savings_coa_list)) {
                         }
                     }
                     $entity.removeData('selected');
+                    initLinkEntitySelect($entity);
                 };
 
                 window.syncMemberSubledgerLink = function($row, autoSelect) {
@@ -691,7 +724,11 @@ if (!empty($savings_coa_list)) {
                         var credit1 = $("#open_credit").val();
                         if (!isNaN(credit1) && credit1.length !== 0 && !isNaN(debit1) && debit1.length !== 0) {
                             if (diff == 0) {
-                                $('#quotetable select.link-entity:disabled').prop('disabled', false);
+                                $('#quotetable select.link-entity').each(function() {
+                                    var $el = $(this);
+                                    destroyLinkEntitySelect($el);
+                                    $el.prop('disabled', false);
+                                });
                                 return true;
                             }
                             alert('Journal not balanced');
@@ -716,7 +753,9 @@ if (!empty($savings_coa_list)) {
                         newRow += '<td><input onchange="credit_sum(this,' + rowindex + ')" onkeyup="credit_sum(this, ' + rowindex + ')" type="text" name="credit[]" class="form-control amountformat credit" /></td>';
                         newRow += '</tr>';
 
-                        $('#quotetable tr:last').before(newRow);
+                        var $newRow = $(newRow);
+                        $('#quotetable tr:last').before($newRow);
+                        initLinkEntitySelect($newRow.find('select.link-entity'));
                         return false;
                     });
 
@@ -738,6 +777,7 @@ if (!empty($savings_coa_list)) {
                             window.syncMemberSubledgerLink($row, false);
                         }
                     });
+                    $('select.link-entity').each(function(){ initLinkEntitySelect($(this)); });
                 });
             }
         }

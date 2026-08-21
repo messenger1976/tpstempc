@@ -15,8 +15,14 @@ $row_count = is_array($loan_beginning_balances) ? count($loan_beginning_balances
         $is_activated = !empty($activated_map[$balance->id]);
         $has_remaining_gl = !empty($remaining_gl_map[$balance->id]);
         $can_print_journal = ((int) $balance->posted === 1) || $has_remaining_gl || !empty($has_gl_map[$balance->id]);
-        $can_post = !$is_activated && (int) $balance->posted === 0;
+        // Do not allow Post while unreversed GL still exists (avoids duplicate Drs).
+        $can_post = !$is_activated && (int) $balance->posted === 0 && !$has_remaining_gl;
         $can_activate = !$is_activated && (int) $balance->posted === 1;
+        $can_void = !$is_activated && $has_remaining_gl && has_role(5, 'void_transaction');
+        // Also allow Void on posted rows that still have GL (normal case).
+        if (!$is_activated && (int) $balance->posted === 1 && has_role(5, 'void_transaction')) {
+            $can_void = true;
+        }
         ?>
         <tr>
             <td style="text-align:center;">
@@ -58,6 +64,9 @@ $row_count = is_array($loan_beginning_balances) ? count($loan_beginning_balances
                     <?php if ($balance->posted_date) { ?>
                         <span class="status-sub"><?php echo date('M d, Y H:i', strtotime($balance->posted_date)); ?></span>
                     <?php } ?>
+                <?php } else if ($has_remaining_gl) { ?>
+                    <span class="status-pill not-posted"><?php echo lang('loan_beginning_balance_not_posted'); ?></span>
+                    <span class="status-sub" style="color:#c0392b;">GL still open — void to clear</span>
                 <?php } else { ?>
                     <span class="status-pill not-posted"><?php echo lang('loan_beginning_balance_not_posted'); ?></span>
                 <?php } ?>
@@ -68,13 +77,17 @@ $row_count = is_array($loan_beginning_balances) ? count($loan_beginning_balances
                         <a class="btn btn-primary btn-xs" href="<?php echo site_url(current_lang() . '/loan/loan_beginning_balance_create/' . encode_id($balance->id)); ?>">
                             <i class="fa fa-edit"></i> <?php echo lang('button_edit'); ?>
                         </a>
+                        <?php if (!$has_remaining_gl) { ?>
                         <a href="javascript:void(0);" class="btn btn-danger btn-xs btn-delete-balance" data-id="<?php echo encode_id($balance->id); ?>" data-member="<?php echo htmlspecialchars($balance->member_id, ENT_QUOTES, 'UTF-8'); ?>">
                             <i class="fa fa-trash"></i> <?php echo lang('button_delete'); ?>
                         </a>
+                        <?php } ?>
+                        <?php if ($can_post) { ?>
                         <a href="javascript:void(0);" class="btn btn-success btn-xs btn-post-balance" data-id="<?php echo encode_id($balance->id); ?>" data-member="<?php echo htmlspecialchars($balance->member_id, ENT_QUOTES, 'UTF-8'); ?>">
                             <i class="fa fa-check"></i> <?php echo lang('loan_beginning_balance_post'); ?>
                         </a>
-                        <?php if ($has_remaining_gl && has_role(5, 'void_transaction')) { ?>
+                        <?php } ?>
+                        <?php if ($can_void) { ?>
                         <a href="javascript:void(0);" class="btn btn-danger btn-xs btn-void-balance" data-id="<?php echo encode_id($balance->id); ?>" data-member="<?php echo htmlspecialchars($balance->member_id, ENT_QUOTES, 'UTF-8'); ?>">
                             <i class="fa fa-undo"></i> Void
                         </a>
@@ -98,7 +111,7 @@ $row_count = is_array($loan_beginning_balances) ? count($loan_beginning_balances
                         <a href="javascript:void(0);" class="btn btn-info btn-xs btn-activate-balance" data-id="<?php echo encode_id($balance->id); ?>" data-member="<?php echo htmlspecialchars($balance->member_id, ENT_QUOTES, 'UTF-8'); ?>">
                             <i class="fa fa-play-circle"></i> <?php echo lang('loan_beginning_balance_activate'); ?>
                         </a>
-                        <?php if (has_role(5, 'void_transaction')) { ?>
+                        <?php if ($can_void) { ?>
                         <a href="javascript:void(0);" class="btn btn-danger btn-xs btn-void-balance" data-id="<?php echo encode_id($balance->id); ?>" data-member="<?php echo htmlspecialchars($balance->member_id, ENT_QUOTES, 'UTF-8'); ?>">
                             <i class="fa fa-undo"></i> Void
                         </a>

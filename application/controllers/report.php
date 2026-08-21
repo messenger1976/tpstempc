@@ -633,10 +633,24 @@ class Report extends CI_Controller {
         $transaction = $this->report_model->create_ledger_trans_summary($reportinfo->fromdate, $reportinfo->todate);
         $total_credit = 0;
         $total_debit = 0;
-        $net_prfit_credit = 0;
-        $net_prfit_debit = 0;
-        $check_exp_inc = 0;
         $as_at = !empty($reportinfo->todate) ? strtoupper(date('F d, Y', strtotime($reportinfo->todate))) : '';
+
+        $tb_section_order = array();
+        if (isset($transaction[4])) {
+            $tb_section_order[] = array(4, 'Income');
+        }
+        if (isset($transaction[5])) {
+            $tb_section_order[] = array(5, 'Expenses');
+        }
+        foreach ($transaction as $type_id => $_unused) {
+            if ($type_id == 4 || $type_id == 5) {
+                continue;
+            }
+            $type_account = $this->finance_model->account_typelist($type_id)->row();
+            if ($type_account) {
+                $tb_section_order[] = array($type_id, $type_account->name);
+            }
+        }
 
         if (ob_get_level()) {
             ob_end_clean();
@@ -670,128 +684,41 @@ class Report extends CI_Controller {
         $row++;
         $data_start = $row;
 
-        if (array_key_exists(4, $transaction)) {
-            $check_exp_inc = 1;
-            $sheet->setCellValue('A' . $row, 'Income');
-            $sheet->getStyle('A' . $row)->getFont()->setBold(true);
-            $row++;
-            foreach ($transaction[4] as $key1 => $value1) {
-                $account_info = $this->finance_model->account_chart(null, $key1)->row();
-                if (!$account_info) {
-                    continue;
-                }
-                $debit = 0;
-                $credit = 0;
-                if (!empty($value1['current']) && is_object($value1['current'])) {
-                    $debit = floatval($value1['current']->debit);
-                    $credit = floatval($value1['current']->credit);
-                    $net_prfit_debit += $debit;
-                    $net_prfit_credit += $credit;
-                    $total_debit += $debit;
-                    $total_credit += $credit;
-                }
-                $sheet->setCellValue('A' . $row, $account_info->name);
-                if ($debit > 0) {
-                    $sheet->setCellValue('B' . $row, $debit);
-                }
-                if ($credit > 0) {
-                    $sheet->setCellValue('C' . $row, $credit);
-                }
-                $row++;
-            }
-            unset($transaction[4]);
-        }
-
-        if (array_key_exists(5, $transaction)) {
-            $check_exp_inc = 1;
-            $sheet->setCellValue('A' . $row, 'Expenses');
-            $sheet->getStyle('A' . $row)->getFont()->setBold(true);
-            $row++;
-            foreach ($transaction[5] as $key1 => $value1) {
-                $account_info = $this->finance_model->account_chart(null, $key1)->row();
-                if (!$account_info) {
-                    continue;
-                }
-                $debit = 0;
-                $credit = 0;
-                if (!empty($value1['current']) && is_object($value1['current'])) {
-                    $debit = floatval($value1['current']->debit);
-                    $credit = floatval($value1['current']->credit);
-                    $net_prfit_debit += $debit;
-                    $net_prfit_credit += $credit;
-                    $total_debit += $debit;
-                    $total_credit += $credit;
-                }
-                $sheet->setCellValue('A' . $row, $account_info->name);
-                if ($debit > 0) {
-                    $sheet->setCellValue('B' . $row, $debit);
-                }
-                if ($credit > 0) {
-                    $sheet->setCellValue('C' . $row, $credit);
-                }
-                $row++;
-            }
-            unset($transaction[5]);
-        }
-
-        $close_balance = $net_prfit_debit - $net_prfit_credit;
-        $balance_credit = 0;
-        $balance_debit = 0;
-        if ($close_balance > 0) {
-            $balance_credit += $close_balance;
-            $total_credit += $close_balance;
-        } else if ($close_balance < 0) {
-            $balance_debit += (-1 * $close_balance);
-            $total_debit += (-1 * $close_balance);
-        }
-        if ($check_exp_inc == 1) {
-            $row++;
-        }
-
-        $sheet->setCellValue('A' . $row, 'Net Surplus (Loss)');
-        $sheet->setCellValue('B' . $row, $balance_debit);
-        $sheet->setCellValue('C' . $row, $balance_credit);
-        $sheet->getStyle('A' . $row . ':C' . $row)->getFont()->setBold(true);
-        $row += 2;
-
-        foreach ($transaction as $key => $value) {
-            $type_account = $this->finance_model->account_typelist($key)->row();
-            if (!$type_account) {
+        foreach ($tb_section_order as $section) {
+            $type_id = $section[0];
+            $section_title = $section[1];
+            if (empty($transaction[$type_id])) {
                 continue;
             }
-            $sheet->setCellValue('A' . $row, $type_account->name);
-            $sheet->getStyle('A' . $row)->getFont()->setBold(true);
-            $row++;
-            foreach ($value as $key1 => $value1) {
+            $section_start_row = $row;
+            $has_row = false;
+            foreach ($transaction[$type_id] as $key1 => $value1) {
                 $account_info = $this->finance_model->account_chart(null, $key1)->row();
                 if (!$account_info) {
                     continue;
                 }
-                $sub_credit = 0;
-                $sub_debit = 0;
-                $open_balance = isset($value1['balance']) ? floatval($value1['balance']) : 0;
-                if ($open_balance > 0) {
-                    $sub_debit += $open_balance;
-                    $total_debit += $open_balance;
-                } else if ($open_balance < 0) {
-                    $sub_credit += (-1 * $open_balance);
-                    $total_credit += (-1 * $open_balance);
+                $sides = $this->report_model->trial_balance_ending_sides($value1);
+                if ($sides['debit'] <= 0 && $sides['credit'] <= 0) {
+                    continue;
                 }
-                if (!empty($value1['current']) && is_object($value1['current'])) {
-                    $sub_credit += floatval($value1['current']->credit);
-                    $sub_debit += floatval($value1['current']->debit);
-                    $total_debit += floatval($value1['current']->debit);
-                    $total_credit += floatval($value1['current']->credit);
+                if (!$has_row) {
+                    $sheet->setCellValue('A' . $row, $section_title);
+                    $sheet->getStyle('A' . $row)->getFont()->setBold(true);
+                    $row++;
+                    $has_row = true;
                 }
+                $total_debit += $sides['debit'];
+                $total_credit += $sides['credit'];
                 $sheet->setCellValue('A' . $row, $account_info->name);
-                if ($sub_debit > 0) {
-                    $sheet->setCellValue('B' . $row, $sub_debit);
+                if ($sides['debit'] > 0) {
+                    $sheet->setCellValue('B' . $row, $sides['debit']);
                 }
-                if ($sub_credit > 0) {
-                    $sheet->setCellValue('C' . $row, $sub_credit);
+                if ($sides['credit'] > 0) {
+                    $sheet->setCellValue('C' . $row, $sides['credit']);
                 }
                 $row++;
             }
+            unset($section_start_row);
         }
 
         $sheet->setCellValue('A' . $row, 'Totals');

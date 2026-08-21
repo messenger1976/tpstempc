@@ -121,22 +121,46 @@ class Report_Model extends CI_Model {
                     if (count($previous) > 0) {
                         $balance = $previous[0]->debit - $previous[0]->credit;
                     }
+                    $current_row = (count($current) > 0) ? $current[0] : null;
+                    // Income/Expense: keep period-driven inclusion (GL Summary expects this).
+                    // Opening (balance) is still stored so Trial Balance can net ending sides.
                     if ($value->id == 4 || $value->id == 5) {
-                        if (count($current) > 0) {
-                            $current = $current[0];
-                            $return[$value->id][$value1->account] = array('balance' => $balance, 'current' => $current);
+                        if ($current_row !== null) {
+                            $return[$value->id][$value1->account] = array('balance' => $balance, 'current' => $current_row);
                         }
                     } else {
-                        if (count($current) > 0) {
-                            $current = $current[0];
-                        }
-                        $return[$value->id][$value1->account] = array('balance' => $balance, 'current' => $current);
+                        $return[$value->id][$value1->account] = array('balance' => $balance, 'current' => $current_row);
                     }
                 }
             }
         }
 
         return $return;
+    }
+
+    /**
+     * Classic trial-balance sides from create_ledger_trans_summary() row.
+     * Ending net = opening (debit-credit before From) + period debit - period credit.
+     * Positive net → Debit column; negative → Credit column (never both).
+     *
+     * @return array('debit' => float, 'credit' => float, 'net' => float)
+     */
+    function trial_balance_ending_sides($row) {
+        $net = 0.0;
+        if (is_array($row) && isset($row['balance'])) {
+            $net = floatval($row['balance']);
+        }
+        if (is_array($row) && !empty($row['current']) && is_object($row['current'])) {
+            $net += floatval($row['current']->debit) - floatval($row['current']->credit);
+        }
+        $debit = 0.0;
+        $credit = 0.0;
+        if ($net > 0.005) {
+            $debit = $net;
+        } elseif ($net < -0.005) {
+            $credit = abs($net);
+        }
+        return array('debit' => $debit, 'credit' => $credit, 'net' => $net);
     }
 
     function get_balance_sheet_data($date, $category) {

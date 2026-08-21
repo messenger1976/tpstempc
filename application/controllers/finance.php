@@ -1755,8 +1755,11 @@ class Finance extends CI_Controller {
                 }
             } else {
                 $raw = trim((string) $this->input->post('closed_as_of'));
+                if ($raw !== '' && function_exists('format_date') && preg_match('/^[0-9]{1,2}-[0-9]{1,2}-[0-9]{4}$/', $raw)) {
+                    $raw = format_date($raw, true);
+                }
                 $normalized = function_exists('gl_books_close_normalize_date') ? gl_books_close_normalize_date($raw) : null;
-                if ($raw !== '' && $normalized === null) {
+                if (trim((string) $this->input->post('closed_as_of')) !== '' && $normalized === null) {
                     $result = array('success' => false, 'message' => lang('gl_close_books_invalid_date'));
                 } else {
                     $result = gl_save_books_close($normalized, 'set', null, $note);

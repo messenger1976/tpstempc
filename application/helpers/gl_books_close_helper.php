@@ -49,6 +49,16 @@ if (!function_exists('gl_books_close_normalize_date')) {
         if ($date === '' || $date === '0000-00-00') {
             return null;
         }
+        // App UI uses DD-MM-YYYY
+        if (preg_match('/^[0-9]{1,2}-[0-9]{1,2}-[0-9]{4}$/', $date) && function_exists('format_date')) {
+            $date = format_date($date, true);
+        } elseif (preg_match('/^[0-9]{1,2}\/[0-9]{1,2}\/[0-9]{4}$/', $date)) {
+            $parts = explode('/', $date);
+            // Prefer MM/DD/YYYY only when first part > 12 (ambiguous otherwise); still accept strtotime fallback
+            if ((int) $parts[0] > 12 && (int) $parts[1] <= 12) {
+                $date = $parts[2] . '-' . $parts[1] . '-' . $parts[0];
+            }
+        }
         $ts = strtotime($date);
         if ($ts === false) {
             return null;

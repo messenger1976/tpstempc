@@ -293,9 +293,31 @@ $this->db->where('PIN',  current_user()->PIN);
         );
     }
 
+    /**
+     * Ensure the waiver contra accounts exist on loan_product (idempotent).
+     * They are debited when a penalty / interest waiver is posted
+     * "gross then waive" so the concession stays visible in the books.
+     */
+    function ensure_loan_product_waiver_account_columns() {
+        if (!$this->db->table_exists('loan_product')) {
+            return false;
+        }
+        $columns = array(
+            'loan_penalt_waived_account' => "VARCHAR(50) NULL DEFAULT NULL COMMENT 'Contra account debited for a waived penalty'",
+            'loan_interest_waived_account' => "VARCHAR(50) NULL DEFAULT NULL COMMENT 'Contra account debited for waived interest'",
+        );
+        foreach ($columns as $col => $definition) {
+            if (!$this->db->query("SHOW COLUMNS FROM loan_product LIKE '" . $this->db->escape_str($col) . "'")->row()) {
+                $this->db->query("ALTER TABLE loan_product ADD COLUMN `$col` $definition");
+            }
+        }
+        return true;
+    }
+
     
     function addloan_product($data, $id = null) {
         $this->ensure_loan_product_penalt_grace_days_column();
+        $this->ensure_loan_product_waiver_account_columns();
         if (!is_null($id)) {
             return $this->db->update('loan_product', $data, array('id' => $id));
         } else {
@@ -306,6 +328,7 @@ $this->db->where('PIN',  current_user()->PIN);
     
     function loanproduct($id=null){
         $this->ensure_loan_product_penalt_grace_days_column();
+        $this->ensure_loan_product_waiver_account_columns();
          $this->db->where('PIN',  current_user()->PIN);
         if(!is_null($id)){
             $this->db->where('id',$id);

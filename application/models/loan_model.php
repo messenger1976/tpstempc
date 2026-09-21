@@ -252,7 +252,7 @@ class Loan_Model extends CI_Model {
      * Suggested Cash Receipt line items for a loan repayment (editable on the form).
      * Debit: payment-method cash/bank. Credit: product principal / interest / penalty.
      */
-    function get_cash_receipt_repayment_worksheet($lid, $payment_method_id = null, $paydate = null, $amount = null) {
+    function get_cash_receipt_repayment_worksheet($lid, $payment_method_id = null, $paydate = null, $amount = null, $waiver = array()) {
         $lid = trim((string) $lid);
         $pin = current_user()->PIN;
         if ($lid === '') {
@@ -273,7 +273,7 @@ class Loan_Model extends CI_Model {
         if ($payment_amount <= 0 && $suggested > 0) {
             $payment_amount = $suggested;
         }
-        $preview = $this->preview_loan_repayment_application($lid, $payment_amount, $paydate);
+        $preview = $this->preview_loan_repayment_application($lid, $payment_amount, $paydate, $waiver);
         $principal = 0.0;
         $interest = 0.0;
         $penalty = 0.0;
@@ -282,7 +282,7 @@ class Loan_Model extends CI_Model {
             $interest = isset($preview['interest']) ? round((float) $preview['interest'], 2) : 0;
             $penalty = isset($preview['penalt']) ? round((float) $preview['penalt'], 2) : 0;
         } else if ($suggested > 0 && abs($payment_amount - $suggested) > 0.009) {
-            $fallback = $this->preview_loan_repayment_application($lid, $suggested, $paydate);
+            $fallback = $this->preview_loan_repayment_application($lid, $suggested, $paydate, $waiver);
             if (!empty($fallback['success'])) {
                 $payment_amount = $suggested;
                 $principal = isset($fallback['principle']) ? round((float) $fallback['principle'], 2) : 0;
@@ -291,6 +291,9 @@ class Loan_Model extends CI_Model {
                 $preview = $fallback;
             }
         }
+        $waived_penalty = !empty($preview['success']) && isset($preview['waived_penalty']) ? round((float) $preview['waived_penalty'], 2) : 0.0;
+        $waived_interest = !empty($preview['success']) && isset($preview['waived_interest']) ? round((float) $preview['waived_interest'], 2) : 0.0;
+        $waived_total = round($waived_penalty + $waived_interest, 2);
         $cash_total = round($principal + $interest + $penalty, 2);
         if ($cash_total <= 0 && $payment_amount > 0) {
             $cash_total = $payment_amount;
@@ -341,6 +344,47 @@ class Loan_Model extends CI_Model {
             );
         }
 
+        // Waived amounts are recognised then immediately contra'd, so penalty /
+        // interest income stays gross in the books and the concession is visible.
+        $waiver_pairs = array(
+            array(
+                'type' => 'penalty',
+                'amount' => $waived_penalty,
+                'contra' => $product && isset($product->loan_penalt_waived_account) ? $product->loan_penalt_waived_account : '',
+                'income' => $product ? $product->loan_penalt_account : '',
+            ),
+            array(
+                'type' => 'interest',
+                'amount' => $waived_interest,
+                'contra' => $product && isset($product->loan_interest_waived_account) ? $product->loan_interest_waived_account : '',
+                'income' => $product ? $product->loan_interest_account : '',
+            ),
+        );
+        $waived_posted = 0.0;
+        foreach ($waiver_pairs as $pair) {
+            if ($pair['amount'] <= 0.009 || empty($pair['contra']) || empty($pair['income'])) {
+                continue;
+            }
+            $lines[] = array(
+                'account' => $pair['contra'],
+                'debit' => $pair['amount'],
+                'credit' => '',
+                'description' => ucfirst($pair['type']) . ' waived ' . $lid,
+                'role' => 'waived_' . $pair['type'],
+            );
+            $lines[] = array(
+                'account' => $pair['income'],
+                'debit' => '',
+                'credit' => $pair['amount'],
+                'description' => ucfirst($pair['type']) . ' waived ' . $lid . ' (income recognised)',
+                'role' => 'waived_' . $pair['type'] . '_income',
+            );
+            $waived_posted = round($waived_posted + $pair['amount'], 2);
+        }
+        // The pair is self-balancing: the waived amount is recognised as income and
+        // immediately contra'd, so the cash/bank debit stays at what the member
+        // actually pays (which is already net of the waiver).
+
         $status_name = '';
         if (isset($loan->status) && function_exists('loan_status')) {
             $mapped = loan_status((string) $loan->status);
@@ -365,6 +409,11 @@ class Loan_Model extends CI_Model {
             'preview_ok' => !empty($preview['success']),
             'preview_message' => !empty($preview['message']) ? $preview['message'] : '',
             'cash_account' => $cash_account,
+            'waived_penalty' => $waived_penalty,
+            'waived_interest' => $waived_interest,
+            'waived_total' => $waived_total,
+            'waived_posted' => $waived_posted,
+            'waiver_capped' => !empty($preview['waiver_capped']),
             'line_items' => $lines,
         );
     }
@@ -824,6 +873,7 @@ class Loan_Model extends CI_Model {
                 'cash_disbursement_id' => "INT NULL DEFAULT NULL",
                 'payout_journal_entry_id' => "INT NULL DEFAULT NULL",
                 'offset_loan_ids' => "TEXT NULL DEFAULT NULL",
+                'offset_breakdown' => "TEXT NULL DEFAULT NULL",
                 'payout_completed_at' => "DATETIME NULL DEFAULT NULL",
             );
             foreach ($columns as $col => $definition) {
@@ -832,6 +882,925 @@ class Loan_Model extends CI_Model {
                 }
             }
         }
+    }
+
+    /* =========================================================================
+     * Penalty / interest waivers
+     *
+     * Every waiver is an auditable record: what was assessed, how much was
+     * waived and collected, why, who asked and who approved. The GL legs are
+     * posted "gross then waive" (credit the assessed penalty/interest income,
+     * debit a contra account for the waived part) so waivers stay visible in
+     * the books instead of disappearing into a net figure.
+     * ========================================================================= */
+
+    /**
+     * Create the waiver audit log on first use (idempotent).
+     */
+    function ensure_loan_waiver_log_table() {
+        if ($this->db->table_exists('loan_waiver_log')) {
+            return true;
+        }
+        $this->db->query(
+            "CREATE TABLE IF NOT EXISTS `loan_waiver_log` (
+                `id` int(11) NOT NULL AUTO_INCREMENT,
+                `PIN` varchar(100) NOT NULL,
+                `LID` varchar(50) NOT NULL COMMENT 'Loan whose penalty/interest is waived',
+                `ref_lid` varchar(100) DEFAULT NULL COMMENT 'New loan LID (release offset) or receipt no. (repayment)',
+                `source` varchar(30) NOT NULL DEFAULT 'release_offset' COMMENT 'release_offset|repayment',
+                `waiver_type` varchar(20) NOT NULL DEFAULT 'penalty' COMMENT 'penalty|interest',
+                `assessed` decimal(15,2) NOT NULL DEFAULT 0.00 COMMENT 'Total assessed before the waiver',
+                `waived` decimal(15,2) NOT NULL DEFAULT 0.00 COMMENT 'Amount waived',
+                `collected` decimal(15,2) NOT NULL DEFAULT 0.00 COMMENT 'Amount still collected for this component',
+                `reason_code` varchar(40) NOT NULL DEFAULT '',
+                `reason_note` varchar(255) NOT NULL DEFAULT '',
+                `status` varchar(20) NOT NULL DEFAULT 'pending' COMMENT 'pending|approved|rejected|reversed',
+                `requestedby` int(11) DEFAULT NULL,
+                `requestedon` datetime DEFAULT NULL,
+                `approvedby` int(11) DEFAULT NULL,
+                `approvedon` datetime DEFAULT NULL,
+                `journal_entry_id` int(11) DEFAULT NULL,
+                `waived_on` date DEFAULT NULL,
+                PRIMARY KEY (`id`),
+                KEY `idx_waiver_lid` (`PIN`,`LID`),
+                KEY `idx_waiver_ref` (`PIN`,`ref_lid`),
+                KEY `idx_waiver_status` (`status`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+        );
+        return $this->db->table_exists('loan_waiver_log');
+    }
+
+    /**
+     * Add penalty_days to loan_contract_repayment so a pro-rated (fractional
+     * month) penalty keeps its day count for audit; penalty_months is an INT.
+     */
+    function ensure_repayment_penalty_days_column() {
+        if (!$this->db->table_exists('loan_contract_repayment')) {
+            return false;
+        }
+        if (!$this->db->query("SHOW COLUMNS FROM loan_contract_repayment LIKE 'penalty_days'")->row()) {
+            $this->db->query("ALTER TABLE loan_contract_repayment ADD COLUMN `penalty_days` INT NOT NULL DEFAULT 0 COMMENT 'Days past grace that the penalty covers (pro-rated)'");
+        }
+        return true;
+    }
+
+    /**
+     * Whether the given user (defaults to the current user) may approve waivers.
+     * Flat Manager/Treasurer role check for v1; amount tiers come later.
+     */
+    function user_can_approve_waiver($user_id = null) {
+        if (!$this->ion_auth->logged_in()) {
+            return false;
+        }
+        if ($user_id !== null && (int) $user_id !== (int) current_user()->id) {
+            return false;
+        }
+        $allowed = array('admin');
+        $configured = defined('TAPSTEMCO_WAIVER_APPROVER_GROUPS') ? TAPSTEMCO_WAIVER_APPROVER_GROUPS : '';
+        foreach (explode(',', (string) $configured) as $group) {
+            $group = trim($group);
+            if ($group !== '') {
+                $allowed[] = $group;
+            }
+        }
+        return (bool) $this->ion_auth->in_group($allowed);
+    }
+
+    /**
+     * Insert a waiver request. Returns the new id, or 0 on failure.
+     */
+    function create_loan_waiver($data) {
+        $this->ensure_loan_waiver_log_table();
+        $pin = current_user()->PIN;
+        $row = array(
+            'PIN' => $pin,
+            'LID' => isset($data['LID']) ? (string) $data['LID'] : '',
+            'ref_lid' => isset($data['ref_lid']) ? (string) $data['ref_lid'] : null,
+            'source' => isset($data['source']) ? (string) $data['source'] : 'release_offset',
+            'waiver_type' => (isset($data['waiver_type']) && $data['waiver_type'] === 'interest') ? 'interest' : 'penalty',
+            'assessed' => isset($data['assessed']) ? round((float) $data['assessed'], 2) : 0,
+            'waived' => isset($data['waived']) ? round((float) $data['waived'], 2) : 0,
+            'collected' => isset($data['collected']) ? round((float) $data['collected'], 2) : 0,
+            'reason_code' => isset($data['reason_code']) ? (string) $data['reason_code'] : '',
+            'reason_note' => isset($data['reason_note']) ? substr((string) $data['reason_note'], 0, 255) : '',
+            'status' => isset($data['status']) ? (string) $data['status'] : 'pending',
+            'requestedby' => isset($data['requestedby']) ? (int) $data['requestedby'] : current_user()->id,
+            'requestedon' => date('Y-m-d H:i:s'),
+            'approvedby' => isset($data['approvedby']) ? (int) $data['approvedby'] : null,
+            'approvedon' => isset($data['approvedby']) ? date('Y-m-d H:i:s') : null,
+            'journal_entry_id' => isset($data['journal_entry_id']) ? (int) $data['journal_entry_id'] : null,
+            'waived_on' => !empty($data['waived_on']) ? $data['waived_on'] : date('Y-m-d'),
+        );
+        if ($row['waived'] <= 0.009) {
+            return 0;
+        }
+        if (!$this->db->insert('loan_waiver_log', $row)) {
+            return 0;
+        }
+        return (int) $this->db->insert_id();
+    }
+
+    /**
+     * Waivers for a loan (optionally a specific reference / source).
+     */
+    function get_loan_waivers($LID, $options = array()) {
+        if (!$this->db->table_exists('loan_waiver_log')) {
+            return array();
+        }
+        $pin = current_user()->PIN;
+        $this->db->where('PIN', $pin);
+        $this->db->where('LID', $LID);
+        if (!empty($options['ref_lid'])) {
+            $this->db->where('ref_lid', $options['ref_lid']);
+        }
+        if (!empty($options['source'])) {
+            $this->db->where('source', $options['source']);
+        }
+        if (!empty($options['status']) && is_array($options['status'])) {
+            $this->db->where_in('status', $options['status']);
+        } elseif (!empty($options['status'])) {
+            $this->db->where('status', $options['status']);
+        }
+        $this->db->order_by('id', 'DESC');
+        return $this->db->get('loan_waiver_log')->result();
+    }
+
+    /**
+     * Waiver requests awaiting approval, newest first.
+     */
+    function list_pending_waivers($limit = 100) {
+        if (!$this->db->table_exists('loan_waiver_log')) {
+            return array();
+        }
+        $pin = current_user()->PIN;
+        $limit = max(1, min(500, (int) $limit));
+        $sql = "SELECT w.*,
+                       m.firstname, m.middlename, m.lastname, m.member_id,
+                       lc.basic_amount, lc.product_type,
+                       lp.name AS product_name,
+                       CONCAT(IFNULL(u.first_name,''), ' ', IFNULL(u.last_name,'')) AS requested_by_name
+                FROM loan_waiver_log w
+                LEFT JOIN loan_contract lc ON lc.LID = w.LID AND lc.PIN = w.PIN
+                LEFT JOIN members m ON m.PID = lc.PID AND m.PIN = lc.PIN
+                LEFT JOIN loan_product lp ON lp.id = lc.product_type AND lp.PIN = lc.PIN
+                LEFT JOIN users u ON u.id = w.requestedby
+                WHERE w.PIN = ?
+                  AND w.status = 'pending'
+                ORDER BY w.id DESC
+                LIMIT {$limit}";
+        return $this->db->query($sql, array($pin))->result();
+    }
+
+    /**
+     * Approve a pending waiver (approver must differ from the initiator).
+     *
+     * @return array{success:bool,message:string}
+     */
+    function approve_loan_waiver($id, $user_id = null, $journal_entry_id = null) {
+        $this->ensure_loan_waiver_log_table();
+        $pin = current_user()->PIN;
+        $user_id = $user_id ? (int) $user_id : (int) current_user()->id;
+        $row = $this->db->where('id', (int) $id)->where('PIN', $pin)->get('loan_waiver_log')->row();
+        if (!$row) {
+            return array('success' => false, 'message' => 'Waiver request not found.');
+        }
+        if ($row->status !== 'pending') {
+            return array('success' => false, 'message' => 'This waiver request is already ' . $row->status . '.');
+        }
+        if ((int) $row->requestedby === $user_id) {
+            return array('success' => false, 'message' => 'The person who requested a waiver cannot approve it.');
+        }
+        if (!$this->user_can_approve_waiver($user_id)) {
+            return array('success' => false, 'message' => 'You are not allowed to approve penalty/interest waivers.');
+        }
+        $update = array(
+            'status' => 'approved',
+            'approvedby' => $user_id,
+            'approvedon' => date('Y-m-d H:i:s'),
+        );
+        if (!empty($journal_entry_id)) {
+            $update['journal_entry_id'] = (int) $journal_entry_id;
+        }
+        $this->db->where('id', (int) $id)->where('PIN', $pin)->update('loan_waiver_log', $update);
+        return array('success' => true, 'message' => 'Waiver approved.');
+    }
+
+    /**
+     * Reject a pending waiver.
+     *
+     * @return array{success:bool,message:string}
+     */
+    function reject_loan_waiver($id, $user_id = null, $note = '') {
+        $this->ensure_loan_waiver_log_table();
+        $pin = current_user()->PIN;
+        $user_id = $user_id ? (int) $user_id : (int) current_user()->id;
+        $row = $this->db->where('id', (int) $id)->where('PIN', $pin)->get('loan_waiver_log')->row();
+        if (!$row) {
+            return array('success' => false, 'message' => 'Waiver request not found.');
+        }
+        if ($row->status !== 'pending') {
+            return array('success' => false, 'message' => 'This waiver request is already ' . $row->status . '.');
+        }
+        $reason_note = trim((string) $row->reason_note);
+        if (trim((string) $note) !== '') {
+            $reason_note = trim($reason_note . ' | Rejected: ' . trim((string) $note));
+        }
+        $this->db->where('id', (int) $id)->where('PIN', $pin)->update('loan_waiver_log', array(
+            'status' => 'rejected',
+            'approvedby' => $user_id,
+            'approvedon' => date('Y-m-d H:i:s'),
+            'reason_note' => substr($reason_note, 0, 255),
+        ));
+        return array('success' => true, 'message' => 'Waiver rejected.');
+    }
+
+    /**
+     * Waivers still awaiting approval for a release / loan.
+     */
+    function count_pending_waivers($LID, $pin = null, $ref_lid = null) {
+        if (!$this->db->table_exists('loan_waiver_log')) {
+            return 0;
+        }
+        $pin = $pin ? $pin : current_user()->PIN;
+        $this->db->where('PIN', $pin)->where('status', 'pending');
+        if ($ref_lid !== null && $ref_lid !== '') {
+            $this->db->where('ref_lid', $ref_lid);
+        } else {
+            $this->db->where('LID', $LID);
+        }
+        return (int) $this->db->count_all_results('loan_waiver_log');
+    }
+
+    /**
+     * Mark the waivers created for a reference as reversed (release void).
+     * Records are never deleted so the audit trail stays complete.
+     */
+    function reverse_loan_waivers($LID, $ref_lid = null, $note = '') {
+        if (!$this->db->table_exists('loan_waiver_log')) {
+            return 0;
+        }
+        $pin = current_user()->PIN;
+        $this->db->where('PIN', $pin)->where('LID', $LID);
+        if ($ref_lid !== null && $ref_lid !== '') {
+            $this->db->where('ref_lid', $ref_lid);
+        }
+        $this->db->where_in('status', array('pending', 'approved'));
+        $rows = $this->db->get('loan_waiver_log')->result();
+        foreach ($rows as $row) {
+            $reason_note = trim((string) $row->reason_note);
+            $this->db->where('id', $row->id)->where('PIN', $pin)->update('loan_waiver_log', array(
+                'status' => 'reversed',
+                'reason_note' => substr(trim($reason_note . ' | Reversed ' . date('Y-m-d') . ($note !== '' ? ': ' . $note : '')), 0, 255),
+            ));
+        }
+        return count($rows);
+    }
+
+    /**
+     * Return the approved waiver total for a component, optionally restricted
+     * to the waivers created by one reference (release or receipt).
+     */
+    function approved_waiver_total($LID, $waiver_type = null, $ref_lid = null) {
+        if (!$this->db->table_exists('loan_waiver_log')) {
+            return 0.0;
+        }
+        $pin = current_user()->PIN;
+        $this->db->select('COALESCE(SUM(waived), 0) AS total', FALSE);
+        $this->db->where('PIN', $pin)->where('LID', $LID);
+        if ($waiver_type !== null && $waiver_type !== '') {
+            $this->db->where('waiver_type', $waiver_type);
+        }
+        if ($ref_lid !== null && $ref_lid !== '') {
+            $this->db->where('ref_lid', $ref_lid);
+        }
+        $this->db->where('status', 'approved');
+        $row = $this->db->get('loan_waiver_log')->row();
+        return $row ? round((float) $row->total, 2) : 0.0;
+    }
+
+    /* =========================================================================
+     * Printable loan forms: TPSTEMPC-12 (Application for Loan),
+     * TPSTEMPC-13 (Co-Makers Statement & Promissory Note) and
+     * TPSTEMPC-13 (Pledge & Authority).
+     *
+     * Only the values that cannot be derived (PASSBOOK No., MIGS, consumer
+     * balance, Net Pay overrides, ...) are stored, in loan_contract_formdata.
+     * Everything else is resolved live by loan_form_prefill() so the forms
+     * always follow the loan/member/schedule records.
+     * ========================================================================= */
+
+    /**
+     * Create the override table on first use (idempotent).
+     */
+    function ensure_loan_form_data_table() {
+        if ($this->db->table_exists('loan_contract_formdata')) {
+            return true;
+        }
+
+        $this->db->query(
+            "CREATE TABLE IF NOT EXISTS `loan_contract_formdata` (
+                `id` INT NOT NULL AUTO_INCREMENT,
+                `LID` VARCHAR(100) NOT NULL,
+                `PIN` VARCHAR(50) NOT NULL,
+                `form_code` VARCHAR(40) NOT NULL,
+                `field_key` VARCHAR(120) NOT NULL,
+                `field_value` TEXT NULL,
+                `updatedby` INT NULL DEFAULT NULL,
+                `updatedon` DATETIME NULL DEFAULT NULL,
+                PRIMARY KEY (`id`),
+                UNIQUE KEY `loan_formdata_key` (`PIN`, `LID`, `form_code`, `field_key`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8"
+        );
+
+        return $this->db->table_exists('loan_contract_formdata');
+    }
+
+    /**
+     * Saved overrides of one loan, grouped by form code.
+     *
+     * @return array array($form_code => array($field_key => $field_value))
+     */
+    function get_loan_form_data($LID, $pin = null) {
+        $pin = $pin ? $pin : current_user()->PIN;
+        $LID = trim((string) $LID);
+        $out = array();
+        if ($LID === '' || !$this->db->table_exists('loan_contract_formdata')) {
+            return $out;
+        }
+
+        $rows = $this->db->query(
+            'SELECT form_code, field_key, field_value FROM loan_contract_formdata WHERE PIN = ? AND LID = ?',
+            array($pin, $LID)
+        )->result();
+
+        foreach ($rows as $row) {
+            $code = trim((string) $row->form_code);
+            if (!isset($out[$code])) {
+                $out[$code] = array();
+            }
+            $out[$code][trim((string) $row->field_key)] = (string) $row->field_value;
+        }
+
+        return $out;
+    }
+
+    /**
+     * Save (upsert) the given fields of one form of one loan.
+     * Only the submitted keys are written, so a panel that submits a subset of
+     * the fields never clears the rest. A blank value is stored too, which keeps
+     * a cleared field blank on the printed form instead of restoring the derived
+     * value (use delete_loan_form_data() for that).
+     *
+     * @param array $values array($field_key => $value)
+     * @return bool
+     */
+    function save_loan_form_data($LID, $form_code, $values, $pin = null, $updatedby = null) {
+        $pin = $pin ? $pin : current_user()->PIN;
+        $LID = trim((string) $LID);
+        $form_code = trim((string) $form_code);
+        if ($LID === '' || $form_code === '' || !is_array($values)) {
+            return false;
+        }
+        if (!$this->ensure_loan_form_data_table()) {
+            return false;
+        }
+        if ($updatedby === null) {
+            $user = function_exists('current_user') ? current_user() : null;
+            $updatedby = ($user && isset($user->id)) ? $user->id : null;
+        }
+
+        $now = date('Y-m-d H:i:s');
+        $batch = array();
+        foreach ($values as $key => $value) {
+            $key = trim((string) $key);
+            if ($key === '') {
+                continue;
+            }
+            if (strlen($key) > 120) {
+                $key = substr($key, 0, 120);
+            }
+            $batch[] = array(
+                'LID' => $LID,
+                'PIN' => $pin,
+                'form_code' => $form_code,
+                'field_key' => $key,
+                'field_value' => is_array($value) ? '' : (string) $value,
+                'updatedby' => $updatedby,
+                'updatedon' => $now,
+            );
+        }
+
+        $this->db->trans_start();
+        if (!empty($batch)) {
+            $saved_keys = array();
+            foreach ($batch as $row) {
+                $saved_keys[] = $row['field_key'];
+            }
+            $this->db->where('PIN', $pin)->where('LID', $LID)->where('form_code', $form_code)
+                ->where_in('field_key', $saved_keys)
+                ->delete('loan_contract_formdata');
+            $this->db->insert_batch('loan_contract_formdata', $batch);
+        }
+        $this->db->trans_complete();
+
+        return $this->db->trans_status() !== FALSE;
+    }
+
+    /**
+     * Drop the saved overrides of one loan; pass a form code to limit it to a
+     * single form and/or $keys to limit it to specific field keys. The forms
+     * fall back to the derived values afterwards.
+     */
+    function delete_loan_form_data($LID, $form_code = null, $pin = null, $keys = null) {
+        $pin = $pin ? $pin : current_user()->PIN;
+        if (!$this->db->table_exists('loan_contract_formdata')) {
+            return true;
+        }
+        $this->db->where('PIN', $pin)->where('LID', $LID);
+        if ($form_code !== null && trim((string) $form_code) !== '') {
+            $this->db->where('form_code', trim((string) $form_code));
+        }
+        if (is_array($keys)) {
+            if (empty($keys)) {
+                return true;
+            }
+            $this->db->where_in('field_key', $keys);
+        }
+        return $this->db->delete('loan_contract_formdata');
+    }
+
+    /**
+     * Everything the printable forms need, resolved once for both the on-screen
+     * "Loan Forms" tab and the TCPDF output. Saved overrides win over derived
+     * values.
+     *
+     * @return array|null null when the loan does not exist for the current PIN
+     */
+    function loan_form_prefill($LID, $pin = null) {
+        $pin = $pin ? $pin : current_user()->PIN;
+        $LID = trim((string) $LID);
+
+        $loan = $this->loan_info($LID)->row();
+        if (!$loan) {
+            return null;
+        }
+
+        $this->load->model('member_model');
+        $this->load->model('setting_model');
+
+        $member = $this->member_model->member_basic_info(null, $loan->PID, $loan->member_id)->row();
+        $contact = $this->member_model->member_contact($loan->PID);
+        $nextkin = $this->member_model->member_nextkin($loan->PID);
+        $product = $this->setting_model->loanproduct($loan->product_type)->row();
+
+        // Maker + co-makers ------------------------------------------------
+        $maker = $this->_loan_form_person($loan->PID, $LID, '');
+        $co_makers = array();
+        foreach ($this->get_guarantor(null, $LID)->result() as $guarantor) {
+            $co_makers[] = $this->_loan_form_person(
+                $guarantor->PID,
+                $LID,
+                isset($guarantor->declaration) ? $guarantor->declaration : ''
+            );
+        }
+
+        // Release / schedule ---------------------------------------------
+        $release = null;
+        if ($this->db->table_exists('loan_contract_disburse')) {
+            $release = $this->db->where('LID', $LID)->where('PIN', $pin)
+                ->order_by('createdon', 'DESC')->limit(1)
+                ->get('loan_contract_disburse')->row();
+        }
+        $release_date = ($release && !empty($release->disbursedate)) ? $release->disbursedate : '';
+        $pn_no = ($release && !empty($release->disburse_no)) ? trim((string) $release->disburse_no) : $LID;
+
+        $first_due = '';
+        $last_due = '';
+        if ($this->db->table_exists('loan_contract_repayment_schedule')) {
+            $row = $this->db->query(
+                'SELECT MIN(repaydate) AS first_due, MAX(repaydate) AS last_due
+                 FROM loan_contract_repayment_schedule WHERE PIN = ? AND LID = ?',
+                array($pin, $LID)
+            )->row();
+            if ($row) {
+                $first_due = !empty($row->first_due) ? $row->first_due : '';
+                $last_due = !empty($row->last_due) ? $row->last_due : '';
+            }
+        }
+        $schedule = array('first_due' => $first_due, 'last_due' => $last_due, 'release_date' => $release_date, 'pn_no' => $pn_no);
+
+        $signatories = $this->_loan_form_signatories($LID);
+
+        $defaults = array(
+            'application' => $this->_loan_form_values_application($loan, $product, $maker, $co_makers, $signatories),
+            'comakers' => $this->_loan_form_values_comakers($loan, $product, $maker, $co_makers, $schedule),
+            'pledge' => $this->_loan_form_values_pledge($loan, $maker, $co_makers, $schedule),
+            'disclosure' => $this->_loan_form_values_disclosure($loan, $maker, $signatories, $schedule, $release, $LID, $pin),
+        );
+
+        $saved = $this->get_loan_form_data($LID, $pin);
+        $values = array();
+        foreach ($defaults as $form_code => $form_defaults) {
+            $overrides = isset($saved[$form_code]) && is_array($saved[$form_code]) ? $saved[$form_code] : array();
+            $values[$form_code] = array_merge($form_defaults, $overrides);
+        }
+
+        return array(
+            'LID' => $LID,
+            'loan' => $loan,
+            'member' => $member,
+            'contact' => $contact,
+            'nextkin' => $nextkin,
+            'product' => $product,
+            'release' => $release,
+            'schedule' => $schedule,
+            'signatories' => $signatories,
+            'maker' => $maker,
+            'co_makers' => $co_makers,
+            'member_name' => ($member && isset($maker['name'])) ? $maker['name'] : '',
+            'values' => $values,
+            'saved' => $saved,
+            'has_overrides' => !empty($saved),
+        );
+    }
+
+    /**
+     * Resolved person block shared by the maker and the co-makers.
+     */
+    private function _loan_form_person($pid, $exclude_LID = null, $assets = '') {
+        $this->load->model('member_model');
+        $this->load->model('finance_model');
+        $this->load->model('contribution_model');
+
+        $person = $this->member_model->member_basic_info(null, $pid)->row();
+        $contact = $this->member_model->member_contact($pid);
+        $nextkin = $this->member_model->member_nextkin($pid);
+
+        $member_id = ($person && !empty($person->member_id)) ? $person->member_id : '';
+        $name = $person ? trim($person->firstname . ' ' . $person->middlename . ' ' . $person->lastname) : '';
+        $name = preg_replace('/\s+/', ' ', $name);
+
+        $address = '';
+        if ($contact) {
+            foreach (array('physicaladdress', 'postaladdress', 'officeaddress') as $field) {
+                if (!empty($contact->$field)) {
+                    $address = trim($contact->$field);
+                    break;
+                }
+            }
+        }
+
+        $annual_income = ($contact && isset($contact->annualincome) && is_numeric($contact->annualincome))
+            ? (float) $contact->annualincome : 0;
+
+        $cbu = 0;
+        $cbu_row = $this->contribution_model->contribution_balance($pid, $member_id);
+        if ($cbu_row && isset($cbu_row->balance)) {
+            $cbu = (float) $cbu_row->balance;
+        }
+
+        $savings = 0;
+        foreach ($this->finance_model->list_member_saving_accounts($pid, $member_id) as $account) {
+            $savings += isset($account->balance) ? (float) $account->balance : 0;
+        }
+
+        $loan_balance = 0;
+        foreach ($this->get_offsetable_loans($pid, $exclude_LID) as $open) {
+            $loan_balance += isset($open->total_outstanding) ? (float) $open->total_outstanding : 0;
+        }
+
+        $spouse = '';
+        $spouse_occupation = '';
+        if ($nextkin && !empty($nextkin->name) && isset($nextkin->relationship)
+                && strcasecmp(trim($nextkin->relationship), 'Spouse') === 0) {
+            $spouse = trim($nextkin->name);
+            $spouse_occupation = !empty($nextkin->sourceofincome) ? trim($nextkin->sourceofincome) : '';
+        }
+
+        return array(
+            'PID' => $pid,
+            'member_id' => $member_id,
+            'name' => $name,
+            'address' => $address,
+            'employer' => ($contact && !empty($contact->officeaddress)) ? trim($contact->officeaddress) : '',
+            'station' => ($contact && !empty($contact->assignedschool)) ? trim($contact->assignedschool) : '',
+            'position' => ($contact && !empty($contact->occupation)) ? trim($contact->occupation) : '',
+            'salary' => ($contact && !empty($contact->salary_grade)) ? trim($contact->salary_grade) : '',
+            'net_pay' => ($annual_income > 0) ? number_format($annual_income / 12, 2, '.', ',') : '',
+            'dependents' => ($contact && isset($contact->dependents) && $contact->dependents !== '') ? $contact->dependents : '',
+            'spouse' => $spouse,
+            'spouse_occupation' => $spouse_occupation,
+            'cbu' => ($cbu > 0) ? number_format($cbu, 2, '.', ',') : '',
+            'savings' => ($savings > 0) ? number_format($savings, 2, '.', ',') : '',
+            'loan_balance' => ($loan_balance > 0) ? number_format($loan_balance, 2, '.', ',') : '',
+            'collateral' => trim((string) $assets),
+        );
+    }
+
+    /**
+     * Loan officer (evaluator) + approval signatories, usable as defaults for
+     * the signature blocks of the application form.
+     */
+    private function _loan_form_signatories($LID) {
+        $out = array('loan_officer' => '', 'treasurer' => '', 'crecom_chairman' => '', 'manager' => '', 'chairman' => '');
+
+        if ($this->db->table_exists('loan_contract_evaluation')) {
+            foreach ($this->loan_evaluation_history($LID)->result() as $row) {
+                if ((string) $row->status === '1') {
+                    $out['loan_officer'] = trim($row->first_name . ' ' . $row->last_name);
+                    break;
+                }
+            }
+        }
+
+        if ($this->db->table_exists('loan_contract_approve')) {
+            $approvers = array();
+            $history = array_reverse($this->loan_approval_history($LID)->result());
+            foreach ($history as $row) {
+                if ((string) $row->status !== '4' && (string) $row->status !== '9') {
+                    continue;
+                }
+                $name = trim($row->first_name . ' ' . $row->last_name);
+                if ($name !== '' && !in_array($name, $approvers)) {
+                    $approvers[] = $name;
+                }
+            }
+            $order = array('treasurer', 'crecom_chairman', 'manager', 'chairman');
+            foreach ($order as $index => $role) {
+                if (isset($approvers[$index])) {
+                    $out[$role] = $approvers[$index];
+                }
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * TPSTEMPC-12 - Application for Loan fields.
+     */
+    private function _loan_form_values_application($loan, $product, $maker, $co_makers, $signatories) {
+        $loan_types = array(
+            'salary' => 'Salary Loan',
+            'supervise' => 'Supervise Loan',
+            'bonus' => 'Bonus Loan',
+            'cashadvance' => 'Cash Advance',
+            'emergency' => 'Emergency Loan',
+            'gadget' => 'Gadget Loan',
+            'car' => 'Car Loan',
+        );
+
+        $product_name = ($product && !empty($product->name)) ? trim((string) $product->name) : '';
+        $matched = '';
+        if ($product_name !== '') {
+            $haystack = strtolower($product_name);
+            foreach ($loan_types as $key => $label) {
+                $needle = str_replace(' loan', '', strtolower($label));
+                if ($needle !== '' && strpos($haystack, $needle) !== false) {
+                    $matched = $key;
+                    break;
+                }
+            }
+        }
+
+        $values = array(
+            'loan_type_others' => ($matched === '' && $product_name !== '') ? $product_name : '',
+            'passbook_no' => '',
+            'date' => $this->_loan_form_date(isset($loan->applicationdate) ? $loan->applicationdate : ''),
+            'amount' => number_format((float) $loan->basic_amount, 2, '.', ','),
+            'period' => (string) $loan->number_istallment,
+            'monthly_installment' => number_format((float) $loan->installment_amount, 2, '.', ','),
+            'purpose' => trim((string) $loan->loan_purpose),
+            'co_makers_security' => '',
+            'maker_cbu' => $maker['cbu'],
+            'maker_savings' => $maker['savings'],
+            'maker_collateral' => '',
+            'maker_loan_balance' => $maker['loan_balance'],
+            'maker_consumer_balance' => '',
+            'maker_migs' => '',
+            'maker_other_info' => $maker['member_id'],
+            'sign_loan_officer' => $signatories['loan_officer'],
+            'sign_treasurer' => $signatories['treasurer'],
+            'sign_crecom_chairman' => $signatories['crecom_chairman'],
+            'sign_manager' => $signatories['manager'],
+            'sign_chairman' => $signatories['chairman'],
+        );
+        foreach ($loan_types as $key => $label) {
+            $values['loan_type_' . $key] = ($matched === $key) ? '1' : '';
+        }
+
+        $security = array();
+        foreach ($co_makers as $index => $co_maker) {
+            $slot = $index + 1;
+            $values['comaker' . $slot . '_cbu'] = $co_maker['cbu'];
+            $values['comaker' . $slot . '_savings'] = $co_maker['savings'];
+            $values['comaker' . $slot . '_collateral'] = $co_maker['collateral'];
+            $values['comaker' . $slot . '_loan_balance'] = $co_maker['loan_balance'];
+            $values['comaker' . $slot . '_consumer_balance'] = '';
+            $values['comaker' . $slot . '_migs'] = '';
+            $values['comaker' . $slot . '_other_info'] = $co_maker['member_id'];
+
+            $piece = 'Co-Maker ' . $slot . ': ' . $co_maker['name'];
+            if ($co_maker['collateral'] !== '') {
+                $piece .= ' (' . $co_maker['collateral'] . ')';
+            }
+            $security[] = $piece;
+        }
+        $values['co_makers_security'] = implode('; ', $security);
+
+        return $values;
+    }
+
+    /**
+     * TPSTEMPC-13 - Co-Makers Statement + Promissory Note fields.
+     */
+    private function _loan_form_values_comakers($loan, $product, $maker, $co_makers, $schedule) {
+        $values = array(
+            'date' => date('d-m-Y'),
+            'amount' => number_format((float) $loan->basic_amount, 2, '.', ','),
+            'date_released' => $this->_loan_form_date($schedule['release_date']),
+            'date_due' => $this->_loan_form_date($schedule['last_due']),
+            'pn_no' => $schedule['pn_no'],
+            'pn_amount' => number_format((float) $loan->basic_amount, 2, '.', ','),
+            'pn_interest_rate' => rtrim(rtrim(number_format((float) $loan->rate, 2, '.', ''), '0'), '.'),
+            'pn_installments' => (string) $loan->number_istallment,
+            'pn_monthly' => number_format((float) $loan->installment_amount, 2, '.', ','),
+            'pn_penalty_rate' => '2',
+            'pn_pay_start' => $this->_loan_form_date($schedule['first_due']),
+            'pn_pay_end' => $this->_loan_form_date($schedule['last_due']),
+            'maker_name' => $maker['name'],
+            'maker_address' => $maker['address'],
+            'remarks' => '',
+        );
+
+        if ($product && isset($product->penalt_percentage) && is_numeric($product->penalt_percentage)
+                && (float) $product->penalt_percentage > 0) {
+            $values['pn_penalty_rate'] = rtrim(rtrim(number_format((float) $product->penalt_percentage, 2, '.', ''), '0'), '.');
+        }
+
+        for ($slot = 1; $slot <= 2; $slot++) {
+            $co_maker = isset($co_makers[$slot - 1]) ? $co_makers[$slot - 1] : null;
+            $values['comaker' . $slot . '_name'] = $co_maker ? $co_maker['name'] : '';
+            $values['comaker' . $slot . '_address'] = $co_maker ? $co_maker['address'] : '';
+            $values['comaker' . $slot . '_employer'] = $co_maker ? $co_maker['employer'] : '';
+            $values['comaker' . $slot . '_station'] = $co_maker ? $co_maker['station'] : '';
+            $values['comaker' . $slot . '_position'] = $co_maker ? $co_maker['position'] : '';
+            $values['comaker' . $slot . '_salary'] = $co_maker ? $co_maker['salary'] : '';
+            $values['comaker' . $slot . '_net_pay'] = $co_maker ? $co_maker['net_pay'] : '';
+            $values['comaker' . $slot . '_obligation_loan'] = $co_maker ? $co_maker['loan_balance'] : '';
+            $values['comaker' . $slot . '_obligation_consumer'] = '';
+            $values['comaker' . $slot . '_spouse'] = $co_maker ? $co_maker['spouse'] : '';
+            $values['comaker' . $slot . '_spouse_occupation'] = $co_maker ? $co_maker['spouse_occupation'] : '';
+            $values['comaker' . $slot . '_dependents'] = $co_maker ? $co_maker['dependents'] : '';
+        }
+
+        return $values;
+    }
+
+    /**
+     * TPSTEMPC-13 - Pledge & Authority fields.
+     */
+    private function _loan_form_values_pledge($loan, $maker, $co_makers, $schedule) {
+        $note_date = $schedule['release_date'] !== '' ? $schedule['release_date'] : (isset($loan->applicationdate) ? $loan->applicationdate : '');
+
+        return array(
+            'date' => date('d-m-Y'),
+            'note_date' => $this->_loan_form_date($note_date),
+            'note_year' => ($note_date !== '' && strtotime($note_date)) ? date('y', strtotime($note_date)) : '',
+            'note_amount' => number_format((float) $loan->basic_amount, 2, '.', ','),
+            'authority_amount' => number_format((float) $loan->basic_amount, 2, '.', ','),
+            'maker_name' => $maker['name'],
+            'comaker1_name' => isset($co_makers[0]) ? $co_makers[0]['name'] : '',
+            'comaker2_name' => isset($co_makers[1]) ? $co_makers[1]['name'] : '',
+            'spouse_name' => $maker['spouse'],
+        );
+    }
+
+    /**
+     * d-m-Y for a stored Y-m-d, '' when empty/invalid.
+     */
+    private function _loan_form_date($date) {
+        $date = trim((string) $date);
+        if ($date === '' || strpos($date, '0000-00-00') === 0) {
+            return '';
+        }
+        return format_date($date, false);
+    }
+
+    /**
+     * Money for a form field: formatted with thousands separators, '' when zero
+     * (an empty cell reads better on a form than 0.00).
+     */
+    private function _loan_form_money($value) {
+        $value = (float) $value;
+        return ($value > 0.009) ? number_format($value, 2, '.', ',') : '';
+    }
+
+    /**
+     * Proceeds deductions entered on the loan release worksheet, matched by GL
+     * account against the coop's default deduction lines, plus the old loans
+     * settled by offset.
+     *
+     * @return array deduction keys, 'financed_charges' (sum) and 'loan_balance'
+     */
+    private function _loan_form_release_figures($LID, $pin, $release) {
+        $out = array(
+            'filing_fee' => '',
+            'service_fee' => '',
+            'savings_deposit' => '',
+            'paid_up_share' => '',
+            'insurance' => '',
+            'financed_charges' => '',
+            'loan_balance' => '',
+        );
+
+        $key_by_account = array();
+        if (function_exists('loan_disbursement_default_deductions')) {
+            foreach (loan_disbursement_default_deductions() as $deduction) {
+                $key_by_account[(string) $deduction['account']] = $deduction['key'];
+            }
+        }
+
+        $charges = 0.0;
+        foreach ($this->get_disbursement_gl_items($LID, $pin) as $item) {
+            $account = (string) $item['account'];
+            if (!isset($key_by_account[$account])) {
+                continue;
+            }
+            $amount = ($item['credit'] > 0) ? (float) $item['credit'] : (float) $item['debit'];
+            if ($amount <= 0.009) {
+                continue;
+            }
+            $out[$key_by_account[$account]] = $this->_loan_form_money($amount);
+            $charges += $amount;
+        }
+        $out['financed_charges'] = $this->_loan_form_money($charges);
+
+        // Old loans settled from this release. The total is written by
+        // Loan::loan_disburse_entry() on the release comment as
+        // "| Offset: LID1, LID2 (Total 1,234.00)" and is the only persisted amount.
+        if ($release && !empty($release->comment)
+                && preg_match('/\(Total\s+([0-9][0-9,]*(?:\.[0-9]{1,2})?)\)/i', (string) $release->comment, $match)) {
+            $out['loan_balance'] = $this->_loan_form_money((float) str_replace(',', '', $match[1]));
+        }
+
+        return $out;
+    }
+
+    /**
+     * Disclosure Statement fields (no form number on the document itself).
+     *
+     * The statement is the release journal from the member's point of view: the
+     * DEBIT side carries the loan granted, the CREDIT side the itemised
+     * deductions and the net proceeds, so the two columns balance.
+     */
+    private function _loan_form_values_disclosure($loan, $maker, $signatories, $schedule, $release, $LID, $pin) {
+        $figures = $this->_loan_form_release_figures($LID, $pin, $release);
+
+        $amount = (float) $loan->basic_amount;
+        $charges = (float) str_replace(',', '', $figures['financed_charges']);
+        $offset = (float) str_replace(',', '', $figures['loan_balance']);
+        $interest = (isset($loan->total_interest_amount) && (float) $loan->total_interest_amount > 0)
+            ? (float) $loan->total_interest_amount : 0;
+
+        // Total deductions = itemised charges + the offset of the old loan(s).
+        $total_deductions = $charges + $offset;
+
+        $release_date = !empty($schedule['release_date']) ? $schedule['release_date'] : (isset($loan->applicationdate) ? $loan->applicationdate : '');
+
+        return array(
+            'payee' => $maker['name'],
+            'address' => $maker['address'],
+            'no' => $schedule['pn_no'],
+            'date' => $this->_loan_form_date($release_date),
+            'loan_granted_dr' => $this->_loan_form_money($amount),
+            'loan_granted_cr' => '',
+            'financed_charges_dr' => '',
+            'financed_charges_cr' => '',
+            'interest_dr' => '',
+            'interest_cr' => $this->_loan_form_money($interest),
+            'filing_fee_dr' => '',
+            'filing_fee_cr' => $figures['filing_fee'],
+            'service_fee_dr' => '',
+            'service_fee_cr' => $figures['service_fee'],
+            'savings_deposit_dr' => '',
+            'savings_deposit_cr' => $figures['savings_deposit'],
+            'paid_up_share_dr' => '',
+            'paid_up_share_cr' => $figures['paid_up_share'],
+            'insurance_dr' => '',
+            'insurance_cr' => $figures['insurance'],
+            'loan_balance_dr' => '',
+            'loan_balance_cr' => $figures['loan_balance'],
+            'others_dr' => '',
+            'others_cr' => '',
+            'total_deductions_dr' => '',
+            'total_deductions_cr' => $this->_loan_form_money($total_deductions),
+            'net_proceeds_dr' => '',
+            'net_proceeds_cr' => $this->_loan_form_money($amount - $total_deductions),
+            'loan_officer' => $signatories['loan_officer'],
+            'manager_chairman' => $signatories['manager'],
+            'payee_conforme' => $maker['name'],
+        );
     }
 
     function get_pending_release($LID, $pin = null) {
@@ -1120,8 +2089,10 @@ class Loan_Model extends CI_Model {
                     $offset_ids = $decoded;
                 }
             }
+            $offset_breakdown = $this->decode_offset_breakdown($row);
             foreach ($offset_ids as $old_lid) {
-                $bd = $this->get_loan_outstanding_for_offset($old_lid);
+                $override = isset($offset_breakdown[(string) $old_lid]) ? $offset_breakdown[(string) $old_lid] : null;
+                $bd = $this->get_loan_outstanding_for_offset($old_lid, null, $override);
                 if ($bd && !empty($bd['total'])) {
                     $offset_total += floatval($bd['total']);
                 }
@@ -1138,6 +2109,107 @@ class Loan_Model extends CI_Model {
             $row->net_cash = round($net_cash, 2);
         }
         return $rows;
+    }
+
+    /**
+     * Release (disbursement) date of a loan, or null when it was never released.
+     * A paid release wins over pending/draft worksheet rows, which may still hold a
+     * provisional date.
+     */
+    function loan_release_date($LID, $pin = null) {
+        $pin = $pin ? $pin : current_user()->PIN;
+        $LID = trim((string) $LID);
+        if ($LID === '') {
+            return null;
+        }
+        $this->ensure_release_workflow_columns();
+        $row = $this->db->query(
+            "SELECT disbursedate FROM loan_contract_disburse
+              WHERE LID = ? AND PIN = ?
+                AND disbursedate IS NOT NULL AND disbursedate > '1000-01-01'
+              ORDER BY (release_status = 'paid') DESC, disbursedate DESC, id DESC
+              LIMIT 1",
+            array($LID, $pin)
+        )->row();
+        return ($row && !empty($row->disbursedate)) ? $row->disbursedate : null;
+    }
+
+    /**
+     * Re-date the OPEN installments of a loan's schedule so the first one falls due
+     * on $first_due, keeping the original spacing, amounts and row status.
+     *
+     * Used by the release finalization: a schedule generated before the payout
+     * (Loan List -> Repayment Schedule) must not make a brand-new loan look overdue.
+     * Never rewrites history - it refuses when the loan already has repayments - and
+     * only ever moves dates LATER, so a deliberate grace period is preserved.
+     *
+     * @return array{success:bool,message:string,shifted:int}
+     */
+    function redate_open_schedule($LID, $pin, $first_due) {
+        $pin = $pin ? $pin : current_user()->PIN;
+        $LID = trim((string) $LID);
+        $first_due = trim((string) $first_due);
+        if ($LID === '' || $first_due === '' || strtotime($first_due) === FALSE) {
+            return array('success' => false, 'message' => 'Invalid loan or first due date.', 'shifted' => 0);
+        }
+
+        $paid = $this->db->query(
+            "SELECT COUNT(*) AS cnt FROM loan_contract_repayment WHERE LID = ? AND PIN = ?",
+            array($LID, $pin)
+        )->row();
+        if ($paid && (int) $paid->cnt > 0) {
+            return array(
+                'success' => false,
+                'message' => $this->_loan_lang_message('loan_schedule_repayments_exist', 'Schedule dates were left unchanged because this loan already has repayments.'),
+                'shifted' => 0,
+            );
+        }
+
+        $rows = $this->db->query(
+            "SELECT id, repaydate FROM loan_contract_repayment_schedule
+              WHERE LID = ? AND PIN = ? AND status = 0
+              ORDER BY repaydate ASC, installment_number ASC, id ASC",
+            array($LID, $pin)
+        )->result();
+        if (empty($rows)) {
+            return array('success' => false, 'message' => 'No open schedule rows found.', 'shifted' => 0);
+        }
+
+        $start = date('Y-m-d', strtotime($first_due));
+        if (strtotime($rows[0]->repaydate) >= strtotime($start)) {
+            return array('success' => true, 'message' => 'Schedule already starts on or after the release date.', 'shifted' => 0);
+        }
+
+        // Weekly products step 7 days, monthly products step 1 month. Step from the
+        // previous date (like Loanbase::create_repayment_schedule) so month-end start
+        // dates behave exactly as a freshly generated schedule would.
+        $loan = $this->db->where('LID', $LID)->where('PIN', $pin)->get('loan_contract')->row();
+        $weekly = ($loan && (int) $loan->interval === 2);
+        $increase = $weekly ? ' +7 days' : ' +1 month';
+
+        $cursor = $start;
+        $shifted = 0;
+        $this->db->trans_start();
+        foreach ($rows as $index => $row) {
+            if ($index > 0) {
+                $cursor = date('Y-m-d', strtotime($cursor . $increase));
+            }
+            $new_date = $cursor;
+            if ($new_date === (string) $row->repaydate) {
+                continue;
+            }
+            $this->db->where('id', (int) $row->id)->update('loan_contract_repayment_schedule', array(
+                'repaydate' => $new_date,
+                'month' => date('Ym', strtotime($new_date)),
+            ));
+            $shifted++;
+        }
+        $this->db->trans_complete();
+
+        if ($this->db->trans_status() === FALSE) {
+            return array('success' => false, 'message' => 'Failed to update the repayment schedule dates.', 'shifted' => 0);
+        }
+        return array('success' => true, 'message' => 'Schedule re-dated from ' . $start . '.', 'shifted' => $shifted);
     }
 
     function finalize_release_payout_by_cash_disbursement($cash_disbursement_id, $journal_entry_id = null, $entry_date = null) {
@@ -1193,14 +2265,21 @@ class Loan_Model extends CI_Model {
                 $offset_ids = $decoded;
             }
         }
+        $offset_breakdown = $this->decode_offset_breakdown($release);
         foreach ($offset_ids as $old_lid) {
-            $settle = $this->settle_loan_by_offset($old_lid, $LID, $pay_date);
+            $override = isset($offset_breakdown[(string) $old_lid]) ? $offset_breakdown[(string) $old_lid] : null;
+            $settle = $this->settle_loan_by_offset($old_lid, $LID, $pay_date, null, $override);
             if (empty($settle['success'])) {
                 return array(
                     'success' => false,
                     'message' => !empty($settle['message']) ? $settle['message'] : ('Failed to settle offset loan ' . $old_lid),
                 );
             }
+        }
+        // Tie the approved waivers to the payout journal entry for the audit trail.
+        if ($this->db->table_exists('loan_waiver_log') && $journal_entry_id) {
+            $this->db->where('PIN', $pin)->where('ref_lid', $LID)->where('status', 'approved');
+            $this->db->update('loan_waiver_log', array('journal_entry_id' => (int) $journal_entry_id));
         }
 
         $subledger = $this->post_disbursement_deduction_subledgers($LID, $loaninfo, $line_items, $pay_date, $payment_method);
@@ -1242,6 +2321,18 @@ class Loan_Model extends CI_Model {
                     }
                 }
                 $this->db->insert_batch('loan_contract_repayment_schedule', $schedule);
+            } else {
+                log_message('error', 'finalize_release_payout: could not build the repayment schedule for ' . $LID . '.');
+            }
+        } else {
+            // A schedule generated earlier (Loan List -> Repayment Schedule) can pre-date the
+            // payout and make a brand-new loan look overdue. Align it with the release date.
+            // Refuses when repayments already exist (see redate_open_schedule).
+            $redate = $this->redate_open_schedule($LID, $pin, $pay_date);
+            if (empty($redate['success'])) {
+                log_message('error', 'finalize_release_payout: schedule for ' . $LID . ' was not re-dated - ' . $redate['message']);
+            } elseif (!empty($redate['shifted'])) {
+                log_message('info', 'finalize_release_payout: re-dated ' . $redate['shifted'] . ' installment(s) of ' . $LID . ' to start ' . $pay_date . '.');
             }
         }
 
@@ -1553,8 +2644,12 @@ class Loan_Model extends CI_Model {
     /**
      * Active disbursed loans for a member that can be offset by a new loan.
      * Excludes the new loan LID being disbursed.
+     *
+     * @param string $PID
+     * @param string $exclude_LID
+     * @param array  $offset_breakdown LID => saved override (optional)
      */
-    function get_offsetable_loans($PID, $exclude_LID = null) {
+    function get_offsetable_loans($PID, $exclude_LID = null, $offset_breakdown = array()) {
         $pin = current_user()->PIN;
         $this->db->select('loan_contract.*');
         $this->db->from('loan_contract');
@@ -1569,14 +2664,25 @@ class Loan_Model extends CI_Model {
         $loans = $this->db->get()->result();
         $out = array();
         foreach ($loans as $loan) {
-            $breakdown = $this->get_loan_outstanding_for_offset($loan->LID);
+            $override = isset($offset_breakdown[(string) $loan->LID]) ? $offset_breakdown[(string) $loan->LID] : null;
+            $breakdown = $this->get_loan_outstanding_for_offset($loan->LID, null, $override);
             if ($breakdown && $breakdown['total'] > 0.009) {
                 $loan->principal_outstanding = $breakdown['principal'];
                 $loan->interest_outstanding = $breakdown['interest'];
+                $loan->penalty_outstanding = $breakdown['penalty'];
+                $loan->other_outstanding = $breakdown['other'];
+                $loan->penalty_waived = $breakdown['penalty_waived'];
+                $loan->interest_waived = $breakdown['interest_waived'];
+                $loan->penalty_days = $breakdown['penalty_days'];
+                $loan->assessed_outstanding = $breakdown['assessed'];
                 $loan->total_outstanding = $breakdown['total'];
                 $loan->principle_account = $breakdown['principle_account'];
                 $loan->interest_account = $breakdown['interest_account'];
+                $loan->penalty_account = $breakdown['penalty_account'];
+                $loan->penalty_waived_account = $breakdown['penalty_waived_account'];
+                $loan->interest_waived_account = $breakdown['interest_waived_account'];
                 $loan->product_name = $breakdown['product_name'];
+                $loan->has_override = $breakdown['overridden'];
                 $out[] = $loan;
             }
         }
@@ -1584,9 +2690,130 @@ class Loan_Model extends CI_Model {
     }
 
     /**
-     * Outstanding principal + unpaid schedule interest for offset calculation.
+     * Decode the per-old-loan offset override saved with a release.
+     *
+     * @param object|array|string|null $release loan_contract_disburse row, its
+     *                                   offset_breakdown value, or the raw JSON
+     * @return array LID => breakdown
      */
-    function get_loan_outstanding_for_offset($LID) {
+    function decode_offset_breakdown($release) {
+        $raw = null;
+        if (is_object($release) && isset($release->offset_breakdown)) {
+            $raw = $release->offset_breakdown;
+        } elseif (is_array($release) && isset($release['offset_breakdown'])) {
+            $raw = $release['offset_breakdown'];
+        } elseif (is_string($release) && $release !== '') {
+            $raw = $release;
+        }
+        if (empty($raw)) {
+            return array();
+        }
+        $decoded = json_decode($raw, true);
+        if (!is_array($decoded)) {
+            return array();
+        }
+        $out = array();
+        foreach ($decoded as $lid => $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $clean = array();
+            foreach (array('principal', 'interest', 'penalty', 'other', 'penalty_waived', 'interest_waived') as $key) {
+                if (array_key_exists($key, $row) && $row[$key] !== '' && $row[$key] !== null) {
+                    $clean[$key] = round((float) $row[$key], 2);
+                }
+            }
+            if (isset($row['penalty_days']) && $row['penalty_days'] !== '' && $row['penalty_days'] !== null) {
+                $clean['penalty_days'] = (int) $row['penalty_days'];
+            }
+            foreach (array('reason_code', 'reason_note') as $key) {
+                if (!empty($row[$key])) {
+                    $clean[$key] = (string) $row[$key];
+                }
+            }
+            $out[(string) $lid] = $clean;
+        }
+        return $out;
+    }
+
+    /**
+     * Persist the per-old-loan offset override on the pending/draft release.
+     * Empty rows are dropped; a release with no overrides stores NULL.
+     *
+     * @return bool
+     */
+    function save_offset_breakdown($LID, $pin, $rows) {
+        $this->ensure_release_workflow_columns();
+        if (!$this->db->table_exists('loan_contract_disburse')) {
+            return false;
+        }
+        $clean = array();
+        if (is_array($rows)) {
+            foreach ($rows as $old_lid => $row) {
+                if (!is_array($row)) {
+                    continue;
+                }
+                $entry = array();
+                foreach (array('principal', 'interest', 'penalty', 'other', 'penalty_waived', 'interest_waived') as $key) {
+                    if (array_key_exists($key, $row) && $row[$key] !== '' && $row[$key] !== null) {
+                        $entry[$key] = round((float) $row[$key], 2);
+                    }
+                }
+                if (isset($row['penalty_days']) && $row['penalty_days'] !== '' && $row['penalty_days'] !== null) {
+                    $entry['penalty_days'] = (int) $row['penalty_days'];
+                }
+                if (!empty($row['reason_code'])) {
+                    $entry['reason_code'] = (string) $row['reason_code'];
+                }
+                if (!empty($row['reason_note'])) {
+                    $entry['reason_note'] = substr((string) $row['reason_note'], 0, 255);
+                }
+                if (!empty($entry)) {
+                    $clean[(string) $old_lid] = $entry;
+                }
+            }
+        }
+        $this->db->where('LID', $LID);
+        $this->db->where('PIN', $pin);
+        $this->db->where_in('release_status', array('pending', 'draft'));
+        $this->db->update('loan_contract_disburse', array(
+            'offset_breakdown' => empty($clean) ? null : json_encode($clean),
+        ));
+        return true;
+    }
+
+    /**
+     * Whether the release has a waiver request still awaiting approval.
+     * A pending waiver must block the payout: nothing may be posted that has not
+     * been approved.
+     */
+    function release_has_pending_waiver($LID, $pin = null) {
+        $pin = $pin ? $pin : current_user()->PIN;
+        if (!$this->db->table_exists('loan_waiver_log')) {
+            return false;
+        }
+        $count = $this->db->where('PIN', $pin)
+            ->where('ref_lid', $LID)
+            ->where('status', 'pending')
+            ->count_all_results('loan_waiver_log');
+        return $count > 0;
+    }
+
+    /**
+     * Outstanding principal + unpaid schedule interest (+ accrued overdue penalty)
+     * for offset calculation, honouring a saved override breakdown.
+     *
+     * The penalty used to be dropped here while the release worksheet could still
+     * post one, which left the GL and the member ledger disagreeing. It is now
+     * part of the payoff and can be waived on the worksheet.
+     *
+     * @param string     $LID
+     * @param string     $paydate   Y-m-d the payoff is computed to (default today)
+     * @param array|null $breakdown saved override: principal / interest / penalty /
+     *                              other / penalty_waived / interest_waived
+     * @return array|null
+     */
+    function get_loan_outstanding_for_offset($LID, $paydate = null, $breakdown = null) {
         $pin = current_user()->PIN;
         $loan = $this->loan_info($LID)->row();
         if (!$loan || (string) $loan->PIN !== (string) $pin) {
@@ -1594,6 +2821,9 @@ class Loan_Model extends CI_Model {
         }
         $this->load->model('setting_model');
         $product = $this->setting_model->loanproduct($loan->product_type)->row();
+        if (empty($paydate)) {
+            $paydate = date('Y-m-d');
+        }
 
         $open = $this->open_repayment_installment($LID);
         $principal = 0.0;
@@ -1612,13 +2842,70 @@ class Loan_Model extends CI_Model {
             $principal = max(0, floatval($loan->basic_amount) - $paid);
         }
 
+        // Accrued overdue penalty as of the payoff date (same formula as the
+        // repayment screen so the two can never disagree).
+        $penalty = 0.0;
+        $penalty_days = 0;
+        $penalty_months = 0;
+        foreach ($open as $row) {
+            $state = $this->_penalty_state($product, $row, $paydate);
+            if (empty($state['is_overdue'])) {
+                continue;
+            }
+            $penalty += (float) $state['penalty'];
+            $penalty_days = max($penalty_days, (int) $state['days']);
+            $penalty_months = max($penalty_months, (int) $state['penalty_months']);
+        }
+
+        $principal = round($principal, 2);
+        $interest = round($interest, 2);
+        $penalty = round($penalty, 2);
+        $other = 0.0;
+        $penalty_waived = 0.0;
+        $interest_waived = 0.0;
+        $overridden = false;
+
+        if (is_array($breakdown) && !empty($breakdown)) {
+            foreach (array('principal', 'interest', 'penalty', 'other', 'penalty_waived', 'interest_waived') as $key) {
+                if (!array_key_exists($key, $breakdown) || $breakdown[$key] === '' || $breakdown[$key] === null) {
+                    continue;
+                }
+                $value = round((float) $breakdown[$key], 2);
+                ${$key} = $value;
+                if (in_array($key, array('principal', 'interest', 'penalty', 'other'), true)) {
+                    $overridden = true;
+                }
+            }
+            if (isset($breakdown['penalty_days']) && $breakdown['penalty_days'] !== '' && $breakdown['penalty_days'] !== null) {
+                $penalty_days = (int) $breakdown['penalty_days'];
+            }
+        }
+        $penalty_waived = min($penalty_waived, $penalty);
+        $interest_waived = min($interest_waived, $interest);
+
+        // Payoff = what the member owes on this loan, waiver already deducted.
+        $payoff = round(max(0, $principal + $interest + $penalty + $other - $penalty_waived - $interest_waived), 2);
+
         return array(
             'LID' => $LID,
-            'principal' => round($principal, 2),
-            'interest' => round($interest, 2),
-            'total' => round($principal + $interest, 2),
+            'principal' => $principal,
+            'interest' => $interest,
+            'penalty' => $penalty,
+            'other' => $other,
+            'penalty_waived' => round($penalty_waived, 2),
+            'interest_waived' => round($interest_waived, 2),
+            'penalty_days' => $penalty_days,
+            'penalty_months' => $penalty_months,
+            'assessed' => round($principal + $interest + $penalty + $other, 2),
+            'total' => $payoff,
+            'payoff' => $payoff,
+            'overridden' => $overridden,
+            'paydate' => $paydate,
             'principle_account' => $product ? $product->loan_principle_account : '',
             'interest_account' => $product ? $product->loan_interest_account : '',
+            'penalty_account' => $product ? $product->loan_penalt_account : '',
+            'penalty_waived_account' => $product && isset($product->loan_penalt_waived_account) ? $product->loan_penalt_waived_account : '',
+            'interest_waived_account' => $product && isset($product->loan_interest_waived_account) ? $product->loan_interest_waived_account : '',
             'product_name' => $product ? $product->name : '',
             'basic_amount' => floatval($loan->basic_amount),
         );
@@ -1637,9 +2924,18 @@ class Loan_Model extends CI_Model {
      * Operationally close an old loan as offset by a new loan.
      * Does NOT post cash GL (settlement is in the new loan disbursement journal).
      *
+     * The sub-ledger follows the amounts actually posted to the GL: $override is
+     * the per-old-loan breakdown saved with the release, so an edited payoff (and
+     * any waived penalty/interest) is reflected here instead of being recomputed.
+     *
+     * @param string     $old_LID
+     * @param string     $new_LID
+     * @param string     $paydate
+     * @param int|null   $createdby
+     * @param array|null $override  breakdown row for this old loan
      * @return array{success:bool,message:string}
      */
-    function settle_loan_by_offset($old_LID, $new_LID, $paydate, $createdby = null) {
+    function settle_loan_by_offset($old_LID, $new_LID, $paydate, $createdby = null, $override = null) {
         $pin = current_user()->PIN;
         $createdby = $createdby ? $createdby : current_user()->id;
         $loan = $this->loan_info($old_LID)->row();
@@ -1650,60 +2946,116 @@ class Loan_Model extends CI_Model {
             return array('success' => false, 'message' => 'Loan ' . $old_LID . ' is not an active disbursed loan.');
         }
 
-        $breakdown = $this->get_loan_outstanding_for_offset($old_LID);
-        if (!$breakdown || $breakdown['total'] <= 0) {
+        $breakdown = $this->get_loan_outstanding_for_offset($old_LID, $paydate, $override);
+        if (!$breakdown || $breakdown['total'] <= 0.009) {
             // Already clear — just force closed if needed
             $this->db->update('loan_contract', array('status' => 5), array('LID' => $old_LID, 'PIN' => $pin, 'status' => 4));
             return array('success' => true, 'message' => 'Loan already settled.');
         }
 
+        $this->ensure_repayment_penalty_days_column();
         $open = $this->open_repayment_installment($old_LID);
         $receipt = $this->loan_repay_receipt($old_LID, $breakdown['total'], $paydate, substr('OFFSET-' . $new_LID, 0, 20));
 
         if (!empty($open)) {
+            $this->load->model('setting_model');
+            $product = $this->setting_model->loanproduct($loan->product_type)->row();
+
+            // Assess every open installment so each component is spread over the
+            // rows in proportion to what that row actually carries. The last row
+            // takes the rounding remainder so the totals match the GL exactly.
+            $rows = array();
+            $assessed = array('principle' => 0.0, 'interest' => 0.0, 'penalty' => 0.0);
             foreach ($open as $sched) {
-                $repay = array(
+                $state = $this->_penalty_state($product, $sched, $paydate);
+                $row = array(
+                    'sched' => $sched,
+                    'principle' => round((float) $sched->principle, 2),
+                    'interest' => round((float) $sched->interest, 2),
+                    'penalty' => !empty($state['is_overdue']) ? round((float) $state['penalty'], 2) : 0.0,
+                    'months' => !empty($state['is_overdue']) ? (int) $state['penalty_months'] : 0,
+                    'days' => !empty($state['is_overdue']) ? (int) $state['penalty_days'] : 0,
+                );
+                $assessed['principle'] = round($assessed['principle'] + $row['principle'], 2);
+                $assessed['interest'] = round($assessed['interest'] + $row['interest'], 2);
+                $assessed['penalty'] = round($assessed['penalty'] + $row['penalty'], 2);
+                $rows[] = $row;
+            }
+
+            $target = array(
+                'principle' => round($breakdown['principal'], 2),
+                'interest' => round($breakdown['interest'], 2),
+                // Only the collected part of the penalty is settled; a waiver is
+                // recorded in loan_waiver_log and never becomes receivable.
+                'penalty' => round(max(0, $breakdown['penalty'] - $breakdown['penalty_waived']), 2),
+            );
+            $extra_other = round($breakdown['other'], 2);
+            if ($extra_other > 0.009) {
+                // 'Other' is not part of the schedule; fold it into the last row's
+                // principal so the settled total still equals the payoff.
+                $target['principle'] = round($target['principle'] + $extra_other, 2);
+            }
+            $allocated = array('principle' => 0.0, 'interest' => 0.0, 'penalty' => 0.0);
+            $last_index = count($rows) - 1;
+            foreach ($rows as $index => $row) {
+                $is_last = ($index === $last_index);
+                $values = array();
+                foreach (array('principle', 'interest', 'penalty') as $component) {
+                    $pool = ($component === 'principle') ? $assessed['principle'] : $assessed[$component];
+                    if ($is_last) {
+                        $values[$component] = round($target[$component] - $allocated[$component], 2);
+                    } elseif ($pool > 0.009) {
+                        $share = $row[$component] / $pool;
+                        $values[$component] = round($target[$component] * $share, 2);
+                    } else {
+                        $values[$component] = 0.0;
+                    }
+                    $allocated[$component] = round($allocated[$component] + $values[$component], 2);
+                }
+                $sched = $row['sched'];
+                $line_amount = round($values['principle'] + $values['interest'] + $values['penalty'], 2);
+                $this->db->insert('loan_contract_repayment', array(
                     'LID' => $old_LID,
                     'receipt' => $receipt,
                     'installment' => $sched->installment_number,
-                    'amount' => floatval($sched->repayamount),
-                    'penalt' => 0,
+                    'amount' => $line_amount,
+                    'penalt' => $values['penalty'],
                     'paydate' => $paydate,
-                    'interest' => floatval($sched->interest),
+                    'interest' => $values['interest'],
                     'duedate' => $sched->repaydate,
-                    'principle' => floatval($sched->principle),
+                    'principle' => $values['principle'],
                     'balance' => 0,
-                    'penalty_months' => 0,
+                    'penalty_months' => $row['months'],
+                    'penalty_days' => $row['days'],
                     'iliyobaki' => 0,
                     'createdby' => $createdby,
                     'month' => isset($sched->month) ? $sched->month : date('Ym', strtotime($paydate)),
                     'PIN' => $pin,
-                );
-                $this->db->insert('loan_contract_repayment', $repay);
+                ));
             }
             $this->db->where('LID', $old_LID);
             $this->db->where('PIN', $pin);
             $this->db->where('status', 0);
             $this->db->update('loan_contract_repayment_schedule', array('status' => 2));
         } else {
-            $repay = array(
+            $this->db->insert('loan_contract_repayment', array(
                 'LID' => $old_LID,
                 'receipt' => $receipt,
                 'installment' => 0,
                 'amount' => $breakdown['total'],
-                'penalt' => 0,
+                'penalt' => round(max(0, $breakdown['penalty'] - $breakdown['penalty_waived']), 2),
                 'paydate' => $paydate,
                 'interest' => $breakdown['interest'],
                 'duedate' => $paydate,
-                'principle' => $breakdown['principal'],
+                'principle' => round($breakdown['principal'] + $breakdown['other'], 2),
                 'balance' => 0,
-                'penalty_months' => 0,
+                'penalty_months' => $breakdown['penalty_months'],
+                'penalty_days' => $breakdown['penalty_days'],
                 'iliyobaki' => 0,
                 'createdby' => $createdby,
                 'month' => date('Ym', strtotime($paydate)),
                 'PIN' => $pin,
-            );
-            $this->db->insert('loan_contract_repayment', $repay);
+            ));
         }
 
         $this->db->update('loan_contract', array('status' => 5), array(
@@ -1718,6 +3070,8 @@ class Loan_Model extends CI_Model {
             'message' => 'Offset settled ' . $old_LID,
             'receipt' => $receipt,
             'amount' => $breakdown['total'],
+            'penalty_waived' => $breakdown['penalty_waived'],
+            'interest_waived' => $breakdown['interest_waived'],
         );
     }
 
@@ -1969,7 +3323,27 @@ class Loan_Model extends CI_Model {
         return ' AND loan_contract.product_type = ' . $id;
     }
 
-    function count_loan($key = null, $status = null, $product_id = null) {
+    /**
+     * Application date range filter for the Loan List.
+     * Empty/null (the default) means "all" - no restriction on the application date.
+     *
+     * @param string|null $date_from Y-m-d lower bound (inclusive)
+     * @param string|null $date_to   Y-m-d upper bound (inclusive)
+     * @param string $column fully qualified date column to filter on
+     * @return string SQL fragment starting with " AND " (empty when no range is set)
+     */
+    private function _loan_list_date_sql($date_from, $date_to, $column) {
+        $sql = '';
+        if (!empty($date_from)) {
+            $sql .= " AND DATE($column) >= " . $this->db->escape($date_from);
+        }
+        if (!empty($date_to)) {
+            $sql .= " AND DATE($column) <= " . $this->db->escape($date_to);
+        }
+        return $sql;
+    }
+
+    function count_loan($key = null, $status = null, $product_id = null, $date_from = null, $date_to = null) {
         $pin = current_user()->PIN;
         
         // Filter: Beginning Balance only (from loan_beginning_balances)
@@ -1977,6 +3351,7 @@ class Loan_Model extends CI_Model {
             $sql_bb = "SELECT loan_beginning_balances.id FROM loan_beginning_balances INNER JOIN members ON members.member_id=loan_beginning_balances.member_id WHERE loan_beginning_balances.PIN='$pin' AND members.PIN='$pin'";
             $sql_bb .= " AND (loan_beginning_balances.loan_id IS NULL OR loan_beginning_balances.loan_id NOT IN (SELECT LID FROM loan_contract WHERE PIN='$pin'))";
             $sql_bb .= $this->_loan_list_product_sql($product_id, 'bb');
+            $sql_bb .= $this->_loan_list_date_sql($date_from, $date_to, 'loan_beginning_balances.disbursement_date');
             if (!is_null($key)) {
                 $sql_bb .= " AND (loan_beginning_balances.loan_id LIKE " . $this->db->escape($key . '%') . " OR loan_beginning_balances.member_id LIKE " . $this->db->escape($key . '%') . " OR members.firstname LIKE " . $this->db->escape($key . '%') . " OR members.lastname LIKE " . $this->db->escape($key . '%') . ")";
             }
@@ -1987,6 +3362,7 @@ class Loan_Model extends CI_Model {
         if ($this->is_loan_lifecycle_filter($status)) {
             $sql = "SELECT loan_contract.LID FROM loan_contract INNER JOIN members ON members.PID=loan_contract.PID WHERE loan_contract.PIN='$pin' AND (" . $this->_lifecycle_filter_sql($status, 'loan_contract') . ")";
             $sql .= $this->_loan_list_product_sql($product_id, 'contract');
+            $sql .= $this->_loan_list_date_sql($date_from, $date_to, 'loan_contract.applicationdate');
             if (!is_null($key)) {
                 $sql .= " AND (loan_contract.LID LIKE " . $this->db->escape($key . '%') . " OR loan_contract.member_id LIKE " . $this->db->escape($key . '%') . " OR members.firstname LIKE " . $this->db->escape($key . '%') . " OR members.lastname LIKE " . $this->db->escape($key . '%') . ")";
             }
@@ -1997,6 +3373,7 @@ class Loan_Model extends CI_Model {
         if ($status !== null && $status !== '') {
             $sql = "SELECT loan_contract.LID FROM loan_contract INNER JOIN members ON members.PID=loan_contract.PID WHERE loan_contract.PIN='$pin' AND loan_contract.status=" . $this->db->escape($status);
             $sql .= $this->_loan_list_product_sql($product_id, 'contract');
+            $sql .= $this->_loan_list_date_sql($date_from, $date_to, 'loan_contract.applicationdate');
             if (!is_null($key)) {
                 $sql .= " AND (loan_contract.LID LIKE " . $this->db->escape($key . '%') . " OR loan_contract.member_id LIKE " . $this->db->escape($key . '%') . " OR members.firstname LIKE " . $this->db->escape($key . '%') . " OR members.lastname LIKE " . $this->db->escape($key . '%') . ")";
             }
@@ -2007,6 +3384,7 @@ class Loan_Model extends CI_Model {
         $sql = "SELECT loan_contract.* FROM loan_contract INNER JOIN members ON members.PID=loan_contract.PID WHERE loan_contract.PIN='$pin'  ";
 
         $sql .= $this->_loan_list_product_sql($product_id, 'contract');
+        $sql .= $this->_loan_list_date_sql($date_from, $date_to, 'loan_contract.applicationdate');
         if (!is_null($key)) {
             $sql .= "  AND (loan_contract.LID LIKE '$key%' OR loan_contract.member_id LIKE '$key%' OR members.firstname LIKE '$key%' OR members.lastname LIKE '$key%')";
         }
@@ -2019,6 +3397,7 @@ class Loan_Model extends CI_Model {
         // Exclude beginning balances that already have corresponding loan_contract entries
         $sql_bb .= " AND (loan_beginning_balances.loan_id IS NULL OR loan_beginning_balances.loan_id NOT IN (SELECT LID FROM loan_contract WHERE PIN='$pin'))";
         $sql_bb .= $this->_loan_list_product_sql($product_id, 'bb');
+        $sql_bb .= $this->_loan_list_date_sql($date_from, $date_to, 'loan_beginning_balances.disbursement_date');
         
         if (!is_null($key)) {
             $sql_bb .= " AND (loan_beginning_balances.loan_id LIKE '$key%' OR loan_beginning_balances.member_id LIKE '$key%' OR members.firstname LIKE '$key%' OR members.lastname LIKE '$key%')";
@@ -2029,7 +3408,7 @@ class Loan_Model extends CI_Model {
         return $count + $count_bb;
     }
 
-    function search_loan($key, $limit, $start, $status = null, $product_id = null) {
+    function search_loan($key, $limit, $start, $status = null, $product_id = null, $date_from = null, $date_to = null) {
         $pin = current_user()->PIN;
         $life_select = $this->_lifecycle_select_sql('loan_contract');
         
@@ -2064,6 +3443,7 @@ class Loan_Model extends CI_Model {
                     WHERE loan_beginning_balances.PIN='$pin' AND members.PIN='$pin'";
             $sql_bb .= " AND (loan_beginning_balances.loan_id IS NULL OR loan_beginning_balances.loan_id NOT IN (SELECT LID FROM loan_contract WHERE PIN='$pin'))";
             $sql_bb .= $this->_loan_list_product_sql($product_id, 'bb');
+            $sql_bb .= $this->_loan_list_date_sql($date_from, $date_to, 'loan_beginning_balances.disbursement_date');
             if (!is_null($key)) {
                 $sql_bb .= " AND (loan_beginning_balances.loan_id LIKE '$key%' OR loan_beginning_balances.member_id LIKE '$key%' OR members.firstname LIKE '$key%' OR members.lastname LIKE '$key%')";
             }
@@ -2080,6 +3460,7 @@ class Loan_Model extends CI_Model {
             $sql .= " LEFT JOIN users encoded_user ON encoded_user.id = COALESCE(lbb.created_by, loan_contract.createdby) ";
             $sql .= " WHERE loan_contract.PIN='$pin' AND (" . $this->_lifecycle_filter_sql($status, 'loan_contract') . ")";
             $sql .= $this->_loan_list_product_sql($product_id, 'contract');
+            $sql .= $this->_loan_list_date_sql($date_from, $date_to, 'loan_contract.applicationdate');
             if (!is_null($key)) {
                 $sql .= " AND ( loan_contract.LID LIKE '$key%' OR loan_contract.member_id LIKE '$key%' OR members.firstname LIKE '$key%' OR members.lastname LIKE '$key%')";
             }
@@ -2096,6 +3477,7 @@ class Loan_Model extends CI_Model {
             $sql .= " LEFT JOIN users encoded_user ON encoded_user.id = COALESCE(lbb.created_by, loan_contract.createdby) ";
             $sql .= " WHERE loan_contract.PIN='$pin' AND loan_contract.status=" . $this->db->escape($status);
             $sql .= $this->_loan_list_product_sql($product_id, 'contract');
+            $sql .= $this->_loan_list_date_sql($date_from, $date_to, 'loan_contract.applicationdate');
             if (!is_null($key)) {
                 $sql .= " AND ( loan_contract.LID LIKE '$key%' OR loan_contract.member_id LIKE '$key%' OR members.firstname LIKE '$key%' OR members.lastname LIKE '$key%')";
             }
@@ -2111,6 +3493,7 @@ class Loan_Model extends CI_Model {
         $sql .= " LEFT JOIN users encoded_user ON encoded_user.id = COALESCE(lbb.created_by, loan_contract.createdby) ";
         $sql .= " WHERE loan_contract.PIN='$pin'";
         $sql .= $this->_loan_list_product_sql($product_id, 'contract');
+        $sql .= $this->_loan_list_date_sql($date_from, $date_to, 'loan_contract.applicationdate');
 
         if (!is_null($key)) {
             $sql .= "  AND ( loan_contract.LID LIKE '$key%' OR loan_contract.member_id LIKE '$key%' OR members.firstname LIKE '$key%' OR members.lastname LIKE '$key%')";
@@ -2152,6 +3535,7 @@ class Loan_Model extends CI_Model {
         // Exclude beginning balances that already have corresponding loan_contract entries
         $sql_bb .= " AND (loan_beginning_balances.loan_id IS NULL OR loan_beginning_balances.loan_id NOT IN (SELECT LID FROM loan_contract WHERE PIN='$pin'))";
         $sql_bb .= $this->_loan_list_product_sql($product_id, 'bb');
+        $sql_bb .= $this->_loan_list_date_sql($date_from, $date_to, 'loan_beginning_balances.disbursement_date');
         
         if (!is_null($key)) {
             $sql_bb .= " AND (loan_beginning_balances.loan_id LIKE '$key%' OR loan_beginning_balances.member_id LIKE '$key%' OR members.firstname LIKE '$key%' OR members.lastname LIKE '$key%')";
@@ -2216,15 +3600,114 @@ class Loan_Model extends CI_Model {
     }
 
     /**
+     * Penalty assessment for one open schedule row as of $paydate.
+     *
+     * Single source of truth for the penalty formula, used by both
+     * calculate_repayment_due() (what is due / previews) and
+     * plan_loan_repayment_applications() (what actually posts), so a preview can
+     * never disagree with the posted amount.
+     *
+     * Grace = product penalt_grace_days when set, else MAX_NUMBER_DAYS_OVERDUE_PENALT.
+     * Method 1 = % of the instalment principal, method 2 = % of principal + interest.
+     *
+     * TAPSTEMCO_PENALTY_PRORATE (default TRUE) pro-rates the penalty over 30-day
+     * periods counted from the end of the grace period, so 15 days past grace is
+     * half a month. When FALSE the legacy rule applies: any part of a month past
+     * the grace period is charged as a whole month.
+     *
+     * @param object|null $product loan_product row
+     * @param object      $row     loan_contract_repayment_schedule row
+     * @param string      $paydate Y-m-d
+     * @param bool        $legacy  force the legacy month rule (used by the
+     *                             recalibration review to show old vs new)
+     * @return array
+     */
+    function _penalty_state($product, $row, $paydate, $legacy = false) {
+        $grace_days = $this->get_penalt_grace_days($product);
+        $due_date = isset($row->repaydate) ? (string) $row->repaydate : '';
+        $grace_end = ($due_date !== '') ? date('Y-m-d', strtotime($due_date . ' +' . $grace_days . ' days')) : '';
+
+        $state = array(
+            'is_overdue' => false,
+            'grace_end' => $grace_end,
+            'days' => 0,
+            'months' => 0.0,
+            'penalty_months' => 0,
+            'penalty_days' => 0,
+            'penalt_unit' => 0.0,
+            'penalty' => 0.0,
+        );
+        if ($grace_end === '' || empty($paydate) || strtotime($paydate) <= strtotime($grace_end)) {
+            return $state;
+        }
+
+        $days = (int) floor((strtotime($paydate) - strtotime($grace_end)) / 86400);
+        if ($days < 1) {
+            // Same calendar day after the grace end (time-of-day / DST rounding).
+            $days = 1;
+        }
+
+        $penalt_method = $product ? (int) $product->penalt_method : 0;
+        $penalt_percentage = ($product && $product->penalt_percentage !== '' && $product->penalt_percentage !== null)
+            ? (float) $product->penalt_percentage : 0;
+
+        $principal = isset($row->principle) ? (float) $row->principle : 0;
+        $interest = isset($row->interest) ? (float) $row->interest : 0;
+        $unit = 0.0;
+        if ($penalt_method == 1) {
+            $unit = ($penalt_percentage / 100) * $principal;
+        } else if ($penalt_method == 2) {
+            $unit = ($penalt_percentage / 100) * ($principal + $interest);
+        }
+
+        $prorate = (!$legacy) && (!defined('TAPSTEMCO_PENALTY_PRORATE') || TAPSTEMCO_PENALTY_PRORATE);
+        if ($prorate) {
+            $period = defined('TAPSTEMCO_PENALTY_PERIOD_DAYS') ? (int) TAPSTEMCO_PENALTY_PERIOD_DAYS : 30;
+            if ($period < 1) {
+                $period = 30;
+            }
+            $months = $days / $period;
+        } else {
+            // Legacy: count calendar months past the grace end and round up.
+            $d1 = new DateTime($grace_end);
+            $d2 = new DateTime($paydate);
+            $months = (float) (($d1->diff($d2)->m + ($d1->diff($d2)->y * 12)) + 1);
+        }
+
+        $state['is_overdue'] = true;
+        $state['days'] = $days;
+        $state['months'] = round($months, 4);
+        $state['penalty_months'] = (int) ceil($months);
+        $state['penalty_days'] = $days;
+        $state['penalt_unit'] = round($unit, 4);
+        $state['penalty'] = round($unit * $months, 2);
+        return $state;
+    }
+
+    /**
+     * Amount that clears one schedule row: its own repayamount plus any carry,
+     * falling back to the flat loan instalment when the schedule row is empty.
+     */
+    function _schedule_line_amount($row, $fallback_installment = 0) {
+        $line = (isset($row->repayamount) ? (float) $row->repayamount : 0)
+            + (isset($row->balance) ? (float) $row->balance : 0);
+        if ($line <= 0.009) {
+            $line = (float) $fallback_installment;
+        }
+        return round($line, 2);
+    }
+
+    /**
      * Calculate what is due as of $paydate for open schedule installments.
      * Matches loan_repayment_process / loan_repayment_save overdue rules:
      * grace = product penalt_grace_days if set, else MAX_NUMBER_DAYS_OVERDUE_PENALT; after grace, penalty months apply.
      *
      * @param string $LID
      * @param string $paydate Y-m-d
+     * @param bool   $legacy_penalty force the legacy penalty month rule (review tool)
      * @return object
      */
-    function calculate_repayment_due($LID, $paydate) {
+    function calculate_repayment_due($LID, $paydate, $legacy_penalty = false) {
         $loaninfo = $this->loan_info($LID)->row();
         $empty = (object) array(
             'items' => array(),
@@ -2269,40 +3752,37 @@ class Loan_Model extends CI_Model {
                 break;
             }
 
-            $grace_end = date('Y-m-d', strtotime($due_date . ' +' . $grace_days . ' days'));
-            $is_overdue = (strtotime($paydate) > strtotime($grace_end));
-            $penalty = 0;
-            $penalty_months = 0;
-
+            // Bill what this schedule row actually asks for (repayamount + carry),
+            // not the flat loan instalment, so variable schedules are stated right.
+            $line_amount = $this->_schedule_line_amount($row, $installment_amount);
+            $pen = $this->_penalty_state($product, $row, $paydate, $legacy_penalty);
+            $is_overdue = !empty($pen['is_overdue']);
+            $penalty = $is_overdue ? (float) $pen['penalty'] : 0.0;
+            $penalty_months = $is_overdue ? (int) $pen['penalty_months'] : 0;
+            $penalty_days = $is_overdue ? (int) $pen['penalty_days'] : 0;
             if ($is_overdue) {
-                $d1 = new DateTime($grace_end);
-                $d2 = new DateTime($paydate);
-                $penalty_months = ($d1->diff($d2)->m + ($d1->diff($d2)->y * 12)) + 1;
-                $penalt_unit = 0;
-                if ($penalt_method == 1) {
-                    $penalt_unit = ($penalt_percentage / 100) * (float) $row->principle;
-                } else if ($penalt_method == 2) {
-                    $penalt_unit = ($penalt_percentage / 100) * ((float) $row->principle + (float) $row->interest);
-                }
-                $penalty = round($penalt_unit * $penalty_months, 2);
                 $has_overdue = true;
                 $overdue_count++;
             }
 
-            $line_total = round($installment_amount + $penalty, 2);
+            $line_total = round($line_amount + $penalty, 2);
             $items[] = (object) array(
                 'installment' => (int) $row->installment_number,
                 'due_date' => $due_date,
-                'grace_end' => $grace_end,
+                'grace_end' => $pen['grace_end'],
                 'status' => $is_overdue ? 'overdue' : 'due',
-                'installment_amount' => $installment_amount,
+                'installment_amount' => $line_amount,
+                'scheduled_amount' => $line_amount,
+                'loan_installment_amount' => $installment_amount,
+                'carry' => round((float) $row->balance, 2),
                 'principle' => round((float) $row->principle, 2),
                 'interest' => round((float) $row->interest, 2),
                 'penalty' => $penalty,
                 'penalty_months' => $penalty_months,
+                'penalty_days' => $penalty_days,
                 'total' => $line_total,
             );
-            $total_installments = round($total_installments + $installment_amount, 2);
+            $total_installments = round($total_installments + $line_amount, 2);
             $total_penalty = round($total_penalty + $penalty, 2);
         }
 
@@ -2351,6 +3831,66 @@ class Loan_Model extends CI_Model {
             'has_overdue' => $has_overdue,
             'overdue_count' => $overdue_count,
         );
+    }
+
+    /**
+     * Past-due loans compared under the legacy penalty rule and the current
+     * (pro-rated) rule. Read-only: nothing is written.
+     *
+     * This is the review gate for enabling TAPSTEMCO_PENALTY_PRORATE, because the
+     * change affects what every past-due member is billed from deploy day on.
+     *
+     * @param int $limit
+     * @return array
+     */
+    function penalty_recalibration_review($limit = 500) {
+        $pin = current_user()->PIN;
+        $limit = max(1, min(2000, (int) $limit));
+        $today = date('Y-m-d');
+        $sql = "SELECT lc.LID, lc.PID, lc.member_id, lc.basic_amount, lc.installment_amount,
+                       lc.product_type, lp.name AS product_name,
+                       m.firstname, m.middlename, m.lastname
+                FROM loan_contract lc
+                LEFT JOIN loan_product lp ON lp.id = lc.product_type AND lp.PIN = lc.PIN
+                LEFT JOIN members m ON m.PID = lc.PID AND m.PIN = lc.PIN
+                WHERE lc.PIN = ?
+                  AND lc.status = 4
+                  AND lc.disburse = 1
+                  AND EXISTS (
+                        SELECT 1 FROM loan_contract_repayment_schedule rs
+                        WHERE rs.LID = lc.LID AND rs.PIN = lc.PIN AND rs.status = 0
+                          AND rs.repaydate < ?
+                  )
+                ORDER BY lc.LID ASC
+                LIMIT " . $limit;
+        $rows = $this->db->query($sql, array($pin, $today))->result();
+        $out = array();
+        $totals = array('legacy_penalty' => 0.0, 'current_penalty' => 0.0, 'legacy_due' => 0.0, 'current_due' => 0.0);
+        foreach ($rows as $row) {
+            $legacy = $this->calculate_repayment_due($row->LID, $today, true);
+            $current = $this->calculate_repayment_due($row->LID, $today);
+            $legacy_penalty = round((float) $legacy->total_penalty, 2);
+            $current_penalty = round((float) $current->total_penalty, 2);
+            $legacy_due = round((float) $legacy->total_due, 2);
+            $current_due = round((float) $current->total_due, 2);
+            $totals['legacy_penalty'] = round($totals['legacy_penalty'] + $legacy_penalty, 2);
+            $totals['current_penalty'] = round($totals['current_penalty'] + $current_penalty, 2);
+            $totals['legacy_due'] = round($totals['legacy_due'] + $legacy_due, 2);
+            $totals['current_due'] = round($totals['current_due'] + $current_due, 2);
+            $out[] = array(
+                'loan' => $row,
+                'overdue_count' => (int) $current->overdue_count,
+                'legacy_penalty' => $legacy_penalty,
+                'current_penalty' => $current_penalty,
+                'penalty_delta' => round($legacy_penalty - $current_penalty, 2),
+                'legacy_due' => $legacy_due,
+                'current_due' => $current_due,
+                'due_delta' => round($legacy_due - $current_due, 2),
+            );
+        }
+        $totals['penalty_delta'] = round($totals['legacy_penalty'] - $totals['current_penalty'], 2);
+        $totals['due_delta'] = round($totals['legacy_due'] - $totals['current_due'], 2);
+        return array('rows' => $out, 'totals' => $totals, 'count' => count($out), 'as_of' => $today);
     }
 
     function loan_repay_receipt($LID, $amount, $paydate, $receipt_no = null) {
@@ -2408,9 +3948,15 @@ class Loan_Model extends CI_Model {
      * Plan installment applications for a payment (no writes).
      * Same carry / grace / penalty / payoff rules as Loan Management → Loan Repayment.
      *
+     * Interest/penalty waivers are expressed as requested amounts in $waiver
+     * (array('penalty' => 0.00, 'interest' => 0.00)) and allocated oldest
+     * installment first, capped at what each installment actually assessed.
+     * The schedule (and therefore the sub-ledger) records only the collected
+     * portion; the waived portion is posted separately to a contra account.
+     *
      * @return array
      */
-    function plan_loan_repayment_applications($LID, $amount, $paydate) {
+    function plan_loan_repayment_applications($LID, $amount, $paydate, $waiver = array()) {
         $pin = current_user()->PIN;
         $amount = round((float) $amount, 2);
         $loaninfo = $this->loan_info($LID)->row();
@@ -2436,12 +3982,51 @@ class Loan_Model extends CI_Model {
         }
 
         $due_preview = $this->calculate_repayment_due($LID, $paydate);
+
+        // Allocate the requested waiver across the installments that are due as of
+        // the payment date, oldest first, capped at each installment's assessment.
+        $waiver_request = array(
+            'penalty' => isset($waiver['penalty']) ? max(0, round((float) $waiver['penalty'], 2)) : 0.0,
+            'interest' => isset($waiver['interest']) ? max(0, round((float) $waiver['interest'], 2)) : 0.0,
+        );
+        $waiver_alloc = array();
+        $waiver_granted = array('penalty' => 0.0, 'interest' => 0.0);
+        $waiver_capped = false;
+        foreach ((array) $due_preview->items as $item) {
+            $installment_no = (int) $item->installment;
+            $alloc = array('penalty' => 0.0, 'interest' => 0.0);
+            foreach (array('penalty', 'interest') as $type) {
+                $remaining = round($waiver_request[$type] - $waiver_granted[$type], 2);
+                if ($remaining <= 0.009) {
+                    continue;
+                }
+                $assessed = round((float) $item->$type, 2);
+                if ($assessed <= 0.009) {
+                    continue;
+                }
+                $take = min($remaining, $assessed);
+                // Do not waive more than is actually assessed for this installment
+                if ($take > 0.009) {
+                    $alloc[$type] = round($take, 2);
+                    $waiver_granted[$type] = round($waiver_granted[$type] + $take, 2);
+                }
+            }
+            $waiver_alloc[$installment_no] = $alloc;
+        }
+        foreach (array('penalty', 'interest') as $type) {
+            if (round($waiver_granted[$type], 2) + 0.009 < $waiver_request[$type]) {
+                $waiver_capped = true;
+            }
+        }
+        $waiver_total = round($waiver_granted['penalty'] + $waiver_granted['interest'], 2);
+
         $minimum = isset($due_preview->minimum_to_apply) ? (float) $due_preview->minimum_to_apply : 0;
-        if (!empty($due_preview->items) && $minimum > 0 && round($amount, 2) + 0.00001 < $minimum) {
+        $minimum_after_waiver = round(max(0, $minimum - $waiver_total), 2);
+        if (!empty($due_preview->items) && $minimum_after_waiver > 0 && round($amount, 2) + 0.00001 < $minimum_after_waiver) {
             return array(
                 'success' => false,
-                'message' => sprintf(lang('loan_repay_amount_insufficient'), number_format($minimum, 2)),
-                'minimum_to_apply' => $minimum,
+                'message' => sprintf(lang('loan_repay_amount_insufficient'), number_format($minimum_after_waiver, 2)),
+                'minimum_to_apply' => $minimum_after_waiver,
                 'due' => $due_preview,
                 'loaninfo' => $loaninfo,
                 'product' => $product,
@@ -2455,135 +4040,101 @@ class Loan_Model extends CI_Model {
         $createdby = current_user()->id;
 
         foreach ($open_repayment as $value) {
-            $repay_amount_install = $loaninfo->installment_amount;
-            if ($amount_tmp >= $repay_amount_install) {
-                $grace_days = $this->get_penalt_grace_days($product);
-                $max_date = date("Y-m-d", strtotime(date("Y-m-d", strtotime($value->repaydate)) . " +" . $grace_days . " days"));
-                if ($paydate <= $max_date) {
-                    $repay_amount_install_to_pay_all_loan = round($value->repayamount + $value->balance, 2);
-                    if ($amount_tmp >= $repay_amount_install_to_pay_all_loan) {
-                        $new_principle = round($repay_amount_install_to_pay_all_loan - $value->interest, 2);
-                        $amount_tmp -= $repay_amount_install_to_pay_all_loan;
-                        $applications[] = array(
-                            'mode' => 'all',
-                            'schedule_id' => $value->id,
-                            'data' => array(
-                                'LID' => $LID,
-                                'installment' => $value->installment_number,
-                                'amount' => $repay_amount_install_to_pay_all_loan,
-                                'paydate' => $paydate,
-                                'interest' => $value->interest,
-                                'principle' => $new_principle,
-                                'duedate' => $value->repaydate,
-                                'balance' => 0,
-                                'iliyobaki' => round($amount_tmp, 2),
-                                'createdby' => $createdby,
-                                'PIN' => $pin,
-                            ),
-                        );
-                        $applied_any = true;
-                        break;
-                    } else {
-                        $amount_tmp -= $repay_amount_install;
-                        $applications[] = array(
-                            'mode' => 'partial',
-                            'schedule_id' => $value->id,
-                            'data' => array(
-                                'LID' => $LID,
-                                'installment' => $value->installment_number,
-                                'amount' => $repay_amount_install,
-                                'paydate' => $paydate,
-                                'interest' => $value->interest,
-                                'principle' => $value->principle,
-                                'duedate' => $value->repaydate,
-                                'balance' => $value->balance,
-                                'iliyobaki' => round($amount_tmp, 2),
-                                'createdby' => $createdby,
-                                'PIN' => $pin,
-                            ),
-                        );
-                        $applied_any = true;
-                    }
-                } else {
-                    $d1 = new DateTime($max_date);
-                    $d2 = new DateTime($paydate);
-                    $number_months = ($d1->diff($d2)->m + ($d1->diff($d2)->y * 12)) + 1;
-                    $penalt_method = $product->penalt_method;
-                    $penalt_percentage = $product->penalt_percentage;
-                    $penalt = 0;
-                    $principle = $value->principle;
-                    $interest_val = $value->interest;
-                    if ($penalt_method == 1) {
-                        $penalt = (($penalt_percentage / 100) * $principle);
-                    } else if ($penalt_method == 2) {
-                        $penalt = (($penalt_percentage / 100) * ($principle + $interest_val));
-                    }
-                    $penalt_avail = round($penalt, 2);
-                    $penalt_total = round($penalt_avail * $number_months, 2);
-                    $test_remain = round($repay_amount_install + $penalt_total, 2);
-                    if ($amount_tmp >= $test_remain) {
-                        $repay_amount_install_to_pay_all_loan = round($value->repayamount + $value->balance + $penalt_total, 2);
-                        if ($amount_tmp >= $repay_amount_install_to_pay_all_loan) {
-                            $new_principle = round($value->repayamount + $value->balance - $value->interest, 2);
-                            $amount_tmp -= $repay_amount_install_to_pay_all_loan;
-                            $applications[] = array(
-                                'mode' => 'all',
-                                'schedule_id' => $value->id,
-                                'data' => array(
-                                    'LID' => $LID,
-                                    'installment' => $value->installment_number,
-                                    'amount' => $repay_amount_install_to_pay_all_loan,
-                                    'paydate' => $paydate,
-                                    'interest' => $value->interest,
-                                    'principle' => $new_principle,
-                                    'balance' => 0,
-                                    'duedate' => $value->repaydate,
-                                    'iliyobaki' => round($amount_tmp, 2),
-                                    'penalt' => $penalt_total,
-                                    'penalty_months' => $number_months,
-                                    'createdby' => $createdby,
-                                    'PIN' => $pin,
-                                ),
-                            );
-                            $applied_any = true;
-                            break;
-                        } else {
-                            $amount_tmp -= $test_remain;
-                            $applications[] = array(
-                                'mode' => 'partial',
-                                'schedule_id' => $value->id,
-                                'data' => array(
-                                    'LID' => $LID,
-                                    'installment' => $value->installment_number,
-                                    'amount' => $repay_amount_install,
-                                    'paydate' => $paydate,
-                                    'interest' => $value->interest,
-                                    'principle' => $value->principle,
-                                    'balance' => $value->balance,
-                                    'duedate' => $value->repaydate,
-                                    'iliyobaki' => round($amount_tmp, 2),
-                                    'penalt' => $penalt_total,
-                                    'penalty_months' => $number_months,
-                                    'createdby' => $createdby,
-                                    'PIN' => $pin,
-                                ),
-                            );
-                            $applied_any = true;
-                        }
-                    } else {
-                        break;
-                    }
-                }
-            } else {
+            $line_amount = $this->_schedule_line_amount($value, $loaninfo->installment_amount);
+            if ($line_amount <= 0.009) {
                 break;
             }
+            $pen = $this->_penalty_state($product, $value, $paydate);
+            $assessed_penalty = !empty($pen['is_overdue']) ? round((float) $pen['penalty'], 2) : 0.0;
+            $row_interest = round((float) $value->interest, 2);
+
+            $installment_no = (int) $value->installment_number;
+            $w_pen = isset($waiver_alloc[$installment_no]['penalty']) ? (float) $waiver_alloc[$installment_no]['penalty'] : 0.0;
+            $w_int = isset($waiver_alloc[$installment_no]['interest']) ? (float) $waiver_alloc[$installment_no]['interest'] : 0.0;
+            // Never waive more than this installment assessed.
+            $w_pen = min($w_pen, $assessed_penalty);
+            $w_int = min($w_int, $row_interest);
+
+            $penalt_recorded = round($assessed_penalty - $w_pen, 2);
+            $interest_recorded = round($row_interest - $w_int, 2);
+            $principle_recorded = round($line_amount - $row_interest, 2);
+            if ($principle_recorded < 0) {
+                $principle_recorded = 0;
+            }
+            // Cash needed to clear this installment after the waiver.
+            $clear_amount = round($line_amount + $assessed_penalty - $w_pen - $w_int, 2);
+
+            // Not even the installment itself is covered yet - stop here.
+            $installment_cash = round($principle_recorded + $interest_recorded, 2);
+            if ($amount_tmp + 0.00001 < $installment_cash) {
+                break;
+            }
+
+            $row_waiver = array(
+                'penalty' => round($w_pen, 2),
+                'interest' => round($w_int, 2),
+            );
+
+            if ($amount_tmp + 0.00001 >= $clear_amount) {
+                $amount_tmp -= $clear_amount;
+                $applications[] = array(
+                    'mode' => 'all',
+                    'schedule_id' => $value->id,
+                    'waiver' => $row_waiver,
+                    'data' => array(
+                        'LID' => $LID,
+                        'installment' => $value->installment_number,
+                        'amount' => $clear_amount,
+                        'paydate' => $paydate,
+                        'interest' => $interest_recorded,
+                        'principle' => round($principle_recorded, 2),
+                        'duedate' => $value->repaydate,
+                        'balance' => 0,
+                        'iliyobaki' => round($amount_tmp, 2),
+                        'penalt' => $penalt_recorded,
+                        'penalty_months' => $assessed_penalty > 0.009 ? (int) $pen['penalty_months'] : 0,
+                        'penalty_days' => $assessed_penalty > 0.009 ? (int) $pen['penalty_days'] : 0,
+                        'createdby' => $createdby,
+                        'PIN' => $pin,
+                    ),
+                );
+                $applied_any = true;
+                break;
+            }
+
+            // Partial: the installment (plus any penalty after the waiver) is
+            // covered, the row stays open for the remainder.
+            $charge_now = round($installment_cash + ($assessed_penalty > 0.009 ? $penalt_recorded : 0), 2);
+            $amount_tmp -= $charge_now;
+            $applications[] = array(
+                'mode' => 'partial',
+                'schedule_id' => $value->id,
+                'waiver' => $row_waiver,
+                'data' => array(
+                    'LID' => $LID,
+                    'installment' => $value->installment_number,
+                    'amount' => $installment_cash,
+                    'paydate' => $paydate,
+                    'interest' => $interest_recorded,
+                    'principle' => round($principle_recorded, 2),
+                    'balance' => $value->balance,
+                    'duedate' => $value->repaydate,
+                    'iliyobaki' => round($amount_tmp, 2),
+                    'penalt' => ($assessed_penalty > 0.009 ? $penalt_recorded : 0),
+                    'penalty_months' => $assessed_penalty > 0.009 ? (int) $pen['penalty_months'] : 0,
+                    'penalty_days' => $assessed_penalty > 0.009 ? (int) $pen['penalty_days'] : 0,
+                    'createdby' => $createdby,
+                    'PIN' => $pin,
+                ),
+            );
+            $applied_any = true;
         }
 
         if (!$applied_any) {
             return array(
                 'success' => false,
-                'message' => sprintf(lang('loan_repay_amount_insufficient'), number_format($minimum, 2)),
-                'minimum_to_apply' => $minimum,
+                'message' => sprintf(lang('loan_repay_amount_insufficient'), number_format($minimum_after_waiver, 2)),
+                'minimum_to_apply' => $minimum_after_waiver,
                 'due' => $due_preview,
                 'loaninfo' => $loaninfo,
                 'product' => $product,
@@ -2593,10 +4144,14 @@ class Loan_Model extends CI_Model {
         $principle_total = 0;
         $interest_total = 0;
         $penalt_total_sum = 0;
+        $waived_penalty_applied = 0;
+        $waived_interest_applied = 0;
         foreach ($applications as $app) {
             $principle_total += isset($app['data']['principle']) ? (float) $app['data']['principle'] : 0;
             $interest_total += isset($app['data']['interest']) ? (float) $app['data']['interest'] : 0;
             $penalt_total_sum += isset($app['data']['penalt']) ? (float) $app['data']['penalt'] : 0;
+            $waived_penalty_applied += isset($app['waiver']['penalty']) ? (float) $app['waiver']['penalty'] : 0;
+            $waived_interest_applied += isset($app['waiver']['interest']) ? (float) $app['waiver']['interest'] : 0;
         }
 
         return array(
@@ -2606,11 +4161,16 @@ class Loan_Model extends CI_Model {
             'loaninfo' => $loaninfo,
             'product' => $product,
             'due' => $due_preview,
-            'minimum_to_apply' => $minimum,
+            'minimum_to_apply' => $minimum_after_waiver,
             'principle' => round($principle_total, 2),
             'interest' => round($interest_total, 2),
             'penalt' => round($penalt_total_sum, 2),
             'amount' => $amount,
+            'waived_penalty' => round($waived_penalty_applied, 2),
+            'waived_interest' => round($waived_interest_applied, 2),
+            'waived_total' => round($waived_penalty_applied + $waived_interest_applied, 2),
+            'waiver_requested' => $waiver_request,
+            'waiver_capped' => $waiver_capped,
         );
     }
 
@@ -2626,10 +4186,11 @@ class Loan_Model extends CI_Model {
         }
         $post_gl = !array_key_exists('post_gl', $options) || !empty($options['post_gl']);
         $manage_transaction = !array_key_exists('manage_transaction', $options) || !empty($options['manage_transaction']);
+        $waiver = (isset($options['waiver']) && is_array($options['waiver'])) ? $options['waiver'] : array();
         $pin = current_user()->PIN;
         $amount = round((float) $amount, 2);
 
-        $plan = $this->plan_loan_repayment_applications($LID, $amount, $paydate);
+        $plan = $this->plan_loan_repayment_applications($LID, $amount, $paydate, $waiver);
         if (empty($plan['success'])) {
             if (!empty($plan['close_if_empty'])) {
                 $this->db->update('loan_contract', array('status' => 5), array('LID' => $LID, 'status' => 4, 'disburse' => 1, 'PIN' => $pin));
@@ -2648,10 +4209,11 @@ class Loan_Model extends CI_Model {
         foreach ($plan['applications'] as $app) {
             $array_data = $app['data'];
             $array_data['receipt'] = $receipt;
+            $row_waiver = isset($app['waiver']) && is_array($app['waiver']) ? $app['waiver'] : array();
             if ($app['mode'] === 'all') {
-                $ok = $this->record_loan_repayment_all($array_data, $app['schedule_id'], $array_data['LID'], $cash_account, $post_gl);
+                $ok = $this->record_loan_repayment_all($array_data, $app['schedule_id'], $array_data['LID'], $cash_account, $post_gl, $row_waiver);
             } else {
-                $ok = $this->record_loan_repayment($array_data, $app['schedule_id'], $cash_account, $post_gl);
+                $ok = $this->record_loan_repayment($array_data, $app['schedule_id'], $cash_account, $post_gl, $row_waiver);
             }
             if ($ok === false) {
                 if ($manage_transaction) {
@@ -2661,6 +4223,7 @@ class Loan_Model extends CI_Model {
                 }
                 return array('success' => false, 'message' => 'Loan repayment GL posting failed. Check payment method and loan product GL accounts.');
             }
+            $this->log_repayment_waiver($LID, $receipt, $array_data, $row_waiver, $waiver);
         }
         if ($plan['amount_tmp'] > 0) {
             $this->add_remain_balance($LID, round($plan['amount_tmp'], 2));
@@ -2677,14 +4240,125 @@ class Loan_Model extends CI_Model {
                 return array('success' => false, 'message' => 'Loan repayment save failed. Please try again.');
             }
         }
-        return array('success' => true, 'receipt' => $receipt, 'plan' => $plan);
+        return array(
+            'success' => true,
+            'receipt' => $receipt,
+            'plan' => $plan,
+            'waived_penalty' => isset($plan['waived_penalty']) ? $plan['waived_penalty'] : 0,
+            'waived_interest' => isset($plan['waived_interest']) ? $plan['waived_interest'] : 0,
+        );
+    }
+
+    /**
+     * Write the waiver audit rows for one applied repayment row.
+     */
+    private function log_repayment_waiver($LID, $receipt, $array_data, $row_waiver, $request) {
+        if (empty($row_waiver) || !$this->db->table_exists('loan_waiver_log')) {
+            return;
+        }
+        $context = array(
+            'LID' => $LID,
+            'ref_lid' => (string) $receipt,
+            'source' => 'repayment',
+            'reason_code' => isset($request['reason_code']) ? $request['reason_code'] : '',
+            'reason_note' => isset($request['reason_note']) ? $request['reason_note'] : '',
+            'status' => !empty($request['require_approval']) ? 'pending' : 'approved',
+            'waived_on' => isset($array_data['paydate']) ? $array_data['paydate'] : date('Y-m-d'),
+        );
+        if ($context['status'] === 'approved') {
+            $context['approvedby'] = current_user()->id;
+        }
+        foreach (array('penalty', 'interest') as $type) {
+            $waived = isset($row_waiver[$type]) ? round((float) $row_waiver[$type], 2) : 0.0;
+            if ($waived <= 0.009) {
+                continue;
+            }
+            $collected = isset($array_data[$type === 'penalty' ? 'penalt' : 'interest'])
+                ? round((float) $array_data[$type === 'penalty' ? 'penalt' : 'interest'], 2) : 0.0;
+            $this->create_loan_waiver(array_merge($context, array(
+                'waiver_type' => $type,
+                'assessed' => round($waived + $collected, 2),
+                'waived' => $waived,
+                'collected' => $collected,
+            )));
+        }
+    }
+
+    /**
+     * Post the "gross then waive" pair for a repayment waiver:
+     *   Debit  the product's waived (contra) account
+     *   Credit the penalty / interest income account
+     * Net profit effect is nil, but the concession stays visible in the books.
+     * When no contra account is configured the pair is skipped, which keeps the
+     * entry balanced and simply leaves the waiver unrecognised.
+     */
+    private function _post_repayment_waiver_gl($ledger_entry_id, $referenceID, $array_data, $product, $pin, $infodata, $row_waiver) {
+        $row_waiver = is_array($row_waiver) ? $row_waiver : array();
+        $pairs = array(
+            array(
+                'amount' => isset($row_waiver['penalty']) ? round((float) $row_waiver['penalty'], 2) : 0.0,
+                'contra' => $product && isset($product->loan_penalt_waived_account) ? $product->loan_penalt_waived_account : '',
+                'income' => $product ? $product->loan_penalt_account : '',
+                'description' => 'Penalty waived ' . (isset($array_data['LID']) ? $array_data['LID'] : ''),
+            ),
+            array(
+                'amount' => isset($row_waiver['interest']) ? round((float) $row_waiver['interest'], 2) : 0.0,
+                'contra' => $product && isset($product->loan_interest_waived_account) ? $product->loan_interest_waived_account : '',
+                'income' => $product ? $product->loan_interest_account : '',
+                'description' => 'Interest waived ' . (isset($array_data['LID']) ? $array_data['LID'] : ''),
+            ),
+        );
+        $base = array(
+            'journalID' => 4,
+            'refferenceID' => $referenceID,
+            'entryid' => $ledger_entry_id,
+            'LID' => isset($array_data['LID']) ? $array_data['LID'] : '',
+            'date' => isset($array_data['paydate']) ? $array_data['paydate'] : date('Y-m-d'),
+            'linkto' => 'loan_contract_repayment.id',
+            'fromtable' => 'loan_contract_repayment',
+            'paid' => 0,
+            'PIN' => $pin,
+            'PID' => isset($infodata->PID) ? $infodata->PID : null,
+            'member_id' => isset($infodata->member_id) ? $infodata->member_id : null,
+        );
+        foreach ($pairs as $pair) {
+            if ($pair['amount'] <= 0.009) {
+                continue;
+            }
+            if (empty($pair['contra']) || empty($pair['income'])) {
+                continue;
+            }
+            $contra_info = account_row_info($pair['contra']);
+            $income_info = account_row_info($pair['income']);
+            if (!$contra_info || !$income_info) {
+                continue;
+            }
+            $debit = $base;
+            $debit['account'] = $pair['contra'];
+            $debit['debit'] = $pair['amount'];
+            $debit['credit'] = 0;
+            $debit['description'] = $pair['description'];
+            $debit['account_type'] = $contra_info->account_type;
+            $debit['sub_account_type'] = isset($contra_info->sub_account_type) ? $contra_info->sub_account_type : null;
+            $this->db->insert('general_ledger', $debit);
+
+            $credit = $base;
+            $credit['account'] = $pair['income'];
+            $credit['debit'] = 0;
+            $credit['credit'] = $pair['amount'];
+            $credit['description'] = $pair['description'];
+            $credit['account_type'] = $income_info->account_type;
+            $credit['sub_account_type'] = isset($income_info->sub_account_type) ? $income_info->sub_account_type : null;
+            $this->db->insert('general_ledger', $credit);
+        }
+        return true;
     }
 
     /**
      * Dry-run apply totals for Cash Receipt journal lines.
      */
-    function preview_loan_repayment_application($LID, $amount, $paydate) {
-        return $this->plan_loan_repayment_applications($LID, $amount, $paydate);
+    function preview_loan_repayment_application($LID, $amount, $paydate, $waiver = array()) {
+        return $this->plan_loan_repayment_applications($LID, $amount, $paydate, $waiver);
     }
 
     /**
@@ -2747,9 +4421,10 @@ class Loan_Model extends CI_Model {
         return array('success' => true, 'receipt' => $applied['receipt']);
     }
 
-    function record_loan_repayment($array_data, $repay_schedule_ref, $cash_account = null, $post_gl = true) {
+    function record_loan_repayment($array_data, $repay_schedule_ref, $cash_account = null, $post_gl = true, $row_waiver = array()) {
         $pin = current_user()->PIN;
         $array_data = $this->_normalize_repayment_row($array_data);
+        $this->ensure_repayment_penalty_days_column();
         $this->db->trans_start();
         $insert = $this->db->insert('loan_contract_repayment', $array_data);
         $referenceID = $this->_loan_repayment_insert_id($array_data);
@@ -2891,6 +4566,7 @@ class Loan_Model extends CI_Model {
             $this->db->insert('general_ledger', $ledger);
         }
 
+            $this->_post_repayment_waiver_gl($ledger_entry_id, $referenceID, $array_data, $product, $pin, $infodata, $row_waiver);
         }
 
 
@@ -2902,9 +4578,10 @@ class Loan_Model extends CI_Model {
     
     
     //paying all loan before the end of the given duration
-    function record_loan_repayment_all($array_data, $repay_schedule_ref, $loan_id, $cash_account = null, $post_gl = true) {
+    function record_loan_repayment_all($array_data, $repay_schedule_ref, $loan_id, $cash_account = null, $post_gl = true, $row_waiver = array()) {
         $pin = current_user()->PIN;
         $array_data = $this->_normalize_repayment_row($array_data);
+        $this->ensure_repayment_penalty_days_column();
         $this->db->trans_start();
         $insert = $this->db->insert('loan_contract_repayment', $array_data);
         $referenceID = $this->_loan_repayment_insert_id($array_data);
@@ -3031,6 +4708,7 @@ class Loan_Model extends CI_Model {
             $this->db->insert('general_ledger', $ledger);
         }
 
+            $this->_post_repayment_waiver_gl($ledger_entry_id, $referenceID, $array_data, $product, $pin, $infodata, $row_waiver);
         }
 
 

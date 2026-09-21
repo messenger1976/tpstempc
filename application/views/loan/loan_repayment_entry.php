@@ -748,6 +748,60 @@ $suggested = $due && isset($due->suggested_amount) ? (float) $due->suggested_amo
                 <i class="fa fa-plus"></i> <?php echo lang('add_row'); ?>
             </button>
 
+            <?php
+            $waiver_codes = isset($waiver_reason_codes) ? $waiver_reason_codes : array();
+            $due_penalty = ($due && isset($due->total_penalty)) ? round((float) $due->total_penalty, 2) : 0;
+            $due_interest = 0.0;
+            if ($due && !empty($due->items)) {
+                foreach ($due->items as $due_item) {
+                    $due_interest += isset($due_item->interest) ? (float) $due_item->interest : 0;
+                }
+                $due_interest = round($due_interest, 2);
+            }
+            ?>
+            <div class="loan-repay-waiver" style="margin-top:18px; padding:14px; border:1px solid #f0d9a8; border-radius:8px; background:#fffbf2;">
+                <h5 style="margin-top:0; font-weight:700;">
+                    <i class="fa fa-gavel"></i> <?php echo lang('loan_repay_waive_title'); ?>
+                </h5>
+                <p class="text-muted" style="margin-bottom:10px;">
+                    <?php echo lang('loan_repay_waive_help'); ?>
+                </p>
+                <div class="row">
+                    <div class="col-md-3">
+                        <label><?php echo lang('loan_waive_penalty'); ?>
+                            <small class="text-muted">(<?php echo number_format($due_penalty, 2); ?> <?php echo lang('loan_offset_total'); ?>)</small>
+                        </label>
+                        <input type="number" step="0.01" min="0" class="form-control waiver-input"
+                               name="waive_penalty" id="waive_penalty" value="0.00"
+                               data-assessed="<?php echo htmlspecialchars($due_penalty); ?>"/>
+                    </div>
+                    <div class="col-md-3">
+                        <label><?php echo lang('loan_waive_interest'); ?>
+                            <small class="text-muted">(<?php echo number_format($due_interest, 2); ?>)</small>
+                        </label>
+                        <input type="number" step="0.01" min="0" class="form-control waiver-input"
+                               name="waive_interest" id="waive_interest" value="0.00"
+                               data-assessed="<?php echo htmlspecialchars($due_interest); ?>"/>
+                    </div>
+                    <div class="col-md-3">
+                        <label><?php echo lang('loan_waiver_reason'); ?> <span class="required">*</span></label>
+                        <select name="waiver_reason_code" id="waiver_reason_code" class="form-control">
+                            <option value=""><?php echo lang('select_default_text'); ?></option>
+                            <?php foreach ((array) $waiver_codes as $code => $reason_label) { ?>
+                            <option value="<?php echo htmlspecialchars($code); ?>"><?php echo htmlspecialchars($reason_label); ?></option>
+                            <?php } ?>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label><?php echo lang('loan_waiver_note'); ?></label>
+                        <input type="text" maxlength="255" class="form-control" name="waiver_reason_note" id="waiver_reason_note"/>
+                    </div>
+                </div>
+                <p class="text-muted" style="margin:10px 0 0;">
+                    <i class="fa fa-info-circle"></i> <?php echo lang('loan_repay_waive_hint'); ?>
+                </p>
+            </div>
+
             <div class="form-actions">
                 <button type="submit" class="btn btn-primary">
                     <i class="fa fa-save"></i> <?php echo lang('save'); ?>

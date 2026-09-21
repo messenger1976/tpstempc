@@ -49,5 +49,54 @@ define('NEW_LOAN', '255684610038,255715222132');
 define('APROVE_LOAN', '255684610038,255715222132');
 define('DISBURSE_LOAN', '255684610038,255715222132');
 
+/*
+|--------------------------------------------------------------------------
+| Printed loan forms letterhead (TPSTEMPC-12 / TPSTEMPC-13)
+|--------------------------------------------------------------------------
+| Used by the Loan Forms tab and its PDF output when the matching value is
+| not present in Company Information (companyinfo).
+| TAPSTEMCO_FORM_EMPLOYER is only used when a member has no Office Address.
+*/
+define('TAPSTEMCO_FORM_COOP_NAME', 'Talibon Public School Teachers and Employees Multipurpose Cooperative (TAPSTEMCO)');
+define('TAPSTEMCO_FORM_COOP_ADDRESS', 'Purok 1 North Road, San Jose, Talibon, Bohol');
+define('TAPSTEMCO_FORM_REG_NO', '9520-07014825');
+define('TAPSTEMCO_FORM_EMPLOYER', '');
+
+/*
+|--------------------------------------------------------------------------
+| Loan penalty assessment
+|--------------------------------------------------------------------------
+| TAPSTEMCO_PENALTY_PRORATE
+|   TRUE  - penalty is pro-rated over 30-day periods counted from the end of
+|           the grace period (15 days past grace = half a month).
+|   FALSE - legacy behaviour: any part of a month past the grace period is
+|           charged as a whole month.
+| Switch this off only if a past-due review shows the pro-rated figures are
+| not the intended policy. It affects every past-due collection, not just
+| waivers, and never rewrites penalties that are already posted.
+*/
+if (!defined('TAPSTEMCO_PENALTY_PRORATE')) {
+    define('TAPSTEMCO_PENALTY_PRORATE', TRUE);
+}
+
+/**
+ * Days in the pro-rated penalty period (30-day month convention).
+ */
+if (!defined('TAPSTEMCO_PENALTY_PERIOD_DAYS')) {
+    define('TAPSTEMCO_PENALTY_PERIOD_DAYS', 30);
+}
+
+/*
+|--------------------------------------------------------------------------
+| Penalty / interest waiver approvals
+|--------------------------------------------------------------------------
+| Comma separated ion_auth group names allowed to approve a waiver.
+| The 'admin' group is always allowed. The initiator of a waiver can never
+| approve it, even when they belong to one of these groups.
+*/
+if (!defined('TAPSTEMCO_WAIVER_APPROVER_GROUPS')) {
+    define('TAPSTEMCO_WAIVER_APPROVER_GROUPS', 'admin,General_Manager,Credit_Committee,Bookeeper,Accounts_Department');
+}
+
 /* End of file constants.php */
 /* Location: ./application/config/constants.php */

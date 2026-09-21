@@ -77,6 +77,7 @@
     min-width: 140px;
 }
 .member-list-page .filter-field.search-field { flex: 2 1 260px; position: relative; }
+.member-list-page .filter-field.date-field { flex: 0 1 180px; min-width: 150px; }
 .member-list-page .filter-field label {
     display: block;
     margin-bottom: 6px;
@@ -282,6 +283,36 @@
     margin: 0;
     width: auto;
 }
+/* Frozen ACTION column: stays visible while the table scrolls horizontally.
+   The cell backgrounds must be opaque so scrolled content cannot show through,
+   which means repeating the zebra and hover colours for this column. */
+.member-list-page .member-table > thead > tr > th.action-col,
+.member-list-page .member-table > tbody > tr > td.action-col {
+    position: sticky;
+    right: 0;
+    border-left: 1px solid #e7eaec !important;
+    box-shadow: -8px 0 10px -8px rgba(47, 64, 80, 0.28);
+    white-space: nowrap;
+}
+.member-list-page .member-table > thead > tr > th.action-col {
+    background: linear-gradient(180deg, #fbfcfd 0%, #f4f7f8 100%) !important;
+    z-index: 4;
+}
+.member-list-page .member-table > tbody > tr > td.action-col {
+    background: #fff;
+    z-index: 3;
+}
+.member-list-page .member-table > tbody > tr:nth-child(even) > td.action-col {
+    background: #fcfdfd;
+}
+.member-list-page .member-table > tbody > tr:hover > td.action-col {
+    background: #f3fbf8 !important;
+}
+/* Keep every action icon on a single, fully visible line. */
+.member-list-page .member-table .action-col .action-btns {
+    justify-content: flex-end;
+    min-width: max-content;
+}
 .member-list-page .list-footer {
     display: flex;
     flex-wrap: wrap;
@@ -397,6 +428,10 @@ $status_list = isset($status_list) ? $status_list : array();
 $current_status = isset($status_filter) ? $status_filter : '';
 $loan_products = isset($loan_products) ? $loan_products : array();
 $current_product_id = isset($product_id) ? $product_id : 'all';
+// Application date range (Y-m-d). Empty means "all" - seeded from the session copy by the controller.
+$date_from = isset($date_from) ? $date_from : '';
+$date_to = isset($date_to) ? $date_to : '';
+$clear_filter_url = site_url(current_lang() . '/loan/loan_viewlist?clear=1');
 ?>
 
 <div class="col-lg-12 member-list-page">
@@ -448,8 +483,16 @@ $current_product_id = isset($product_id) ? $product_id : 'all';
                             <?php } ?>
                         </select>
                     </div>
+                    <div class="filter-field date-field">
+                        <label><?php echo lang('loan_applicationdate_from'); ?></label>
+                        <input type="date" class="form-control" name="date_from" value="<?php echo htmlspecialchars($date_from, ENT_QUOTES, 'UTF-8'); ?>"/>
+                    </div>
+                    <div class="filter-field date-field">
+                        <label><?php echo lang('loan_applicationdate_to'); ?></label>
+                        <input type="date" class="form-control" name="date_to" value="<?php echo htmlspecialchars($date_to, ENT_QUOTES, 'UTF-8'); ?>"/>
+                    </div>
                     <div class="filter-actions">
-                        <a href="<?php echo site_url(current_lang() . '/loan/loan_viewlist'); ?>" class="btn btn-default btn-clear-filter">
+                        <a href="<?php echo $clear_filter_url; ?>" class="btn btn-default btn-clear-filter">
                             <i class="fa fa-undo"></i> Clear
                         </a>
                         <button type="submit" class="btn btn-primary">
@@ -495,7 +538,7 @@ $current_product_id = isset($product_id) ? $product_id : 'all';
                         <th style="text-align:right;"><?php echo lang('loan_total_interest'); ?></th>
                         <th style="text-align:right;"><?php echo lang('loan_total'); ?></th>
                         <th><?php echo lang('loan_status'); ?></th>
-                        <th><?php echo lang('index_action_th'); ?></th>
+                        <th class="action-col"><?php echo lang('index_action_th'); ?></th>
                     </tr>
                 </thead>
                 <tbody>
@@ -577,7 +620,7 @@ $current_product_id = isset($product_id) ? $product_id : 'all';
                                 <td class="amount-cell"><?php echo number_format($value->total_interest_amount, 2); ?></td>
                                 <td class="amount-cell"><?php echo number_format($value->total_loan, 2); ?></td>
                                 <td><span class="status-pill <?php echo htmlspecialchars($pill, ENT_QUOTES, 'UTF-8'); ?>"><?php echo htmlspecialchars($status_name, ENT_QUOTES, 'UTF-8'); ?></span></td>
-                                <td>
+                                <td class="action-col">
                                     <div class="action-btns">
                                         <?php
                                         $is_bb_row = !empty($value->is_beginning_balance)
@@ -603,6 +646,12 @@ $current_product_id = isset($product_id) ? $product_id : 'all';
                                             if ($value->edit == 0) {
                                                 echo anchor(current_lang() . '/loan/loan_editing/' . encode_id($value->LID), ' <i class="fa fa-edit"></i> ' . lang('button_edit'), 'class="btn btn-default btn-xs" title="' . htmlspecialchars(lang('button_edit'), ENT_QUOTES, 'UTF-8') . '"');
                                             }
+                                            // Printable forms (TPSTEMPC-12 / TPSTEMPC-13) for every product and every status.
+                                            echo anchor(
+                                                current_lang() . '/loan/loan_forms/' . encode_id($value->LID),
+                                                ' <i class="fa fa-print"></i> ' . lang('loan_forms'),
+                                                'class="btn btn-success btn-xs" target="_blank" title="' . htmlspecialchars(lang('loan_forms'), ENT_QUOTES, 'UTF-8') . '"'
+                                            );
                                             $lifecycle_code = isset($value->lifecycle_code) ? (string) $value->lifecycle_code : '';
                                             if (has_role(5, 'void_transaction') && in_array($lifecycle_code, array('pending_release', 'released_unposted'), true)) {
                                                 $cancel_url = site_url(current_lang() . '/loan/view_indetail/' . encode_id($value->LID) . '#loan-cancel-panel');
@@ -628,7 +677,7 @@ $current_product_id = isset($product_id) ? $product_id : 'all';
                         <?php } ?>
                     <?php } else { ?>
                         <tr>
-                            <td colspan="11">
+                            <td colspan="13">
                                 <div class="empty-state">
                                     <i class="fa fa-list"></i>
                                     <?php echo lang('no_records_found'); ?>

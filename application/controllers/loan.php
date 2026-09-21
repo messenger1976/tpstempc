@@ -694,6 +694,377 @@ class Loan extends CI_Controller {
         $this->load->view('template', $this->data);
     }
 
+    /**
+     * Printable loan forms: TPSTEMPC-12 (Application for Loan) and TPSTEMPC-13
+     * (Co-Makers Statement & Promissory Note / Pledge & Authority).
+     *
+     * Values are prefilled from the loan record. The fields the paper form
+     * leaves blank (PASSBOOK No., MIGS, Consumer Balance, ...) are saved here as
+     * overrides and reused by the PDF output of the same loan.
+     */
+    function loan_forms($loanid) {
+        $this->data['title'] = lang('loan_forms');
+        $this->data['loanid'] = $loanid;
+        $LID = decode_id($loanid);
+
+        $forms = $this->loan_model->loan_form_prefill($LID);
+        if (!$forms) {
+            show_404();
+            return;
+        }
+
+        if (strtoupper((string) $this->input->server('REQUEST_METHOD')) === 'POST') {
+            $posted = $this->input->post('f');
+            $known = $forms['values'];
+            $saved = 0;
+            $failed = 0;
+            if (is_array($posted)) {
+                foreach ($posted as $form_code => $fields) {
+                    $form_code = trim((string) $form_code);
+                    if (!isset($known[$form_code]) || !is_array($fields)) {
+                        continue;
+                    }
+                    // Store only what differs from the derived value, so untouched
+                    // fields keep following the loan record. A field typed back to
+                    // the derived value drops its stored override instead.
+                    $saved_map = (isset($forms['saved'][$form_code]) && is_array($forms['saved'][$form_code]))
+                        ? $forms['saved'][$form_code] : array();
+                    $upsert = array();
+                    $remove = array();
+                    foreach ($fields as $key => $value) {
+                        if (!array_key_exists($key, $known[$form_code])) {
+                            continue;
+                        }
+                        $new_value = is_array($value) ? '' : trim((string) $value);
+                        if ($new_value !== trim((string) $known[$form_code][$key])) {
+                            $upsert[$key] = $new_value;
+                        } else if (array_key_exists($key, $saved_map)) {
+                            $remove[] = $key;
+                        }
+                    }
+                    // Unchecked checkboxes are never submitted.
+                    foreach ($known[$form_code] as $key => $known_value) {
+                        if (strpos($key, 'loan_type_') !== 0 || array_key_exists($key, $fields)) {
+                            continue;
+                        }
+                        if (trim((string) $known_value) !== '') {
+                            $upsert[$key] = '';
+                        } else if (array_key_exists($key, $saved_map)) {
+                            $remove[] = $key;
+                        }
+                    }
+
+                    $touched = !empty($upsert) || !empty($remove);
+                    if (!$touched) {
+                        continue;
+                    }
+
+                    $ok = TRUE;
+                    if (!empty($remove)) {
+                        $ok = ($this->loan_model->delete_loan_form_data($LID, $form_code, null, $remove) !== FALSE) && $ok;
+                    }
+                    if (!empty($upsert)) {
+                        $ok = $this->loan_model->save_loan_form_data($LID, $form_code, $upsert) && $ok;
+                    }
+
+                    if ($ok) {
+                        $saved++;
+                    } else {
+                        $failed++;
+                    }
+                }
+            }
+            if ($saved > 0) {
+                $this->session->set_flashdata('message', lang('loan_form_saved'));
+            } else if ($failed > 0) {
+                $this->session->set_flashdata('warning', lang('loan_form_save_failed'));
+            }
+            redirect(current_lang() . '/loan/loan_forms/' . $loanid, 'refresh');
+            return;
+        }
+
+        $this->data['forms'] = $forms;
+        $this->data['loaninfo'] = $forms['loan'];
+        $this->data['basicinfo'] = $forms['member'];
+        $this->data['contactinfo'] = $forms['contact'];
+        $this->data['product'] = $forms['product'];
+        $this->data['maker'] = $forms['maker'];
+        $this->data['co_makers'] = $forms['co_makers'];
+        $this->data['schedule'] = $forms['schedule'];
+        $this->data['form_values'] = $forms['values'];
+        $this->data['content'] = 'loan/loan_forms';
+        $this->load->view('template', $this->data);
+    }
+
+    /**
+     * Clear the saved overrides of one loan (optionally of a single form) so the
+     * forms go back to the values derived from the loan record.
+     */
+    function loan_form_reset($loanid, $form_code = null) {
+        $LID = decode_id($loanid);
+        $loaninfo = $this->loan_model->loan_info($LID)->row();
+        if (!$loaninfo) {
+            show_404();
+            return;
+        }
+
+        $allowed = array('application', 'comakers', 'pledge', 'disclosure');
+        if ($form_code !== null && in_array($form_code, $allowed, TRUE)) {
+            $this->loan_model->delete_loan_form_data($LID, $form_code);
+        } else {
+            $this->loan_model->delete_loan_form_data($LID);
+        }
+
+        $this->session->set_flashdata('message', lang('loan_form_reset_done'));
+        redirect(current_lang() . '/loan/loan_forms/' . $loanid, 'refresh');
+    }
+
+    /**
+     * Printable loan forms as stand-alone HTML pages: the browser preview that
+     * is printed with Ctrl+P / Print Form. Uses the same markup and print CSS as
+     * the source documents, so the sheet looks exactly like the designed form.
+     */
+    function print_loan_application_html($loanid) {
+        $data = $this->_loan_form_view_data($loanid, 'application');
+        if ($data === null) {
+            show_404();
+            return;
+        }
+        $this->load->view('loan/print/loan_application_print', $data);
+    }
+
+    /**
+     * TPSTEMPC-13 - Co-Makers Statement & Promissory Note (HTML preview).
+     */
+    function print_comakers_promissory_html($loanid) {
+        $data = $this->_loan_form_view_data($loanid, 'comakers');
+        if ($data === null) {
+            show_404();
+            return;
+        }
+        $this->load->view('loan/print/loan_comakers_promissory_print', $data);
+    }
+
+    /**
+     * TPSTEMPC-13 - Pledge & Authority (HTML preview).
+     */
+    function print_pledge_authority_html($loanid) {
+        $data = $this->_loan_form_view_data($loanid, 'pledge');
+        if ($data === null) {
+            show_404();
+            return;
+        }
+        $this->load->view('loan/print/loan_pledge_authority_print', $data);
+    }
+
+    /**
+     * Disclosure Statement (HTML preview): two copies on one sheet with a cut mark.
+     */
+    function print_loan_disclosure_html($loanid) {
+        $data = $this->_loan_form_view_data($loanid, 'disclosure');
+        if ($data === null) {
+            show_404();
+            return;
+        }
+        $this->load->view('loan/print/loan_disclosure_print', $data);
+    }
+
+    /**
+     * Disclosure Statement (PDF): one copy per page.
+     */
+    function print_loan_disclosure_pdf($loanid) {
+        $forms = $this->_loan_form_print_data($loanid);
+        if ($forms === null) {
+            show_404();
+            return;
+        }
+        if (!$this->_loan_form_renderer()) {
+            return;
+        }
+        $company = $forms['company'];
+        $loaninfo = $forms['loan'];
+        $member = $forms['member'];
+        $maker = $forms['maker'];
+        $form = $forms['values']['disclosure'];
+        include dirname(__FILE__) . '/pdf/loan_disclosure_statement.php';
+    }
+
+    /**
+     * View data for the HTML loan forms: the resolved values of one form plus the
+     * letterhead data and the links shown on the preview toolbar.
+     */
+    private function _loan_form_view_data($loanid, $form_code) {
+        $forms = $this->_loan_form_print_data($loanid);
+        if ($forms === null) {
+            return null;
+        }
+
+        $meta = array(
+            'application' => array(
+                'no' => 'TPSTEMPC-12',
+                'name' => 'Application for Loan',
+                'pdf' => 'print_loan_application_pdf',
+                'header_form_no' => 'TPSTEMPC-12',
+            ),
+            'comakers' => array(
+                'no' => 'TPSTEMPC-13',
+                'name' => 'Co-Makers Statement & Promissory Note',
+                'pdf' => 'print_comakers_promissory_pdf',
+                'header_form_no' => '',
+            ),
+            'pledge' => array(
+                'no' => 'TPSTEMPC-13',
+                'name' => 'Pledge & Authority',
+                'pdf' => 'print_pledge_authority_pdf',
+                'header_form_no' => '',
+            ),
+            'disclosure' => array(
+                'no' => 'DS',
+                'name' => 'Disclosure Statement',
+                'pdf' => 'print_loan_disclosure_pdf',
+                'header_form_no' => '',
+            ),
+        );
+        if (!isset($meta[$form_code])) {
+            return null;
+        }
+
+        $member_id = ($forms['member'] && !empty($forms['member']->member_id)) ? $forms['member']->member_id : '';
+        $product_name = ($forms['product'] && !empty($forms['product']->name)) ? $forms['product']->name : '';
+
+        return array(
+            'loanid' => $loanid,
+            'company' => $forms['company'],
+            'loaninfo' => $forms['loan'],
+            'member' => $forms['member'],
+            'contact' => $forms['contact'],
+            'product' => $forms['product'],
+            'maker' => $forms['maker'],
+            'co_makers' => $forms['co_makers'],
+            'schedule' => $forms['schedule'],
+            'form' => isset($forms['values'][$form_code]) ? $forms['values'][$form_code] : array(),
+            'form_code' => $form_code,
+            'form_no' => $meta[$form_code]['no'],
+            'form_name' => $meta[$form_code]['name'],
+            'form_no_header' => $meta[$form_code]['header_form_no'],
+            'page_title' => 'TAPSTEMCO - Form ' . $meta[$form_code]['no'] . ' ' . $meta[$form_code]['name'],
+            'reference' => 'Member: ' . $forms['maker']['name'] . ($member_id !== '' ? ' (' . $member_id . ')' : '')
+                . '   |   Loan No.: ' . $forms['loan']->LID
+                . ($product_name !== '' ? '   |   Product: ' . $product_name : ''),
+            'pdf_url' => site_url(current_lang() . '/loan/' . $meta[$form_code]['pdf'] . '/' . $loanid),
+            'forms_url' => site_url(current_lang() . '/loan/loan_forms/' . $loanid),
+        );
+    }
+
+    /**
+     * Load the shared TCPDF helpers used by the printable loan forms.
+     * Included by absolute path because a relative include from inside another
+     * included file is resolved against the including file, not the controller.
+     *
+     * @return bool false when the helper file is missing (caller should stop)
+     */
+    private function _loan_form_renderer() {
+        if (function_exists('loan_form_pdf_start')) {
+            return TRUE;
+        }
+
+        $helper = dirname(__FILE__) . '/pdf/loan_form_common.php';
+        if (!is_file($helper)) {
+            show_error('Loan form renderer is missing: ' . $helper, 500);
+            return FALSE;
+        }
+
+        include_once $helper;
+
+        if (!function_exists('loan_form_pdf_start')) {
+            show_error('Loan form renderer could not be loaded: ' . $helper, 500);
+            return FALSE;
+        }
+
+        return TRUE;
+    }
+
+    /**
+     * Shared data for the printable loan form PDFs.
+     */
+    private function _loan_form_print_data($loanid) {
+        $LID = decode_id($loanid);
+        $forms = $this->loan_model->loan_form_prefill($LID);
+        if (!$forms) {
+            return null;
+        }
+        $forms['company'] = function_exists('company_info') ? company_info() : null;
+        return $forms;
+    }
+
+    /**
+     * TPSTEMPC-12 - Application for Loan (PDF).
+     */
+    function print_loan_application_pdf($loanid) {
+        $forms = $this->_loan_form_print_data($loanid);
+        if ($forms === null) {
+            show_404();
+            return;
+        }
+        if (!$this->_loan_form_renderer()) {
+            return;
+        }
+        $company = $forms['company'];
+        $loaninfo = $forms['loan'];
+        $member = $forms['member'];
+        $product = $forms['product'];
+        $maker = $forms['maker'];
+        $co_makers = $forms['co_makers'];
+        $signatories = $forms['signatories'];
+        $form = $forms['values']['application'];
+        include dirname(__FILE__) . '/pdf/loan_application_form.php';
+    }
+
+    /**
+     * TPSTEMPC-13 - Co-Makers Statement & Promissory Note (PDF).
+     */
+    function print_comakers_promissory_pdf($loanid) {
+        $forms = $this->_loan_form_print_data($loanid);
+        if ($forms === null) {
+            show_404();
+            return;
+        }
+        if (!$this->_loan_form_renderer()) {
+            return;
+        }
+        $company = $forms['company'];
+        $loaninfo = $forms['loan'];
+        $member = $forms['member'];
+        $product = $forms['product'];
+        $maker = $forms['maker'];
+        $co_makers = $forms['co_makers'];
+        $schedule = $forms['schedule'];
+        $form = $forms['values']['comakers'];
+        include dirname(__FILE__) . '/pdf/loan_comakers_promissory.php';
+    }
+
+    /**
+     * TPSTEMPC-13 - Pledge & Authority (PDF).
+     */
+    function print_pledge_authority_pdf($loanid) {
+        $forms = $this->_loan_form_print_data($loanid);
+        if ($forms === null) {
+            show_404();
+            return;
+        }
+        if (!$this->_loan_form_renderer()) {
+            return;
+        }
+        $company = $forms['company'];
+        $loaninfo = $forms['loan'];
+        $member = $forms['member'];
+        $maker = $forms['maker'];
+        $co_makers = $forms['co_makers'];
+        $schedule = $forms['schedule'];
+        $form = $forms['values']['pledge'];
+        include dirname(__FILE__) . '/pdf/loan_pledge_authority.php';
+    }
+
     function deletedoc($loanid, $id) {
         $this->db->delete('loan_contract_supportdoc', array('id' => $id));
         redirect(current_lang() . '/loan/loan_security/' . $loanid, 'refresh');
@@ -1374,10 +1745,15 @@ $pin = current_user()->PIN;
                 }
             }
 
-            // Validate selected offset loans (same member, active, outstanding)
+            // Validate selected offset loans (same member, active, outstanding).
+            // Each old loan may carry an override of its payoff: principal /
+            // interest / penalty / other plus any waived penalty or interest.
             $offset_lids = $this->input->post('offset_loans');
             $offset_loans_selected = array();
             $offset_total = 0.0;
+            $offset_breakdown = array();
+            $waived_penalty_total = 0.0;
+            $waived_interest_total = 0.0;
             if (is_array($offset_lids)) {
                 foreach ($offset_lids as $old_lid) {
                     $old_lid = trim($old_lid);
@@ -1395,15 +1771,65 @@ $pin = current_user()->PIN;
                         $offset_loans_selected = array();
                         break;
                     }
-                    $bd = $this->loan_model->get_loan_outstanding_for_offset($old_lid);
-                    if (!$bd || $bd['total'] <= 0) {
+
+                    // Assessed payoff for this old loan (no override yet).
+                    $assessed = $this->loan_model->get_loan_outstanding_for_offset($old_lid);
+                    if (!$assessed || $assessed['assessed'] <= 0.009) {
                         continue;
                     }
-                    $offset_loans_selected[] = array('LID' => $old_lid, 'breakdown' => $bd);
-                    $offset_total += $bd['total'];
+
+                    $row = array();
+                    foreach (array('principal', 'interest', 'penalty', 'other', 'penalty_waived', 'interest_waived') as $key) {
+                        $posted = $this->input->post('offset_' . $key);
+                        if (is_array($posted) && array_key_exists($old_lid, $posted) && $posted[$old_lid] !== '') {
+                            $row[$key] = round((float) str_replace(',', '', $posted[$old_lid]), 2);
+                        } else {
+                            // Fall back to the assessed figure for the components the
+                            // worksheet does not submit (other / waived).
+                            $default_key = ($key === 'principal') ? 'principal' : $key;
+                            $row[$key] = isset($assessed[$default_key]) ? round((float) $assessed[$default_key], 2) : 0.0;
+                        }
+                    }
+                    if (isset($assessed['penalty_days'])) {
+                        $row['penalty_days'] = (int) $assessed['penalty_days'];
+                    }
+                    foreach (array('reason_code' => 'offset_reason', 'reason_note' => 'offset_reason_note') as $field => $post_key) {
+                        $posted = $this->input->post($post_key);
+                        if (is_array($posted) && !empty($posted[$old_lid])) {
+                            $row[$field] = trim((string) $posted[$old_lid]);
+                        }
+                    }
+
+                    $row['penalty_waived'] = min(max(0, $row['penalty_waived']), max(0, $row['penalty']));
+                    $row['interest_waived'] = min(max(0, $row['interest_waived']), max(0, $row['interest']));
+                    $row['principal'] = max(0, $row['principal']);
+                    $row['interest'] = max(0, $row['interest']);
+                    $row['penalty'] = max(0, $row['penalty']);
+                    $row['other'] = max(0, $row['other']);
+
+                    if (($row['penalty_waived'] > 0.009 || $row['interest_waived'] > 0.009)
+                            && empty($row['reason_code'])) {
+                        $this->data['warning'] = sprintf(lang('loan_waiver_reason_required'), htmlspecialchars($old_lid));
+                    }
+
+                    $row_payoff = round(
+                        $row['principal'] + $row['interest'] + $row['penalty'] + $row['other']
+                        - $row['penalty_waived'] - $row['interest_waived'],
+                        2
+                    );
+                    if ($row_payoff <= 0.009) {
+                        continue;
+                    }
+
+                    $waived_penalty_total = round($waived_penalty_total + $row['penalty_waived'], 2);
+                    $waived_interest_total = round($waived_interest_total + $row['interest_waived'], 2);
+                    $offset_breakdown[(string) $old_lid] = $row;
+                    $offset_loans_selected[] = array('LID' => $old_lid, 'breakdown' => $row, 'payoff' => $row_payoff);
+                    $offset_total += $row_payoff;
                 }
             }
             $offset_total = round($offset_total, 2);
+            $waived_total = round($waived_penalty_total + $waived_interest_total, 2);
 
             // Proceeds deductions are entered directly in Accounting Entries.
             $deduction_defs = loan_disbursement_default_deductions();
@@ -1423,10 +1849,14 @@ $pin = current_user()->PIN;
             }
             $deduction_total = round($deduction_total, 2);
 
+            // A payoff larger than the new loan is allowed: the member covers the
+            // difference in cash (a top-up debit line on the worksheet), so this is
+            // an informational note rather than a block.
             if (($offset_total + $deduction_total) > (floatval($loaninfo->basic_amount) + 0.009)) {
-                $this->data['warning'] = lang('loan_disburse_deductions_exceed');
-            } elseif ($offset_total > 0 && $offset_total > (floatval($loaninfo->basic_amount) + 0.009)) {
-                $this->data['warning'] = lang('loan_offset_exceeds_new_loan');
+                $this->data['info'] = sprintf(
+                    lang('loan_offset_topup_needed'),
+                    number_format(($offset_total + $deduction_total) - floatval($loaninfo->basic_amount), 2)
+                );
             }
 
             if (!empty($this->data['warning'])) {
@@ -1456,6 +1886,16 @@ $pin = current_user()->PIN;
                     $comment = trim($comment . ' | Offset: ' . implode(', ', $offset_ids) . ' (Total ' . number_format($offset_total, 2) . ')');
                     $this->loan_model->ensure_offset_loans_column();
                 }
+                if ($waived_total > 0.009) {
+                    $waiver_bits = array();
+                    if ($waived_penalty_total > 0.009) {
+                        $waiver_bits[] = 'penalty ' . number_format($waived_penalty_total, 2);
+                    }
+                    if ($waived_interest_total > 0.009) {
+                        $waiver_bits[] = 'interest ' . number_format($waived_interest_total, 2);
+                    }
+                    $comment = trim($comment . ' | Waived: ' . implode(', ', $waiver_bits));
+                }
                 if ($deduction_total > 0 && !empty($deduction_labels)) {
                     $comment = trim($comment . ' | Deductions: ' . implode(', ', $deduction_labels));
                 }
@@ -1484,6 +1924,41 @@ $pin = current_user()->PIN;
                     ));
                 }
 
+                // Persist the edited payoff so the settlement follows the GL.
+                $this->loan_model->save_offset_breakdown($LID, $pin, $offset_breakdown);
+
+                // Audit the waivers. Every waiver starts as pending and must be
+                // approved by a Manager/Treasurer before the payout can be posted.
+                $waiver_pending = 0;
+                if ($waived_total > 0.009) {
+                    $this->loan_model->ensure_loan_waiver_log_table();
+                    foreach ($offset_breakdown as $old_lid => $row) {
+                        foreach (array('penalty', 'interest') as $type) {
+                            $waived_key = $type . '_waived';
+                            $waived_amount = isset($row[$waived_key]) ? round((float) $row[$waived_key], 2) : 0.0;
+                            if ($waived_amount <= 0.009) {
+                                continue;
+                            }
+                            $collected = ($type === 'penalty')
+                                ? round(max(0, (float) $row['penalty'] - $waived_amount), 2)
+                                : round(max(0, (float) $row['interest'] - $waived_amount), 2);
+                            $this->loan_model->create_loan_waiver(array(
+                                'LID' => $old_lid,
+                                'ref_lid' => $LID,
+                                'source' => 'release_offset',
+                                'waiver_type' => $type,
+                                'assessed' => round($waived_amount + $collected, 2),
+                                'waived' => $waived_amount,
+                                'collected' => $collected,
+                                'reason_code' => isset($row['reason_code']) ? $row['reason_code'] : '',
+                                'reason_note' => isset($row['reason_note']) ? $row['reason_note'] : '',
+                                'status' => 'pending',
+                            ));
+                            $waiver_pending++;
+                        }
+                    }
+                }
+
                 if (empty($this->data['warning'])) {
                     $this->db->trans_complete();
 
@@ -1493,6 +1968,9 @@ $pin = current_user()->PIN;
                         $msg = lang('loan_release_saved');
                         if (!empty($offset_loans_selected)) {
                             $msg .= ' ' . sprintf(lang('loan_offset_pending'), count($offset_loans_selected), number_format($offset_total, 2));
+                        }
+                        if (!empty($waiver_pending)) {
+                            $msg .= ' ' . sprintf(lang('loan_waiver_pending_notice'), $waiver_pending);
                         }
                         $this->session->set_flashdata('message', $msg);
                         redirect(current_lang() . '/loan/loan_disbursement', 'refresh');
@@ -1572,8 +2050,11 @@ $pin = current_user()->PIN;
         }
         $this->data['disburse_deductions'] = $deductions;
 
-        // Offset / reloan: other active loans for this member
-        $offsetable = $this->loan_model->get_offsetable_loans($loaninfo->PID, $LID);
+        // Offset / reloan: other active loans for this member.
+        // Saved overrides are re-applied so the edited payoff survives a reopen.
+        $saved_offset_breakdown = $existing_release ? $this->loan_model->decode_offset_breakdown($existing_release) : array();
+        $this->data['offset_breakdown'] = $saved_offset_breakdown;
+        $offsetable = $this->loan_model->get_offsetable_loans($loaninfo->PID, $LID, $saved_offset_breakdown);
         $this->data['offsetable_loans'] = $offsetable;
         $offset_json = array();
         foreach ($offsetable as $ol) {
@@ -1581,14 +2062,32 @@ $pin = current_user()->PIN;
                 'LID' => $ol->LID,
                 'principal' => floatval($ol->principal_outstanding),
                 'interest' => floatval($ol->interest_outstanding),
+                'penalty' => floatval($ol->penalty_outstanding),
+                'other' => floatval($ol->other_outstanding),
+                'penalty_waived' => floatval($ol->penalty_waived),
+                'interest_waived' => floatval($ol->interest_waived),
+                'penalty_days' => (int) $ol->penalty_days,
+                'assessed' => floatval($ol->assessed_outstanding),
                 'total' => floatval($ol->total_outstanding),
                 'principle_account' => $ol->principle_account,
                 'interest_account' => $ol->interest_account,
+                'penalty_account' => $ol->penalty_account,
+                'penalty_waived_account' => $ol->penalty_waived_account,
+                'interest_waived_account' => $ol->interest_waived_account,
                 'product_name' => $ol->product_name,
                 'basic_amount' => floatval($ol->basic_amount),
             );
         }
         $this->data['offsetable_loans_json'] = $offset_json;
+
+        // Payoff components the worksheet needs so it can rebuild the journal
+        // lines (and the gross-then-waive pairs) without recomputing anything.
+        $this->data['offset_new_amount'] = round(floatval($loaninfo->basic_amount), 2);
+        $this->data['waiver_reason_codes'] = function_exists('loan_waiver_reason_codes') ? loan_waiver_reason_codes() : array();
+        $this->data['can_approve_waiver'] = $this->loan_model->user_can_approve_waiver();
+        $this->data['pending_waivers'] = $existing_release
+            ? $this->loan_model->count_pending_waivers($LID, $pin, $LID)
+            : 0;
         $posted_offsets = $this->input->post('offset_loans');
         if (is_array($posted_offsets)) {
             $this->data['selected_offset_loans'] = $posted_offsets;
@@ -1760,12 +2259,41 @@ $pin = current_user()->PIN;
             $product_id = $_GET['product_id'];
         }
 
+        // Application date range filter. Default (empty) is "all".
+        // Request values win and are copied into the session so the range survives
+        // paging / leaving the page; ?clear=1 resets it back to "all".
+        if ((string) $this->input->get('clear') === '1') {
+            $this->session->unset_userdata(array('loan_viewlist_date_from', 'loan_viewlist_date_to'));
+            redirect(current_lang() . '/loan/loan_viewlist', 'refresh');
+            return;
+        }
+
+        $date_param_sent = array_key_exists('date_from', $_GET) || array_key_exists('date_from', $_POST)
+                || array_key_exists('date_to', $_GET) || array_key_exists('date_to', $_POST);
+        if ($date_param_sent) {
+            $date_from_raw = trim((string) $this->input->get_post('date_from'));
+            $date_to_raw = trim((string) $this->input->get_post('date_to'));
+            $this->session->set_userdata('loan_viewlist_date_from', $date_from_raw);
+            $this->session->set_userdata('loan_viewlist_date_to', $date_to_raw);
+        } else {
+            $date_from_raw = trim((string) $this->session->userdata('loan_viewlist_date_from'));
+            $date_to_raw = trim((string) $this->session->userdata('loan_viewlist_date_to'));
+        }
+        $date_from = ($date_from_raw !== '') ? format_date($date_from_raw) : null;
+        $date_to = ($date_to_raw !== '') ? format_date($date_to_raw) : null;
+
         $suffix_array = array();
         if (!is_null($key) && $key !== '') {
             $suffix_array['key'] = $key;
         }
         if ($status_filter !== null && $status_filter !== '') {
             $suffix_array['status_filter'] = $status_filter;
+        }
+        if ($date_from_raw !== '') {
+            $suffix_array['date_from'] = $date_from_raw;
+        }
+        if ($date_to_raw !== '') {
+            $suffix_array['date_to'] = $date_to_raw;
         }
         if ($product_id !== null && $product_id !== '' && $product_id !== 'all') {
             $suffix_array['product_id'] = $product_id;
@@ -1777,7 +2305,7 @@ $pin = current_user()->PIN;
         }
 
         $config["base_url"] = site_url(current_lang() . '/loan/loan_viewlist/');
-        $config["total_rows"] = $this->loan_model->count_loan($key, $status_filter, $product_id);
+        $config["total_rows"] = $this->loan_model->count_loan($key, $status_filter, $product_id, $date_from, $date_to);
         $config["uri_segment"] = 4;
 
         $config['full_tag_open'] = '<div class="pagination member-pagination">';
@@ -1814,12 +2342,14 @@ $pin = current_user()->PIN;
         $this->data['page_start'] = (int) $page;
         $this->data['per_page'] = (int) $config["per_page"];
 
-        $this->data['loan_list'] = $this->loan_model->search_loan($key, $config["per_page"], $page, $status_filter, $product_id);
+        $this->data['loan_list'] = $this->loan_model->search_loan($key, $config["per_page"], $page, $status_filter, $product_id, $date_from, $date_to);
         $this->data['search_key'] = $key;
 
         $this->data['status_filter'] = $status_filter;
         $this->data['status_list'] = loan_status();
         $this->data['product_id'] = $product_id;
+        $this->data['date_from'] = $date_from_raw;
+        $this->data['date_to'] = $date_to_raw;
         $this->data['loan_products'] = $this->setting_model->loanproduct()->result();
         $this->data['content'] = 'loan/viewloanlist';
         $this->load->view('template', $this->data);
@@ -1917,6 +2447,69 @@ $pin = current_user()->PIN;
         $this->data['ledger_transactions'] = $this->loan_model->get_loan_ledger_transactions($loaninfo->LID);
         $this->data['content'] = 'loan/loan_ledger';
         $this->load->view('template', $this->data);
+    }
+
+    /**
+     * Penalty / interest waiver approvals.
+     *
+     * Every waiver is queued as pending and must be approved by a Manager or
+     * Treasurer (never the person who requested it) before the release payout or
+     * repayment it belongs to may post.
+     */
+    function loan_waiver_list() {
+        $this->data['title'] = lang('loan_waiver_list_title');
+        $this->data['can_approve'] = $this->loan_model->user_can_approve_waiver();
+        $this->data['waivers'] = $this->loan_model->list_pending_waivers(200);
+        $this->data['content'] = 'loan/loan_waiver_list';
+        $this->load->view('template', $this->data);
+    }
+
+    /**
+     * AJAX/POST: approve a pending waiver.
+     */
+    function loan_waiver_approve($id) {
+        $this->output->set_content_type('application/json');
+        if (strtoupper($this->input->server('REQUEST_METHOD')) !== 'POST') {
+            $this->output->set_output(json_encode(array('success' => false, 'warning' => 'Invalid request.')));
+            return;
+        }
+        if (!$this->loan_model->user_can_approve_waiver()) {
+            $this->output->set_output(json_encode(array('success' => false, 'warning' => lang('loan_waiver_not_allowed'))));
+            return;
+        }
+        $result = $this->loan_model->approve_loan_waiver((int) $id);
+        if (empty($result['success'])) {
+            $this->output->set_output(json_encode(array('success' => false, 'warning' => $result['message'])));
+            return;
+        }
+        $this->output->set_output(json_encode(array(
+            'success' => true,
+            'message' => lang('loan_waiver_approved_ok'),
+        )));
+    }
+
+    /**
+     * AJAX/POST: reject a pending waiver with an optional note.
+     */
+    function loan_waiver_reject($id) {
+        $this->output->set_content_type('application/json');
+        if (strtoupper($this->input->server('REQUEST_METHOD')) !== 'POST') {
+            $this->output->set_output(json_encode(array('success' => false, 'warning' => 'Invalid request.')));
+            return;
+        }
+        if (!$this->loan_model->user_can_approve_waiver()) {
+            $this->output->set_output(json_encode(array('success' => false, 'warning' => lang('loan_waiver_not_allowed'))));
+            return;
+        }
+        $result = $this->loan_model->reject_loan_waiver((int) $id, null, (string) $this->input->post('note'));
+        if (empty($result['success'])) {
+            $this->output->set_output(json_encode(array('success' => false, 'warning' => $result['message'])));
+            return;
+        }
+        $this->output->set_output(json_encode(array(
+            'success' => true,
+            'message' => lang('loan_waiver_rejected_ok'),
+        )));
     }
 
     function loan_repayment() {
@@ -2072,6 +2665,8 @@ $pin = current_user()->PIN;
         $this->data['repayment_due'] = $this->loan_model->calculate_repayment_due($LID, $paydate_default);
         $this->data['repayment_due_url'] = site_url(current_lang() . '/loan/loan_repayment_due_preview/' . $loanid);
         $this->data['collection_notice_url'] = site_url(current_lang() . '/loan/loan_collection_notice_print/' . $loanid);
+        $this->data['waiver_reason_codes'] = function_exists('loan_waiver_reason_codes') ? loan_waiver_reason_codes() : array();
+        $this->data['can_approve_waiver'] = $this->loan_model->user_can_approve_waiver();
 
         $this->data['basicinfo'] = $this->member_model->member_basic_info(null, $loaninfo->PID, $loaninfo->member_id)->row();
         $this->data['contactinfo'] = $this->member_model->member_contact($loaninfo->PID);
@@ -2252,7 +2847,27 @@ $pin = current_user()->PIN;
             $cash_account = 1010001;
         }
 
-        $applied = $this->loan_model->apply_loan_repayment($LID, $amount, $paydate, $receipt_no, $cash_account, array('post_gl' => true));
+        // Optional penalty / interest waiver. A reason is mandatory and the
+        // request is queued for Manager/Treasurer approval.
+        $waiver = $this->input->post('waive_penalty') !== null || $this->input->post('waive_interest') !== null
+            ? array(
+                'penalty' => round((float) str_replace(',', '', (string) $this->input->post('waive_penalty')), 2),
+                'interest' => round((float) str_replace(',', '', (string) $this->input->post('waive_interest')), 2),
+                'reason_code' => trim((string) $this->input->post('waiver_reason_code')),
+                'reason_note' => trim((string) $this->input->post('waiver_reason_note')),
+                'require_approval' => true,
+            )
+            : array();
+        if ((!empty($waiver['penalty']) || !empty($waiver['interest'])) && $waiver['reason_code'] === '') {
+            $this->session->set_flashdata('warning', sprintf(lang('loan_waiver_reason_required'), $LID));
+            redirect($redirect_back, 'refresh');
+            return;
+        }
+
+        $applied = $this->loan_model->apply_loan_repayment($LID, $amount, $paydate, $receipt_no, $cash_account, array(
+            'post_gl' => true,
+            'waiver' => $waiver,
+        ));
         if (empty($applied['success'])) {
             $this->session->set_flashdata('warning', !empty($applied['message']) ? $applied['message'] : 'Loan repayment save failed. Please try again.');
             redirect($redirect_back, 'refresh');
@@ -2512,6 +3127,11 @@ $pin = current_user()->PIN;
         $data['loaninfo'] = $loaninfo;
         $data['loanid'] = $loanid;
         $data['can_generate'] = in_array((string) $loaninfo->status, array('4', '5'), TRUE);
+        // Default the first due date to the release date: the application date can be
+        // months old for loans that waited in Pending Release, which would create a
+        // schedule that is already overdue the moment it is generated.
+        $release_date = $this->loan_model->loan_release_date($LID, $loaninfo->PIN);
+        $data['schedule_start_default'] = !empty($release_date) ? $release_date : $loaninfo->applicationdate;
         $this->load->view('loan/loan_repayment_schedule_popup', $data);
     }
 
@@ -2551,11 +3171,23 @@ $pin = current_user()->PIN;
         }
 
         $startdate = format_date(trim((string) $this->input->post('startdate')));
+        $release_date = $this->loan_model->loan_release_date($LID, $pin);
         if ($startdate === '') {
-            $startdate = $loaninfo->applicationdate;
+            // Never fall back to the application date of a loan that has already been
+            // released - that is what makes fresh releases look overdue.
+            $startdate = !empty($release_date) ? $release_date : $loaninfo->applicationdate;
         }
         if (!preg_match('/^[0-9]{4}-[0-9]{1,2}-[0-9]{1,2}$/', $startdate) || strtotime($startdate) === FALSE) {
             $this->session->set_flashdata('warning', lang('loan_schedule_invalid_date'));
+            redirect($redirect);
+            return;
+        }
+        // A first installment cannot fall due before the money actually went out.
+        if (!empty($release_date) && strtotime($startdate) < strtotime($release_date)) {
+            $this->session->set_flashdata('warning', sprintf(
+                lang('loan_schedule_before_release'),
+                date('d M, Y', strtotime($release_date))
+            ));
             redirect($redirect);
             return;
         }

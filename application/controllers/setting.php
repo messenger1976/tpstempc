@@ -821,6 +821,9 @@ class Setting extends CI_Controller {
                 'penalt_grace_days' => $penalt_grace_days,
                 'PIN' => current_user()->PIN
             );
+            $this->setting_model->ensure_loan_product_waiver_account_columns();
+            $productinfo['loan_penalt_waived_account'] = trim((string) $this->input->post('loan_penalt_waived_account'));
+            $productinfo['loan_interest_waived_account'] = trim((string) $this->input->post('loan_interest_waived_account'));
 
 
             $create = $this->setting_model->addloan_product($productinfo, $id);

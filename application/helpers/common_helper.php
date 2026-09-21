@@ -458,6 +458,43 @@ if (!function_exists('loan_disbursement_default_deductions')) {
 
 }
 
+if (!function_exists('loan_waiver_reason_codes')) {
+
+    /**
+     * Reason codes for waiving a loan penalty or interest.
+     * Codes (not free text) so waivers stay analysable; the note is supplementary.
+     *
+     * @return array code => label
+     */
+    function loan_waiver_reason_codes() {
+        return array(
+            'RELOAN' => 'Reloan / Restructuring',
+            'ADJUSTMENT' => 'Data entry / System correction',
+            'MEDICAL' => 'Medical emergency',
+            'BEREAVEMENT' => 'Death in the family',
+            'DISASTER' => 'Calamity / Disaster',
+            'UNEMPLOYMENT' => 'Loss of job / Suspension',
+            'BOARD_RES' => 'Board resolution',
+            'GOODWILL' => 'Goodwill / Loyal member',
+            'OTHER' => 'Others (see note)',
+        );
+    }
+
+}
+
+if (!function_exists('loan_waiver_reason_label')) {
+
+    /**
+     * Human label for a waiver reason code, falling back to the raw code.
+     */
+    function loan_waiver_reason_label($code) {
+        $codes = loan_waiver_reason_codes();
+        $code = trim((string) $code);
+        return isset($codes[$code]) ? $codes[$code] : $code;
+    }
+
+}
+
 
 if (!function_exists("format_date")) {
 

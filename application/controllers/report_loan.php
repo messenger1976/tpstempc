@@ -59,6 +59,14 @@ class Report_Loan extends CI_Controller {
         $this->load->view('template', $this->data);
     }
 
+    function loan_penalty_review() {
+        $this->data['title'] = 'Penalty recalibration review';
+        $this->data['review'] = $this->loan_model->penalty_recalibration_review(1000);
+        $this->data['prorate_enabled'] = (!defined('TAPSTEMCO_PENALTY_PRORATE') || TAPSTEMCO_PENALTY_PRORATE);
+        $this->data['content'] = 'report/loan/loan_penalty_review';
+        $this->load->view('template', $this->data);
+    }
+
     function loan_statement() {
         $this->data['title'] = lang('loan_statement');
         $this->form_validation->set_rules('loan_id', lang('loan_id'), 'required');

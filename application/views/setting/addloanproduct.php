@@ -29,6 +29,8 @@ $system_grace = defined('MAX_NUMBER_DAYS_OVERDUE_PENALT') ? (int) MAX_NUMBER_DAY
 $selected_principle = $product ? $product->loan_principle_account : set_value('loan_principle_account');
 $selected_interest = $product ? $product->loan_interest_account : set_value('loan_interest_account');
 $selected_penalt = $product ? $product->loan_penalt_account : set_value('loan_penalt_account');
+$selected_penalt_waived = $product && isset($product->loan_penalt_waived_account) ? $product->loan_penalt_waived_account : set_value('loan_penalt_waived_account');
+$selected_interest_waived = $product && isset($product->loan_interest_waived_account) ? $product->loan_interest_waived_account : set_value('loan_interest_waived_account');
 $selected_interval = $product ? $product->interval : set_value('interval');
 $selected_interest_method = $product ? $product->interest_method : set_value('interest_method');
 $selected_penalt_method = $product ? $product->penalt_method : set_value('penalt_method');
@@ -403,6 +405,36 @@ $contribution_times = $product ? $product->loan_security_contribution_times : se
                                 <?php $this->load->view('finance/partials/coa_select_options', array('account_list' => $account_list, 'selected_account' => $selected_penalt)); ?>
                             </select>
                             <?php echo form_error('loan_penalt_account'); ?>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="row">
+                <div class="col-md-12">
+                    <div class="form-group">
+                        <label class="col-lg-2 control-label"><?php echo lang('loanproduct_account_penalt_waived'); ?> :</label>
+                        <div class="col-lg-10">
+                            <select name="loan_penalt_waived_account" class="form-control account-select">
+                                <option value=""><?php echo lang('select_default_text'); ?></option>
+                                <?php $this->load->view('finance/partials/coa_select_options', array('account_list' => $account_list, 'selected_account' => $selected_penalt_waived)); ?>
+                            </select>
+                            <span class="help-block"><?php echo lang('loanproduct_account_penalt_waived_help'); ?></span>
+                            <?php echo form_error('loan_penalt_waived_account'); ?>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="row">
+                <div class="col-md-12">
+                    <div class="form-group">
+                        <label class="col-lg-2 control-label"><?php echo lang('loanproduct_account_interest_waived'); ?> :</label>
+                        <div class="col-lg-10">
+                            <select name="loan_interest_waived_account" class="form-control account-select">
+                                <option value=""><?php echo lang('select_default_text'); ?></option>
+                                <?php $this->load->view('finance/partials/coa_select_options', array('account_list' => $account_list, 'selected_account' => $selected_interest_waived)); ?>
+                            </select>
+                            <span class="help-block"><?php echo lang('loanproduct_account_interest_waived_help'); ?></span>
+                            <?php echo form_error('loan_interest_waived_account'); ?>
                         </div>
                     </div>
                 </div>

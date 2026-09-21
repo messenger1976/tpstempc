@@ -294,6 +294,24 @@ $this->db->where('PIN',  current_user()->PIN);
     }
 
     /**
+     * Ensure optional loan_product.penalt_period_days exists.
+     * 0 = charge the penalty once per overdue installment; N>0 = per N days
+     * (30 = monthly, 7 = weekly, 1 = daily); NULL = system default
+     * (TAPSTEMCO_PENALTY_PERIOD_DAYS).
+     */
+    function ensure_loan_product_penalt_period_column() {
+        if (!$this->db->table_exists('loan_product')) {
+            return false;
+        }
+        if ($this->db->query("SHOW COLUMNS FROM loan_product LIKE 'penalt_period_days'")->row()) {
+            return true;
+        }
+        return (bool) $this->db->query(
+            "ALTER TABLE loan_product ADD COLUMN penalt_period_days INT NULL DEFAULT NULL COMMENT 'Penalty accrual period: 0 = once per installment, N = per N days (30 = monthly); NULL = system default'"
+        );
+    }
+
+    /**
      * Ensure the waiver contra accounts exist on loan_product (idempotent).
      * They are debited when a penalty / interest waiver is posted
      * "gross then waive" so the concession stays visible in the books.
@@ -317,6 +335,7 @@ $this->db->where('PIN',  current_user()->PIN);
     
     function addloan_product($data, $id = null) {
         $this->ensure_loan_product_penalt_grace_days_column();
+        $this->ensure_loan_product_penalt_period_column();
         $this->ensure_loan_product_waiver_account_columns();
         if (!is_null($id)) {
             return $this->db->update('loan_product', $data, array('id' => $id));
@@ -328,6 +347,7 @@ $this->db->where('PIN',  current_user()->PIN);
     
     function loanproduct($id=null){
         $this->ensure_loan_product_penalt_grace_days_column();
+        $this->ensure_loan_product_penalt_period_column();
         $this->ensure_loan_product_waiver_account_columns();
          $this->db->where('PIN',  current_user()->PIN);
         if(!is_null($id)){

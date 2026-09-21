@@ -71,6 +71,7 @@ if ($basicinfo) {
 $default_debit = isset($default_debit_account) ? $default_debit_account : '';
 $loan_credit = isset($loan_credit_account) ? $loan_credit_account : '';
 $account_list = isset($account_list) ? $account_list : array();
+$repayment_lines = isset($repayment_lines) && is_array($repayment_lines) ? $repayment_lines : array();
 $payment_methods = isset($payment_methods) ? $payment_methods : array();
 $default_payment_method_id = isset($default_payment_method_id) ? $default_payment_method_id : '';
 
@@ -79,6 +80,39 @@ $suggested = $due && isset($due->suggested_amount) ? (float) $due->suggested_amo
 ?>
 
 <style type="text/css">
+/* Line Items: spreadsheet-style cells (borderless, underlined amounts) */
+#lineItemsTable { table-layout: fixed; }
+#lineItemsTable tbody .line-item > td { vertical-align: middle; }
+#lineItemsTable tbody .line-item .form-control {
+    border: 0;
+    border-bottom: 1px solid #dfe4ea;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    height: 30px;
+    padding: 2px 6px;
+}
+#lineItemsTable tbody .line-item .form-control:focus {
+    border-bottom-color: #1ab394;
+    box-shadow: none;
+}
+#lineItemsTable tbody .line-item .form-control.is-zero {
+    color: #b8bfc7;
+    border-bottom-style: dashed;
+}
+#lineItemsTable tbody .line-item .select2-container--default .select2-selection--single {
+    border: 0;
+    border-bottom: 1px solid #dfe4ea;
+    border-radius: 0;
+    background: transparent;
+    height: 30px;
+}
+#lineItemsTable tbody .line-item .select2-container--default .select2-selection--single .select2-selection__rendered {
+    line-height: 30px;
+    padding-left: 6px;
+}
+#lineItemsTable tbody .line-item .select2-container--default .select2-selection--single .select2-selection__arrow { height: 28px; }
+#lineItemsTable tfoot input[readonly] { background: #f5f6f8; }
 .datepicker-dropdown,.datepicker{z-index:9999!important;width:auto;min-width:0;}
 .datepicker-dropdown.dropdown-menu{background:#fff;border:1px solid #e7eaec;box-shadow:0 2px 8px rgba(0,0,0,0.12);padding:8px;width:auto;min-width:220px;max-width:280px;}
 .datepicker table{width:auto;margin:0;table-layout:fixed;}
@@ -606,7 +640,8 @@ $suggested = $due && isset($due->suggested_amount) ? (float) $due->suggested_amo
                             <th><?php echo lang('loan_installment'); ?></th>
                             <th><?php echo lang('due_date'); ?></th>
                             <th><?php echo lang('index_status_th'); ?></th>
-                            <th class="text-right"><?php echo lang('loan_installment_amount'); ?></th>
+                            <th class="text-right"><?php echo lang('loan_repay_principal_amount'); ?></th>
+                            <th class="text-right"><?php echo lang('loan_ledger_interest'); ?></th>
                             <th class="text-right"><?php echo lang('loan_ledger_penalty'); ?></th>
                             <th class="text-right"><?php echo lang('loan_repay_penalty_months'); ?></th>
                             <th class="text-right"><?php echo lang('total'); ?></th>
@@ -619,32 +654,34 @@ $suggested = $due && isset($due->suggested_amount) ? (float) $due->suggested_amo
                                     <td><?php echo (int) $item->installment; ?></td>
                                     <td><?php echo htmlspecialchars(format_date($item->due_date, FALSE)); ?></td>
                                     <td><?php echo $item->status === 'overdue' ? lang('loan_repay_status_overdue') : lang('loan_repay_status_due'); ?></td>
-                                    <td class="text-right"><?php echo number_format((float) $item->installment_amount, 2); ?></td>
-                                    <td class="text-right"><?php echo number_format((float) $item->penalty, 2); ?></td>
+                                    <td class="text-right"><?php echo number_format(isset($item->principle) ? (float) $item->principle : 0, 2); ?></td>
+                                    <td class="text-right"><?php echo number_format(isset($item->interest) ? (float) $item->interest : 0, 2); ?></td>
+                                    <td class="text-right"><?php echo ((float) $item->penalty > 0) ? number_format((float) $item->penalty, 2) : ''; ?></td>
                                     <td class="text-right"><?php echo (int) $item->penalty_months; ?></td>
                                     <td class="text-right"><strong><?php echo number_format((float) $item->total, 2); ?></strong></td>
                                 </tr>
                             <?php endforeach; ?>
                         <?php else: ?>
                             <tr id="repaymentDueEmptyRow">
-                                <td colspan="7" class="text-muted"><?php echo lang('loan_repay_nothing_due'); ?></td>
+                                <td colspan="8" class="text-muted"><?php echo lang('loan_repay_nothing_due'); ?></td>
                             </tr>
                         <?php endif; ?>
                     </tbody>
                     <tfoot>
                         <tr>
                             <th colspan="3" class="text-right"><?php echo lang('loan_repay_total_due'); ?></th>
-                            <th class="text-right" id="dueTotalInstallments"><?php echo number_format($due ? (float) $due->total_installments : 0, 2); ?></th>
+                            <th class="text-right" id="dueTotalPrinciple"><?php echo number_format(($due && isset($due->total_principle)) ? (float) $due->total_principle : 0, 2); ?></th>
+                            <th class="text-right" id="dueTotalInterest"><?php echo number_format(($due && isset($due->total_interest)) ? (float) $due->total_interest : 0, 2); ?></th>
                             <th class="text-right" id="dueTotalPenalty"><?php echo number_format($due ? (float) $due->total_penalty : 0, 2); ?></th>
                             <th></th>
                             <th class="text-right" id="dueTotalDue"><?php echo number_format($due ? (float) $due->total_due : 0, 2); ?></th>
                         </tr>
                         <tr>
-                            <td colspan="6" class="text-right"><?php echo lang('loan_repay_carry_balance'); ?></td>
+                            <td colspan="7" class="text-right"><?php echo lang('loan_repay_carry_balance'); ?></td>
                             <td class="text-right" id="dueCarry"><?php echo number_format($due ? (float) $due->carry_balance : 0, 2); ?></td>
                         </tr>
                         <tr style="background:#e8f8f5;">
-                            <th colspan="6" class="text-right"><?php echo lang('loan_repay_net_due'); ?> / <?php echo lang('loan_repay_suggested'); ?></th>
+                            <th colspan="7" class="text-right"><?php echo lang('loan_repay_net_due'); ?> / <?php echo lang('loan_repay_suggested'); ?></th>
                             <th class="text-right" id="dueNetDue"><?php echo number_format($suggested, 2); ?></th>
                         </tr>
                     </tfoot>
@@ -673,29 +710,46 @@ $suggested = $due && isset($due->suggested_amount) ? (float) $due->suggested_amo
                 <table id="lineItemsTable" class="table table-bordered" style="margin-bottom:0;">
                     <thead>
                         <tr>
-                            <th style="width: 30%;"><?php echo lang('cash_receipt_account'); ?> <span class="required">*</span></th>
-                            <th style="width: 30%;"><?php echo lang('cash_receipt_line_description'); ?></th>
+                            <th style="width: 34%;"><?php echo lang('cash_receipt_account'); ?> <span class="required">*</span></th>
+                            <th style="width: 26%;"><?php echo lang('cash_receipt_line_description'); ?></th>
                             <th style="width: 15%;"><?php echo lang('journalentry_debit'); ?></th>
                             <th style="width: 15%;"><?php echo lang('journalentry_credit'); ?></th>
                             <th style="width: 10%;"></th>
                         </tr>
                     </thead>
                     <tbody>
-                        <tr class="line-item loan-repay-debit-row" data-row-type="debit">
+                        <?php
+                        // Accounting Entries are rendered from the same resolver the Cash
+                        // Receipt worksheet uses: the cash/bank debit, then the loan
+                        // principal, interest and penalty income credits (and waiver
+                        // contra pairs) - so the GL mirrors the repayment sub-ledger.
+                        $render_lines = !empty($repayment_lines) ? $repayment_lines : array(
+                            array('account' => $default_debit, 'debit' => '', 'credit' => '', 'description' => '', 'role' => 'cash'),
+                            array('account' => $loan_credit, 'debit' => '', 'credit' => '', 'description' => lang('loan_repayment'), 'role' => 'principal'),
+                        );
+                        foreach ($render_lines as $render_line):
+                            $line_role = isset($render_line['role']) ? $render_line['role'] : '';
+                            $line_account = isset($render_line['account']) ? $render_line['account'] : '';
+                            $line_desc = isset($render_line['description']) ? $render_line['description'] : '';
+                            $line_debit = (isset($render_line['debit']) && $render_line['debit'] !== '') ? round((float) $render_line['debit'], 2) : 0;
+                            $line_credit = (isset($render_line['credit']) && $render_line['credit'] !== '') ? round((float) $render_line['credit'], 2) : 0;
+                        ?>
+                        <tr class="line-item" data-role="<?php echo htmlspecialchars($line_role); ?>">
                             <td>
+                                <input type="hidden" name="line_role[]" value="<?php echo htmlspecialchars($line_role); ?>"/>
                                 <select class="form-control account-select" name="account[]">
                                     <option value=""><?php echo lang('select_default_text'); ?></option>
-                                    <?php $this->load->view('finance/partials/coa_select_options', array('account_list' => $account_list, 'selected_account' => $default_debit)); ?>
+                                    <?php $this->load->view('finance/partials/coa_select_options', array('account_list' => $account_list, 'selected_account' => $line_account)); ?>
                                 </select>
                             </td>
                             <td>
-                                <input type="text" name="line_description[]" class="form-control" placeholder="<?php echo htmlspecialchars(lang('cash_receipt_line_description')); ?>" value=""/>
+                                <input type="text" name="line_description[]" class="form-control" value="<?php echo htmlspecialchars($line_desc); ?>"/>
                             </td>
                             <td>
-                                <input type="number" step="0.01" min="0" name="debit[]" class="form-control debit-input loan-repay-amount-debit" placeholder="0.00" title="<?php echo htmlspecialchars(lang('loan_repay_amount')); ?>"/>
+                                <input type="number" step="0.01" min="0" name="debit[]" class="form-control debit-input<?php echo $line_credit > 0 ? ' is-zero' : ''; ?>" placeholder="0.00" value="<?php echo $line_credit > 0 ? '0.00' : ($line_debit > 0 ? number_format($line_debit, 2, '.', '') : ''); ?>"<?php echo $line_credit > 0 ? ' readonly="readonly" tabindex="-1"' : ''; ?>/>
                             </td>
                             <td>
-                                <input type="number" step="0.01" min="0" name="credit[]" class="form-control credit-input" placeholder="0.00" value="0" readonly tabindex="-1"/>
+                                <input type="number" step="0.01" min="0" name="credit[]" class="form-control credit-input<?php echo $line_debit > 0 ? ' is-zero' : ''; ?>" placeholder="0.00" value="<?php echo $line_debit > 0 ? '0.00' : ($line_credit > 0 ? number_format($line_credit, 2, '.', '') : ''); ?>"<?php echo $line_debit > 0 ? ' readonly="readonly" tabindex="-1"' : ''; ?>/>
                             </td>
                             <td>
                                 <button type="button" class="btn btn-danger btn-xs remove-line" title="<?php echo lang('delete'); ?>">
@@ -703,28 +757,7 @@ $suggested = $due && isset($due->suggested_amount) ? (float) $due->suggested_amo
                                 </button>
                             </td>
                         </tr>
-                        <tr class="line-item loan-repay-credit-row" data-row-type="credit">
-                            <td>
-                                <select class="form-control account-select" name="account[]">
-                                    <option value=""><?php echo lang('select_default_text'); ?></option>
-                                    <?php $this->load->view('finance/partials/coa_select_options', array('account_list' => $account_list, 'selected_account' => $loan_credit)); ?>
-                                </select>
-                            </td>
-                            <td>
-                                <input type="text" name="line_description[]" class="form-control" value="<?php echo htmlspecialchars(lang('loan_repayment')); ?>"/>
-                            </td>
-                            <td>
-                                <input type="number" step="0.01" min="0" name="debit[]" class="form-control debit-input" placeholder="0.00" value="0" readonly tabindex="-1"/>
-                            </td>
-                            <td>
-                                <input type="number" step="0.01" min="0" name="credit[]" class="form-control credit-input loan-repay-amount-credit" placeholder="0.00" title="<?php echo htmlspecialchars(lang('loan_repay_amount')); ?>"/>
-                            </td>
-                            <td>
-                                <button type="button" class="btn btn-danger btn-xs remove-line" title="<?php echo lang('delete'); ?>">
-                                    <i class="fa fa-trash"></i>
-                                </button>
-                            </td>
-                        </tr>
+                        <?php endforeach; ?>
                     </tbody>
                     <tfoot>
                         <tr>
@@ -743,6 +776,35 @@ $suggested = $due && isset($due->suggested_amount) ? (float) $due->suggested_amo
                         </tr>
                     </tfoot>
                 </table>
+            </div>
+            <?php // Row template for the JS that rebuilds the split (amount, date, payment
+                  // method or waiver changed). Outside the table so it is never counted. ?>
+            <div id="lineItemTemplate" style="display:none;">
+                <table><tbody>
+                    <tr class="line-item" data-role="">
+                        <td>
+                            <input type="hidden" name="line_role[]" value=""/>
+                            <select class="form-control account-select" name="account[]">
+                                <option value=""><?php echo lang('select_default_text'); ?></option>
+                                <?php $this->load->view('finance/partials/coa_select_options', array('account_list' => $account_list, 'selected_account' => '')); ?>
+                            </select>
+                        </td>
+                        <td>
+                            <input type="text" name="line_description[]" class="form-control" value=""/>
+                        </td>
+                        <td>
+                            <input type="number" step="0.01" min="0" name="debit[]" class="form-control debit-input" placeholder="0.00" value=""/>
+                        </td>
+                        <td>
+                            <input type="number" step="0.01" min="0" name="credit[]" class="form-control credit-input" placeholder="0.00" value=""/>
+                        </td>
+                        <td>
+                            <button type="button" class="btn btn-danger btn-xs remove-line" title="<?php echo lang('delete'); ?>">
+                                <i class="fa fa-trash"></i>
+                            </button>
+                        </td>
+                    </tr>
+                </tbody></table>
             </div>
             <button type="button" class="btn btn-primary" id="addLineItem" style="margin-top:12px;">
                 <i class="fa fa-plus"></i> <?php echo lang('add_row'); ?>
@@ -819,6 +881,8 @@ $suggested = $due && isset($due->suggested_amount) ? (float) $due->suggested_amo
 <script src="<?php echo base_url(); ?>assets/js/plugins/select2/select2.full.min.js"></script>
 <script>
 var loanRepayPaymentMethodAccounts = <?php echo json_encode(isset($payment_method_gl_accounts) ? $payment_method_gl_accounts : array()); ?>;
+var loanRepayCashAccount = <?php echo json_encode($default_debit); ?>;
+var loanRepayPrincipalAccount = <?php echo json_encode($loan_credit); ?>;
 var loanRepayDueUrl = <?php echo json_encode(isset($repayment_due_url) ? $repayment_due_url : ''); ?>;
 var loanCollectionNoticeUrl = <?php echo json_encode(isset($collection_notice_url) ? $collection_notice_url : ''); ?>;
 var loanRepaySuggestedAmount = <?php echo json_encode(isset($suggested) ? round((float) $suggested, 2) : 0); ?>;
@@ -888,22 +952,122 @@ var loanRepayDueLabels = {
                 }
             }
 
-            function cloneLineItem() {
-                var $first = $('#lineItemsTable tbody .line-item:first');
-                destroyAccountSelect($first.find('.account-select'));
-                var newRow = $first.clone();
-                newRow.find('.select2-container').remove();
-                newRow.removeClass('loan-repay-debit-row loan-repay-credit-row');
-                newRow.removeAttr('data-row-type');
-                newRow.find('input').val('').prop('readonly', false).removeAttr('tabindex');
-                newRow.find('select').val('');
-                newRow.find('.debit-input, .credit-input')
-                    .removeClass('loan-repay-amount-debit loan-repay-amount-credit')
-                    .attr('placeholder', '0.00');
-                $('#lineItemsTable tbody').append(newRow);
-                initAccountSelect($first.find('.account-select'));
-                initAccountSelect(newRow.find('.account-select'));
-                return newRow;
+            function buildRepaymentRow(line) {
+                var $row = $('#lineItemTemplate tbody tr.line-item').first().clone();
+                // Cloning must never carry a select2 widget or its generated ids.
+                $row.find('.select2-container').remove();
+                $row.find('[data-select2-id]').removeAttr('data-select2-id');
+                $row.find('select.account-select').removeClass('select2-hidden-accessible');
+                var role = (line && line.role) ? String(line.role) : '';
+                $row.attr('data-role', role);
+                $row.find('input[name="line_role[]"]').val(role);
+                $row.find('input[name="line_description[]"]').val((line && line.description) ? String(line.description) : '');
+                var debit = (line && line.debit !== '' && line.debit !== undefined && line.debit !== null) ? parseFloat(line.debit) : 0;
+                var credit = (line && line.credit !== '' && line.credit !== undefined && line.credit !== null) ? parseFloat(line.credit) : 0;
+                if (isNaN(debit)) debit = 0;
+                if (isNaN(credit)) credit = 0;
+                // Only one side of a line carries an amount: the other one shows a
+                // greyed, read-only 0.00 (matches the paper-style grid).
+                var $debitInput = $row.find('input[name="debit[]"]');
+                var $creditInput = $row.find('input[name="credit[]"]');
+                if (credit > 0 && debit <= 0) {
+                    $debitInput.val('0.00').addClass('is-zero').prop('readonly', true).attr('tabindex', '-1');
+                    $creditInput.val(credit.toFixed(2)).removeClass('is-zero').prop('readonly', false).removeAttr('tabindex');
+                } else if (debit > 0 && credit <= 0) {
+                    $creditInput.val('0.00').addClass('is-zero').prop('readonly', true).attr('tabindex', '-1');
+                    $debitInput.val(debit.toFixed(2)).removeClass('is-zero').prop('readonly', false).removeAttr('tabindex');
+                } else {
+                    $debitInput.val(debit > 0 ? debit.toFixed(2) : '').removeClass('is-zero').prop('readonly', false).removeAttr('tabindex');
+                    $creditInput.val(credit > 0 ? credit.toFixed(2) : '').removeClass('is-zero').prop('readonly', false).removeAttr('tabindex');
+                }
+                $row.find('select.account-select').val((line && line.account) ? String(line.account) : '');
+                return $row;
+            }
+
+            // Fallback when the split cannot be resolved: cash debit + principal credit.
+            function fallbackRepaymentLines(amount) {
+                var v = parseFloat(amount);
+                if (isNaN(v) || v < 0) v = 0;
+                var s = v > 0 ? v.toFixed(2) : '';
+                return [
+                    { role: 'cash', account: loanRepayCashAccount, debit: s, credit: '', description: '' },
+                    { role: 'principal', account: loanRepayPrincipalAccount, debit: '', credit: s, description: '' }
+                ];
+            }
+
+            // Rebuild the Accounting Entries: cash/bank debit + loan principal,
+            // interest and penalty income credits (+ waiver contra pairs).
+            function renderRepaymentLines(lines, amount) {
+                var $tbody = $('#lineItemsTable tbody');
+                $tbody.find('.account-select').each(function(){ destroyAccountSelect($(this)); });
+                $tbody.empty();
+                var rows = (lines && lines.length) ? lines.slice() : fallbackRepaymentLines(amount);
+                // The worksheet omits the cash line when the payment method has no GL
+                // account: add it back so the grid stays balanced and postable.
+                var hasDebit = false;
+                $.each(rows, function(_, line){ if (parseFloat(line.debit) > 0) { hasDebit = true; } });
+                if (!hasDebit) {
+                    var cashAmount = parseFloat(amount);
+                    if (isNaN(cashAmount) || cashAmount <= 0) {
+                        cashAmount = 0;
+                        $.each(rows, function(_, line){ cashAmount += parseFloat(line.credit) || 0; });
+                        cashAmount = Math.round(cashAmount * 100) / 100;
+                    }
+                    rows.unshift({
+                        role: 'cash',
+                        account: loanRepayCashAccount,
+                        debit: cashAmount > 0 ? cashAmount.toFixed(2) : '',
+                        credit: '',
+                        description: ''
+                    });
+                }
+                $.each(rows, function(_, line){ $tbody.append(buildRepaymentRow(line)); });
+                $tbody.find('.account-select').each(function(){ initAccountSelect($(this)); });
+                updateRemoveButtons();
+                calculateTotals();
+            }
+
+            function currentRepaymentCashAmount() {
+                var v = $('#lineItemsTable tbody tr[data-role="cash"] .debit-input').first().val();
+                if (v === undefined || v === null || v === '') {
+                    v = $('#lineItemsTable tbody .debit-input').first().val();
+                }
+                return parseFloat(v) || 0;
+            }
+
+            function collectRepaymentWaiver() {
+                return {
+                    penalty: parseFloat($('#waive_penalty').val()) || 0,
+                    interest: parseFloat($('#waive_interest').val()) || 0
+                };
+            }
+
+            // Ask the server how the payment splits at this amount / date / payment
+            // method / waiver, then redraw the grid with those lines.
+            function refreshRepaymentLines(amount) {
+                if (!loanRepayDueUrl) { return; }
+                var params = {
+                    repaydate: $('input[name="repaydate"]').val(),
+                    payment_method: $('#payment_method').val(),
+                    amount: (amount === undefined || amount === null) ? currentRepaymentCashAmount() : amount
+                };
+                var waiver = collectRepaymentWaiver();
+                if (waiver.penalty > 0) { params.waive_penalty = waiver.penalty.toFixed(2); }
+                if (waiver.interest > 0) { params.waive_interest = waiver.interest.toFixed(2); }
+                $.getJSON(loanRepayDueUrl, params).done(function(res){
+                    if (res && res.success) {
+                        renderRepaymentLines(res.lines, params.amount);
+                    }
+                });
+            }
+
+            var repaymentLineTimer = null;
+            function scheduleRepaymentLineRefresh() {
+                if (repaymentLineTimer) { clearTimeout(repaymentLineTimer); }
+                repaymentLineTimer = setTimeout(function(){
+                    repaymentLineTimer = null;
+                    refreshRepaymentLines();
+                }, 150);
             }
 
             function ensureBootstrapDP(cb){
@@ -946,26 +1110,29 @@ var loanRepayDueLabels = {
             ensureBootstrapDP(initPicker);
 
             updateRemoveButtons();
-            $('.account-select').each(function(){ initAccountSelect($(this)); });
+            $('#lineItemsTable .account-select').each(function(){ initAccountSelect($(this)); });
 
             function formatMoney(n){
                 var x = parseFloat(n);
                 if (isNaN(x)) x = 0;
                 return x.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
             }
+            // Footer total for a component: prefer the server total, fall back to the rows.
+            function dueTotalOf(due, itemField, totalField) {
+                if (due && due[totalField] != null) {
+                    return parseFloat(due[totalField]) || 0;
+                }
+                var t = 0;
+                $.each((due && due.items) ? due.items : [], function(_, item){
+                    t += parseFloat(item[itemField]) || 0;
+                });
+                return t;
+            }
             function formatDateDisplay(ymd){
                 if (!ymd || ymd.indexOf('-') < 0) return ymd || '';
                 var p = ymd.split('-');
                 if (p.length !== 3) return ymd;
                 return p[2] + '-' + p[1] + '-' + p[0];
-            }
-            function setLineAmounts(amount){
-                var v = parseFloat(amount);
-                if (isNaN(v) || v < 0) v = 0;
-                var s = v.toFixed(2);
-                $('#lineItemsTable tbody .loan-repay-debit-row').first().find('.loan-repay-amount-debit').val(s);
-                $('#lineItemsTable tbody .loan-repay-credit-row').first().find('.loan-repay-amount-credit').val(s);
-                calculateTotals();
             }
             function renderDue(due){
                 if (!due) return;
@@ -976,7 +1143,7 @@ var loanRepayDueLabels = {
                 $('#repaymentDueExplanation').text(expl.replace('%s', grace).replace('%s', pct));
                 var $body = $('#repaymentDueBody').empty();
                 if (!due.items || !due.items.length) {
-                    $body.append('<tr><td colspan="7" class="text-muted">' + loanRepayDueLabels.nothing_due + '</td></tr>');
+                    $body.append('<tr><td colspan="8" class="text-muted">' + loanRepayDueLabels.nothing_due + '</td></tr>');
                 } else {
                     $.each(due.items, function(_, item){
                         var status = item.status === 'overdue' ? loanRepayDueLabels.status_overdue : loanRepayDueLabels.status_due;
@@ -986,15 +1153,17 @@ var loanRepayDueLabels = {
                             '<td>' + item.installment + '</td>' +
                             '<td>' + formatDateDisplay(item.due_date) + '</td>' +
                             '<td>' + status + '</td>' +
-                            '<td class="text-right">' + formatMoney(item.installment_amount) + '</td>' +
-                            '<td class="text-right">' + formatMoney(item.penalty) + '</td>' +
+                            '<td class="text-right">' + formatMoney(item.principle) + '</td>' +
+                            '<td class="text-right">' + formatMoney(item.interest) + '</td>' +
+                            '<td class="text-right">' + (parseFloat(item.penalty) > 0 ? formatMoney(item.penalty) : '') + '</td>' +
                             '<td class="text-right">' + (item.penalty_months || 0) + '</td>' +
                             '<td class="text-right"><strong>' + formatMoney(item.total) + '</strong></td>' +
                             '</tr>'
                         );
                     });
                 }
-                $('#dueTotalInstallments').text(formatMoney(due.total_installments));
+                $('#dueTotalPrinciple').text(formatMoney(dueTotalOf(due, 'principle', 'total_principle')));
+                $('#dueTotalInterest').text(formatMoney(dueTotalOf(due, 'interest', 'total_interest')));
                 $('#dueTotalPenalty').text(formatMoney(due.total_penalty));
                 $('#dueTotalDue').text(formatMoney(due.total_due));
                 $('#dueCarry').text(formatMoney(due.carry_balance));
@@ -1004,20 +1173,28 @@ var loanRepayDueLabels = {
             function refreshRepaymentDue(autofill){
                 if (!loanRepayDueUrl) return;
                 var repaydate = $('input[name="repaydate"]').val();
+                var params = {
+                    repaydate: repaydate,
+                    payment_method: $('#payment_method').val()
+                };
+                if (!autofill) { params.amount = currentRepaymentCashAmount(); }
+                var waiver = collectRepaymentWaiver();
+                if (waiver.penalty > 0) { params.waive_penalty = waiver.penalty.toFixed(2); }
+                if (waiver.interest > 0) { params.waive_interest = waiver.interest.toFixed(2); }
                 if (dueRequest && dueRequest.abort) dueRequest.abort();
-                dueRequest = $.getJSON(loanRepayDueUrl, { repaydate: repaydate })
+                dueRequest = $.getJSON(loanRepayDueUrl, params)
                     .done(function(res){
                         if (res && res.success && res.due) {
                             renderDue(res.due);
                             if (autofill) {
-                                setLineAmounts(res.due.suggested_amount);
+                                renderRepaymentLines(res.lines, res.due.suggested_amount);
                             }
                         }
                     });
             }
 
             $('#btnUseSuggestedAmount').on('click', function(){
-                setLineAmounts(loanRepaySuggestedAmount);
+                refreshRepaymentLines(loanRepaySuggestedAmount);
             });
 
             function updateCollectionNoticeLink(){
@@ -1047,11 +1224,6 @@ var loanRepayDueLabels = {
                 updateCollectionNoticeLink();
             });
 
-            // Prefill line amounts with suggested due on first load
-            if (loanRepaySuggestedAmount > 0) {
-                setLineAmounts(loanRepaySuggestedAmount);
-            }
-
             // Show/hide cheque details based on payment method (by option data or text)
             $('#payment_method').on('change', function(){
                 var opt = $(this).find('option:selected');
@@ -1064,45 +1236,27 @@ var loanRepayDueLabels = {
             // Trigger once on load
             $('#payment_method').trigger('change');
 
-            // Auto-fill: mirror amount between first debit row and first credit row only
-            $(document).on('keyup change', '.loan-repay-amount-debit', function(){
-                var $firstDebitRow = $('#lineItemsTable tbody .loan-repay-debit-row').first();
-                if ($(this).closest('tr').get(0) !== $firstDebitRow.get(0)) return;
-                var v = $(this).val();
-                $('#lineItemsTable tbody .loan-repay-credit-row').first().find('.loan-repay-amount-credit').val(v);
-                calculateTotals();
-            });
-            $(document).on('keyup change', '.loan-repay-amount-credit', function(){
-                var $firstCreditRow = $('#lineItemsTable tbody .loan-repay-credit-row').first();
-                if ($(this).closest('tr').get(0) !== $firstCreditRow.get(0)) return;
-                var v = $(this).val();
-                $('#lineItemsTable tbody .loan-repay-debit-row').first().find('.loan-repay-amount-debit').val(v);
-                calculateTotals();
-            });
+            // The amount collected (cash/bank debit) drives the split: editing it, the
+            // waiver or the payment method re-derives principal / interest / penalty.
+            $(document).on('change', '#lineItemsTable tbody tr[data-role="cash"] .debit-input', scheduleRepaymentLineRefresh);
+            $(document).on('change', '#waive_penalty, #waive_interest', scheduleRepaymentLineRefresh);
 
-            // When payment method changes, update the first line's account to that method's GL account
+            // When payment method changes, the cash/bank line follows that method's GL account
             $('#payment_method').on('change', function(){
-                var pmId = $(this).val();
-                if (typeof loanRepayPaymentMethodAccounts !== 'undefined' && loanRepayPaymentMethodAccounts[pmId]) {
-                    var account = loanRepayPaymentMethodAccounts[pmId];
-                    if (account) {
-                        setAccountValue(
-                            $('#lineItemsTable tbody .loan-repay-debit-row').first().find('.account-select'),
-                            String(account)
-                        );
-                    }
-                }
+                refreshRepaymentLines();
             });
 
             // Add line item
             $('#addLineItem').on('click', function(){
-                cloneLineItem();
+                var $row = buildRepaymentRow({});
+                $('#lineItemsTable tbody').append($row);
+                initAccountSelect($row.find('.account-select'));
                 updateRemoveButtons();
                 calculateTotals();
             });
 
             $(document).on('click', '.remove-line', function(){
-                if ($('.line-item').length > 1) {
+                if ($('#lineItemsTable tbody .line-item').length > 1) {
                     var $row = $(this).closest('tr');
                     destroyAccountSelect($row.find('.account-select'));
                     $row.remove();
@@ -1112,8 +1266,8 @@ var loanRepayDueLabels = {
             });
 
             function updateRemoveButtons(){
-                var count = $('.line-item').length;
-                $('.remove-line').prop('disabled', count <= 1);
+                var count = $('#lineItemsTable tbody .line-item').length;
+                $('#lineItemsTable .remove-line').prop('disabled', count <= 1);
             }
 
             $(document).on('keyup change', '.debit-input, .credit-input', function(){
@@ -1122,10 +1276,10 @@ var loanRepayDueLabels = {
 
             function calculateTotals(){
                 var totalDebit = 0, totalCredit = 0;
-                $('.debit-input').each(function(){
+                $('#lineItemsTable tbody .debit-input').each(function(){
                     totalDebit += parseFloat($(this).val()) || 0;
                 });
-                $('.credit-input').each(function(){
+                $('#lineItemsTable tbody .credit-input').each(function(){
                     totalCredit += parseFloat($(this).val()) || 0;
                 });
                 $('#total_debit').val(totalDebit.toFixed(2));
@@ -1141,10 +1295,10 @@ var loanRepayDueLabels = {
             // Form validation: debits must equal credits; set hidden amount from total
             $('#loanRepaymentForm').on('submit', function(e){
                 var totalDebit = 0, totalCredit = 0, hasItems = false;
-                $('.debit-input').each(function(){
+                $('#lineItemsTable tbody .debit-input').each(function(){
                     totalDebit += parseFloat($(this).val()) || 0;
                 });
-                $('.credit-input').each(function(){
+                $('#lineItemsTable tbody .credit-input').each(function(){
                     var v = parseFloat($(this).val()) || 0;
                     totalCredit += v;
                     if (v > 0) hasItems = true;

@@ -2172,6 +2172,22 @@ class Loan_Model extends CI_Model {
     }
 
     /**
+     * First installment due date for a released loan: one period AFTER the release
+     * (1 month monthly / 7 days weekly), the same rule as Beginning Balance activation.
+     * Returns null when the loan was never released.
+     */
+    function loan_first_due_date($LID, $pin = null) {
+        $pin = $pin ? $pin : current_user()->PIN;
+        $release = $this->loan_release_date($LID, $pin);
+        if (empty($release)) {
+            return null;
+        }
+        $loan = $this->db->where('LID', trim((string) $LID))->where('PIN', $pin)->get('loan_contract')->row();
+        $weekly = ($loan && (int) $loan->interval === 2);
+        return date('Y-m-d', strtotime($release . ($weekly ? ' +7 days' : ' +1 month')));
+    }
+
+    /**
      * Re-date the OPEN installments of a loan's schedule so the first one falls due
      * on $first_due, keeping the original spacing, amounts and row status.
      *
@@ -2330,6 +2346,11 @@ class Loan_Model extends CI_Model {
             );
         }
 
+        // The first installment falls due one period AFTER the release (1 month monthly /
+        // 7 days weekly) - the same rule as Beginning Balance activation - never on the
+        // release date itself, otherwise a loan is already overdue the day it is released.
+        $first_due = date('Y-m-d', strtotime($pay_date . (((int) $loaninfo->interval === 2) ? ' +7 days' : ' +1 month')));
+
         $schedule_exists = $this->db->where('LID', $LID)->where('PIN', $pin)->count_all_results('loan_contract_repayment_schedule');
         if (!$schedule_exists) {
             $product = $this->setting_model->loanproduct($loaninfo->product_type)->row();
@@ -2342,7 +2363,7 @@ class Loan_Model extends CI_Model {
                 $loaninfo->installment_amount,
                 $loaninfo->rate,
                 $loaninfo->number_istallment,
-                $pay_date,
+                $first_due,
                 $loaninfo->basic_amount,
                 $LID,
                 $interest_method,
@@ -2363,13 +2384,13 @@ class Loan_Model extends CI_Model {
             }
         } else {
             // A schedule generated earlier (Loan List -> Repayment Schedule) can pre-date the
-            // payout and make a brand-new loan look overdue. Align it with the release date.
+            // payout and make a brand-new loan look overdue. Align it with the first due date.
             // Refuses when repayments already exist (see redate_open_schedule).
-            $redate = $this->redate_open_schedule($LID, $pin, $pay_date);
+            $redate = $this->redate_open_schedule($LID, $pin, $first_due);
             if (empty($redate['success'])) {
                 log_message('error', 'finalize_release_payout: schedule for ' . $LID . ' was not re-dated - ' . $redate['message']);
             } elseif (!empty($redate['shifted'])) {
-                log_message('info', 'finalize_release_payout: re-dated ' . $redate['shifted'] . ' installment(s) of ' . $LID . ' to start ' . $pay_date . '.');
+                log_message('info', 'finalize_release_payout: re-dated ' . $redate['shifted'] . ' installment(s) of ' . $LID . ' to start ' . $first_due . '.');
             }
         }
 
@@ -3641,6 +3662,39 @@ class Loan_Model extends CI_Model {
     }
 
     /**
+     * True when the product row carries an explicit penalty period (0 or N days).
+     */
+    function _product_sets_penalt_period($product) {
+        return (bool) ($product
+            && isset($product->penalt_period_days)
+            && $product->penalt_period_days !== null
+            && $product->penalt_period_days !== ''
+            && is_numeric($product->penalt_period_days)
+            && (int) $product->penalt_period_days >= 0);
+    }
+
+    /**
+     * Penalty accrual period for a product, in days.
+     * 0 = the penalty percentage is charged ONCE per overdue installment;
+     * N>0 = charged per N days past the grace end (30 = monthly, 7 = weekly, 1 = daily).
+     * The product's penalt_period_days wins; blank/NULL falls back to the system default
+     * (TAPSTEMCO_PENALTY_PERIOD_DAYS, 30 days).
+     *
+     * @param object|null $product loan_product row
+     * @return int days per penalty period (0 = once)
+     */
+    function get_penalt_period_days($product = null) {
+        $default = defined('TAPSTEMCO_PENALTY_PERIOD_DAYS') ? (int) TAPSTEMCO_PENALTY_PERIOD_DAYS : 30;
+        if ($default < 1) {
+            $default = 30;
+        }
+        if (!$this->_product_sets_penalt_period($product)) {
+            return $default;
+        }
+        return (int) $product->penalt_period_days;
+    }
+
+    /**
      * Penalty assessment for one open schedule row as of $paydate.
      *
      * Single source of truth for the penalty formula, used by both
@@ -3677,6 +3731,8 @@ class Loan_Model extends CI_Model {
             'penalty_days' => 0,
             'penalt_unit' => 0.0,
             'penalty' => 0.0,
+            'period_days' => $this->get_penalt_period_days($product),
+            'is_once' => false,
         );
         if ($grace_end === '' || empty($paydate) || strtotime($paydate) <= strtotime($grace_end)) {
             return $state;
@@ -3701,18 +3757,24 @@ class Loan_Model extends CI_Model {
             $unit = ($penalt_percentage / 100) * ($principal + $interest);
         }
 
-        $prorate = (!$legacy) && (!defined('TAPSTEMCO_PENALTY_PRORATE') || TAPSTEMCO_PENALTY_PRORATE);
-        if ($prorate) {
-            $period = defined('TAPSTEMCO_PENALTY_PERIOD_DAYS') ? (int) TAPSTEMCO_PENALTY_PERIOD_DAYS : 30;
-            if ($period < 1) {
-                $period = 30;
-            }
-            $months = $days / $period;
+        $period_days = $state['period_days'];
+        if ($period_days === 0) {
+            // Product charges the penalty ONCE per overdue installment (("Once On ..." methods).
+            $months = 1.0;
         } else {
-            // Legacy: count calendar months past the grace end and round up.
-            $d1 = new DateTime($grace_end);
-            $d2 = new DateTime($paydate);
-            $months = (float) (($d1->diff($d2)->m + ($d1->diff($d2)->y * 12)) + 1);
+            $prorate = (!$legacy) && (!defined('TAPSTEMCO_PENALTY_PRORATE') || TAPSTEMCO_PENALTY_PRORATE);
+            if ($prorate) {
+                $months = $days / $period_days;
+            } else if (!$this->_product_sets_penalt_period($product)) {
+                // Legacy (unchanged when the product sets no period): count calendar
+                // months past the grace end and round up.
+                $d1 = new DateTime($grace_end);
+                $d2 = new DateTime($paydate);
+                $months = (float) (($d1->diff($d2)->m + ($d1->diff($d2)->y * 12)) + 1);
+            } else {
+                // Whole product periods past the grace end, rounded up.
+                $months = max(1.0, (float) ceil($days / $period_days));
+            }
         }
 
         $state['is_overdue'] = true;
@@ -3722,16 +3784,23 @@ class Loan_Model extends CI_Model {
         $state['penalty_days'] = $days;
         $state['penalt_unit'] = round($unit, 4);
         $state['penalty'] = round($unit * $months, 2);
+        $state['is_once'] = ($period_days === 0);
         return $state;
     }
 
     /**
-     * Amount that clears one schedule row: its own repayamount plus any carry,
-     * falling back to the flat loan instalment when the schedule row is empty.
+     * Amount that clears one schedule row: its own repayamount, falling back to the
+     * flat loan instalment when the schedule row does not carry one.
+     *
+     * NOTE: a row's `balance` is the REMAINING PRINCIPAL after that instalment
+     * (Loanbase::create_repayment_schedule sets balance = principal - principle), it is
+     * NOT an arrears carry. Adding it here made every collection a full payoff
+     * (instalment + the whole outstanding principal). The genuine "amount already on
+     * account" carry is get_previous_remain_balance() and is subtracted in
+     * calculate_repayment_due().
      */
     function _schedule_line_amount($row, $fallback_installment = 0) {
-        $line = (isset($row->repayamount) ? (float) $row->repayamount : 0)
-            + (isset($row->balance) ? (float) $row->balance : 0);
+        $line = (isset($row->repayamount) ? (float) $row->repayamount : 0);
         if ($line <= 0.009) {
             $line = (float) $fallback_installment;
         }
@@ -3762,6 +3831,7 @@ class Loan_Model extends CI_Model {
             'grace_days' => defined('MAX_NUMBER_DAYS_OVERDUE_PENALT') ? (int) MAX_NUMBER_DAYS_OVERDUE_PENALT : 0,
             'penalt_percentage' => 0,
             'penalt_method' => 0,
+            'penalt_period_days' => 0,
             'installment_amount' => 0,
             'paydate' => $paydate,
             'has_overdue' => false,
@@ -3776,12 +3846,15 @@ class Loan_Model extends CI_Model {
         $penalt_percentage = $product && $product->penalt_percentage !== '' && $product->penalt_percentage !== null
             ? (float) $product->penalt_percentage : 0;
         $grace_days = $this->get_penalt_grace_days($product);
+        $period_days = $this->get_penalt_period_days($product);
         $installment_amount = round((float) $loaninfo->installment_amount, 2);
         $carry = round((float) $this->get_previous_remain_balance($LID), 2);
         $open = $this->open_repayment_installment($LID);
 
         $items = array();
         $total_installments = 0;
+        $total_principle = 0;
+        $total_interest = 0;
         $total_penalty = 0;
         $has_overdue = false;
         $overdue_count = 0;
@@ -3793,8 +3866,8 @@ class Loan_Model extends CI_Model {
                 break;
             }
 
-            // Bill what this schedule row actually asks for (repayamount + carry),
-            // not the flat loan instalment, so variable schedules are stated right.
+            // Bill what this schedule row actually asks for (its own repayamount),
+            // not the remaining principal and not the flat loan instalment.
             $line_amount = $this->_schedule_line_amount($row, $installment_amount);
             $pen = $this->_penalty_state($product, $row, $paydate, $legacy_penalty);
             $is_overdue = !empty($pen['is_overdue']);
@@ -3807,6 +3880,9 @@ class Loan_Model extends CI_Model {
             }
 
             $line_total = round($line_amount + $penalty, 2);
+            // Component split of this installment (stored on the schedule row).
+            $row_principle = round((float) $row->principle, 2);
+            $row_interest = round((float) $row->interest, 2);
             $items[] = (object) array(
                 'installment' => (int) $row->installment_number,
                 'due_date' => $due_date,
@@ -3815,15 +3891,18 @@ class Loan_Model extends CI_Model {
                 'installment_amount' => $line_amount,
                 'scheduled_amount' => $line_amount,
                 'loan_installment_amount' => $installment_amount,
+                // Informational: this row's remaining principal, NOT the amount to collect.
                 'carry' => round((float) $row->balance, 2),
-                'principle' => round((float) $row->principle, 2),
-                'interest' => round((float) $row->interest, 2),
+                'principle' => $row_principle,
+                'interest' => $row_interest,
                 'penalty' => $penalty,
                 'penalty_months' => $penalty_months,
                 'penalty_days' => $penalty_days,
                 'total' => $line_total,
             );
             $total_installments = round($total_installments + $line_amount, 2);
+            $total_principle = round($total_principle + $row_principle, 2);
+            $total_interest = round($total_interest + $row_interest, 2);
             $total_penalty = round($total_penalty + $penalty, 2);
         }
 
@@ -3858,6 +3937,8 @@ class Loan_Model extends CI_Model {
         return (object) array(
             'items' => $items,
             'total_installments' => $total_installments,
+            'total_principle' => $total_principle,
+            'total_interest' => $total_interest,
             'total_penalty' => $total_penalty,
             'total_due' => $total_due,
             'carry_balance' => $carry,
@@ -3867,6 +3948,7 @@ class Loan_Model extends CI_Model {
             'grace_days' => $grace_days,
             'penalt_percentage' => $penalt_percentage,
             'penalt_method' => $penalt_method,
+            'penalt_period_days' => $period_days,
             'installment_amount' => $installment_amount,
             'paydate' => $paydate,
             'has_overdue' => $has_overdue,
@@ -4116,8 +4198,13 @@ class Loan_Model extends CI_Model {
                 'interest' => round($w_int, 2),
             );
 
-            if ($amount_tmp + 0.00001 >= $clear_amount) {
-                $amount_tmp -= $clear_amount;
+            // Full payoff of the remaining loan: this installment's interest plus the
+            // whole outstanding principal (the legacy rule is repayamount + balance,
+            // plus the penalty when overdue). Only THIS case may close the rest of the
+            // schedule - record_loan_repayment_all() marks every open row as paid.
+            $payoff_amount = round($line_amount + (float) $value->balance + $penalt_recorded, 2);
+            if ($amount_tmp + 0.00001 >= $payoff_amount) {
+                $amount_tmp -= $payoff_amount;
                 $applications[] = array(
                     'mode' => 'all',
                     'schedule_id' => $value->id,
@@ -4125,10 +4212,10 @@ class Loan_Model extends CI_Model {
                     'data' => array(
                         'LID' => $LID,
                         'installment' => $value->installment_number,
-                        'amount' => $clear_amount,
+                        'amount' => $payoff_amount,
                         'paydate' => $paydate,
                         'interest' => $interest_recorded,
-                        'principle' => round($principle_recorded, 2),
+                        'principle' => round($payoff_amount - $interest_recorded, 2),
                         'duedate' => $value->repaydate,
                         'balance' => 0,
                         'iliyobaki' => round($amount_tmp, 2),
@@ -4143,32 +4230,38 @@ class Loan_Model extends CI_Model {
                 break;
             }
 
-            // Partial: the installment (plus any penalty after the waiver) is
-            // covered, the row stays open for the remainder.
-            $charge_now = round($installment_cash + ($assessed_penalty > 0.009 ? $penalt_recorded : 0), 2);
-            $amount_tmp -= $charge_now;
-            $applications[] = array(
-                'mode' => 'partial',
-                'schedule_id' => $value->id,
-                'waiver' => $row_waiver,
-                'data' => array(
-                    'LID' => $LID,
-                    'installment' => $value->installment_number,
-                    'amount' => $installment_cash,
-                    'paydate' => $paydate,
-                    'interest' => $interest_recorded,
-                    'principle' => round($principle_recorded, 2),
-                    'balance' => $value->balance,
-                    'duedate' => $value->repaydate,
-                    'iliyobaki' => round($amount_tmp, 2),
-                    'penalt' => ($assessed_penalty > 0.009 ? $penalt_recorded : 0),
-                    'penalty_months' => $assessed_penalty > 0.009 ? (int) $pen['penalty_months'] : 0,
-                    'penalty_days' => $assessed_penalty > 0.009 ? (int) $pen['penalty_days'] : 0,
-                    'createdby' => $createdby,
-                    'PIN' => $pin,
-                ),
-            );
-            $applied_any = true;
+            // This installment (plus its penalty after any waiver) is covered: settle the
+            // row and keep going, so one payment can clear several installments.
+            if ($amount_tmp + 0.00001 >= $clear_amount) {
+                $amount_tmp -= $clear_amount;
+                $applications[] = array(
+                    'mode' => 'partial',
+                    'schedule_id' => $value->id,
+                    'waiver' => $row_waiver,
+                    'data' => array(
+                        'LID' => $LID,
+                        'installment' => $value->installment_number,
+                        'amount' => $installment_cash,
+                        'paydate' => $paydate,
+                        'interest' => $interest_recorded,
+                        'principle' => round($principle_recorded, 2),
+                        'balance' => $value->balance,
+                        'duedate' => $value->repaydate,
+                        'iliyobaki' => round($amount_tmp, 2),
+                        'penalt' => $penalt_recorded,
+                        'penalty_months' => $assessed_penalty > 0.009 ? (int) $pen['penalty_months'] : 0,
+                        'penalty_days' => $assessed_penalty > 0.009 ? (int) $pen['penalty_days'] : 0,
+                        'createdby' => $createdby,
+                        'PIN' => $pin,
+                    ),
+                );
+                $applied_any = true;
+                continue;
+            }
+
+            // The assessed penalty is not covered: leave this row open and let the
+            // remainder become the member's carry (same as the legacy screen).
+            break;
         }
 
         if (!$applied_any) {
@@ -4284,6 +4377,269 @@ class Loan_Model extends CI_Model {
         return array(
             'success' => true,
             'receipt' => $receipt,
+            'plan' => $plan,
+            'waived_penalty' => isset($plan['waived_penalty']) ? $plan['waived_penalty'] : 0,
+            'waived_interest' => isset($plan['waived_interest']) ? $plan['waived_interest'] : 0,
+        );
+    }
+
+    /**
+     * Normalise + validate the Accounting Entries grid of the Loan Repayment
+     * "Process Payment" screen (one row per account: debit OR credit).
+     *
+     * @param array $rows rows of array('account','debit','credit','description','role')
+     * @return array
+     */
+    function validate_repayment_gl_lines($rows) {
+        $lines = array();
+        $total_debit = 0.0;
+        $total_credit = 0.0;
+        $cash_debit = 0.0;
+        $has_role = false;
+        if (is_array($rows)) {
+            foreach ($rows as $row) {
+                $account = isset($row['account']) ? trim((string) $row['account']) : '';
+                $debit = isset($row['debit']) ? round((float) str_replace(',', '', (string) $row['debit']), 2) : 0.0;
+                $credit = isset($row['credit']) ? round((float) str_replace(',', '', (string) $row['credit']), 2) : 0.0;
+                if ($account === '' || ($debit <= 0.009 && $credit <= 0.009)) {
+                    continue;
+                }
+                if ($debit > 0.009 && $credit > 0.009) {
+                    return array('success' => false, 'message' => 'An accounting entry line cannot have both a debit and a credit amount.');
+                }
+                if (!account_row_info($account)) {
+                    return array('success' => false, 'message' => 'Account ' . $account . ' was not found in the chart of accounts.');
+                }
+                $role = isset($row['role']) ? trim((string) $row['role']) : '';
+                if ($role !== '' && $role !== 'cash') {
+                    $has_role = true;
+                }
+                if ($role === 'cash' && $debit > 0.009) {
+                    $cash_debit = round($cash_debit + $debit, 2);
+                }
+                $lines[] = array(
+                    'account' => $account,
+                    'debit' => $debit > 0.009 ? $debit : 0.0,
+                    'credit' => $credit > 0.009 ? $credit : 0.0,
+                    // general_ledger.description is varchar(200).
+                    'description' => (isset($row['description']) && $row['description'] !== '')
+                        ? substr(trim((string) $row['description']), 0, 200) : '',
+                    'role' => $role,
+                );
+                $total_debit = round($total_debit + $debit, 2);
+                $total_credit = round($total_credit + $credit, 2);
+            }
+        }
+        $no_items = lang('cash_receipt_no_items');
+        if (!is_string($no_items) || $no_items === '') {
+            $no_items = 'Add at least one line item with an account and an amount.';
+        }
+        $not_balanced = lang('debits_credits_not_balanced');
+        if (!is_string($not_balanced) || $not_balanced === '') {
+            $not_balanced = 'Total debits and credits must be equal.';
+        }
+        if (empty($lines)) {
+            return array('success' => false, 'message' => $no_items);
+        }
+        if ($total_debit <= 0.009) {
+            return array('success' => false, 'message' => 'The accounting entries need at least one debit line.');
+        }
+        if (abs($total_debit - $total_credit) > 0.01) {
+            return array(
+                'success' => false,
+                'message' => $not_balanced . ' Debit: ' . number_format($total_debit, 2) . ', Credit: ' . number_format($total_credit, 2) . '.',
+            );
+        }
+        // The amount actually received is the cash/bank debit. Waiver lines add a
+        // contra debit, which must not be treated as money collected from the member.
+        $amount = $cash_debit > 0.009 ? $cash_debit : $total_debit;
+        return array(
+            'success' => true,
+            'lines' => $lines,
+            'total_debit' => $total_debit,
+            'total_credit' => $total_credit,
+            'cash_debit' => $cash_debit,
+            'has_role' => $has_role,
+            'amount' => $amount,
+        );
+    }
+
+    /**
+     * Post a repayment journal to the general ledger exactly as entered on the
+     * Accounting Entries grid (tagged like the schedule-driven posting so the
+     * existing void/reversal path keeps working).
+     *
+     * @return int|false general_ledger_entry id
+     */
+    function post_repayment_gl_lines($LID, $paydate, $lines, $referenceID, $description = 'Loan Repayment') {
+        $pin = current_user()->PIN;
+        $infodata = $this->loan_info($LID)->row();
+        $this->db->insert('general_ledger_entry', array('date' => $paydate, 'PIN' => $pin));
+        $ledger_entry_id = $this->_last_gl_entry_id($pin);
+        if (!$ledger_entry_id) {
+            return false;
+        }
+        $ledger = array(
+            'journalID' => 4,
+            'refferenceID' => $referenceID,
+            'entryid' => $ledger_entry_id,
+            'LID' => $LID,
+            'date' => $paydate,
+            'description' => $description,
+            'linkto' => 'loan_contract_repayment.id',
+            'fromtable' => 'loan_contract_repayment',
+            'paid' => 0,
+            'PIN' => $pin,
+            'PID' => $infodata ? $infodata->PID : null,
+            'member_id' => $infodata ? $infodata->member_id : null,
+        );
+        $inserted = 0;
+        foreach ($lines as $line) {
+            $infoaccount = account_row_info($line['account']);
+            if (!$infoaccount) {
+                continue;
+            }
+            $ledger['account'] = $line['account'];
+            $ledger['debit'] = $line['debit'];
+            $ledger['credit'] = $line['credit'];
+            $ledger['description'] = ($line['description'] !== '') ? $line['description'] : $description;
+            $ledger['account_type'] = $infoaccount->account_type;
+            $ledger['sub_account_type'] = isset($infoaccount->sub_account_type) ? $infoaccount->sub_account_type : null;
+            if ($this->db->insert('general_ledger', $ledger)) {
+                $inserted++;
+            }
+        }
+        return $inserted > 0 ? $ledger_entry_id : false;
+    }
+
+    /**
+     * Resolve the general_ledger_entry row just created for this tenant.
+     * insert_id() cannot be trusted here: MY_DB_active_record logs every insert
+     * into activity_logs on the same connection, which overwrites it (the same
+     * reason _loan_repayment_insert_id() exists).
+     */
+    private function _last_gl_entry_id($pin) {
+        $candidate = (int) $this->db->insert_id();
+        if ($candidate > 0) {
+            $hit = $this->db->query(
+                'SELECT id FROM general_ledger_entry WHERE id = ? AND PIN = ? LIMIT 1',
+                array($candidate, $pin)
+            )->row();
+            if ($hit) {
+                return $candidate;
+            }
+        }
+        $row = $this->db->query(
+            'SELECT id FROM general_ledger_entry WHERE PIN = ? ORDER BY id DESC LIMIT 1',
+            array($pin)
+        )->row();
+        return $row ? (int) $row->id : 0;
+    }
+
+    /**
+     * "Process Payment" engine: post the Accounting Entries grid the user sees /
+     * saved and apply it to the loan schedule sub-ledger WITHOUT a second
+     * (schedule-derived) GL entry — same split of duties as the Cash Receipt flow.
+     *
+     * @param array $lines   rows: array('account','debit','credit','description','role')
+     * @param array $options waiver, description, manage_transaction
+     * @return array
+     */
+    function apply_loan_repayment_with_lines($LID, $lines, $paydate, $receipt_no = null, $options = array()) {
+        if (!is_array($options)) {
+            $options = array();
+        }
+        $waiver = (isset($options['waiver']) && is_array($options['waiver'])) ? $options['waiver'] : array();
+        $description = !empty($options['description']) ? $options['description'] : 'Loan Repayment';
+        $manage_transaction = !array_key_exists('manage_transaction', $options) || !empty($options['manage_transaction']);
+        $pin = current_user()->PIN;
+
+        $validated = $this->validate_repayment_gl_lines($lines);
+        if (empty($validated['success'])) {
+            return $validated;
+        }
+        $lines = $validated['lines'];
+        $amount = $validated['amount'];
+
+        $plan = $this->plan_loan_repayment_applications($LID, $amount, $paydate, $waiver);
+        if (empty($plan['success'])) {
+            if (!empty($plan['close_if_empty'])) {
+                $this->db->update('loan_contract', array('status' => 5), array('LID' => $LID, 'status' => 4, 'disburse' => 1, 'PIN' => $pin));
+            }
+            return array(
+                'success' => false,
+                'message' => isset($plan['message']) ? $plan['message'] : 'Loan repayment could not be applied.',
+                'plan' => $plan,
+            );
+        }
+        if ($receipt_no !== null && $receipt_no !== '' && $this->receipt_no_exists_loan_repayment($receipt_no)) {
+            return array('success' => false, 'message' => lang('cash_receipt_no_exists'));
+        }
+
+        if ($manage_transaction) {
+            $this->db->trans_start();
+        }
+        $receipt = $this->loan_repay_receipt($LID, $amount, $paydate, $receipt_no);
+        foreach ($plan['applications'] as $app) {
+            $array_data = $app['data'];
+            $array_data['receipt'] = $receipt;
+            $row_waiver = isset($app['waiver']) && is_array($app['waiver']) ? $app['waiver'] : array();
+            // Sub-ledger only: the grid posted below IS the GL entry for this receipt.
+            if ($app['mode'] === 'all') {
+                $ok = $this->record_loan_repayment_all($array_data, $app['schedule_id'], $array_data['LID'], null, false, $row_waiver);
+            } else {
+                $ok = $this->record_loan_repayment($array_data, $app['schedule_id'], null, false, $row_waiver);
+            }
+            if ($ok === false) {
+                if ($manage_transaction) {
+                    $this->db->trans_rollback();
+                } else {
+                    $this->db->_trans_status = FALSE;
+                }
+                return array('success' => false, 'message' => 'Loan repayment schedule update failed. Check the loan product GL accounts.');
+            }
+            $this->log_repayment_waiver($LID, $receipt, $array_data, $row_waiver, $waiver);
+        }
+
+        // One GL entry per receipt, referenced to its first sub-ledger row so the
+        // void path (fromtable + refferenceID) can reverse it.
+        $gl_ref = $this->db->query(
+            "SELECT id FROM loan_contract_repayment WHERE PIN = ? AND LID = ? AND receipt = ? ORDER BY id ASC LIMIT 1",
+            array($pin, $LID, $receipt)
+        )->row();
+        if (!$gl_ref) {
+            if ($manage_transaction) {
+                $this->db->trans_rollback();
+            }
+            return array('success' => false, 'message' => 'Loan repayment could not be applied.');
+        }
+        if ($this->post_repayment_gl_lines($LID, $paydate, $lines, (int) $gl_ref->id, $description) === false) {
+            log_message('error', 'apply_loan_repayment_with_lines: GL posting failed for ' . $LID . ' receipt ' . $receipt . ' (cash ' . number_format($amount, 2) . ')');
+            if ($manage_transaction) {
+                $this->db->trans_rollback();
+            }
+            return array('success' => false, 'message' => 'Loan repayment GL posting failed. Check the payment method and the accounts on the line items.');
+        }
+
+        if ($plan['amount_tmp'] > 0) {
+            $this->add_remain_balance($LID, round($plan['amount_tmp'], 2));
+        } else {
+            $this->add_remain_balance($LID, 0);
+        }
+        $open_repayment_check = $this->open_repayment_installment($LID);
+        if (count($open_repayment_check) < 1) {
+            $this->db->update('loan_contract', array('status' => 5), array('LID' => $LID, 'status' => 4, 'disburse' => 1, 'PIN' => $pin));
+        }
+        if ($manage_transaction) {
+            $this->db->trans_complete();
+            if ($this->db->trans_status() === FALSE) {
+                return array('success' => false, 'message' => 'Loan repayment save failed. Please try again.');
+            }
+        }
+        return array(
+            'success' => true,
+            'receipt' => $receipt,
+            'amount' => $amount,
             'plan' => $plan,
             'waived_penalty' => isset($plan['waived_penalty']) ? $plan['waived_penalty'] : 0,
             'waived_interest' => isset($plan['waived_interest']) ? $plan['waived_interest'] : 0,
@@ -4503,9 +4859,6 @@ class Loan_Model extends CI_Model {
             $product ? $product->loan_principle_account : null,
             $product ? $product->loan_interest_account : null,
         );
-        $equity_account_setting = function_exists('default_text_value') ? default_text_value('RETAINED_EARNINGS_ACCOUNT') : '';
-        $equity_account = (is_numeric($equity_account_setting) && (int)$equity_account_setting > 0) ? (int)$equity_account_setting : 3000002;
-        $accounts_needed[] = $equity_account;
         if (array_key_exists('penalt', $array_data) && floatval($array_data['penalt']) > 0) {
             $accounts_needed[] = $product ? $product->loan_penalt_account : null;
         }
@@ -4559,17 +4912,6 @@ class Loan_Model extends CI_Model {
       $ledger['sub_account_type'] = $infoaccount->sub_account_type;
         $this->db->insert('general_ledger', $ledger);
 
-        //credit equity
-        $ledger['credit'] = 0;
-        $ledger['debit'] = 0;
-        $ledger['account'] = $equity_account;
-       // $ledger['account_type'] = account_row_info($ledger['account'])->account_type;
- $infoaccount = account_row_info($ledger['account']);
-        $ledger['account_type'] = $infoaccount->account_type;
-      $ledger['sub_account_type'] = $infoaccount->sub_account_type;
-        $ledger['credit'] = $array_data['interest'];
-        $this->db->insert('general_ledger', $ledger);
-
 
         //check if penalty exist
         if (array_key_exists('penalt', $array_data) && floatval($array_data['penalt']) > 0) {
@@ -4592,18 +4934,6 @@ class Loan_Model extends CI_Model {
  $infoaccount = account_row_info($ledger['account']);
         $ledger['account_type'] = $infoaccount->account_type;
       $ledger['sub_account_type'] = $infoaccount->sub_account_type;
-            $this->db->insert('general_ledger', $ledger);
-
-
-            //credit equity
-            $ledger['credit'] = 0;
-            $ledger['debit'] = 0;
-            $ledger['account'] = $equity_account;
-            //$ledger['account_type'] = account_row_info($ledger['account'])->account_type;
- $infoaccount = account_row_info($ledger['account']);
-        $ledger['account_type'] = $infoaccount->account_type;
-      $ledger['sub_account_type'] = $infoaccount->sub_account_type;
-            $ledger['credit'] = $array_data['penalt'];
             $this->db->insert('general_ledger', $ledger);
         }
 
@@ -4697,21 +5027,6 @@ class Loan_Model extends CI_Model {
       $ledger['sub_account_type'] = $infoaccount->sub_account_type;
         $this->db->insert('general_ledger', $ledger);
 
-        // Determine equity account (Retained Earnings) from global settings (fallback to 3000002)
-        $equity_account_setting = function_exists('default_text_value') ? default_text_value('RETAINED_EARNINGS_ACCOUNT') : '';
-        $equity_account = (is_numeric($equity_account_setting) && (int)$equity_account_setting > 0) ? (int)$equity_account_setting : 3000002;
-
-        //credit equity
-        $ledger['credit'] = 0;
-        $ledger['debit'] = 0;
-        $ledger['account'] = $equity_account;
-       // $ledger['account_type'] = account_row_info($ledger['account'])->account_type;
- $infoaccount = account_row_info($ledger['account']);
-        $ledger['account_type'] = $infoaccount->account_type;
-      $ledger['sub_account_type'] = $infoaccount->sub_account_type;
-        $ledger['credit'] = $array_data['interest'];
-        $this->db->insert('general_ledger', $ledger);
-
 
         //check if penalty exist
         if (array_key_exists('penalt', $array_data) && floatval($array_data['penalt']) > 0) {
@@ -4734,18 +5049,6 @@ class Loan_Model extends CI_Model {
  $infoaccount = account_row_info($ledger['account']);
         $ledger['account_type'] = $infoaccount->account_type;
       $ledger['sub_account_type'] = $infoaccount->sub_account_type;
-            $this->db->insert('general_ledger', $ledger);
-
-
-            //credit equity
-            $ledger['credit'] = 0;
-            $ledger['debit'] = 0;
-            $ledger['account'] = $equity_account;
-            //$ledger['account_type'] = account_row_info($ledger['account'])->account_type;
- $infoaccount = account_row_info($ledger['account']);
-        $ledger['account_type'] = $infoaccount->account_type;
-      $ledger['sub_account_type'] = $infoaccount->sub_account_type;
-            $ledger['credit'] = $array_data['penalt'];
             $this->db->insert('general_ledger', $ledger);
         }
 
@@ -5595,7 +5898,7 @@ class Loan_Model extends CI_Model {
                AND fromtable = 'loan_contract_repayment'
                AND LID = ?
                AND date = ?
-               AND description = 'Loan Repayment'
+               AND (description = 'Loan Repayment' OR description LIKE 'Loan %')
                AND (refferenceID IS NOT NULL AND refferenceID != '' AND refferenceID != '0')
              ORDER BY refferenceID ASC",
             array($pin, $lid, $paydate)

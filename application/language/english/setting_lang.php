@@ -103,6 +103,14 @@ $lang['loanproduct_penalt_percentage'] = 'Penalty Percentage (%)';
 $lang['loanproduct_penalt_grace_days'] = 'Overdue Grace Days';
 $lang['loanproduct_penalt_grace_days_placeholder'] = 'Blank = system default (%s days)';
 $lang['loanproduct_penalt_grace_days_help'] = 'Optional. Days after the installment due date before overdue penalty starts. Leave blank to use the system default (%s days).';
+$lang['loanproduct_penalt_period'] = 'Penalty Period';
+$lang['loanproduct_penalt_period_default'] = 'System default (%s days)';
+$lang['loanproduct_penalt_period_once'] = 'Once per installment';
+$lang['loanproduct_penalt_period_day'] = 'Per day';
+$lang['loanproduct_penalt_period_week'] = 'Per week (7 days)';
+$lang['loanproduct_penalt_period_half'] = 'Per 15 days';
+$lang['loanproduct_penalt_period_month'] = 'Per month (30 days)';
+$lang['loanproduct_penalt_period_help'] = 'How often the penalty percentage above is charged while an installment stays unpaid. Blank = system default (%s days). Choose "Once per installment" for a one-time penalty.';
 
 // Payment Method
 $lang['payment_method_list'] = 'Payment Method List';

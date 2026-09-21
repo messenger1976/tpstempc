@@ -94,6 +94,14 @@ $lang['loanproduct_penalt_percentage'] = 'Penalty Percentage (%)';
 $lang['loanproduct_penalt_grace_days'] = 'Siku za Neema baada ya Tarehe';
 $lang['loanproduct_penalt_grace_days_placeholder'] = 'Weka tupu = chaguo-msingi la mfumo (siku %s)';
 $lang['loanproduct_penalt_grace_days_help'] = 'Si lazima. Siku baada ya tarehe ya kikomo kabla adhabu ya kuchelewa kuanza. Acha tupu kutumia chaguo-msingi la mfumo (siku %s).';
+$lang['loanproduct_penalt_period'] = 'Kipindi cha Adhabu';
+$lang['loanproduct_penalt_period_default'] = 'Chaguo-msingi la mfumo (siku %s)';
+$lang['loanproduct_penalt_period_once'] = 'Mara moja kwa kikomo';
+$lang['loanproduct_penalt_period_day'] = 'Kwa siku';
+$lang['loanproduct_penalt_period_week'] = 'Kwa wiki (siku 7)';
+$lang['loanproduct_penalt_period_half'] = 'Kwa siku 15';
+$lang['loanproduct_penalt_period_month'] = 'Kwa mwezi (siku 30)';
+$lang['loanproduct_penalt_period_help'] = 'Ni mara ngapi asilimia ya adhabu juu inatozwa wakati kikomo hakijalipwa. Acha tupu kutumia chaguo-msingi la mfumo (siku %s). Chagua "Mara moja kwa kikomo" kwa adhabu ya mara moja.';
 
 $lang['app_name'] = 'COOP';
 

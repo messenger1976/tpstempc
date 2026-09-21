@@ -2315,7 +2315,10 @@ $pin = current_user()->PIN;
                 $this->db->insert('general_ledger', $ledger);
 
 
-                $schedule = $this->loanbase->create_repayment_schedule($infodata->installment_amount, $infodata->rate, $infodata->number_istallment, $array_data['disbursedate'], $infodata->basic_amount, $LID, $product->interest_method, $product->interval);
+                // First installment falls due one period after the disbursement
+                // (1 month monthly / 7 days weekly), matching Beginning Balance activation.
+                $first_due = date('Y-m-d', strtotime($array_data['disbursedate'] . (((int) $product->interval === 2) ? ' +7 days' : ' +1 month')));
+                $schedule = $this->loanbase->create_repayment_schedule($infodata->installment_amount, $infodata->rate, $infodata->number_istallment, $first_due, $infodata->basic_amount, $LID, $product->interest_method, $product->interval);
 
                 // foreach ($schedule as $key => $value) {
                 //   $value['LID'] = $LID;
@@ -2789,6 +2792,36 @@ $pin = current_user()->PIN;
         // Amount due as of today (recalculated in the page when repayment date changes)
         $paydate_default = date('Y-m-d');
         $this->data['repayment_due'] = $this->loan_model->calculate_repayment_due($LID, $paydate_default);
+
+        // Pre-fill the Accounting Entries grid with the real split: the cash/bank
+        // debit plus the loan principal / interest / penalty income credits from the
+        // same resolver the Cash Receipt worksheet uses, so the GL matches the
+        // loan_contract_repayment sub-ledger.
+        $repayment_worksheet = $this->loan_model->get_cash_receipt_repayment_worksheet($LID, $default_payment_method_id, $paydate_default);
+        $this->data['repayment_lines'] = (!empty($repayment_worksheet['line_items'])) ? $repayment_worksheet['line_items'] : array();
+        // The workheet omits the cash line when the payment method has no GL account:
+        // add it back (to the amount of the credit side) so the grid stays balanced.
+        $has_debit_line = false;
+        foreach ($this->data['repayment_lines'] as $ws_line) {
+            if (isset($ws_line['debit']) && (float) $ws_line['debit'] > 0.009) {
+                $has_debit_line = true;
+                break;
+            }
+        }
+        if (!$has_debit_line && !empty($this->data['repayment_lines'])) {
+            $ws_credit_total = 0.0;
+            foreach ($this->data['repayment_lines'] as $ws_line) {
+                $ws_credit_total = round($ws_credit_total + (isset($ws_line['credit']) ? (float) $ws_line['credit'] : 0), 2);
+            }
+            array_unshift($this->data['repayment_lines'], array(
+                'account' => $this->data['default_debit_account'],
+                'debit' => $ws_credit_total > 0 ? $ws_credit_total : '',
+                'credit' => '',
+                'description' => 'Loan Repayment ' . $LID,
+                'role' => 'cash',
+            ));
+        }
+
         $this->data['repayment_due_url'] = site_url(current_lang() . '/loan/loan_repayment_due_preview/' . $loanid);
         $this->data['collection_notice_url'] = site_url(current_lang() . '/loan/loan_collection_notice_print/' . $loanid);
         $this->data['waiver_reason_codes'] = function_exists('loan_waiver_reason_codes') ? loan_waiver_reason_codes() : array();
@@ -2831,9 +2864,27 @@ $pin = current_user()->PIN;
         }
 
         $due = $this->loan_model->calculate_repayment_due($LID, $paydate);
+
+        // Split of the payment as of this date (cash + principal / interest /
+        // penalty / waiver lines) so the page can show and post the same figures.
+        $amount_raw = $this->input->get_post('amount');
+        $amount = ($amount_raw !== null && $amount_raw !== '') ? (float) str_replace(',', '', (string) $amount_raw) : null;
+        $payment_method = (int) $this->input->get_post('payment_method');
+        $waiver = array(
+            'penalty' => round((float) str_replace(',', '', (string) $this->input->get_post('waive_penalty')), 2),
+            'interest' => round((float) str_replace(',', '', (string) $this->input->get_post('waive_interest')), 2),
+        );
+        if ($waiver['penalty'] <= 0 && $waiver['interest'] <= 0) {
+            $waiver = array();
+        }
+        $worksheet = $this->loan_model->get_cash_receipt_repayment_worksheet($LID, $payment_method, $paydate, $amount, $waiver);
+
         $this->output->set_output(json_encode(array(
             'success' => true,
             'due' => $due,
+            'lines' => (!empty($worksheet['line_items'])) ? $worksheet['line_items'] : array(),
+            'cash_account' => !empty($worksheet['cash_account']) ? $worksheet['cash_account'] : '',
+            'payment_amount' => !empty($worksheet['payment_amount']) ? round((float) $worksheet['payment_amount'], 2) : 0,
             'labels' => array(
                 'installment' => lang('loan_installment'),
                 'due_date' => lang('due_date'),
@@ -2913,11 +2964,6 @@ $pin = current_user()->PIN;
             return;
         }
         $pin = current_user()->PIN;
-        $amount_raw = $this->input->post('amount');
-        if ($amount_raw !== null && $amount_raw !== '') {
-            $_POST['amount'] = str_replace(',', '', $amount_raw);
-        }
-        $this->form_validation->set_rules('amount', lang('loan_repay_amount'), 'required|numeric');
         $this->form_validation->set_rules('loanid', lang('loan_LID'), 'required');
         $this->form_validation->set_rules('repaydate', lang('loan_repay_date'), 'required|valid_date');
         $this->form_validation->set_rules('receipt_no', lang('cash_receipt_no'), 'required');
@@ -2933,7 +2979,6 @@ $pin = current_user()->PIN;
             return;
         }
 
-        $amount = trim($this->input->post('amount'));
         $paydate = format_date(trim($this->input->post('repaydate')));
         $receipt_no = trim($this->input->post('receipt_no'));
         $payment_method_id = (int) $this->input->post('payment_method');
@@ -2965,12 +3010,31 @@ $pin = current_user()->PIN;
             redirect($redirect_back, 'refresh');
             return;
         }
-        $cash_account = null;
-        if ($payment_method_id > 0) {
-            $cash_account = $this->loan_model->get_credit_account_for_payment_method($payment_method_id);
+        // Accounting Entries grid: what the user saved IS this receipt's general
+        // ledger entry (same split of duties as the Cash Receipt flow). The cash /
+        // bank debit is the amount applied to the loan schedule.
+        $posted_lines = array();
+        $line_accounts = $this->input->post('account');
+        $line_debits = $this->input->post('debit');
+        $line_credits = $this->input->post('credit');
+        $line_descriptions = $this->input->post('line_description');
+        $line_roles = $this->input->post('line_role');
+        if (is_array($line_accounts)) {
+            foreach ($line_accounts as $line_key => $line_account) {
+                $posted_lines[] = array(
+                    'account' => $line_account,
+                    'debit' => isset($line_debits[$line_key]) ? $line_debits[$line_key] : 0,
+                    'credit' => isset($line_credits[$line_key]) ? $line_credits[$line_key] : 0,
+                    'description' => isset($line_descriptions[$line_key]) ? $line_descriptions[$line_key] : '',
+                    'role' => isset($line_roles[$line_key]) ? $line_roles[$line_key] : '',
+                );
+            }
         }
-        if (!$cash_account) {
-            $cash_account = 1010001;
+        $validated_lines = $this->loan_model->validate_repayment_gl_lines($posted_lines);
+        if (empty($validated_lines['success'])) {
+            $this->session->set_flashdata('warning', $validated_lines['message']);
+            redirect($redirect_back, 'refresh');
+            return;
         }
 
         // Optional penalty / interest waiver. A reason is mandatory and the
@@ -2990,9 +3054,9 @@ $pin = current_user()->PIN;
             return;
         }
 
-        $applied = $this->loan_model->apply_loan_repayment($LID, $amount, $paydate, $receipt_no, $cash_account, array(
-            'post_gl' => true,
+        $applied = $this->loan_model->apply_loan_repayment_with_lines($LID, $posted_lines, $paydate, $receipt_no, array(
             'waiver' => $waiver,
+            'description' => 'Loan Repayment ' . $LID,
         ));
         if (empty($applied['success'])) {
             $this->session->set_flashdata('warning', !empty($applied['message']) ? $applied['message'] : 'Loan repayment save failed. Please try again.');
@@ -3152,18 +3216,12 @@ $pin = current_user()->PIN;
                         $applied_any = true;
                     }
                 } else {
-                    $d1 = new DateTime($max_date);
-                    $d2 = new DateTime($paydate);
-                    $number_months = ($d1->diff($d2)->m + ($d1->diff($d2)->y * 12)) + 1;
-                    $penalt_method = $product->penalt_method;
-                    $penalt_percentage = $product->penalt_percentage;
-                    $penalt = 0;
-                    $principle = $value->principle;
-                    $interest_val = $value->interest;
-                    if ($penalt_method == 1) $penalt = (($penalt_percentage / 100) * $principle);
-                    else if ($penalt_method == 2) $penalt = (($penalt_percentage / 100) * ($principle + $interest_val));
-                    $penalt_avail = round($penalt, 2);
-                    $penalt_total = round($penalt_avail * $number_months, 2);
+                    // Product-driven penalty: method, percentage and grace all come from the
+                    // loan product through the single source of truth (_penalty_state), so this
+                    // legacy branch can never disagree with the due preview / allocation path.
+                    $pen = $this->loan_model->_penalty_state($product, $value, $paydate);
+                    $number_months = !empty($pen['penalty_months']) ? (int) $pen['penalty_months'] : 0;
+                    $penalt_total = round((float) $pen['penalty'], 2);
                     $test_remain = round($repay_amount_install + $penalt_total, 2);
                     if ($amount_tmp >= $test_remain) {
                         $repay_amount_install_to_pay_all_loan = round($value->repayamount + $value->balance + $penalt_total, 2);
@@ -3253,11 +3311,14 @@ $pin = current_user()->PIN;
         $data['loaninfo'] = $loaninfo;
         $data['loanid'] = $loanid;
         $data['can_generate'] = in_array((string) $loaninfo->status, array('4', '5'), TRUE);
-        // Default the first due date to the release date: the application date can be
-        // months old for loans that waited in Pending Release, which would create a
-        // schedule that is already overdue the moment it is generated.
+        // Default the first due date to one period AFTER the release (the coop's rule):
+        // the application date can be months old for loans that waited in Pending Release,
+        // which would create a schedule that is already overdue the moment it is generated.
+        $first_due_default = $this->loan_model->loan_first_due_date($LID, $loaninfo->PIN);
         $release_date = $this->loan_model->loan_release_date($LID, $loaninfo->PIN);
-        $data['schedule_start_default'] = !empty($release_date) ? $release_date : $loaninfo->applicationdate;
+        $data['schedule_start_default'] = !empty($first_due_default)
+            ? $first_due_default
+            : (!empty($release_date) ? $release_date : $loaninfo->applicationdate);
         $this->load->view('loan/loan_repayment_schedule_popup', $data);
     }
 
@@ -3298,10 +3359,13 @@ $pin = current_user()->PIN;
 
         $startdate = format_date(trim((string) $this->input->post('startdate')));
         $release_date = $this->loan_model->loan_release_date($LID, $pin);
+        $first_due_default = $this->loan_model->loan_first_due_date($LID, $pin);
         if ($startdate === '') {
-            // Never fall back to the application date of a loan that has already been
-            // released - that is what makes fresh releases look overdue.
-            $startdate = !empty($release_date) ? $release_date : $loaninfo->applicationdate;
+            // Default to one period after the release (the coop's rule), never to the
+            // application date - that is what makes fresh releases look overdue.
+            $startdate = !empty($first_due_default)
+                ? $first_due_default
+                : (!empty($release_date) ? $release_date : $loaninfo->applicationdate);
         }
         if (!preg_match('/^[0-9]{4}-[0-9]{1,2}-[0-9]{1,2}$/', $startdate) || strtotime($startdate) === FALSE) {
             $this->session->set_flashdata('warning', lang('loan_schedule_invalid_date'));

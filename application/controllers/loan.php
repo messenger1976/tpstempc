@@ -1822,6 +1822,25 @@ $pin = current_user()->PIN;
                         continue;
                     }
 
+                    // Every payoff component with an amount needs its GL account.
+                    // Without it the worksheet drops the credit leg while the net
+                    // cash still falls by the payoff, leaving the entry unbalanced.
+                    $offset_leg_accounts = array(
+                        'principal' => 'principle_account',
+                        'interest' => 'interest_account',
+                        'penalty' => 'penalty_account',
+                        'other' => 'principle_account',
+                    );
+                    foreach ($offset_leg_accounts as $leg_component => $leg_account_key) {
+                        if ($row[$leg_component] > 0.009 && empty($assessed[$leg_account_key])) {
+                            $this->data['warning'] = sprintf(
+                                lang('loan_offset_account_missing'),
+                                htmlspecialchars($old_lid . ' (' . $leg_component . ')')
+                            );
+                            break;
+                        }
+                    }
+
                     $waived_penalty_total = round($waived_penalty_total + $row['penalty_waived'], 2);
                     $waived_interest_total = round($waived_interest_total + $row['interest_waived'], 2);
                     // Keep the product accounts so the waiver GL pairs can be

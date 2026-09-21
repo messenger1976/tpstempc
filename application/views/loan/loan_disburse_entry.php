@@ -719,7 +719,10 @@ $disburse_deductions = isset($disburse_deductions) ? $disburse_deductions : arra
                         }
                         foreach ($default_lines as $line):
                         ?>
-                        <tr class="line-item">
+                        <?php // data-source="sys" is what rebuildGlLinesFromOffset() removes before
+                              // regenerating; without it the server rows survive the rebuild and
+                              // every account ends up in the table twice. ?>
+                        <tr class="line-item" data-source="sys">
                             <td>
                                 <select class="form-control account-select" name="account[]">
                                     <option value=""><?php echo lang('select_default_text'); ?></option>
@@ -773,6 +776,7 @@ $disburse_deductions = isset($disburse_deductions) ? $disburse_deductions : arra
     var newPrincipleAccount = <?php echo json_encode($loan_principle_account); ?>;
     var offsetExceedsMsg = <?php echo json_encode(lang('loan_offset_exceeds_new_loan')); ?>;
     var deductionsExceedMsg = <?php echo json_encode(lang('loan_disburse_deductions_exceed')); ?>;
+    var offsetAccountMissingMsg = <?php echo json_encode(lang('loan_offset_account_missing')); ?>;
     var deductionDefs = <?php echo json_encode(isset($disburse_deductions) ? $disburse_deductions : array()); ?>;
     var canApproveWaiver = <?php echo json_encode(!empty($can_approve_waiver)); ?>;
 
@@ -983,12 +987,13 @@ $disburse_deductions = isset($disburse_deductions) ? $disburse_deductions : arra
                 : <?php echo json_encode(lang('loan_offset_net_proceeds')); ?>);
 
             var $warning = $('#offsetWarning').hide().text('');
+            var offsetWarnings = [];
             var $topup = $('#offsetTopupNote').hide().text('');
             if (isTopup) {
                 $topup.text(<?php echo json_encode(lang('loan_offset_topup_hint')); ?>).show();
             }
             if (waivedTotal > 0.009 && !canApproveWaiver) {
-                $warning.text(<?php echo json_encode(lang('loan_waiver_pending_hint')); ?>).show();
+                offsetWarnings.push(<?php echo json_encode(lang('loan_waiver_pending_hint')); ?>);
             }
 
             var cashAccount = firstCreditAccount || '';
@@ -998,7 +1003,20 @@ $disburse_deductions = isset($disburse_deductions) ? $disburse_deductions : arra
             }
 
             // Drop only the auto-generated rows; keep anything typed by hand.
-            $('#lineItemsTable tbody tr.line-item[data-source="sys"]').each(function () {
+            // NOTE: which accounts were on the sheet is captured first, so a
+            // deduction placeholder the user deleted stays deleted instead of
+            // being seeded back on the next rebuild. Everything that is not a
+            // hand-typed ("manual") row is regenerated here - the server-rendered
+            // worksheet included - so the generated lines can never end up next
+            // to a second copy of themselves.
+            var accountsOnSheet = {};
+            $('#lineItemsTable tbody tr.line-item').each(function () {
+                var account = String($(this).find('.account-select').val() || '');
+                if (account) {
+                    accountsOnSheet[account] = true;
+                }
+            });
+            $('#lineItemsTable tbody tr.line-item').not('[data-source="manual"]').each(function () {
                 destroyAccountSelect($(this).find('.account-select'));
                 $(this).remove();
             });
@@ -1006,26 +1024,35 @@ $disburse_deductions = isset($disburse_deductions) ? $disburse_deductions : arra
             addRow(newPrincipleAccount, newLoanAmount.toFixed(2), '', 'Loan principal', 'sys');
 
             deductions.forEach(function (d) {
-                if (d.account) {
+                if (!d.account) {
+                    return;
+                }
+                if (d.amount > 0.009 || accountsOnSheet[String(d.account)]) {
                     addRow(d.account, '', d.amount > 0.009 ? d.amount.toFixed(2) : '', d.description, 'sys');
                 }
             });
 
             // Old loans: principal and interest receivable are credited, the
-            // accrued penalty is recognised as income.
+            // accrued penalty is recognised as income. A component that carries an
+            // amount but has no GL account would drop its credit leg and leave the
+            // worksheet unbalanced, so it is reported here instead of skipped.
             offsets.forEach(function (o) {
-                if (o.principal > 0.009 && o.principle_account) {
-                    addRow(o.principle_account, '', o.principal.toFixed(2), 'Offset principal ' + o.LID, 'sys');
-                }
-                if (o.interest > 0.009 && o.interest_account) {
-                    addRow(o.interest_account, '', o.interest.toFixed(2), 'Offset interest ' + o.LID, 'sys');
-                }
-                if (o.penalty > 0.009 && o.penalty_account) {
-                    addRow(o.penalty_account, '', o.penalty.toFixed(2), 'Offset penalty ' + o.LID, 'sys');
-                }
-                if (o.other > 0.009) {
-                    addRow(o.principle_account, '', o.other.toFixed(2), 'Offset other ' + o.LID, 'sys');
-                }
+                var legs = [
+                    { label: 'principal', account: o.principle_account, amount: o.principal, desc: 'Offset principal ' + o.LID },
+                    { label: 'interest', account: o.interest_account, amount: o.interest, desc: 'Offset interest ' + o.LID },
+                    { label: 'penalty', account: o.penalty_account, amount: o.penalty, desc: 'Offset penalty ' + o.LID },
+                    { label: 'other', account: o.principle_account, amount: o.other, desc: 'Offset other ' + o.LID }
+                ];
+                legs.forEach(function (leg) {
+                    if (leg.amount <= 0.009) {
+                        return;
+                    }
+                    if (!leg.account) {
+                        offsetWarnings.push(offsetAccountMissingMsg.replace('%s', o.LID + ' (' + leg.label + ')'));
+                        return;
+                    }
+                    addRow(leg.account, '', leg.amount.toFixed(2), leg.desc, 'sys');
+                });
                 // Gross then waive: recognise the waived amount, debit the contra.
                 if (o.waive_penalty > 0.009 && o.penalty_waived_account && o.penalty_account) {
                     addRow(o.penalty_waived_account, o.waive_penalty.toFixed(2), '', 'Penalty waived ' + o.LID, 'sys');
@@ -1045,6 +1072,9 @@ $disburse_deductions = isset($disburse_deductions) ? $disburse_deductions : arra
                 addRow(cashAccount, Math.abs(net).toFixed(2), '', 'Cash from member (top-up)', 'sys');
             } else if (offsets.length === 0 && deductions.length === 0) {
                 addRow(cashAccount, '', newLoanAmount.toFixed(2), 'Disbursement source', 'sys');
+            }
+            if (offsetWarnings.length) {
+                $warning.text(offsetWarnings.join(' ')).show();
             }
             updateTotals();
             updateRemoveButtons();

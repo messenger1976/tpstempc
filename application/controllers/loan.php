@@ -1752,6 +1752,7 @@ $pin = current_user()->PIN;
             $offset_loans_selected = array();
             $offset_total = 0.0;
             $offset_breakdown = array();
+            $offset_accounts = array();
             $waived_penalty_total = 0.0;
             $waived_interest_total = 0.0;
             if (is_array($offset_lids)) {
@@ -1823,6 +1824,14 @@ $pin = current_user()->PIN;
 
                     $waived_penalty_total = round($waived_penalty_total + $row['penalty_waived'], 2);
                     $waived_interest_total = round($waived_interest_total + $row['interest_waived'], 2);
+                    // Keep the product accounts so the waiver GL pairs can be
+                    // re-derived server-side instead of trusting the worksheet JS.
+                    $offset_accounts[(string) $old_lid] = array(
+                        'penalty_account' => isset($assessed['penalty_account']) ? (string) $assessed['penalty_account'] : '',
+                        'interest_account' => isset($assessed['interest_account']) ? (string) $assessed['interest_account'] : '',
+                        'penalty_waived_account' => isset($assessed['penalty_waived_account']) ? (string) $assessed['penalty_waived_account'] : '',
+                        'interest_waived_account' => isset($assessed['interest_waived_account']) ? (string) $assessed['interest_waived_account'] : '',
+                    );
                     $offset_breakdown[(string) $old_lid] = $row;
                     $offset_loans_selected[] = array('LID' => $old_lid, 'breakdown' => $row, 'payoff' => $row_payoff);
                     $offset_total += $row_payoff;
@@ -1830,6 +1839,99 @@ $pin = current_user()->PIN;
             }
             $offset_total = round($offset_total, 2);
             $waived_total = round($waived_penalty_total + $waived_interest_total, 2);
+
+            // ------------------------------------------------------------------
+            // The "gross then waive" lines are built in JavaScript on the
+            // worksheet. Re-derive them here from the validated breakdown so a
+            // disabled, failed or tampered client can never record a waiver
+            // without its GL legs, nor post a different amount than the auditor
+            // will read back from loan_waiver_log.
+            // ------------------------------------------------------------------
+            if ($waived_total > 0.009) {
+                $waiver_contra_accounts = array();
+                foreach ($offset_accounts as $acct) {
+                    foreach (array('penalty_waived_account', 'interest_waived_account') as $acct_key) {
+                        if (!empty($acct[$acct_key])) {
+                            $waiver_contra_accounts[(string) $acct[$acct_key]] = true;
+                        }
+                    }
+                }
+
+                // Drop whatever waiver lines the client sent - both legs: the
+                // contra debit by account, the recognised income by description.
+                $kept_lines = array();
+                foreach ($line_items as $item) {
+                    $line_account = isset($item['account']) ? trim((string) $item['account']) : '';
+                    $line_desc = isset($item['description']) ? trim((string) $item['description']) : '';
+                    if ($line_account !== '' && isset($waiver_contra_accounts[$line_account])) {
+                        continue;
+                    }
+                    if (preg_match('/^(penalty|interest) waived\b/i', $line_desc)) {
+                        continue;
+                    }
+                    $kept_lines[] = $item;
+                }
+                $line_items = $kept_lines;
+
+                $waiver_missing_account = '';
+                foreach ($offset_breakdown as $breakdown_lid => $breakdown_row) {
+                    $acct = isset($offset_accounts[(string) $breakdown_lid]) ? $offset_accounts[(string) $breakdown_lid] : array();
+                    $waiver_pairs = array(
+                        array(
+                            'label' => 'Penalty',
+                            'amount' => isset($breakdown_row['penalty_waived']) ? round((float) $breakdown_row['penalty_waived'], 2) : 0.0,
+                            'contra' => isset($acct['penalty_waived_account']) ? (string) $acct['penalty_waived_account'] : '',
+                            'income' => isset($acct['penalty_account']) ? (string) $acct['penalty_account'] : '',
+                        ),
+                        array(
+                            'label' => 'Interest',
+                            'amount' => isset($breakdown_row['interest_waived']) ? round((float) $breakdown_row['interest_waived'], 2) : 0.0,
+                            'contra' => isset($acct['interest_waived_account']) ? (string) $acct['interest_waived_account'] : '',
+                            'income' => isset($acct['interest_account']) ? (string) $acct['interest_account'] : '',
+                        ),
+                    );
+                    foreach ($waiver_pairs as $waiver_pair) {
+                        if ($waiver_pair['amount'] <= 0.009) {
+                            continue;
+                        }
+                        if ($waiver_pair['contra'] === '' || $waiver_pair['income'] === '') {
+                            $waiver_missing_account = $breakdown_lid . ' (' . strtolower($waiver_pair['label']) . ')';
+                            continue;
+                        }
+                        // Recognise the income gross, then contra the concession.
+                        $line_items[] = array(
+                            'account' => $waiver_pair['contra'],
+                            'debit' => $waiver_pair['amount'],
+                            'credit' => 0,
+                            'description' => $waiver_pair['label'] . ' waived ' . $breakdown_lid,
+                        );
+                        $line_items[] = array(
+                            'account' => $waiver_pair['income'],
+                            'debit' => 0,
+                            'credit' => $waiver_pair['amount'],
+                            'description' => $waiver_pair['label'] . ' waived ' . $breakdown_lid . ' (income recognised)',
+                        );
+                    }
+                }
+
+                if ($waiver_missing_account !== '') {
+                    $this->data['warning'] = sprintf(
+                        lang('loan_waiver_account_missing'),
+                        htmlspecialchars($waiver_missing_account)
+                    );
+                }
+
+                // Re-derive the totals so the balance check below sees the
+                // normalised set rather than whatever the client submitted.
+                $total_debit = 0.0;
+                $total_credit = 0.0;
+                foreach ($line_items as $item) {
+                    $total_debit += isset($item['debit']) ? floatval($item['debit']) : 0;
+                    $total_credit += isset($item['credit']) ? floatval($item['credit']) : 0;
+                }
+                $total_debit = round($total_debit, 2);
+                $total_credit = round($total_credit, 2);
+            }
 
             // Proceeds deductions are entered directly in Accounting Entries.
             $deduction_defs = loan_disbursement_default_deductions();
@@ -2457,6 +2559,11 @@ $pin = current_user()->PIN;
      * repayment it belongs to may post.
      */
     function loan_waiver_list() {
+        if (!has_role(5, 'Loan_waiver_approval') && !$this->loan_model->user_can_approve_waiver()) {
+            $this->session->set_flashdata('warning', lang('loan_waiver_not_allowed'));
+            redirect(current_lang() . '/dashboard', 'refresh');
+            return;
+        }
         $this->data['title'] = lang('loan_waiver_list_title');
         $this->data['can_approve'] = $this->loan_model->user_can_approve_waiver();
         $this->data['waivers'] = $this->loan_model->list_pending_waivers(200);

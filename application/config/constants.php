@@ -95,7 +95,10 @@ if (!defined('TAPSTEMCO_PENALTY_PERIOD_DAYS')) {
 | approve it, even when they belong to one of these groups.
 */
 if (!defined('TAPSTEMCO_WAIVER_APPROVER_GROUPS')) {
-    define('TAPSTEMCO_WAIVER_APPROVER_GROUPS', 'admin,General_Manager,Credit_Committee,Bookeeper,Accounts_Department');
+    // Names must match ion_auth `groups`.`name` exactly. Verified against the
+    // live groups table: the loan-approver group is spelled "Credit_Commitee"
+    // (single 't'), and "Bookeeper" is stored with the double 'e'.
+    define('TAPSTEMCO_WAIVER_APPROVER_GROUPS', 'admin,General_Manager,Credit_Commitee,Bookeeper,Accounts_Department');
 }
 
 /* End of file constants.php */

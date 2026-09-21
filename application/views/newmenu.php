@@ -180,6 +180,9 @@ $current_member_id = ($current_user_data && isset($current_user_data->member_id)
                         <?php if (has_role(5, 'Loan_repayment')) { ?>
                             <li class="<?php echo ($activefunction == 'loan_repayment' ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/loan/loan_repayment'); ?>"><?php echo lang('loan_repayment'); ?></a></li>
                         <?php } ?>
+                        <?php if (has_role(5, 'Loan_waiver_approval')) { ?>
+                            <li class="<?php echo ($activefunction == 'loan_waiver_list' ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/loan/loan_waiver_list'); ?>"><?php echo lang('loan_waiver_list_title'); ?></a></li>
+                        <?php } ?>
                         <?php if (has_role(5, 'Loan_beginning_balances')) { ?>
                             <li class="<?php echo (($activefunction == 'loan_beginning_balance_list' || $activefunction == 'loan_beginning_balance_create' || $activefunction == 'loan_beginning_balance_activate') ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/loan/loan_beginning_balance_list'); ?>"><?php echo lang('loan_beginning_balance_list'); ?></a></li>
                         <?php } ?>

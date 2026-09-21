@@ -1157,6 +1157,38 @@ class Loan_Model extends CI_Model {
     }
 
     /**
+     * Mark every waiver queued for a release reference (the new loan LID) as
+     * reversed. A release can waive penalty/interest on several old loans, so
+     * this filters on ref_lid alone — reverse_loan_waivers() scopes by LID and
+     * would miss them. Records are never deleted so the audit trail stays complete.
+     *
+     * @return int number of rows reversed
+     */
+    function reverse_release_waivers($ref_lid, $note = '') {
+        if (!$this->db->table_exists('loan_waiver_log')) {
+            return 0;
+        }
+        $ref_lid = trim((string) $ref_lid);
+        if ($ref_lid === '') {
+            return 0;
+        }
+        $pin = current_user()->PIN;
+        $rows = $this->db->where('PIN', $pin)
+            ->where('ref_lid', $ref_lid)
+            ->where_in('status', array('pending', 'approved'))
+            ->get('loan_waiver_log')
+            ->result();
+        foreach ($rows as $row) {
+            $reason_note = trim((string) $row->reason_note);
+            $this->db->where('id', $row->id)->where('PIN', $pin)->update('loan_waiver_log', array(
+                'status' => 'reversed',
+                'reason_note' => substr(trim($reason_note . ' | Reversed ' . date('Y-m-d') . ($note !== '' ? ': ' . $note : '')), 0, 255),
+            ));
+        }
+        return count($rows);
+    }
+
+    /**
      * Return the approved waiver total for a component, optionally restricted
      * to the waivers created by one reference (release or receipt).
      */
@@ -1821,6 +1853,10 @@ class Loan_Model extends CI_Model {
         $this->ensure_release_workflow_columns();
         $existing = $this->get_pending_release($LID, $pin);
         if ($existing) {
+            // The previous worksheet's waivers are no longer part of the deal.
+            // Reusing the same ref_lid would otherwise strand a pending row and
+            // permanently block the payout gate in cash_disbursement.
+            $this->reverse_release_waivers($LID, 'Release worksheet replaced');
             $this->db->where('LID', $LID);
             $this->db->where('PIN', $pin);
             $this->db->where_in('release_status', array('pending', 'draft'));
@@ -1953,6 +1989,7 @@ class Loan_Model extends CI_Model {
         $this->db->trans_start();
 
         if ($open_release && isset($open_release->release_status) && $open_release->release_status === 'pending') {
+            $this->reverse_release_waivers($LID, 'Loan cancelled');
             if ($this->db->table_exists('loan_disbursement_gl_items')) {
                 $this->db->where('LID', $LID)->where('PIN', $pin)->delete('loan_disbursement_gl_items');
             }
@@ -2982,11 +3019,15 @@ class Loan_Model extends CI_Model {
                 $rows[] = $row;
             }
 
+            $interest_waived = isset($breakdown['interest_waived']) ? (float) $breakdown['interest_waived'] : 0.0;
             $target = array(
                 'principle' => round($breakdown['principal'], 2),
-                'interest' => round($breakdown['interest'], 2),
-                // Only the collected part of the penalty is settled; a waiver is
-                // recorded in loan_waiver_log and never becomes receivable.
+                // Only the collected part is settled; a waiver is recorded in
+                // loan_waiver_log and never becomes receivable. Penalty and
+                // interest must be treated identically - the payoff total already
+                // nets both, so leaving interest gross here overstated the
+                // sub-ledger and broke principal + interest + penalty == payoff.
+                'interest' => round(max(0, $breakdown['interest'] - $interest_waived), 2),
                 'penalty' => round(max(0, $breakdown['penalty'] - $breakdown['penalty_waived']), 2),
             );
             $extra_other = round($breakdown['other'], 2);
@@ -3045,7 +3086,7 @@ class Loan_Model extends CI_Model {
                 'amount' => $breakdown['total'],
                 'penalt' => round(max(0, $breakdown['penalty'] - $breakdown['penalty_waived']), 2),
                 'paydate' => $paydate,
-                'interest' => $breakdown['interest'],
+                'interest' => round(max(0, $breakdown['interest'] - (isset($breakdown['interest_waived']) ? (float) $breakdown['interest_waived'] : 0.0)), 2),
                 'duedate' => $paydate,
                 'principle' => round($breakdown['principal'] + $breakdown['other'], 2),
                 'balance' => 0,
@@ -5841,6 +5882,11 @@ class Loan_Model extends CI_Model {
             if ($loan && isset($loan->status) && intval($loan->status) === 5) {
                 $this->db->where('LID', $LID)->update('loan_contract', array('status' => 4));
             }
+        }
+        // Repayment waivers are logged with ref_lid = receipt; voiding the
+        // receipt must reverse them or they linger as approved-but-unbacked.
+        if ($LID) {
+            $this->reverse_loan_waivers($LID, $receipt, 'Repayment voided');
         }
         $this->db->where('receipt', $receipt)->update('loan_repayment_receipt', array('is_voided' => 1, 'affect_loan' => 0));
         $this->db->trans_complete();

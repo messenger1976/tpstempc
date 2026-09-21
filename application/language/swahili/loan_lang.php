@@ -215,6 +215,7 @@ $lang['loan_waiver_reject'] = 'Reject';
 $lang['loan_waiver_approved_ok'] = 'Waiver approved.';
 $lang['loan_waiver_rejected_ok'] = 'Waiver rejected.';
 $lang['loan_waiver_not_allowed'] = 'You are not allowed to approve penalty or interest waivers.';
+$lang['loan_waiver_account_missing'] = 'Cannot waive %s: the loan product has no waived-penalty/interest (contra) account configured. Set it in Loan Product Setup first.';
 $lang['loan_waiver_self_denied'] = 'The person who requested a waiver cannot approve it.';
 $lang['loan_waiver_source_offset'] = 'Release offset / reloan';
 $lang['loan_waiver_source_repayment'] = 'Loan repayment';

@@ -1,4 +1,13 @@
 <?php
+/**
+ * DEPRECATED - DO NOT EDIT.
+ *
+ * The dashboard now renders views/newmenu.php (see views/dashboard.php), so this
+ * file is no longer loaded by any page. It is kept for reference and rollback
+ * (a copy also exists at menu.php.bak-20260921).
+ *
+ * Every sidebar change now belongs in newmenu.php.
+ */
 $active = ($this->uri->segment(2)) ? $this->uri->segment(2) : 'X';
 $activefunction = ($this->uri->segment(3)) ? $this->uri->segment(3) : 'X';
 $company_info = function_exists('company_info') ? company_info() : null;

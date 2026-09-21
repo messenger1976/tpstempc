@@ -600,6 +600,28 @@ if (!function_exists("has_role")) {
 
 }
 
+if (!function_exists("can_approve_waivers")) {
+
+    /**
+     * Whether the current user may approve penalty / interest waivers.
+     *
+     * Delegates to loan_model::user_can_approve_waiver() so the sidebar and the
+     * approval controller can never drift apart. Safe to call from a view: the
+     * model is loaded on demand.
+     */
+    function can_approve_waivers() {
+        $CI = & get_instance();
+        if (empty($CI->session->userdata('user_id'))) {
+            return FALSE;
+        }
+        if (!isset($CI->loan_model) || !method_exists($CI->loan_model, 'user_can_approve_waiver')) {
+            $CI->load->model('loan_model');
+        }
+        return (bool) $CI->loan_model->user_can_approve_waiver();
+    }
+
+}
+
 if (!function_exists("access_module")) {
 
     function access_module($module_id) {

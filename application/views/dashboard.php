@@ -366,7 +366,8 @@
 <body>
     <div id="wrapper">
         <nav class="navbar-default navbar-static-side" role="navigation">
-            <?php $this->load->view('menu'); ?>
+            <?php /* newmenu.php is the single source of truth for the sidebar (was 'menu'). */ ?>
+            <?php $this->load->view('newmenu'); ?>
         </nav>
 
         <div id="page-wrapper" class="gray-bg">

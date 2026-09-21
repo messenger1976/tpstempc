@@ -339,6 +339,7 @@ $mid_js = $basicinfo ? $basicinfo->member_id : '';
     color: #c9ebe3;
     margin-bottom: 8px;
 }
+.loan-app-page .loan-forms-card .panel-body .btn:last-child { margin-bottom: 0; }
 </style>
 
 <div class="col-lg-12 loan-app-page">

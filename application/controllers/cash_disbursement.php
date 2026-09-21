@@ -354,6 +354,10 @@ class Cash_disbursement extends CI_Controller {
                     $release = $this->loan_model->get_pending_release($loan_release_lid, current_user()->PIN);
                     if (!$release) {
                         $this->data['warning'] = lang('cash_disbursement_release_not_found');
+                    } elseif ($this->loan_model->release_has_pending_waiver($loan_release_lid, current_user()->PIN)) {
+                        // A waiver on this release has not been approved yet. Posting
+                        // now would recognise a concession nobody signed off on.
+                        $this->data['warning'] = lang('loan_waiver_pending_block');
                     } else {
                         $draft_items = $this->loan_model->get_disbursement_gl_items($loan_release_lid, current_user()->PIN);
                         if (!empty($draft_items)) {
@@ -557,6 +561,9 @@ class Cash_disbursement extends CI_Controller {
                     $release = $this->loan_model->get_pending_release($loan_release_lid, current_user()->PIN);
                     if (!$release) {
                         $this->data['warning'] = lang('cash_disbursement_release_not_found');
+                        $can_save = false;
+                    } elseif ($this->loan_model->release_has_pending_waiver($loan_release_lid, current_user()->PIN)) {
+                        $this->data['warning'] = lang('loan_waiver_pending_block');
                         $can_save = false;
                     } else {
                         // Keep cashier edits: do not rebuild lines from the loan release worksheet.

@@ -795,12 +795,23 @@ class Setting extends CI_Controller {
         if ($grace_check !== '') {
             $this->form_validation->set_rules('penalt_grace_days', lang('loanproduct_penalt_grace_days'), 'integer|greater_than[-1]');
         }
+        // Optional penalty accrual period: blank = system default, 0 = once per
+        // installment, N = every N days. Must be an integer >= 0 when filled.
+        $period_check = trim((string) $this->input->post('penalt_period_days'));
+        if ($period_check !== '') {
+            $this->form_validation->set_rules('penalt_period_days', lang('loanproduct_penalt_period'), 'integer|greater_than[-1]');
+        }
 
         if ($this->form_validation->run() == TRUE) {
             $grace_raw = trim((string) $this->input->post('penalt_grace_days'));
             $penalt_grace_days = ($grace_raw === '') ? null : (int) $grace_raw;
             if ($penalt_grace_days !== null && $penalt_grace_days < 0) {
                 $penalt_grace_days = null;
+            }
+            $period_raw = trim((string) $this->input->post('penalt_period_days'));
+            $penalt_period_days = ($period_raw === '') ? null : (int) $period_raw;
+            if ($penalt_period_days !== null && $penalt_period_days < 0) {
+                $penalt_period_days = null;
             }
             $productinfo = array(
                 'name' => trim($this->input->post('name')),
@@ -819,8 +830,12 @@ class Setting extends CI_Controller {
                 'loan_penalt_account' => trim($this->input->post('loan_penalt_account')),
                 'penalt_percentage' => trim($this->input->post('penalt_percentage')),
                 'penalt_grace_days' => $penalt_grace_days,
+                'penalt_period_days' => $penalt_period_days,
                 'PIN' => current_user()->PIN
             );
+            $this->setting_model->ensure_loan_product_waiver_account_columns();
+            $productinfo['loan_penalt_waived_account'] = trim((string) $this->input->post('loan_penalt_waived_account'));
+            $productinfo['loan_interest_waived_account'] = trim((string) $this->input->post('loan_interest_waived_account'));
 
 
             $create = $this->setting_model->addloan_product($productinfo, $id);

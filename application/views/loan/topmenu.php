@@ -30,6 +30,7 @@ $tabs = array(
     'loan_editing' => array('label' => lang('loan_basic_info'), 'icon' => 'fa-file-text-o'),
     'loan_security' => array('label' => lang('loan_security'), 'icon' => 'fa-shield'),
     'loan_guarantor' => array('label' => lang('loan_guarantors'), 'icon' => 'fa-users'),
+    'loan_forms' => array('label' => lang('loan_forms'), 'icon' => 'fa-print'),
 );
 ?>
 <div class="loan-topmenu">

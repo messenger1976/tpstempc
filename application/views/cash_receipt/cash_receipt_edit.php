@@ -209,7 +209,8 @@ if (isset($message) && !empty($message)) {
                                                     <th><?php echo lang('loan_installment'); ?></th>
                                                     <th><?php echo lang('due_date'); ?></th>
                                                     <th><?php echo lang('index_status_th'); ?></th>
-                                                    <th class="text-right"><?php echo lang('loan_installment_amount'); ?></th>
+                                                    <th class="text-right"><?php echo lang('loan_repay_principal_amount'); ?></th>
+                                                    <th class="text-right"><?php echo lang('loan_ledger_interest'); ?></th>
                                                     <th class="text-right"><?php echo lang('loan_ledger_penalty'); ?></th>
                                                     <th class="text-right"><?php echo lang('loan_repay_penalty_months'); ?></th>
                                                     <th class="text-right"><?php echo lang('total'); ?></th>
@@ -219,17 +220,18 @@ if (isset($message) && !empty($message)) {
                                             <tfoot>
                                                 <tr>
                                                     <th colspan="3" class="text-right"><?php echo lang('loan_repay_total_due'); ?></th>
-                                                    <th class="text-right" id="crDueTotalInstallments">0.00</th>
+                                                    <th class="text-right" id="crDueTotalPrinciple">0.00</th>
+                                                    <th class="text-right" id="crDueTotalInterest">0.00</th>
                                                     <th class="text-right" id="crDueTotalPenalty">0.00</th>
                                                     <th></th>
                                                     <th class="text-right" id="crDueTotalDue">0.00</th>
                                                 </tr>
                                                 <tr>
-                                                    <td colspan="6" class="text-right"><?php echo lang('loan_repay_carry_balance'); ?></td>
+                                                    <td colspan="7" class="text-right"><?php echo lang('loan_repay_carry_balance'); ?></td>
                                                     <td class="text-right" id="crDueCarry">0.00</td>
                                                 </tr>
                                                 <tr>
-                                                    <th colspan="6" class="text-right"><?php echo lang('loan_repay_net_due'); ?> / <?php echo lang('loan_repay_suggested'); ?></th>
+                                                    <th colspan="7" class="text-right"><?php echo lang('loan_repay_net_due'); ?> / <?php echo lang('loan_repay_suggested'); ?></th>
                                                     <th class="text-right" id="crDueNetDue">0.00</th>
                                                 </tr>
                                             </tfoot>
@@ -882,6 +884,18 @@ if (isset($message) && !empty($message)) {
                 return v.toFixed(2);
             }
 
+            // Footer total for a component: prefer the server total, fall back to the rows.
+            function dueTotalOf(due, itemField, totalField) {
+                if (due && due[totalField] != null) {
+                    return parseFloat(due[totalField]) || 0;
+                }
+                var t = 0;
+                $.each((due && due.items) ? due.items : [], function(_, item){
+                    t += parseFloat(item[itemField]) || 0;
+                });
+                return t;
+            }
+
             function renderDuePanel(due, extra) {
                 extra = extra || {};
                 if (!due) {
@@ -896,7 +910,7 @@ if (isset($message) && !empty($message)) {
                 var items = due.items || [];
                 var body = '';
                 if (!items.length) {
-                    body = '<tr><td colspan="7" class="text-muted">' + i18n.nothingDue + '</td></tr>';
+                    body = '<tr><td colspan="8" class="text-muted">' + i18n.nothingDue + '</td></tr>';
                 } else {
                     $.each(items, function(i, item){
                         var overdue = item.status === 'overdue';
@@ -904,7 +918,8 @@ if (isset($message) && !empty($message)) {
                         body += '<td>' + (item.installment || '') + '</td>';
                         body += '<td>' + (item.due_date || '') + '</td>';
                         body += '<td>' + (overdue ? i18n.statusOverdue : i18n.statusDue) + '</td>';
-                        body += '<td class="text-right">' + formatMoney(item.installment_amount) + '</td>';
+                        body += '<td class="text-right">' + formatMoney(item.principle) + '</td>';
+                        body += '<td class="text-right">' + formatMoney(item.interest) + '</td>';
                         body += '<td class="text-right">' + formatMoney(item.penalty) + '</td>';
                         body += '<td class="text-right">' + (item.penalty_months || 0) + '</td>';
                         body += '<td class="text-right"><strong>' + formatMoney(item.total) + '</strong></td>';
@@ -912,7 +927,8 @@ if (isset($message) && !empty($message)) {
                     });
                 }
                 $('#loanRepaymentDueBody').html(body);
-                $('#crDueTotalInstallments').text(formatMoney(due.total_installments));
+                $('#crDueTotalPrinciple').text(formatMoney(dueTotalOf(due, 'principle', 'total_principle')));
+                $('#crDueTotalInterest').text(formatMoney(dueTotalOf(due, 'interest', 'total_interest')));
                 $('#crDueTotalPenalty').text(formatMoney(due.total_penalty));
                 $('#crDueTotalDue').text(formatMoney(due.total_due));
                 $('#crDueCarry').text(formatMoney(due.carry_balance));
@@ -1106,11 +1122,36 @@ if (isset($message) && !empty($message)) {
                     loadLoanWorksheet($('#loan_repayment_lid').val());
                 }
             });
-            $('input[name="receipt_date"]').on('change', function(){
-                if ($('#received_from_type').val() === 'loan_repayment' && $('#loan_repayment_lid').val()) {
-                    loadLoanWorksheet($('#loan_repayment_lid').val());
+            // The date field is driven by bootstrap-datepicker, which fires only
+            // changeDate (on the #datetimepicker wrapper) and never 'change' on the
+            // input, so picking a date used to leave the loan line items stale.
+            // Bind the picker event as well as change/blur (debounced, because blur
+            // fires together with change when the value was typed).
+            var loanWorksheetDateTimer = null;
+            function refreshLoanWorksheetForDate() {
+                if ($('#received_from_type').val() !== 'loan_repayment') {
+                    return;
                 }
-            });
+                if (!$('#loan_repayment_lid').val()) {
+                    return;
+                }
+                if (loanWorksheetDateTimer) {
+                    clearTimeout(loanWorksheetDateTimer);
+                }
+                loanWorksheetDateTimer = setTimeout(function(){
+                    loanWorksheetDateTimer = null;
+                    // Follow the new date: when the amount is still the suggested one (or
+                    // empty), let the worksheet re-derive it - otherwise a stale amount
+                    // kept the line items looking unchanged. A typed amount is kept.
+                    var typed = parseFloat(String($('#loan_repayment_amount').val() || '').replace(/,/g, '')) || 0;
+                    if (typed <= 0 || Math.abs(typed - (parseFloat(loanDueState.suggested) || 0)) < 0.005) {
+                        $('#loan_repayment_amount').val('');
+                    }
+                    loadLoanWorksheet($('#loan_repayment_lid').val());
+                }, 120);
+            }
+            $('input[name="receipt_date"]').on('change blur', refreshLoanWorksheetForDate);
+            $('#datetimepicker').on('changeDate', refreshLoanWorksheetForDate);
 
             updateReceivedFromUI(false);
             if ($('#received_from_type').val() === 'loan_repayment' && $('#loan_repayment_lid').val()) {

@@ -33,7 +33,7 @@
                 <form class="form-inline" method="post" action="<?php echo site_url(current_lang() . '/loan/generate_repayment_schedule/' . $loanid); ?>">
                     <div class="form-group">
                         <label for="startdate"><?php echo lang('loan_schedule_start_date'); ?></label>
-                        <input type="date" id="startdate" name="startdate" class="form-control input-sm" value="<?php echo htmlspecialchars($loaninfo->applicationdate); ?>" required/>
+                        <input type="date" id="startdate" name="startdate" class="form-control input-sm" value="<?php echo htmlspecialchars(isset($schedule_start_default) && $schedule_start_default !== '' ? $schedule_start_default : $loaninfo->applicationdate); ?>" required/>
                     </div>
                     <button type="submit" class="btn btn-primary btn-sm"><?php echo lang('loan_schedule_generate'); ?></button>
                 </form>

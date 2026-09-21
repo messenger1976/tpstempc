@@ -484,10 +484,13 @@ class Finance extends CI_Controller {
         $this->data['account_list'] = $this->finance_model->account_chart_by_accounttype();
         $this->data['customerlist'] = $this->customer_model->customer_info()->result();
         $this->data['supplierlist'] = $this->supplier_model->supplier_info()->result();
-        $this->data['loanlist'] = $this->loan_model->loan_repay_list();
+        $this->data['loanlist'] = $this->finance_model->loan_journal_link_list();
         $this->data['cbulist'] = $this->finance_model->cbu_member_list();
         $cbu_global = $this->setting_model->global_contribution_info();
         $this->data['cbu_account'] = isset($cbu_global->capital_build_up_account) ? $cbu_global->capital_build_up_account : '';
+        $this->data['savings_coa_list'] = $this->finance_model->savings_coa_list();
+        $this->data['savings_member_accounts'] = $this->finance_model->savings_member_account_list();
+        $this->data['loan_receivable_coa_list'] = $this->finance_model->loan_receivable_coa_list();
         $this->data['next_reference_no'] = $this->finance_model->get_next_journal_voucher_no(date('Y'));
         
         // Get count of unposted entries for display
@@ -645,10 +648,13 @@ class Finance extends CI_Controller {
         $this->data['account_list'] = $this->finance_model->account_chart_by_accounttype();
         $this->data['customerlist'] = $this->customer_model->customer_info()->result();
         $this->data['supplierlist'] = $this->supplier_model->supplier_info()->result();
-        $this->data['loanlist'] = $this->loan_model->loan_repay_list();
+        $this->data['loanlist'] = $this->finance_model->loan_journal_link_list();
         $this->data['cbulist'] = $this->finance_model->cbu_member_list();
         $cbu_global = $this->setting_model->global_contribution_info();
         $this->data['cbu_account'] = isset($cbu_global->capital_build_up_account) ? $cbu_global->capital_build_up_account : '';
+        $this->data['savings_coa_list'] = $this->finance_model->savings_coa_list();
+        $this->data['savings_member_accounts'] = $this->finance_model->savings_member_account_list();
+        $this->data['loan_receivable_coa_list'] = $this->finance_model->loan_receivable_coa_list();
         $this->data['content'] = 'finance/journal_entry_edit';
         $this->load->view('template', $this->data);
     }
@@ -1749,8 +1755,11 @@ class Finance extends CI_Controller {
                 }
             } else {
                 $raw = trim((string) $this->input->post('closed_as_of'));
+                if ($raw !== '' && function_exists('format_date') && preg_match('/^[0-9]{1,2}-[0-9]{1,2}-[0-9]{4}$/', $raw)) {
+                    $raw = format_date($raw, true);
+                }
                 $normalized = function_exists('gl_books_close_normalize_date') ? gl_books_close_normalize_date($raw) : null;
-                if ($raw !== '' && $normalized === null) {
+                if (trim((string) $this->input->post('closed_as_of')) !== '' && $normalized === null) {
                     $result = array('success' => false, 'message' => lang('gl_close_books_invalid_date'));
                 } else {
                     $result = gl_save_books_close($normalized, 'set', null, $note);

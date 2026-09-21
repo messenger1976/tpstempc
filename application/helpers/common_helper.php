@@ -352,6 +352,46 @@ if (!function_exists('company_info')) {
 
 }
 
+if (!function_exists('loan_form_logo_src')) {
+
+    /**
+     * Source for the cooperative crest on the printed loan forms.
+     *
+     * Returns an inline data URI when the file is readable so the headless PDF
+     * renderer (which loads the page from a file:// temp file) never has to fetch
+     * the image over HTTP from the site itself - a fetch that fails silently and
+     * prints a broken image. Falls back to the site URL, then to the company logo
+     * from companyinfo, and finally to '' (the caller then draws its own badge).
+     */
+    function loan_form_logo_src($fallback_file = '') {
+        $candidates = array();
+        if (defined('TAPSTEMCO_FORM_LOGO') && TAPSTEMCO_FORM_LOGO !== '') {
+            $candidates[] = TAPSTEMCO_FORM_LOGO;
+        }
+        $fallback_file = trim((string) $fallback_file);
+        if ($fallback_file !== '') {
+            $candidates[] = $fallback_file;
+        }
+        if (!defined('FCPATH')) {
+            return '';
+        }
+        foreach ($candidates as $rel) {
+            $path = FCPATH . 'logo/' . $rel;
+            if (!is_file($path) || !is_readable($path)) {
+                continue;
+            }
+            $info = @getimagesize($path);
+            $data = @file_get_contents($path);
+            if ($info && !empty($info['mime']) && $data !== false) {
+                return 'data:' . $info['mime'] . ';base64,' . base64_encode($data);
+            }
+            return base_url('logo/' . $rel);
+        }
+        return '';
+    }
+
+}
+
 if (!function_exists('member_avatar_url')) {
 
     function member_avatar_url($photo = '', $gender = '') {
@@ -458,6 +498,43 @@ if (!function_exists('loan_disbursement_default_deductions')) {
 
 }
 
+if (!function_exists('loan_waiver_reason_codes')) {
+
+    /**
+     * Reason codes for waiving a loan penalty or interest.
+     * Codes (not free text) so waivers stay analysable; the note is supplementary.
+     *
+     * @return array code => label
+     */
+    function loan_waiver_reason_codes() {
+        return array(
+            'RELOAN' => 'Reloan / Restructuring',
+            'ADJUSTMENT' => 'Data entry / System correction',
+            'MEDICAL' => 'Medical emergency',
+            'BEREAVEMENT' => 'Death in the family',
+            'DISASTER' => 'Calamity / Disaster',
+            'UNEMPLOYMENT' => 'Loss of job / Suspension',
+            'BOARD_RES' => 'Board resolution',
+            'GOODWILL' => 'Goodwill / Loyal member',
+            'OTHER' => 'Others (see note)',
+        );
+    }
+
+}
+
+if (!function_exists('loan_waiver_reason_label')) {
+
+    /**
+     * Human label for a waiver reason code, falling back to the raw code.
+     */
+    function loan_waiver_reason_label($code) {
+        $codes = loan_waiver_reason_codes();
+        $code = trim((string) $code);
+        return isset($codes[$code]) ? $codes[$code] : $code;
+    }
+
+}
+
 
 if (!function_exists("format_date")) {
 
@@ -559,6 +636,28 @@ if (!function_exists("has_role")) {
         }
 
         return FALSE;
+    }
+
+}
+
+if (!function_exists("can_approve_waivers")) {
+
+    /**
+     * Whether the current user may approve penalty / interest waivers.
+     *
+     * Delegates to loan_model::user_can_approve_waiver() so the sidebar and the
+     * approval controller can never drift apart. Safe to call from a view: the
+     * model is loaded on demand.
+     */
+    function can_approve_waivers() {
+        $CI = & get_instance();
+        if (empty($CI->session->userdata('user_id'))) {
+            return FALSE;
+        }
+        if (!isset($CI->loan_model) || !method_exists($CI->loan_model, 'user_can_approve_waiver')) {
+            $CI->load->model('loan_model');
+        }
+        return (bool) $CI->loan_model->user_can_approve_waiver();
     }
 
 }

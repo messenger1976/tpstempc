@@ -11,7 +11,7 @@ $this->pdf->SetY(10);
 $this->pdf->SetFont('times', '', 10);
 
 $company = company_info();
-$logo = !empty($company->logo) ? $company->logo : 'logo.png';
+$logo_src = function_exists('loan_form_logo_src') ? loan_form_logo_src(!empty($company->logo) ? $company->logo : '') : '';
 $member = $this->member_model->member_basic_info(null, $loaninfo->PID)->row();
 $member_name = $member ? trim($member->firstname . ' ' . $member->middlename . ' ' . $member->lastname) : '';
 $disburse_no = isset($disburse->disburse_no) ? trim((string) $disburse->disburse_no) : '';
@@ -24,7 +24,7 @@ $statement_title = isset($statement_title) ? $statement_title : lang('loan_disbu
 $html = '<table style="border-bottom:1px solid #000; width:100%;">
         <tr>
             <td style="width:300px;">
-                <img src="' . base_url() . 'logo/' . $logo . '" style="width:200px; height:160px;"/>
+                ' . ($logo_src !== '' ? '<img src="' . $logo_src . '" style="width:160px; height:160px;"/>' : '') . '
             </td>
             <td style="width:1800px; text-align:center"><b>
                <div style="font-size:180px;">' . htmlspecialchars($company->name) . '</div>

@@ -17,7 +17,9 @@ $html='<div id="receipt">
     <table style="border-bottom:1px solid #000;">
         <tr>
             <td style="width:300px;">
-                <img src="'. base_url().'logo/'.company_info()->logo.'" style="width:250px; height:200px;"/>
+                ' . (function_exists('loan_form_logo_src') && loan_form_logo_src(company_info()->logo) !== ''
+                    ? '<img src="' . loan_form_logo_src(company_info()->logo) . '" style="width:160px; height:160px;"/>'
+                    : '') . '
             </td>
             <td style="width:1200px; text-align:center"><b>
                '. company_info()->name.'<br/>

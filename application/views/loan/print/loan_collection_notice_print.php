@@ -19,6 +19,15 @@
         $interval_label = isset($interval->description) ? $interval->description : (isset($interval->name) ? $interval->name : '');
     }
     $net_payable = $due ? (float) $due->suggested_amount : 0;
+    $logo_file = (defined('TAPSTEMCO_FORM_LOGO') && TAPSTEMCO_FORM_LOGO !== '')
+        ? TAPSTEMCO_FORM_LOGO
+        : (($company && !empty($company->logo)) ? $company->logo : '');
+    $logo_ok = false;
+    $logo_src = '';
+    if (function_exists('loan_form_logo_src')) {
+        $logo_src = loan_form_logo_src(($company && !empty($company->logo)) ? $company->logo : '');
+        $logo_ok = ($logo_src !== '');
+    }
     ?>
     <title><?php echo htmlspecialchars($company_name); ?> | <?php echo lang('loan_collection_notice'); ?></title>
     <style>
@@ -52,6 +61,7 @@
         .signature-section { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-top: 36px; font-size: 12px; }
         .signature-box { text-align: center; }
         .signature-line { border-top: 1px solid #000; margin-top: 40px; width: 100%; }
+        @page { size: 8.5in 13in; margin: 10mm; }
         @media print {
             body { margin: 0; }
             .container { padding: 0; }
@@ -72,8 +82,8 @@
         </div>
 
         <div class="header">
-            <?php if (defined('FCPATH') && file_exists(FCPATH . 'logo/logo.png')): ?>
-                <img src="<?php echo base_url('logo/logo.png'); ?>" alt="Logo" class="logo">
+            <?php if ($logo_ok): ?>
+                <img src="<?php echo $logo_src; ?>" alt="Cooperative logo" class="logo">
             <?php endif; ?>
             <div class="company-name"><?php echo htmlspecialchars($company_name); ?></div>
             <div class="company-info">

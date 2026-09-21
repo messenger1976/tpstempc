@@ -1,9 +1,10 @@
 <link href="<?php echo base_url(); ?>assets/css/plugins/datapicker/datepicker3.css?v=20260801" rel="stylesheet">
+<link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-datepicker/1.9.0/css/bootstrap-datepicker.min.css" rel="stylesheet" crossorigin="anonymous" referrerpolicy="no-referrer">
 <?php
 $closed_as_of = isset($closed_as_of) ? $closed_as_of : null;
 $fiscal_years = isset($fiscal_years) ? $fiscal_years : array();
 $close_history = isset($close_history) ? $close_history : array();
-$closed_display = $closed_as_of ? date('m/d/Y', strtotime($closed_as_of)) : '';
+$closed_display = $closed_as_of ? date('d-m-Y', strtotime($closed_as_of)) : '';
 ?>
 <style>
 .gl-close-page { margin-top: 4px; }
@@ -17,14 +18,14 @@ $closed_display = $closed_as_of ? date('m/d/Y', strtotime($closed_as_of)) : '';
 .gl-close-page .cbu-alert.info { background: #eef6fb; color: #1c6ea4; border: 1px solid #d4e8f5; }
 .gl-close-page .cbu-panel {
     background: #fff; border: 1px solid #e7eaec; border-radius: 10px;
-    margin-bottom: 20px; box-shadow: 0 1px 2px rgba(0,0,0,0.03); overflow: hidden;
+    margin-bottom: 20px; box-shadow: 0 1px 2px rgba(0,0,0,0.03); overflow: visible;
 }
 .gl-close-page .cbu-panel .panel-head {
     display: flex; align-items: center; justify-content: space-between; gap: 10px;
     padding: 14px 20px; background: #fafbfc; border-bottom: 1px solid #e7eaec;
 }
 .gl-close-page .cbu-panel .panel-head h4 { margin: 0; font-size: 15px; font-weight: 700; color: #2f4050; }
-.gl-close-page .cbu-panel .panel-body { padding: 20px; }
+.gl-close-page .cbu-panel .panel-body { padding: 20px; overflow: visible; }
 .gl-close-page .status-pill {
     display: inline-block; padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: 700;
 }
@@ -32,6 +33,11 @@ $closed_display = $closed_as_of ? date('m/d/Y', strtotime($closed_as_of)) : '';
 .gl-close-page .status-pill.open { background: #1ab394; color: #fff; }
 .gl-close-page .help { color: #676a6c; font-size: 13px; margin: 0 0 16px; }
 .gl-close-page .fy-table td, .gl-close-page .fy-table th { vertical-align: middle; }
+.gl-close-page .input-group-addon { cursor: pointer; }
+.datepicker-dropdown,.datepicker{z-index:9999!important;width:auto;min-width:0;}
+.datepicker-dropdown.dropdown-menu{background:#fff;border:1px solid #e7eaec;box-shadow:0 2px 8px rgba(0,0,0,0.12);padding:8px;width:auto;min-width:220px;max-width:280px;}
+.datepicker table{width:auto;margin:0;table-layout:fixed;}
+.datepicker td,.datepicker th{text-align:center;width:auto;}
 </style>
 
 <div class="col-lg-12 gl-close-page">
@@ -61,8 +67,9 @@ $closed_display = $closed_as_of ? date('m/d/Y', strtotime($closed_as_of)) : '';
                 <label class="col-lg-3 control-label"><?php echo lang('gl_close_books_as_of'); ?></label>
                 <div class="col-lg-4">
                     <div class="input-group date" id="closeBooksDate">
-                        <input type="text" name="closed_as_of" value="<?php echo htmlspecialchars($closed_display, ENT_QUOTES, 'UTF-8'); ?>"
-                               placeholder="<?php echo lang('hint_date'); ?>" data-date-format="MM/DD/YYYY" class="form-control"/>
+                        <input type="text" name="closed_as_of" id="closed_as_of"
+                               value="<?php echo htmlspecialchars($closed_display, ENT_QUOTES, 'UTF-8'); ?>"
+                               placeholder="<?php echo lang('hint_date'); ?>" class="form-control"/>
                         <span class="input-group-addon"><span class="fa fa-calendar"></span></span>
                     </div>
                     <span class="help-block"><?php echo lang('gl_close_books_as_of_hint'); ?></span>
@@ -181,11 +188,68 @@ $closed_display = $closed_as_of ? date('m/d/Y', strtotime($closed_as_of)) : '';
 
 <script>
 (function() {
-    if (typeof jQuery === 'undefined') { return; }
-    jQuery(function($) {
-        if ($.fn.datepicker) {
-            $('#closeBooksDate').datepicker({ autoclose: true, todayHighlight: true, format: 'mm/dd/yyyy' });
+    function loadScript(src, cb, fallback) {
+        var s = document.createElement('script');
+        s.src = src;
+        s.onload = cb;
+        if (fallback) {
+            s.onerror = function() { loadScript(fallback, cb); };
         }
-    });
+        document.head.appendChild(s);
+    }
+
+    function initOnceReady() {
+        if (!window.jQuery) {
+            setTimeout(initOnceReady, 50);
+            return;
+        }
+        var $ = window.jQuery;
+
+        function ensureBootstrapDP(cb) {
+            function wrapBootstrapDP() {
+                if ($.fn.datepicker && $.fn.datepicker.DPGlobal) {
+                    $.fn.bootstrapDP = $.fn.datepicker;
+                    if ($.fn.datepicker.noConflict) {
+                        $.fn.datepicker.noConflict();
+                    }
+                }
+                cb();
+            }
+            if (!($.fn.datepicker && $.fn.datepicker.DPGlobal)) {
+                loadScript(
+                    '<?php echo base_url(); ?>assets/js/plugins/datapicker/bootstrap-datepicker.js',
+                    wrapBootstrapDP,
+                    'https://cdnjs.cloudflare.com/ajax/libs/bootstrap-datepicker/1.9.0/js/bootstrap-datepicker.min.js'
+                );
+            } else {
+                wrapBootstrapDP();
+            }
+        }
+
+        function initPicker() {
+            var picker = $.fn.bootstrapDP || $.fn.datepicker;
+            if (!picker) { return; }
+            var $wrap = $('#closeBooksDate');
+            if (!$wrap.length) { return; }
+            picker.call($wrap, {
+                todayBtn: 'linked',
+                keyboardNavigation: false,
+                forceParse: false,
+                calendarWeeks: true,
+                autoclose: true,
+                format: 'dd-mm-yyyy',
+                orientation: 'bottom auto',
+                todayHighlight: true,
+                container: 'body'
+            });
+            $wrap.find('.input-group-addon').on('click', function() {
+                picker.call($wrap, 'show');
+            });
+        }
+
+        ensureBootstrapDP(initPicker);
+    }
+
+    initOnceReady();
 })();
 </script>

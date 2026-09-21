@@ -4,6 +4,14 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <?php $company = function_exists('company_info_detail') ? company_info_detail() : null; $company_name = ($company && isset($company->name) && $company->name !== '') ? $company->name : 'Cooperative'; ?>
+    <?php
+    $logo_ok = false;
+    $logo_src = '';
+    if (function_exists('loan_form_logo_src')) {
+        $logo_src = loan_form_logo_src(($company && !empty($company->logo)) ? $company->logo : '');
+        $logo_ok = ($logo_src !== '');
+    }
+    ?>
     <title><?php echo htmlspecialchars($company_name); ?> | <?php echo htmlspecialchars(isset($document_title) ? $document_title : lang('loan_disbursement_print'), ENT_QUOTES, 'UTF-8'); ?></title>
 
     <style>
@@ -31,6 +39,7 @@
         .signature-section { display: grid; grid-template-columns: 1fr 1fr; gap: 30px; margin-top: 40px; font-size: 12px; }
         .signature-box { text-align: center; }
         .signature-line { border-top: 1px solid #000; margin-top: 30px; width: 100%; }
+        @page { size: 8.5in 13in; margin: 10mm; }
         @media print {
             body { margin: 0; padding: 0; }
             .container { padding: 0; }
@@ -42,8 +51,8 @@
 <body>
     <div class="container">
         <div class="header">
-            <?php if (defined('FCPATH') && file_exists(FCPATH . 'logo/logo.png')): ?>
-                <img src="<?php echo base_url('logo/logo.png'); ?>" alt="Company Logo" class="logo">
+            <?php if ($logo_ok): ?>
+                <img src="<?php echo $logo_src; ?>" alt="Cooperative logo" class="logo">
             <?php endif; ?>
             <div class="company-name"><?php echo htmlspecialchars($company_name); ?></div>
             <div class="company-info">

@@ -46,6 +46,8 @@ $transactions = $ledger['transactions'];
                 <th style="border-bottom:1px solid #000; text-align:left; padding:3px;">Type</th>
                 <th style="border-bottom:1px solid #000; text-align:left; padding:3px;">Ref #</th>
                 <th style="border-bottom:1px solid #000; text-align:left; padding:3px;">Description</th>
+                <th style="border-bottom:1px solid #000; text-align:left; padding:3px;">Cust/Supp/Member ID</th>
+                <th style="border-bottom:1px solid #000; text-align:left; padding:3px;">Person</th>
                 <th style="border-bottom:1px solid #000; text-align:right; padding:3px;">Debit</th>
                 <th style="border-bottom:1px solid #000; text-align:right; padding:3px;">Credit</th>
                 <th style="border-bottom:1px solid #000; text-align:right; padding:3px;">Balance</th>
@@ -53,7 +55,7 @@ $transactions = $ledger['transactions'];
         </thead>
         <tbody>
             <tr>
-                <td colspan="4" style="padding:3px; font-weight:bold;">Balance Forwarded</td>
+                <td colspan="6" style="padding:3px; font-weight:bold;">Balance Forwarded</td>
                 <td style="text-align:right; padding:3px;"><?php echo ($ledger['opening_debit'] > 0 ? number_format($ledger['opening_debit'], 2) : ''); ?></td>
                 <td style="text-align:right; padding:3px;"><?php echo ($ledger['opening_credit'] > 0 ? number_format($ledger['opening_credit'], 2) : ''); ?></td>
                 <td style="text-align:right; padding:3px; font-weight:bold;"><?php echo al_fmt($ledger['opening_balance'], true); ?></td>
@@ -62,28 +64,29 @@ $transactions = $ledger['transactions'];
                 $journal_type = isset($t->trans_comment) ? $t->trans_comment : '';
                 $ref_no = (isset($t->invoiceid) && $t->invoiceid > 0) ? $t->invoiceid : (isset($t->refferenceID) ? $t->refferenceID : '');
                 $desc = isset($t->description) ? $t->description : '';
-                if (!empty($t->related_entity_name)) {
-                    $desc = trim($desc . ($desc !== '' ? ' — ' : '') . $t->related_entity_name);
-                }
+                $party_id = isset($t->related_entity_party_id) ? $t->related_entity_party_id : '';
+                $person = isset($t->related_entity_name) ? $t->related_entity_name : '';
                 ?>
                 <tr>
                     <td style="padding:2px 3px; border-bottom:1px solid #eee;"><?php echo format_date($t->date, false); ?></td>
                     <td style="padding:2px 3px; border-bottom:1px solid #eee;"><?php echo htmlspecialchars($journal_type); ?></td>
                     <td style="padding:2px 3px; border-bottom:1px solid #eee;"><?php echo ($ref_no !== '' && $ref_no !== null) ? '#' . htmlspecialchars($ref_no) : ''; ?></td>
                     <td style="padding:2px 3px; border-bottom:1px solid #eee;"><?php echo htmlspecialchars($desc); ?></td>
+                    <td style="padding:2px 3px; border-bottom:1px solid #eee;"><?php echo htmlspecialchars($party_id); ?></td>
+                    <td style="padding:2px 3px; border-bottom:1px solid #eee;"><?php echo htmlspecialchars($person); ?></td>
                     <td style="text-align:right; padding:2px 3px; border-bottom:1px solid #eee;"><?php echo ($t->debit > 0 ? number_format($t->debit, 2) : ''); ?></td>
                     <td style="text-align:right; padding:2px 3px; border-bottom:1px solid #eee;"><?php echo ($t->credit > 0 ? number_format($t->credit, 2) : ''); ?></td>
                     <td style="text-align:right; padding:2px 3px; border-bottom:1px solid #eee;"><?php echo al_fmt($t->running_balance, true); ?></td>
                 </tr>
             <?php } ?>
             <tr>
-                <td colspan="4" style="padding:4px 3px; border-top:1px solid #000; font-weight:bold; text-align:right;">Period Totals</td>
+                <td colspan="6" style="padding:4px 3px; border-top:1px solid #000; font-weight:bold; text-align:right;">Period Totals</td>
                 <td style="text-align:right; padding:4px 3px; border-top:1px solid #000; font-weight:bold;"><?php echo number_format($ledger['period_debit'], 2); ?></td>
                 <td style="text-align:right; padding:4px 3px; border-top:1px solid #000; font-weight:bold;"><?php echo number_format($ledger['period_credit'], 2); ?></td>
                 <td style="border-top:1px solid #000;"></td>
             </tr>
             <tr>
-                <td colspan="6" style="padding:4px 3px; border-bottom:3px double #000; font-weight:bold; text-align:right;">Ending Balance</td>
+                <td colspan="8" style="padding:4px 3px; border-bottom:3px double #000; font-weight:bold; text-align:right;">Ending Balance</td>
                 <td style="text-align:right; padding:4px 3px; border-bottom:3px double #000; font-weight:bold;"><?php echo al_fmt($ledger['ending_balance'], true); ?></td>
             </tr>
         </tbody>

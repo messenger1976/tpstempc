@@ -140,7 +140,9 @@ $export_url = site_url(current_lang() . '/report/account_ledger_export/' . $acco
                             <th style="width:90px;">Date</th>
                             <th style="width:110px;">Type</th>
                             <th style="width:70px;">Ref #</th>
-                            <th>Description / Person</th>
+                            <th>Description</th>
+                            <th style="width:100px;">Cust/Supp/Member ID</th>
+                            <th style="width:160px;">Person</th>
                             <th style="text-align:right; width:110px;">Debit</th>
                             <th style="text-align:right; width:110px;">Credit</th>
                             <th style="text-align:right; width:120px;">Balance</th>
@@ -148,14 +150,14 @@ $export_url = site_url(current_lang() . '/report/account_ledger_export/' . $acco
                     </thead>
                     <tbody>
                         <tr style="background:#eef7f4; font-weight:bold;">
-                            <td colspan="4">Balance Forwarded</td>
+                            <td colspan="6">Balance Forwarded</td>
                             <td style="text-align:right;"><?php echo ($ledger['opening_debit'] > 0 ? number_format($ledger['opening_debit'], 2) : ''); ?></td>
                             <td style="text-align:right;"><?php echo ($ledger['opening_credit'] > 0 ? number_format($ledger['opening_credit'], 2) : ''); ?></td>
                             <td style="text-align:right;"><?php echo al_fmt($ledger['opening_balance'], true); ?></td>
                         </tr>
                         <?php if (empty($transactions)) { ?>
                             <tr>
-                                <td colspan="7" style="text-align:center; color:#999; font-style:italic; padding:20px;">
+                                <td colspan="9" style="text-align:center; color:#999; font-style:italic; padding:20px;">
                                     No transactions found for this account in the selected date range.
                                 </td>
                             </tr>
@@ -167,6 +169,7 @@ $export_url = site_url(current_lang() . '/report/account_ledger_export/' . $acco
                                     ? get_gl_reference_url(isset($t->fromtable) ? $t->fromtable : '', isset($t->refferenceID) ? $t->refferenceID : null)
                                     : '';
                                 $desc = isset($t->description) ? $t->description : '';
+                                $party_id = isset($t->related_entity_party_id) ? $t->related_entity_party_id : '';
                                 $rel = isset($t->related_entity_name) ? $t->related_entity_name : '';
                                 ?>
                                 <tr>
@@ -183,19 +186,18 @@ $export_url = site_url(current_lang() . '/report/account_ledger_export/' . $acco
                                             echo '&mdash;';
                                         }
                                     ?></td>
+                                    <td><?php echo $desc !== '' ? htmlspecialchars($desc) : '&mdash;'; ?></td>
+                                    <td><?php echo $party_id !== '' ? htmlspecialchars($party_id) : '&mdash;'; ?></td>
                                     <td><?php
-                                        $parts = array();
-                                        if ($desc !== '') {
-                                            $parts[] = htmlspecialchars($desc);
-                                        }
                                         if ($rel !== '') {
                                             if (!empty($t->related_entity_url)) {
-                                                $parts[] = anchor($t->related_entity_url, htmlspecialchars($rel));
+                                                echo anchor($t->related_entity_url, htmlspecialchars($rel));
                                             } else {
-                                                $parts[] = htmlspecialchars($rel);
+                                                echo htmlspecialchars($rel);
                                             }
+                                        } else {
+                                            echo '&mdash;';
                                         }
-                                        echo !empty($parts) ? implode(' — ', $parts) : '&mdash;';
                                     ?></td>
                                     <td style="text-align:right;"><?php echo ($t->debit > 0 ? number_format($t->debit, 2) : ''); ?></td>
                                     <td style="text-align:right;"><?php echo ($t->credit > 0 ? number_format($t->credit, 2) : ''); ?></td>
@@ -204,13 +206,13 @@ $export_url = site_url(current_lang() . '/report/account_ledger_export/' . $acco
                             <?php }
                         } ?>
                         <tr style="font-weight:bold; background:#f5f5f5;">
-                            <td colspan="4" style="text-align:right; border-top:2px solid #000;">Period Totals</td>
+                            <td colspan="6" style="text-align:right; border-top:2px solid #000;">Period Totals</td>
                             <td style="text-align:right; border-top:2px solid #000;"><?php echo number_format($ledger['period_debit'], 2); ?></td>
                             <td style="text-align:right; border-top:2px solid #000;"><?php echo number_format($ledger['period_credit'], 2); ?></td>
                             <td style="text-align:right; border-top:2px solid #000;"></td>
                         </tr>
                         <tr style="font-weight:bold; background:#e8f8f5;">
-                            <td colspan="6" style="text-align:right; border-bottom:3px double #000;">Ending Balance</td>
+                            <td colspan="8" style="text-align:right; border-bottom:3px double #000;">Ending Balance</td>
                             <td style="text-align:right; border-bottom:3px double #000;"><?php echo al_fmt($ledger['ending_balance'], true); ?></td>
                         </tr>
                     </tbody>

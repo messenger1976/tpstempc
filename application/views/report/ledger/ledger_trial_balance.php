@@ -18,9 +18,24 @@ $tb_ledger_url = function ($account_code) use ($link_cat, $id) {
 $transaction = $this->report_model->create_ledger_trans_summary($reportinfo->fromdate, $reportinfo->todate);
 $total_credit = 0;
 $total_debit = 0;
-$net_prfit_credit = 0;
-$net_prfit_debit = 0;
-$check_exp_inc = 0;
+
+// Section order: Income, Expenses, then remaining account types.
+$tb_section_order = array();
+if (isset($transaction[4])) {
+    $tb_section_order[] = array(4, 'Income');
+}
+if (isset($transaction[5])) {
+    $tb_section_order[] = array(5, 'Expenses');
+}
+foreach ($transaction as $type_id => $_unused) {
+    if ($type_id == 4 || $type_id == 5) {
+        continue;
+    }
+    $type_account = $this->finance_model->account_typelist($type_id)->row();
+    if ($type_account) {
+        $tb_section_order[] = array($type_id, $type_account->name);
+    }
+}
 ?>
 <div class="row">
     <div class="col-lg-12">
@@ -70,141 +85,44 @@ $check_exp_inc = 0;
                     </tr>
                 </thead>
                 <tbody>
-                <?php if (array_key_exists(4, $transaction)) {
-                    $check_exp_inc = 1;
-                    ?>
-                    <tr>
-                        <td style="padding:10px 4px 2px 0; font-weight:bold; text-transform:uppercase;" colspan="3">Income</td>
-                    </tr>
-                    <?php
-                    foreach ($transaction[4] as $key1 => $value1) {
+                <?php foreach ($tb_section_order as $section) {
+                    $type_id = $section[0];
+                    $section_title = $section[1];
+                    if (empty($transaction[$type_id])) {
+                        continue;
+                    }
+                    $section_rows = '';
+                    $has_row = false;
+                    foreach ($transaction[$type_id] as $key1 => $value1) {
                         $account_info = $this->finance_model->account_chart(null, $key1)->row();
                         if (!$account_info) {
                             continue;
                         }
-                        $debit = 0;
-                        $credit = 0;
-                        if (!empty($value1['current']) && is_object($value1['current'])) {
-                            $debit = floatval($value1['current']->debit);
-                            $credit = floatval($value1['current']->credit);
-                            $net_prfit_debit += $debit;
-                            $net_prfit_credit += $credit;
-                            $total_debit += $debit;
-                            $total_credit += $credit;
-                        }
-                        $acct_code = !empty($account_info->account) ? $account_info->account : $key1;
-                        $label = '<a class="tb-account-link" href="' . $tb_ledger_url($acct_code) . '" title="View account ledger">' . htmlspecialchars($account_info->name) . '</a>';
-                        ?>
-                        <tr>
-                            <td style="padding:2px 4px 2px 36px;"><?php echo $label; ?></td>
-                            <td style="text-align:right; white-space:nowrap; padding:2px 4px;"><?php echo tb_format_amt($debit); ?></td>
-                            <td style="text-align:right; white-space:nowrap; padding:2px 4px;"><?php echo tb_format_amt($credit); ?></td>
-                        </tr>
-                    <?php }
-                    unset($transaction[4]);
-                }
-
-                if (array_key_exists(5, $transaction)) {
-                    $check_exp_inc = 1;
-                    ?>
-                    <tr>
-                        <td style="padding:14px 4px 2px 0; font-weight:bold; text-transform:uppercase;" colspan="3">Expenses</td>
-                    </tr>
-                    <?php
-                    foreach ($transaction[5] as $key1 => $value1) {
-                        $account_info = $this->finance_model->account_chart(null, $key1)->row();
-                        if (!$account_info) {
+                        $sides = $this->report_model->trial_balance_ending_sides($value1);
+                        if ($sides['debit'] <= 0 && $sides['credit'] <= 0) {
                             continue;
                         }
-                        $debit = 0;
-                        $credit = 0;
-                        if (!empty($value1['current']) && is_object($value1['current'])) {
-                            $debit = floatval($value1['current']->debit);
-                            $credit = floatval($value1['current']->credit);
-                            $net_prfit_debit += $debit;
-                            $net_prfit_credit += $credit;
-                            $total_debit += $debit;
-                            $total_credit += $credit;
-                        }
+                        $has_row = true;
+                        $total_debit += $sides['debit'];
+                        $total_credit += $sides['credit'];
                         $acct_code = !empty($account_info->account) ? $account_info->account : $key1;
                         $label = '<a class="tb-account-link" href="' . $tb_ledger_url($acct_code) . '" title="View account ledger">' . htmlspecialchars($account_info->name) . '</a>';
-                        ?>
-                        <tr>
-                            <td style="padding:2px 4px 2px 36px;"><?php echo $label; ?></td>
-                            <td style="text-align:right; white-space:nowrap; padding:2px 4px;"><?php echo tb_format_amt($debit); ?></td>
-                            <td style="text-align:right; white-space:nowrap; padding:2px 4px;"><?php echo tb_format_amt($credit); ?></td>
-                        </tr>
-                    <?php }
-                    unset($transaction[5]);
-                }
-
-                $close_balance = $net_prfit_debit - $net_prfit_credit;
-                $balance_credit = 0;
-                $balance_debit = 0;
-                if ($close_balance > 0) {
-                    $balance_credit += $close_balance;
-                    $total_credit += $close_balance;
-                } else if ($close_balance < 0) {
-                    $balance_debit += (-1 * $close_balance);
-                    $total_debit += (-1 * $close_balance);
-                }
-                if ($check_exp_inc == 1) {
-                    echo '<tr><td colspan="3" style="height:10px;"></td></tr>';
-                }
-                ?>
-                    <tr>
-                        <td style="padding:4px; font-weight:bold; border-top:1px solid #000; border-bottom:1px solid #000;">Net Surplus (Loss)</td>
-                        <td style="text-align:right; white-space:nowrap; padding:2px 4px; font-weight:bold; border-top:1px solid #000; border-bottom:1px solid #000;">
-                            <?php echo number_format($balance_debit, 2); ?>
-                        </td>
-                        <td style="text-align:right; white-space:nowrap; padding:2px 4px; font-weight:bold; border-top:1px solid #000; border-bottom:1px solid #000;">
-                            <?php echo number_format($balance_credit, 2); ?>
-                        </td>
-                    </tr>
-                    <tr><td colspan="3" style="height:12px;"></td></tr>
-
-                <?php foreach ($transaction as $key => $value) {
-                    $type_account = $this->finance_model->account_typelist($key)->row();
-                    if (!$type_account) {
+                        $section_rows .= '<tr>'
+                            . '<td style="padding:2px 4px 2px 36px;">' . $label . '</td>'
+                            . '<td style="text-align:right; white-space:nowrap; padding:2px 4px;">' . tb_format_amt($sides['debit']) . '</td>'
+                            . '<td style="text-align:right; white-space:nowrap; padding:2px 4px;">' . tb_format_amt($sides['credit']) . '</td>'
+                            . '</tr>';
+                    }
+                    if (!$has_row) {
                         continue;
                     }
                     ?>
                     <tr>
                         <td style="padding:10px 4px 2px 0; font-weight:bold; text-transform:uppercase;" colspan="3">
-                            <?php echo htmlspecialchars($type_account->name); ?>
+                            <?php echo htmlspecialchars($section_title); ?>
                         </td>
                     </tr>
-                    <?php
-                    foreach ($value as $key1 => $value1) {
-                        $account_info = $this->finance_model->account_chart(null, $key1)->row();
-                        if (!$account_info) {
-                            continue;
-                        }
-                        $sub_credit = 0;
-                        $sub_debit = 0;
-                        $open_balance = isset($value1['balance']) ? floatval($value1['balance']) : 0;
-                        if ($open_balance > 0) {
-                            $sub_debit += $open_balance;
-                            $total_debit += $open_balance;
-                        } else if ($open_balance < 0) {
-                            $sub_credit += (-1 * $open_balance);
-                            $total_credit += (-1 * $open_balance);
-                        }
-                        if (!empty($value1['current']) && is_object($value1['current'])) {
-                            $sub_credit += floatval($value1['current']->credit);
-                            $sub_debit += floatval($value1['current']->debit);
-                            $total_debit += floatval($value1['current']->debit);
-                            $total_credit += floatval($value1['current']->credit);
-                        }
-                        $acct_code = !empty($account_info->account) ? $account_info->account : $key1;
-                        $label = '<a class="tb-account-link" href="' . $tb_ledger_url($acct_code) . '" title="View account ledger">' . htmlspecialchars($account_info->name) . '</a>';
-                        ?>
-                        <tr>
-                            <td style="padding:2px 4px 2px 36px;"><?php echo $label; ?></td>
-                            <td style="text-align:right; white-space:nowrap; padding:2px 4px;"><?php echo tb_format_amt($sub_debit); ?></td>
-                            <td style="text-align:right; white-space:nowrap; padding:2px 4px;"><?php echo tb_format_amt($sub_credit); ?></td>
-                        </tr>
-                    <?php }
+                    <?php echo $section_rows;
                 } ?>
 
                     <tr>

@@ -312,6 +312,26 @@ $disburse_deductions = isset($disburse_deductions) ? $disburse_deductions : arra
 }
 .loan-disburse-page .offset-panel .offset-body { padding: 14px; }
 .loan-disburse-page .offset-summary {
+    display: block;
+    padding: 10px 0 0;
+    border-top: 1px solid #e5e9ed;
+    margin-top: 10px;
+}
+.loan-disburse-page .offset-waive-row > td { padding-top: 0 !important; }
+.loan-disburse-page .offset-waive {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 4px 0 8px;
+    border-bottom: 1px dashed #e5e9ed;
+}
+.loan-disburse-page .offset-waive-label { font-weight: 600; color: #6c757d; }
+.loan-disburse-page .offset-waive-field { font-weight: normal; margin: 0; }
+.loan-disburse-page .offset-waive-field input,
+.loan-disburse-page .offset-waive-field select { display: inline-block; width: 110px; }
+.loan-disburse-page .offset-waive-note input { width: 220px; }
+.loan-disburse-page .text-warning { color: #f0ad4e; }
     margin: 12px 0 0;
     padding: 10px 12px;
     border-radius: 6px;
@@ -518,37 +538,116 @@ $disburse_deductions = isset($disburse_deductions) ? $disburse_deductions : arra
                 <div class="offset-head"><?php echo lang('loan_offset_section'); ?></div>
                 <div class="offset-body">
                     <p class="section-note"><?php echo lang('loan_offset_help'); ?></p>
+                    <?php if (!empty($pending_waivers)) { ?>
+                    <div class="alert alert-warning" style="margin-bottom:12px;">
+                        <i class="fa fa-clock-o"></i>
+                        <?php echo sprintf(lang('loan_waiver_release_pending'), (int) $pending_waivers); ?>
+                        <a href="<?php echo site_url(current_lang() . '/loan/loan_waiver_list'); ?>" target="_blank"><?php echo lang('loan_waiver_list_title'); ?></a>
+                    </div>
+                    <?php } ?>
                     <div class="docs-table table-responsive">
                         <table class="table table-striped" id="offsetLoansTable">
                             <thead>
                                 <tr>
-                                    <th style="width:40px;"></th>
+                                    <th style="width:34px;"></th>
                                     <th><?php echo lang('loan_LID'); ?></th>
                                     <th><?php echo lang('loan_product'); ?></th>
-                                    <th class="text-right"><?php echo lang('loan_offset_principal'); ?></th>
-                                    <th class="text-right"><?php echo lang('loan_offset_interest'); ?></th>
-                                    <th class="text-right"><?php echo lang('loan_offset_total'); ?></th>
+                                    <th class="text-right" style="width:110px;"><?php echo lang('loan_offset_principal'); ?></th>
+                                    <th class="text-right" style="width:110px;"><?php echo lang('loan_offset_interest'); ?></th>
+                                    <th class="text-right" style="width:110px;"><?php echo lang('loan_offset_penalty'); ?></th>
+                                    <th class="text-right" style="width:100px;"><?php echo lang('loan_offset_other'); ?></th>
+                                    <th class="text-right" style="width:110px;"><?php echo lang('loan_offset_total'); ?></th>
                                 </tr>
                             </thead>
                             <tbody>
                                 <?php foreach ($offsetable_loans as $ol) {
                                     $checked = in_array($ol->LID, $selected_offset_loans, true);
+                                    $saved_row = isset($offset_breakdown[(string) $ol->LID]) ? $offset_breakdown[(string) $ol->LID] : array();
+                                    $val_principal = array_key_exists('principal', $saved_row) ? $saved_row['principal'] : $ol->principal_outstanding;
+                                    $val_interest = array_key_exists('interest', $saved_row) ? $saved_row['interest'] : $ol->interest_outstanding;
+                                    $val_penalty = array_key_exists('penalty', $saved_row) ? $saved_row['penalty'] : $ol->penalty_outstanding;
+                                    $val_other = array_key_exists('other', $saved_row) ? $saved_row['other'] : 0;
+                                    $val_wpen = array_key_exists('penalty_waived', $saved_row) ? $saved_row['penalty_waived'] : 0;
+                                    $val_wint = array_key_exists('interest_waived', $saved_row) ? $saved_row['interest_waived'] : 0;
+                                    $val_reason = isset($saved_row['reason_code']) ? $saved_row['reason_code'] : '';
+                                    $val_note = isset($saved_row['reason_note']) ? $saved_row['reason_note'] : '';
                                 ?>
-                                <tr>
+                                <tr class="offset-loan-row" data-lid="<?php echo htmlspecialchars($ol->LID); ?>">
                                     <td class="text-center">
                                         <input type="checkbox" class="offset-loan-cb" name="offset_loans[]" value="<?php echo htmlspecialchars($ol->LID); ?>"
                                                data-principal="<?php echo htmlspecialchars($ol->principal_outstanding); ?>"
                                                data-interest="<?php echo htmlspecialchars($ol->interest_outstanding); ?>"
+                                               data-penalty="<?php echo htmlspecialchars($ol->penalty_outstanding); ?>"
+                                               data-assessed="<?php echo htmlspecialchars($ol->assessed_outstanding); ?>"
                                                data-total="<?php echo htmlspecialchars($ol->total_outstanding); ?>"
                                                data-principle-account="<?php echo htmlspecialchars($ol->principle_account); ?>"
                                                data-interest-account="<?php echo htmlspecialchars($ol->interest_account); ?>"
+                                               data-penalty-account="<?php echo htmlspecialchars($ol->penalty_account); ?>"
+                                               data-penalty-waived-account="<?php echo htmlspecialchars($ol->penalty_waived_account); ?>"
+                                               data-interest-waived-account="<?php echo htmlspecialchars($ol->interest_waived_account); ?>"
+                                               data-penalty-days="<?php echo (int) $ol->penalty_days; ?>"
                                                <?php echo $checked ? 'checked="checked"' : ''; ?> />
                                     </td>
                                     <td><?php echo htmlspecialchars($ol->LID); ?></td>
                                     <td><?php echo htmlspecialchars($ol->product_name); ?></td>
-                                    <td class="text-right"><?php echo number_format($ol->principal_outstanding, 2); ?></td>
-                                    <td class="text-right"><?php echo number_format($ol->interest_outstanding, 2); ?></td>
-                                    <td class="text-right"><strong><?php echo number_format($ol->total_outstanding, 2); ?></strong></td>
+                                    <td><input type="number" step="0.01" min="0" class="form-control input-sm text-right offset-amount"
+                                               name="offset_principal[<?php echo htmlspecialchars($ol->LID); ?>]"
+                                               value="<?php echo number_format((float) $val_principal, 2, '.', ''); ?>"/></td>
+                                    <td><input type="number" step="0.01" min="0" class="form-control input-sm text-right offset-amount"
+                                               name="offset_interest[<?php echo htmlspecialchars($ol->LID); ?>]"
+                                               value="<?php echo number_format((float) $val_interest, 2, '.', ''); ?>"/></td>
+                                    <td>
+                                        <input type="number" step="0.01" min="0" class="form-control input-sm text-right offset-amount"
+                                               name="offset_penalty[<?php echo htmlspecialchars($ol->LID); ?>]"
+                                               value="<?php echo number_format((float) $val_penalty, 2, '.', ''); ?>"/>
+                                        <?php if ($ol->penalty_days > 0) { ?>
+                                        <small class="text-muted"><?php echo sprintf(lang('loan_offset_penalty_days'), (int) $ol->penalty_days); ?></small>
+                                        <?php } ?>
+                                    </td>
+                                    <td><input type="number" step="0.01" min="0" class="form-control input-sm text-right offset-amount"
+                                               name="offset_other[<?php echo htmlspecialchars($ol->LID); ?>]"
+                                               value="<?php echo number_format((float) $val_other, 2, '.', ''); ?>"/></td>
+                                    <td class="text-right"><strong class="offset-row-total">0.00</strong></td>
+                                </tr>
+                                <tr class="offset-waive-row">
+                                    <td></td>
+                                    <td colspan="7">
+                                        <div class="offset-waive">
+                                            <span class="offset-waive-label"><?php echo lang('loan_waive_label'); ?>:</span>
+                                            <label class="offset-waive-field">
+                                                <?php echo lang('loan_waive_penalty'); ?>
+                                                <input type="number" step="0.01" min="0" class="form-control input-sm offset-waive-input"
+                                                       name="offset_penalty_waived[<?php echo htmlspecialchars($ol->LID); ?>]"
+                                                       value="<?php echo number_format((float) $val_wpen, 2, '.', ''); ?>"/>
+                                            </label>
+                                            <label class="offset-waive-field">
+                                                <?php echo lang('loan_waive_interest'); ?>
+                                                <input type="number" step="0.01" min="0" class="form-control input-sm offset-waive-input"
+                                                       name="offset_interest_waived[<?php echo htmlspecialchars($ol->LID); ?>]"
+                                                       value="<?php echo number_format((float) $val_wint, 2, '.', ''); ?>"/>
+                                            </label>
+                                            <label class="offset-waive-field">
+                                                <?php echo lang('loan_waiver_reason'); ?>
+                                                <select class="form-control input-sm offset-waive-reason"
+                                                        name="offset_reason[<?php echo htmlspecialchars($ol->LID); ?>]">
+                                                    <option value=""><?php echo lang('select_default_text'); ?></option>
+                                                    <?php foreach ((array) $waiver_reason_codes as $code => $reason_label) { ?>
+                                                    <option value="<?php echo htmlspecialchars($code); ?>" <?php echo ($code === $val_reason) ? 'selected="selected"' : ''; ?>><?php echo htmlspecialchars($reason_label); ?></option>
+                                                    <?php } ?>
+                                                </select>
+                                            </label>
+                                            <label class="offset-waive-field offset-waive-note">
+                                                <?php echo lang('loan_waiver_note'); ?>
+                                                <input type="text" maxlength="255" class="form-control input-sm"
+                                                       name="offset_reason_note[<?php echo htmlspecialchars($ol->LID); ?>]"
+                                                       value="<?php echo htmlspecialchars($val_note, ENT_QUOTES, 'UTF-8'); ?>"/>
+                                            </label>
+                                            <button type="button" class="btn btn-default btn-xs offset-reset"
+                                                    title="<?php echo lang('loan_offset_reset_row'); ?>">
+                                                <i class="fa fa-undo"></i> <?php echo lang('loan_offset_reset_row'); ?>
+                                            </button>
+                                        </div>
+                                    </td>
                                 </tr>
                                 <?php } ?>
                             </tbody>
@@ -559,8 +658,11 @@ $disburse_deductions = isset($disburse_deductions) ? $disburse_deductions : arra
                         &nbsp;|&nbsp;
                         <strong><?php echo lang('loan_offset_total'); ?>:</strong> <span id="offsetTotalAmt">0.00</span>
                         &nbsp;|&nbsp;
-                        <strong><?php echo lang('loan_offset_net_proceeds'); ?>:</strong> <span id="offsetNetProceeds"><?php echo number_format($basic_amount, 2); ?></span>
+                        <strong><?php echo lang('loan_offset_waived_total'); ?>:</strong> <span id="offsetWaivedAmt">0.00</span>
+                        &nbsp;|&nbsp;
+                        <strong id="offsetNetLabel"><?php echo lang('loan_offset_net_proceeds'); ?>:</strong> <span id="offsetNetProceeds"><?php echo number_format($basic_amount, 2); ?></span>
                         <div id="offsetWarning" class="text-danger" style="display:none; margin-top:6px;"></div>
+                        <div id="offsetTopupNote" class="text-warning" style="display:none; margin-top:6px;"></div>
                     </div>
                 </div>
             </div>
@@ -617,7 +719,10 @@ $disburse_deductions = isset($disburse_deductions) ? $disburse_deductions : arra
                         }
                         foreach ($default_lines as $line):
                         ?>
-                        <tr class="line-item">
+                        <?php // data-source="sys" is what rebuildGlLinesFromOffset() removes before
+                              // regenerating; without it the server rows survive the rebuild and
+                              // every account ends up in the table twice. ?>
+                        <tr class="line-item" data-source="sys">
                             <td>
                                 <select class="form-control account-select" name="account[]">
                                     <option value=""><?php echo lang('select_default_text'); ?></option>
@@ -671,7 +776,9 @@ $disburse_deductions = isset($disburse_deductions) ? $disburse_deductions : arra
     var newPrincipleAccount = <?php echo json_encode($loan_principle_account); ?>;
     var offsetExceedsMsg = <?php echo json_encode(lang('loan_offset_exceeds_new_loan')); ?>;
     var deductionsExceedMsg = <?php echo json_encode(lang('loan_disburse_deductions_exceed')); ?>;
+    var offsetAccountMissingMsg = <?php echo json_encode(lang('loan_offset_account_missing')); ?>;
     var deductionDefs = <?php echo json_encode(isset($disburse_deductions) ? $disburse_deductions : array()); ?>;
+    var canApproveWaiver = <?php echo json_encode(!empty($can_approve_waiver)); ?>;
 
     function loadScript(src, cb, fallback) {
         var s = document.createElement('script');
@@ -752,9 +859,9 @@ $disburse_deductions = isset($disburse_deductions) ? $disburse_deductions : arra
             return $tmp.html();
         }
 
-        function addRow(account, debit, credit, desc) {
+        function addRow(account, debit, credit, desc, source) {
             var tbody = $('#lineItemsTable tbody');
-            var html = '<tr class="line-item">' +
+            var html = '<tr class="line-item" data-source="' + (source || 'manual') + '">' +
                 '<td><select class="form-control account-select" name="account[]">' +
                 makeAccountSelectHtml(account || '') + '</select></td>' +
                 '<td><input type="text" name="line_description[]" class="form-control" value="' + (desc || '').replace(/"/g, '&quot;') + '"/></td>' +
@@ -791,18 +898,186 @@ $disburse_deductions = isset($disburse_deductions) ? $disburse_deductions : arra
 
         function getSelectedOffsets() {
             var rows = [];
-            $('.offset-loan-cb:checked').each(function() {
-                var $cb = $(this);
+            $('.offset-loan-row').each(function() {
+                var $row = $(this);
+                var $cb = $row.find('.offset-loan-cb');
+                if (!$cb.is(':checked')) {
+                    return;
+                }
+                // The waive controls live on the row immediately below.
+                var $waiveRow = $row.next('.offset-waive-row');
+                var amount = function (suffix) {
+                    var v = parseFloat($row.find('.offset-amount[name^="offset_' + suffix + '["]').val());
+                    return isNaN(v) ? 0 : v;
+                };
+                var waived = function (suffix) {
+                    var v = parseFloat($waiveRow.find('.offset-waive-input[name^="offset_' + suffix + '["]').val());
+                    return isNaN(v) ? 0 : v;
+                };
+                var reason = String($waiveRow.find('.offset-waive-reason').val() || '');
+                var note = String($waiveRow.find('input[type="text"]').val() || '');
+                var principal = amount('principal');
+                var interest = amount('interest');
+                var penalty = amount('penalty');
+                var other = amount('other');
+                var waivePenalty = Math.min(waived('penalty_waived'), penalty);
+                var waiveInterest = Math.min(waived('interest_waived'), interest);
+                var total = Math.round((principal + interest + penalty + other - waivePenalty - waiveInterest) * 100) / 100;
                 rows.push({
-                    LID: $cb.val(),
-                    principal: parseFloat($cb.data('principal')) || 0,
-                    interest: parseFloat($cb.data('interest')) || 0,
-                    total: parseFloat($cb.data('total')) || 0,
+                    LID: String($cb.val()),
+                    principal: principal,
+                    interest: interest,
+                    penalty: penalty,
+                    other: other,
+                    waive_penalty: waivePenalty,
+                    waive_interest: waiveInterest,
+                    reason: reason,
+                    note: note,
+                    total: total,
                     principle_account: String($cb.data('principle-account') || ''),
-                    interest_account: String($cb.data('interest-account') || '')
+                    interest_account: String($cb.data('interest-account') || ''),
+                    penalty_account: String($cb.data('penalty-account') || ''),
+                    penalty_waived_account: String($cb.data('penalty-waived-account') || ''),
+                    interest_waived_account: String($cb.data('interest-waived-account') || '')
                 });
             });
             return rows;
+        }
+
+        /**
+         * Recompute the per-loan payoff column, the summary strip and the
+         * accounting lines from what is typed in the offset panel. Only rows this
+         * function created (data-source="sys") are replaced, so any extra lines
+         * added by hand survive.
+         */
+        function rebuildGlLinesFromOffset() {
+            var offsets = getSelectedOffsets();
+            var deductions = getDeductions();
+            var offsetTotal = 0;
+            var assessedTotal = 0;
+            var waivedTotal = 0;
+            offsets.forEach(function (o) {
+                offsetTotal += o.total;
+                assessedTotal += (o.principal + o.interest + o.penalty + o.other);
+                waivedTotal += (o.waive_penalty + o.waive_interest);
+            });
+            offsetTotal = Math.round(offsetTotal * 100) / 100;
+            assessedTotal = Math.round(assessedTotal * 100) / 100;
+            waivedTotal = Math.round(waivedTotal * 100) / 100;
+            var deductionTotal = 0;
+            deductions.forEach(function (d) { deductionTotal += d.amount; });
+            deductionTotal = Math.round(deductionTotal * 100) / 100;
+            var net = Math.round((newLoanAmount - offsetTotal - deductionTotal) * 100) / 100;
+
+            // Per-loan payoff total in the offset table
+            $('.offset-loan-row').each(function () {
+                var $row = $(this);
+                var lid = String($row.data('lid'));
+                var match = null;
+                offsets.forEach(function (o) { if (o.LID === lid) { match = o; } });
+                $row.find('.offset-row-total').text(match ? match.total.toFixed(2) : '0.00');
+            });
+
+            $('#offsetTotalAmt').text(offsetTotal.toFixed(2));
+            $('#offsetWaivedAmt').text(waivedTotal.toFixed(2));
+            $('#offsetNetProceeds').text(Math.abs(net).toFixed(2));
+            var isTopup = net < -0.009;
+            $('#offsetNetLabel').text(isTopup
+                ? <?php echo json_encode(lang('loan_offset_topup_label')); ?>
+                : <?php echo json_encode(lang('loan_offset_net_proceeds')); ?>);
+
+            var $warning = $('#offsetWarning').hide().text('');
+            var offsetWarnings = [];
+            var $topup = $('#offsetTopupNote').hide().text('');
+            if (isTopup) {
+                $topup.text(<?php echo json_encode(lang('loan_offset_topup_hint')); ?>).show();
+            }
+            if (waivedTotal > 0.009 && !canApproveWaiver) {
+                offsetWarnings.push(<?php echo json_encode(lang('loan_waiver_pending_hint')); ?>);
+            }
+
+            var cashAccount = firstCreditAccount || '';
+            var pmId = $('#payment_method').val();
+            if (pmId && paymentMethodAccounts && paymentMethodAccounts[pmId]) {
+                cashAccount = paymentMethodAccounts[pmId];
+            }
+
+            // Drop only the auto-generated rows; keep anything typed by hand.
+            // NOTE: which accounts were on the sheet is captured first, so a
+            // deduction placeholder the user deleted stays deleted instead of
+            // being seeded back on the next rebuild. Everything that is not a
+            // hand-typed ("manual") row is regenerated here - the server-rendered
+            // worksheet included - so the generated lines can never end up next
+            // to a second copy of themselves.
+            var accountsOnSheet = {};
+            $('#lineItemsTable tbody tr.line-item').each(function () {
+                var account = String($(this).find('.account-select').val() || '');
+                if (account) {
+                    accountsOnSheet[account] = true;
+                }
+            });
+            $('#lineItemsTable tbody tr.line-item').not('[data-source="manual"]').each(function () {
+                destroyAccountSelect($(this).find('.account-select'));
+                $(this).remove();
+            });
+
+            addRow(newPrincipleAccount, newLoanAmount.toFixed(2), '', 'Loan principal', 'sys');
+
+            deductions.forEach(function (d) {
+                if (!d.account) {
+                    return;
+                }
+                if (d.amount > 0.009 || accountsOnSheet[String(d.account)]) {
+                    addRow(d.account, '', d.amount > 0.009 ? d.amount.toFixed(2) : '', d.description, 'sys');
+                }
+            });
+
+            // Old loans: principal and interest receivable are credited, the
+            // accrued penalty is recognised as income. A component that carries an
+            // amount but has no GL account would drop its credit leg and leave the
+            // worksheet unbalanced, so it is reported here instead of skipped.
+            offsets.forEach(function (o) {
+                var legs = [
+                    { label: 'principal', account: o.principle_account, amount: o.principal, desc: 'Offset principal ' + o.LID },
+                    { label: 'interest', account: o.interest_account, amount: o.interest, desc: 'Offset interest ' + o.LID },
+                    { label: 'penalty', account: o.penalty_account, amount: o.penalty, desc: 'Offset penalty ' + o.LID },
+                    { label: 'other', account: o.principle_account, amount: o.other, desc: 'Offset other ' + o.LID }
+                ];
+                legs.forEach(function (leg) {
+                    if (leg.amount <= 0.009) {
+                        return;
+                    }
+                    if (!leg.account) {
+                        offsetWarnings.push(offsetAccountMissingMsg.replace('%s', o.LID + ' (' + leg.label + ')'));
+                        return;
+                    }
+                    addRow(leg.account, '', leg.amount.toFixed(2), leg.desc, 'sys');
+                });
+                // Gross then waive: recognise the waived amount, debit the contra.
+                if (o.waive_penalty > 0.009 && o.penalty_waived_account && o.penalty_account) {
+                    addRow(o.penalty_waived_account, o.waive_penalty.toFixed(2), '', 'Penalty waived ' + o.LID, 'sys');
+                    addRow(o.penalty_account, '', o.waive_penalty.toFixed(2), 'Penalty waived ' + o.LID + ' (income recognised)', 'sys');
+                }
+                if (o.waive_interest > 0.009 && o.interest_waived_account && o.interest_account) {
+                    addRow(o.interest_waived_account, o.waive_interest.toFixed(2), '', 'Interest waived ' + o.LID, 'sys');
+                    addRow(o.interest_account, '', o.waive_interest.toFixed(2), 'Interest waived ' + o.LID + ' (income recognised)', 'sys');
+                }
+            });
+
+            if (net > 0.009) {
+                addRow(cashAccount, '', net.toFixed(2), 'Net cash to member', 'sys');
+            } else if (isTopup && cashAccount) {
+                // The payoff is bigger than the new loan: the member pays the
+                // difference in cash, which is a debit rather than a credit.
+                addRow(cashAccount, Math.abs(net).toFixed(2), '', 'Cash from member (top-up)', 'sys');
+            } else if (offsets.length === 0 && deductions.length === 0) {
+                addRow(cashAccount, '', newLoanAmount.toFixed(2), 'Disbursement source', 'sys');
+            }
+            if (offsetWarnings.length) {
+                $warning.text(offsetWarnings.join(' ')).show();
+            }
+            updateTotals();
+            updateRemoveButtons();
         }
 
         function getDeductions() {
@@ -827,61 +1102,6 @@ $disburse_deductions = isset($disburse_deductions) ? $disburse_deductions : arra
             return rows;
         }
 
-        function rebuildGlLinesFromOffset() {
-            var offsets = getSelectedOffsets();
-            var deductions = getDeductions();
-            var offsetTotal = 0;
-            offsets.forEach(function(o) { offsetTotal += o.total; });
-            offsetTotal = Math.round(offsetTotal * 100) / 100;
-            var deductionTotal = 0;
-            deductions.forEach(function(d) { deductionTotal += d.amount; });
-            deductionTotal = Math.round(deductionTotal * 100) / 100;
-            var net = Math.round((newLoanAmount - offsetTotal - deductionTotal) * 100) / 100;
-
-            $('#offsetTotalAmt').text(offsetTotal.toFixed(2));
-            $('#offsetNetProceeds').text(net.toFixed(2));
-            if ((offsetTotal + deductionTotal) > newLoanAmount + 0.009) {
-                $('#offsetWarning').text(deductionsExceedMsg).show();
-            } else {
-                $('#offsetWarning').hide().text('');
-            }
-
-            var cashAccount = firstCreditAccount || '';
-            var pmId = $('#payment_method').val();
-            if (pmId && paymentMethodAccounts && paymentMethodAccounts[pmId]) {
-                cashAccount = paymentMethodAccounts[pmId];
-            }
-
-            $('#lineItemsTable tbody tr.line-item').each(function() {
-                destroyAccountSelect($(this).find('.account-select'));
-            });
-            $('#lineItemsTable tbody').empty();
-            addRow(newPrincipleAccount, newLoanAmount.toFixed(2), '', 'Loan principal');
-
-            deductions.forEach(function(d) {
-                if (d.account) {
-                    addRow(d.account, '', d.amount > 0.009 ? d.amount.toFixed(2) : '', d.description);
-                }
-            });
-
-            offsets.forEach(function(o) {
-                if (o.principal > 0.009 && o.principle_account) {
-                    addRow(o.principle_account, '', o.principal.toFixed(2), 'Offset principal ' + o.LID);
-                }
-                if (o.interest > 0.009 && o.interest_account) {
-                    addRow(o.interest_account, '', o.interest.toFixed(2), 'Offset interest ' + o.LID);
-                }
-            });
-
-            if (net > 0.009) {
-                addRow(cashAccount, '', net.toFixed(2), 'Net cash to member');
-            } else if (offsets.length === 0 && deductions.length === 0) {
-                addRow(cashAccount, '', newLoanAmount.toFixed(2), 'Disbursement source');
-            }
-            updateTotals();
-            updateRemoveButtons();
-        }
-
         $('#payment_method').on('change', function() {
             var id = $(this).val();
             var account = (paymentMethodAccounts && paymentMethodAccounts[id]) ? paymentMethodAccounts[id] : '';
@@ -902,8 +1122,42 @@ $disburse_deductions = isset($disburse_deductions) ? $disburse_deductions : arra
             rebuildGlLinesFromOffset();
         });
 
+        // Typed overrides and waivers drive the accounting lines.
+        $(document).on('keyup change', '.offset-amount, .offset-waive-input', function() {
+            var $row = $(this).closest('.offset-loan-row');
+            if (!$row.length) {
+                $row = $(this).closest('tr').prev('.offset-loan-row');
+            }
+            var $penalty = $row.find('.offset-amount[name^="offset_penalty["]');
+            var $interest = $row.find('.offset-amount[name^="offset_interest["]');
+            var $wpen = $row.find('.offset-waive-input[name^="offset_penalty_waived["]');
+            var $wint = $row.find('.offset-waive-input[name^="offset_interest_waived["]');
+            // A waiver can never exceed what was assessed.
+            if (parseFloat($wpen.val()) > parseFloat($penalty.val())) {
+                $wpen.val(parseFloat($penalty.val()).toFixed(2));
+            }
+            if (parseFloat($wint.val()) > parseFloat($interest.val())) {
+                $wint.val(parseFloat($interest.val()).toFixed(2));
+            }
+            rebuildGlLinesFromOffset();
+        });
+
+        $(document).on('click', '.offset-reset', function() {
+            var $waiveRow = $(this).closest('.offset-waive-row');
+            var $row = $waiveRow.prev('.offset-loan-row');
+            var $cb = $row.find('.offset-loan-cb');
+            $row.find('.offset-amount[name^="offset_principal["]').val(parseFloat($cb.data('principal') || 0).toFixed(2));
+            $row.find('.offset-amount[name^="offset_interest["]').val(parseFloat($cb.data('interest') || 0).toFixed(2));
+            $row.find('.offset-amount[name^="offset_penalty["]').val(parseFloat($cb.data('penalty') || 0).toFixed(2));
+            $row.find('.offset-amount[name^="offset_other["]').val('0.00');
+            $row.find('.offset-waive-input').val('0.00');
+            $waiveRow.find('.offset-waive-reason').val('');
+            $waiveRow.find('input[type="text"]').val('');
+            rebuildGlLinesFromOffset();
+        });
+
         $('#addLineItem').on('click', function() {
-            addRow('', '', '', '');
+            addRow('', '', '', '', 'manual');
         });
 
         $(document).on('click', '.remove-line', function() {
@@ -932,14 +1186,17 @@ $disburse_deductions = isset($disburse_deductions) ? $disburse_deductions : arra
 
         $('#loanDisburseEntryForm').on('submit', function(e) {
             var offsets = getSelectedOffsets();
-            var deductions = getDeductions();
-            var offsetTotal = 0;
-            offsets.forEach(function(o) { offsetTotal += o.total; });
-            var deductionTotal = 0;
-            deductions.forEach(function(d) { deductionTotal += d.amount; });
-            if ((offsetTotal + deductionTotal) > newLoanAmount + 0.009) {
+            // A payoff larger than the new loan is allowed - the member covers the
+            // difference in cash, so the worksheet carries a top-up debit line.
+            var missingReason = null;
+            offsets.forEach(function (o) {
+                if ((o.waive_penalty > 0.009 || o.waive_interest > 0.009) && !o.reason) {
+                    missingReason = o.LID;
+                }
+            });
+            if (missingReason) {
                 e.preventDefault();
-                alert(deductionsExceedMsg);
+                alert(<?php echo json_encode(lang('loan_waiver_reason_required_js')); ?>.replace('%s', missingReason));
                 return false;
             }
             var totalDebit = 0, totalCredit = 0, hasItems = false;

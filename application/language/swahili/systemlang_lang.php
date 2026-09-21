@@ -324,6 +324,11 @@ $lang['loan_approval'] = 'Loan Approval';
 $lang['loan_disbursement'] = 'Loan Release';
 $lang['loan_repayment'] = 'Loan Repayment';
 $lang['loan_viewlist'] = 'Loan List';
+// Sidebar label. Needed here (not only loan_lang.php) because this file is in
+// autoload['language'] and the sidebar renders on EVERY page, while loan_lang.php
+// only loads in the Loan and Finance controllers - a label found nowhere else
+// renders blank, making the menu entry invisible.
+$lang['loan_waiver_list_title'] = 'Penalty & Interest Waivers';
 $lang['loan_report'] = 'Loan Reports';
 
 

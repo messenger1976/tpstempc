@@ -92,6 +92,10 @@ $lang['loanproduct_account']='Account';
 $lang['loanproduct_account_principle']='Loan Principle A/R';
 $lang['loanproduct_account_interest']='Interest  A/R';
 $lang['loanproduct_account_penalt']='Penalty Interest  A/R';
+$lang['loanproduct_account_penalt_waived']='Penalty Waived (contra account)';
+$lang['loanproduct_account_penalt_waived_help']='Debited when a penalty is waived, so the concession shows in the books. Leave blank to disallow penalty waivers for this product.';
+$lang['loanproduct_account_interest_waived']='Interest Waived (contra account)';
+$lang['loanproduct_account_interest_waived_help']='Debited when interest is waived. Leave blank to disallow interest waivers for this product.';
 $lang['loanproduct_security']='Loan Security';
 $lang['loanproduct_add_fail']='Fail to save loan product information';
 $lang['loanproduct_add_success']='Loan Product Information saved successfully';
@@ -99,6 +103,15 @@ $lang['loanproduct_penalt_percentage'] = 'Penalty Percentage (%)';
 $lang['loanproduct_penalt_grace_days'] = 'Overdue Grace Days';
 $lang['loanproduct_penalt_grace_days_placeholder'] = 'Blank = system default (%s days)';
 $lang['loanproduct_penalt_grace_days_help'] = 'Optional. Days after the installment due date before overdue penalty starts. Leave blank to use the system default (%s days).';
+$lang['loanproduct_policy_penalty_warning'] = 'This product differs from the standard lending policy penalty settings. Review the 2% rate, Principal + Interest method, and 5-day grace period before saving.';
+$lang['loanproduct_penalt_period'] = 'Penalty Period';
+$lang['loanproduct_penalt_period_default'] = 'System default (%s days)';
+$lang['loanproduct_penalt_period_once'] = 'Once per installment';
+$lang['loanproduct_penalt_period_day'] = 'Per day';
+$lang['loanproduct_penalt_period_week'] = 'Per week (7 days)';
+$lang['loanproduct_penalt_period_half'] = 'Per 15 days';
+$lang['loanproduct_penalt_period_month'] = 'Per month (30 days)';
+$lang['loanproduct_penalt_period_help'] = 'How often the penalty percentage above is charged while an installment stays unpaid. Blank = system default (%s days). Choose "Once per installment" for a one-time penalty.';
 
 // Payment Method
 $lang['payment_method_list'] = 'Payment Method List';

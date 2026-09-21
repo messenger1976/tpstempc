@@ -352,6 +352,46 @@ if (!function_exists('company_info')) {
 
 }
 
+if (!function_exists('loan_form_logo_src')) {
+
+    /**
+     * Source for the cooperative crest on the printed loan forms.
+     *
+     * Returns an inline data URI when the file is readable so the headless PDF
+     * renderer (which loads the page from a file:// temp file) never has to fetch
+     * the image over HTTP from the site itself - a fetch that fails silently and
+     * prints a broken image. Falls back to the site URL, then to the company logo
+     * from companyinfo, and finally to '' (the caller then draws its own badge).
+     */
+    function loan_form_logo_src($fallback_file = '') {
+        $candidates = array();
+        if (defined('TAPSTEMCO_FORM_LOGO') && TAPSTEMCO_FORM_LOGO !== '') {
+            $candidates[] = TAPSTEMCO_FORM_LOGO;
+        }
+        $fallback_file = trim((string) $fallback_file);
+        if ($fallback_file !== '') {
+            $candidates[] = $fallback_file;
+        }
+        if (!defined('FCPATH')) {
+            return '';
+        }
+        foreach ($candidates as $rel) {
+            $path = FCPATH . 'logo/' . $rel;
+            if (!is_file($path) || !is_readable($path)) {
+                continue;
+            }
+            $info = @getimagesize($path);
+            $data = @file_get_contents($path);
+            if ($info && !empty($info['mime']) && $data !== false) {
+                return 'data:' . $info['mime'] . ';base64,' . base64_encode($data);
+            }
+            return base_url('logo/' . $rel);
+        }
+        return '';
+    }
+
+}
+
 if (!function_exists('member_avatar_url')) {
 
     function member_avatar_url($photo = '', $gender = '') {

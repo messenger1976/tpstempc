@@ -17,8 +17,9 @@
         border: 0px;
     }
     table#receipt_header tr td#logo_receipt img{
-        width: 120px;
-        height: 100px;
+        width: 110px;
+        height: 110px;
+        object-fit: contain;
     }
 
     table#receipt_header tr td#receipt_title{
@@ -45,7 +46,16 @@
     <table id="receipt_header">
         <tr>
             <td id="logo_receipt">
-                <img src="<?php echo base_url() ?>logo/<?php echo company_info()->logo; ?>"/>
+                <?php
+                // Inline the crest so a blank/renamed company logo can never print
+                // a broken image; no image at all when no logo file is available.
+                $receipt_logo = function_exists('loan_form_logo_src')
+                    ? loan_form_logo_src(company_info()->logo)
+                    : '';
+                ?>
+                <?php if ($receipt_logo !== ''): ?>
+                    <img src="<?php echo $receipt_logo; ?>" alt="Cooperative logo"/>
+                <?php endif; ?>
             </td>
             <td id="receipt_title">
                 <?php echo company_info()->name; ?><br/>

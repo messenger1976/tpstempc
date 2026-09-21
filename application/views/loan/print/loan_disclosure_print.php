@@ -15,7 +15,16 @@ $this->load->view('loan/print/partials/loan_form_open', array(
     'forms_url' => isset($forms_url) ? $forms_url : '',
     'company' => isset($company) ? $company : null,
     'form_no_header' => '',
+    'include_letterhead' => false,
 ));
+
+/* Actual cooperative crest for each copy, inlined so the headless PDF renderer
+   always has it (drawn badge only as a fallback). */
+$form_logo_url = (isset($logo_override) && $logo_override !== '') ? (string) $logo_override : '';
+if ($form_logo_url === '' && function_exists('loan_form_logo_src')) {
+    $form_logo_url = loan_form_logo_src(($company && !empty($company->logo)) ? $company->logo : '');
+}
+$form_logo_ok = ($form_logo_url !== '');
 
 $input = function ($value, $class = '') {
     return '<input type="text" readonly="readonly" class="' . $class . '" value="'
@@ -42,18 +51,19 @@ $rows = array(
 /**
  * One copy of the statement. Rendered twice: original on top, duplicate below.
  */
-$render_copy = function () use ($form, $input, $rows) {
-    $html = '<div class="space-y-3">';
+$render_copy = function () use ($form, $input, $rows, $form_logo_ok, $form_logo_url) {
+    $html = '<div class="space-y-2">';
 
     /* ------------------------------------------------------------- header -- */
     $html .= '<div class="relative flex items-center justify-center border-b border-gray-300 pb-2">'
         . '<div class="absolute left-0 top-0 w-16 h-16 flex items-center justify-center">'
-        . '<div class="w-14 h-14 rounded-full border-2 border-green-700 p-0.5 flex items-center justify-center text-center text-[7px] font-bold text-green-800 relative print-exact">'
-        . '<div class="absolute inset-0 rounded-full border border-yellow-500"></div>'
-        . '<div>'
-        . '<div class="text-[8px] font-extrabold text-red-600">TAPSTEMCO</div>'
-        . '<div class="leading-tight text-[6px]">TEACHERS &amp; EMPLOYEES</div>'
-        . '</div></div></div>'
+        . ($form_logo_ok
+            ? '<img src="' . htmlspecialchars($form_logo_url, ENT_QUOTES, 'UTF-8') . '" alt="Cooperative logo" class="w-14 h-14 object-contain print-exact">'
+            : '<div class="w-14 h-14 rounded-full border-2 border-green-700 p-0.5 flex items-center justify-center text-center text-[7px] font-bold text-green-800 relative print-exact">'
+                . '<div class="absolute inset-0 rounded-full border border-yellow-500"></div>'
+                . '<div><div class="text-[8px] font-extrabold text-red-600">TAPSTEMCO</div>'
+                . '<div class="leading-tight text-[6px]">TEACHERS &amp; EMPLOYEES</div></div></div>')
+        . '</div>'
         . '<div class="text-center">'
         . '<h1 class="text-xs md:text-sm font-bold tracking-tight text-gray-900 leading-snug uppercase">'
         . 'TALIBON PUBLIC SCHOOL TEACHERS AND EMPLOYEES<br>MULTIPURPOSE COOPERATIVE (TAPSTEMCO)'
@@ -79,18 +89,18 @@ $render_copy = function () use ($form, $input, $rows) {
     $html .= '<div class="overflow-x-auto"><table class="w-full text-xs border border-gray-800 border-collapse">'
         . '<thead>'
         . '<tr class="border-b border-gray-800">'
-        . '<th rowspan="2" class="border-r border-gray-800 p-1 text-center font-bold w-1/2">PARTICULARS</th>'
-        . '<th colspan="2" class="p-1 text-center font-bold">AMOUNT</th>'
+        . '<th rowspan="2" class="border-r border-gray-800 px-1 py-0.5 text-center font-bold w-1/2">PARTICULARS</th>'
+        . '<th colspan="2" class="px-1 py-0.5 text-center font-bold">AMOUNT</th>'
         . '</tr>'
         . '<tr class="border-b border-gray-800">'
-        . '<th class="border-r border-gray-800 p-0.5 text-center font-bold w-1/4">DR</th>'
-        . '<th class="p-0.5 text-center font-bold w-1/4">CR</th>'
+        . '<th class="border-r border-gray-800 px-1 py-0.5 text-center font-bold w-1/4">DR</th>'
+        . '<th class="px-1 py-0.5 text-center font-bold w-1/4">CR</th>'
         . '</tr>'
         . '</thead><tbody class="divide-y divide-gray-800">';
 
     foreach ($rows as $row) {
         $extra = !empty($row['top']) ? ' border-t-2 border-gray-800' : '';
-        $label_class = trim('border-r border-gray-800 p-1 ' . $row['cell']);
+        $label_class = trim('border-r border-gray-800 px-1 py-0.5 ' . $row['cell']);
 
         $cell_dr = $row['p_dr']
             ? '<div class="flex items-center px-1"><span class="mr-1">P</span>' . $input($form[$row['key'] . '_dr'], 'w-full bg-transparent outline-none') . '</div>'
@@ -101,14 +111,14 @@ $render_copy = function () use ($form, $input, $rows) {
 
         $html .= '<tr class="' . trim($extra) . '">'
             . '<td class="' . htmlspecialchars($label_class, ENT_QUOTES, 'UTF-8') . '">' . htmlspecialchars($row['label'], ENT_QUOTES, 'UTF-8') . '</td>'
-            . '<td class="border-r border-gray-800 p-0.5">' . $cell_dr . '</td>'
-            . '<td class="p-0.5">' . $cell_cr . '</td>'
+            . '<td class="border-r border-gray-800 px-1 py-0.5">' . $cell_dr . '</td>'
+            . '<td class="px-1 py-0.5">' . $cell_cr . '</td>'
             . '</tr>';
     }
     $html .= '</tbody></table></div>';
 
     /* -------------------------------------------------------- signatures --- */
-    $html .= '<div class="grid grid-cols-2 gap-8 text-xs pt-3 items-end">'
+    $html .= '<div class="grid grid-cols-2 gap-8 text-xs pt-1 items-end">'
         . '<div class="space-y-3">'
         . '<span class="font-semibold block">APPROVED:</span>'
         . '<div class="text-center w-48">' . $input($form['loan_officer'], 'underline-input w-full text-center')
@@ -126,10 +136,10 @@ $render_copy = function () use ($form, $input, $rows) {
 };
 ?>
 
-<div class="space-y-8">
+<div class="space-y-6">
     <?php echo $render_copy(); ?>
 
-    <div class="relative flex items-center justify-center my-4">
+    <div class="relative flex items-center justify-center my-2">
         <div class="border-t border-dashed border-gray-400 w-full"></div>
         <span class="absolute bg-white px-3 text-[10px] text-gray-400 italic">&#9986; Cut Here (Duplicate Copy)</span>
     </div>

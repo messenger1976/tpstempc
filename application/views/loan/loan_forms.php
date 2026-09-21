@@ -22,13 +22,15 @@ $esc = function ($value) {
 };
 
 $form_url = current_lang() . '/loan/loan_forms/' . $loanid;
-$pdf_url = current_lang() . '/loan/print_loan_application_pdf/' . $loanid;
-$pdf13_url = current_lang() . '/loan/print_comakers_promissory_pdf/' . $loanid;
-$pdf_pledge_url = current_lang() . '/loan/print_pledge_authority_pdf/' . $loanid;
+// "Print PDF" downloads a real PDF file: the server prints the same preview page
+// with a headless browser, so the file keeps the exact form layout.
 $html_url = current_lang() . '/loan/print_loan_application_html/' . $loanid;
 $html13_url = current_lang() . '/loan/print_comakers_promissory_html/' . $loanid;
 $html_pledge_url = current_lang() . '/loan/print_pledge_authority_html/' . $loanid;
 $html_ds_url = current_lang() . '/loan/print_loan_disclosure_html/' . $loanid;
+$pdf_url = current_lang() . '/loan/print_loan_application_pdf/' . $loanid;
+$pdf13_url = current_lang() . '/loan/print_comakers_promissory_pdf/' . $loanid;
+$pdf_pledge_url = current_lang() . '/loan/print_pledge_authority_pdf/' . $loanid;
 $pdf_ds_url = current_lang() . '/loan/print_loan_disclosure_pdf/' . $loanid;
 ?>
 
@@ -250,7 +252,8 @@ $pdf_ds_url = current_lang() . '/loan/print_loan_disclosure_pdf/' . $loanid;
             <a class="btn btn-primary btn-sm" target="_blank" href="<?php echo site_url($html_url); ?>">
                 <i class="fa fa-eye"></i> <?php echo lang('loan_form_preview'); ?>
             </a>
-            <a class="btn btn-default btn-sm" target="_blank" href="<?php echo site_url($pdf_url); ?>">
+            <a class="btn btn-default btn-sm" target="_blank" href="<?php echo site_url($pdf_url); ?>"
+               title="Downloads this form as a PDF (long bond) using the exact preview layout.">
                 <i class="fa fa-file-pdf-o"></i> <?php echo lang('loan_form_print_pdf'); ?>
             </a>
         </div>
@@ -424,7 +427,8 @@ $pdf_ds_url = current_lang() . '/loan/print_loan_disclosure_pdf/' . $loanid;
             <a class="btn btn-primary btn-sm" target="_blank" href="<?php echo site_url($html13_url); ?>">
                 <i class="fa fa-eye"></i> <?php echo lang('loan_form_preview'); ?>
             </a>
-            <a class="btn btn-default btn-sm" target="_blank" href="<?php echo site_url($pdf13_url); ?>">
+            <a class="btn btn-default btn-sm" target="_blank" href="<?php echo site_url($pdf13_url); ?>"
+               title="Downloads this form as a PDF (long bond) using the exact preview layout.">
                 <i class="fa fa-file-pdf-o"></i> <?php echo lang('loan_form_print_pdf'); ?>
             </a>
         </div>
@@ -603,7 +607,8 @@ $pdf_ds_url = current_lang() . '/loan/print_loan_disclosure_pdf/' . $loanid;
             <a class="btn btn-primary btn-sm" target="_blank" href="<?php echo site_url($html_pledge_url); ?>">
                 <i class="fa fa-eye"></i> <?php echo lang('loan_form_preview'); ?>
             </a>
-            <a class="btn btn-default btn-sm" target="_blank" href="<?php echo site_url($pdf_pledge_url); ?>">
+            <a class="btn btn-default btn-sm" target="_blank" href="<?php echo site_url($pdf_pledge_url); ?>"
+               title="Downloads this form as a PDF (long bond) using the exact preview layout.">
                 <i class="fa fa-file-pdf-o"></i> <?php echo lang('loan_form_print_pdf'); ?>
             </a>
         </div>
@@ -681,7 +686,8 @@ $pdf_ds_url = current_lang() . '/loan/print_loan_disclosure_pdf/' . $loanid;
             <a class="btn btn-primary btn-sm" target="_blank" href="<?php echo site_url($html_ds_url); ?>">
                 <i class="fa fa-eye"></i> <?php echo lang('loan_form_preview'); ?>
             </a>
-            <a class="btn btn-default btn-sm" target="_blank" href="<?php echo site_url($pdf_ds_url); ?>">
+            <a class="btn btn-default btn-sm" target="_blank" href="<?php echo site_url($pdf_ds_url); ?>"
+               title="Downloads this form as a PDF (long bond) using the exact preview layout.">
                 <i class="fa fa-file-pdf-o"></i> <?php echo lang('loan_form_print_pdf'); ?>
             </a>
         </div>

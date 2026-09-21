@@ -23,15 +23,15 @@ $input = function ($value, $class = '') {
 };
 ?>
 
-<div class="flex justify-between items-center my-8 text-sm font-semibold">
+<div class="flex justify-between items-center my-4 text-sm font-semibold">
     <div>Form No. TPSTEMPC-13</div>
     <div class="flex items-center">
         <span class="mr-2">Date</span><?php echo $input($form['date'], 'w-44 text-center px-1'); ?>
     </div>
 </div>
 
-<div class="space-y-10">
-    <div class="text-sm leading-relaxed text-justify">
+<div class="space-y-6">
+    <div class="text-sm leading-snug text-justify">
         <p>
             I/We the undersigned hereby pledge all deposits and payments on deposits which I/We now have or hereafter may have in the Multipurpose Cooperative as security for the loan as evidenced by a note dated
             <?php echo $input($form['note_date'], 'w-36 text-center mx-1 px-1'); ?>, 20<?php echo $input($form['note_year'], 'w-12 text-center mx-1 px-1'); ?>
@@ -41,7 +41,7 @@ $input = function ($value, $class = '') {
         </p>
     </div>
 
-    <div class="pt-6 space-y-12">
+    <div class="pt-3 space-y-8">
         <div class="flex justify-center">
             <div class="w-80 text-center">
                 <?php echo $input($form['maker_name'], 'w-full text-center py-1 mb-1'); ?>
@@ -49,7 +49,7 @@ $input = function ($value, $class = '') {
             </div>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-12 pt-4">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-8 pt-2">
             <div class="text-center">
                 <?php echo $input($form['comaker1_name'], 'w-full max-w-xs text-center py-1 mb-1'); ?>
                 <span class="text-xs font-semibold text-gray-700 block">Signature of Co-Maker</span>
@@ -61,11 +61,11 @@ $input = function ($value, $class = '') {
         </div>
     </div>
 
-    <div class="pt-8 space-y-6">
+    <div class="pt-4 space-y-4">
         <div class="text-center">
             <h2 class="text-base font-extrabold tracking-widest uppercase">A U T H O R I T Y</h2>
         </div>
-        <div class="text-sm leading-relaxed text-justify">
+        <div class="text-sm leading-snug text-justify">
             <p>
                 In consideration for the Loan granted to me by the <strong class="font-semibold uppercase">TALIBON PUBLIC SCHOOL TEACHERS &amp; EMPLOYEES MULTIPURPOSE COOPERATIVE, Talibon, Bohol</strong> in the amount of P
                 <?php echo $input($form['authority_amount'], 'w-48 text-center mx-1 px-1'); ?>
@@ -74,9 +74,9 @@ $input = function ($value, $class = '') {
         </div>
     </div>
 
-    <div class="pt-6 space-y-8">
+    <div class="pt-3 space-y-6">
         <div class="text-xs font-medium text-gray-700">With Spouse consent:</div>
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-12 pt-4">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-8 pt-2">
             <div class="text-center">
                 <?php echo $input($form['spouse_name'], 'w-full max-w-xs text-center py-1 mb-1'); ?>
                 <span class="text-xs font-semibold text-gray-700 block">(Signature of Spouse over printed name)</span>

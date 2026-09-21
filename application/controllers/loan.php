@@ -873,20 +873,49 @@ class Loan extends CI_Controller {
      * Disclosure Statement (PDF): one copy per page.
      */
     function print_loan_disclosure_pdf($loanid) {
-        $forms = $this->_loan_form_print_data($loanid);
-        if ($forms === null) {
-            show_404();
-            return;
-        }
-        if (!$this->_loan_form_renderer()) {
-            return;
-        }
-        $company = $forms['company'];
-        $loaninfo = $forms['loan'];
-        $member = $forms['member'];
-        $maker = $forms['maker'];
-        $form = $forms['values']['disclosure'];
-        include dirname(__FILE__) . '/pdf/loan_disclosure_statement.php';
+        $this->_loan_form_pdf_download($loanid, 'disclosure');
+    }
+
+    /**
+     * Form metadata: route methods, printed form number, preview view and header
+     * form number. Single source for the preview toolbar URLs, the direct PDF
+     * download and the buttons on the Loan Forms hub.
+     */
+    private function _loan_form_meta() {
+        return array(
+            'application' => array(
+                'no' => 'TPSTEMPC-12',
+                'name' => 'Application for Loan',
+                'pdf' => 'print_loan_application_pdf',
+                'html' => 'print_loan_application_html',
+                'view' => 'loan_application_print',
+                'header_form_no' => 'TPSTEMPC-12',
+            ),
+            'comakers' => array(
+                'no' => 'TPSTEMPC-13',
+                'name' => 'Co-Makers Statement & Promissory Note',
+                'pdf' => 'print_comakers_promissory_pdf',
+                'html' => 'print_comakers_promissory_html',
+                'view' => 'loan_comakers_promissory_print',
+                'header_form_no' => '',
+            ),
+            'pledge' => array(
+                'no' => 'TPSTEMPC-13',
+                'name' => 'Pledge & Authority',
+                'pdf' => 'print_pledge_authority_pdf',
+                'html' => 'print_pledge_authority_html',
+                'view' => 'loan_pledge_authority_print',
+                'header_form_no' => '',
+            ),
+            'disclosure' => array(
+                'no' => 'DS',
+                'name' => 'Disclosure Statement',
+                'pdf' => 'print_loan_disclosure_pdf',
+                'html' => 'print_loan_disclosure_html',
+                'view' => 'loan_disclosure_print',
+                'header_form_no' => '',
+            ),
+        );
     }
 
     /**
@@ -899,32 +928,7 @@ class Loan extends CI_Controller {
             return null;
         }
 
-        $meta = array(
-            'application' => array(
-                'no' => 'TPSTEMPC-12',
-                'name' => 'Application for Loan',
-                'pdf' => 'print_loan_application_pdf',
-                'header_form_no' => 'TPSTEMPC-12',
-            ),
-            'comakers' => array(
-                'no' => 'TPSTEMPC-13',
-                'name' => 'Co-Makers Statement & Promissory Note',
-                'pdf' => 'print_comakers_promissory_pdf',
-                'header_form_no' => '',
-            ),
-            'pledge' => array(
-                'no' => 'TPSTEMPC-13',
-                'name' => 'Pledge & Authority',
-                'pdf' => 'print_pledge_authority_pdf',
-                'header_form_no' => '',
-            ),
-            'disclosure' => array(
-                'no' => 'DS',
-                'name' => 'Disclosure Statement',
-                'pdf' => 'print_loan_disclosure_pdf',
-                'header_form_no' => '',
-            ),
-        );
+        $meta = $this->_loan_form_meta();
         if (!isset($meta[$form_code])) {
             return null;
         }
@@ -951,6 +955,10 @@ class Loan extends CI_Controller {
             'reference' => 'Member: ' . $forms['maker']['name'] . ($member_id !== '' ? ' (' . $member_id . ')' : '')
                 . '   |   Loan No.: ' . $forms['loan']->LID
                 . ($product_name !== '' ? '   |   Product: ' . $product_name : ''),
+            // Direct PDF download: the server prints this same preview page with a
+            // headless browser, so the file keeps the exact form layout (and the
+            // long bond sheet size from the form's @page rule). When no browser can
+            // be launched the route falls back to the preview in print mode.
             'pdf_url' => site_url(current_lang() . '/loan/' . $meta[$form_code]['pdf'] . '/' . $loanid),
             'forms_url' => site_url(current_lang() . '/loan/loan_forms/' . $loanid),
         );
@@ -985,6 +993,54 @@ class Loan extends CI_Controller {
     }
 
     /**
+     * Direct PDF download of one loan form.
+     *
+     * The file is produced by a headless browser printing the very same preview
+     * page, so the download matches the on-screen form and the long bond sheet
+     * size declared by the form's @page rule. If no headless browser can be
+     * launched the request falls back to the preview in print mode, which lets the
+     * operator save the same layout as a PDF from the print dialog.
+     */
+    private function _loan_form_pdf_download($loanid, $form_code) {
+        $meta = $this->_loan_form_meta();
+        if (!isset($meta[$form_code])) {
+            show_404();
+            return;
+        }
+        $data = $this->_loan_form_view_data($loanid, $form_code);
+        if ($data === null) {
+            show_404();
+            return;
+        }
+        if (!$this->_loan_form_renderer()) {
+            return;
+        }
+
+        $html = $this->load->view('loan/print/' . $meta[$form_code]['view'], $data, TRUE);
+        $pdf_file = loan_form_html_to_pdf($html);
+
+        if ($pdf_file === false) {
+            log_message('error', 'Loan form PDF: headless render unavailable for ' . $form_code . ' / ' . $loanid . '; falling back to print mode.');
+            redirect(site_url(current_lang() . '/loan/' . $meta[$form_code]['html'] . '/' . $loanid . '?autoprint=1'), 'refresh');
+            return;
+        }
+
+        $lid = isset($data['loaninfo']->LID) ? (string) $data['loaninfo']->LID : '';
+        $filename = $meta[$form_code]['no'] . '-'
+            . trim(preg_replace('/[^A-Za-z0-9]+/', '-', $meta[$form_code]['name']), '-')
+            . ($lid !== '' ? '-' . trim(preg_replace('/[^A-Za-z0-9]+/', '-', $lid), '-') : '')
+            . '.pdf';
+
+        $this->output
+            ->set_content_type('application/pdf')
+            ->set_header('Content-Disposition: attachment; filename="' . $filename . '"')
+            ->set_header('Content-Length: ' . filesize($pdf_file))
+            ->set_output(file_get_contents($pdf_file));
+
+        @unlink($pdf_file);
+    }
+
+    /**
      * Shared data for the printable loan form PDFs.
      */
     private function _loan_form_print_data($loanid) {
@@ -1001,68 +1057,21 @@ class Loan extends CI_Controller {
      * TPSTEMPC-12 - Application for Loan (PDF).
      */
     function print_loan_application_pdf($loanid) {
-        $forms = $this->_loan_form_print_data($loanid);
-        if ($forms === null) {
-            show_404();
-            return;
-        }
-        if (!$this->_loan_form_renderer()) {
-            return;
-        }
-        $company = $forms['company'];
-        $loaninfo = $forms['loan'];
-        $member = $forms['member'];
-        $product = $forms['product'];
-        $maker = $forms['maker'];
-        $co_makers = $forms['co_makers'];
-        $signatories = $forms['signatories'];
-        $form = $forms['values']['application'];
-        include dirname(__FILE__) . '/pdf/loan_application_form.php';
+        $this->_loan_form_pdf_download($loanid, 'application');
     }
 
     /**
      * TPSTEMPC-13 - Co-Makers Statement & Promissory Note (PDF).
      */
     function print_comakers_promissory_pdf($loanid) {
-        $forms = $this->_loan_form_print_data($loanid);
-        if ($forms === null) {
-            show_404();
-            return;
-        }
-        if (!$this->_loan_form_renderer()) {
-            return;
-        }
-        $company = $forms['company'];
-        $loaninfo = $forms['loan'];
-        $member = $forms['member'];
-        $product = $forms['product'];
-        $maker = $forms['maker'];
-        $co_makers = $forms['co_makers'];
-        $schedule = $forms['schedule'];
-        $form = $forms['values']['comakers'];
-        include dirname(__FILE__) . '/pdf/loan_comakers_promissory.php';
+        $this->_loan_form_pdf_download($loanid, 'comakers');
     }
 
     /**
      * TPSTEMPC-13 - Pledge & Authority (PDF).
      */
     function print_pledge_authority_pdf($loanid) {
-        $forms = $this->_loan_form_print_data($loanid);
-        if ($forms === null) {
-            show_404();
-            return;
-        }
-        if (!$this->_loan_form_renderer()) {
-            return;
-        }
-        $company = $forms['company'];
-        $loaninfo = $forms['loan'];
-        $member = $forms['member'];
-        $maker = $forms['maker'];
-        $co_makers = $forms['co_makers'];
-        $schedule = $forms['schedule'];
-        $form = $forms['values']['pledge'];
-        include dirname(__FILE__) . '/pdf/loan_pledge_authority.php';
+        $this->_loan_form_pdf_download($loanid, 'pledge');
     }
 
     function deletedoc($loanid, $id) {

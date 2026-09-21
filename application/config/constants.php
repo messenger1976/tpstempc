@@ -63,6 +63,16 @@ define('TAPSTEMCO_FORM_REG_NO', '9520-07014825');
 define('TAPSTEMCO_FORM_EMPLOYER', '');
 
 /*
+| File name of the cooperative crest used on the printed loan forms, inside the
+| app logo/ folder (the same convention as companyinfo.logo). The form previews,
+| the collection notice, the disbursement voucher and the loan form PDFs all read
+| this value, so re-branding every printed loan form is a single edit.
+*/
+if (!defined('TAPSTEMCO_FORM_LOGO')) {
+    define('TAPSTEMCO_FORM_LOGO', '1761642549tapstemco-logo.png');
+}
+
+/*
 |--------------------------------------------------------------------------
 | Loan penalty assessment
 |--------------------------------------------------------------------------

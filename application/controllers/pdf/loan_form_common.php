@@ -199,21 +199,35 @@ if (!function_exists('loan_form_pdf_letterhead')) {
         $cx = $margins['left'] + 11;
         $cy = $top + 11;
 
-        $pdf->SetLineWidth(0.7);
-        $pdf->SetDrawColor(22, 101, 52);
-        $pdf->Ellipse($cx, $cy, 10.5, 10.5, 0, 0, 360, 'D');
-        $pdf->SetLineWidth(0.2);
-        $pdf->SetDrawColor(234, 179, 8);
-        $pdf->Ellipse($cx, $cy, 9.1, 9.1, 0, 0, 360, 'D');
+        $logo_file = (defined('TAPSTEMCO_FORM_LOGO') && TAPSTEMCO_FORM_LOGO !== '')
+            ? TAPSTEMCO_FORM_LOGO
+            : (($company && !empty($company->logo)) ? $company->logo : '');
+        $logo_path = ($logo_file !== '' && defined('FCPATH')) ? FCPATH . 'logo/' . $logo_file : '';
+        // TCPDF::Image() dies on an unreadable file, so the crest is used only when
+        // getimagesize() confirms a real raster image.
+        $logo_ok = ($logo_path !== '' && @getimagesize($logo_path));
 
-        $pdf->SetFont('helvetica', 'B', 5.4);
-        $pdf->SetTextColor(220, 38, 38);
-        $pdf->SetXY($cx - 8.6, $cy - 3.2);
-        $pdf->Cell(17.2, 2.6, 'TAPSTEMCO', 0, 2, 'C');
-        $pdf->SetFont('helvetica', '', 3.8);
-        $pdf->SetTextColor(22, 101, 52);
-        $pdf->SetX($cx - 8.6);
-        $pdf->Cell(17.2, 2.6, 'TEACHERS & EMPLOYEES', 0, 2, 'C');
+        if ($logo_ok) {
+            $pdf->Image($logo_path, $cx - 10.5, $cy - 10.5, 21, 21, '', '', '', TRUE, 300, '', FALSE, FALSE, 0, FALSE, FALSE, FALSE);
+        } else {
+            /* Fallback: the cooperative badge drawn with primitives. */
+            $pdf->SetLineWidth(0.7);
+            $pdf->SetDrawColor(22, 101, 52);
+            $pdf->Ellipse($cx, $cy, 10.5, 10.5, 0, 0, 360, 'D');
+            $pdf->SetLineWidth(0.2);
+            $pdf->SetDrawColor(234, 179, 8);
+            $pdf->Ellipse($cx, $cy, 9.1, 9.1, 0, 0, 360, 'D');
+
+            $pdf->SetFont('helvetica', 'B', 5.4);
+            $pdf->SetTextColor(220, 38, 38);
+            $pdf->SetXY($cx - 8.6, $cy - 3.2);
+            $pdf->Cell(17.2, 2.6, 'TAPSTEMCO', 0, 2, 'C');
+            $pdf->SetFont('helvetica', '', 3.8);
+            $pdf->SetTextColor(22, 101, 52);
+            $pdf->SetX($cx - 8.6);
+            $pdf->Cell(17.2, 2.6, 'TEACHERS & EMPLOYEES', 0, 2, 'C');
+        }
+
         $pdf->SetTextColor(0, 0, 0);
         $pdf->SetDrawColor(0, 0, 0);
 
@@ -276,5 +290,206 @@ if (!function_exists('lf_render')) {
         $pdf->SetX($margins['left']);
         $pdf->writeHTML($html, TRUE, FALSE, TRUE, FALSE, '');
         $pdf->Output($filename, 'I');
+    }
+}
+
+if (!function_exists('loan_form_pdf_binary')) {
+
+    /**
+     * Locate an HTML-to-PDF renderer: a Chromium/Edge binary or wkhtmltopdf.
+     *
+     * @return string|null executable path, or null when none is installed
+     */
+    function loan_form_pdf_binary() {
+        static $binary = null;
+        static $checked = false;
+        if ($checked) {
+            return $binary;
+        }
+        $checked = true;
+
+        $candidates = (DIRECTORY_SEPARATOR === '\\')
+            ? array(
+                'C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe',
+                'C:\Program Files\Microsoft\Edge\Application\msedge.exe',
+                'C:\Program Files\Google\Chrome\Application\chrome.exe',
+                'C:\Program Files (x86)\Google\Chrome\Application\chrome.exe',
+            )
+            : array(
+                '/usr/bin/google-chrome',
+                '/usr/bin/google-chrome-stable',
+                '/usr/bin/chromium',
+                '/usr/bin/chromium-browser',
+                '/usr/bin/microsoft-edge',
+                '/snap/bin/chromium',
+                '/usr/local/bin/wkhtmltopdf',
+                '/usr/bin/wkhtmltopdf',
+            );
+
+        foreach ($candidates as $path) {
+            if (is_file($path)) {
+                $binary = $path;
+                return $binary;
+            }
+        }
+        return null;
+    }
+}
+
+if (!function_exists('_loan_form_run_command')) {
+
+    /**
+     * Run a shell command with a wall-clock timeout. Output is written to a log
+     * file rather than a pipe, so a chatty child process cannot block the parent.
+     *
+     * @return bool whether the command was launched at all
+     */
+    function _loan_form_run_command($cmd, $log_file, $timeout_seconds = 45) {
+        // cmd.exe drops the first and last quote of a command line that starts with
+        // a quote, which breaks a quoted executable path containing spaces
+        // ("C:\Program Files (x86)\..."). One extra pair of quotes keeps the line
+        // intact; it is harmless for commands that do not start with a quote.
+        if (DIRECTORY_SEPARATOR === '\\' && substr($cmd, 0, 1) === '"') {
+            $cmd = '"' . $cmd . '"';
+        }
+
+        if (function_exists('proc_open')) {
+            $null_device = (DIRECTORY_SEPARATOR === '\\') ? 'NUL' : '/dev/null';
+            $descriptors = array(
+                0 => array('file', $null_device, 'r'),
+                1 => array('file', $log_file, 'a'),
+                2 => array('file', $log_file, 'a'),
+            );
+            $pipes = array();
+            $process = @proc_open($cmd, $descriptors, $pipes);
+            if (is_resource($process)) {
+                $deadline = microtime(TRUE) + max(5, (int) $timeout_seconds);
+                while (microtime(TRUE) < $deadline) {
+                    $status = proc_get_status($process);
+                    if (empty($status['running'])) {
+                        break;
+                    }
+                    usleep(200000);
+                }
+                $status = proc_get_status($process);
+                if (!empty($status['running'])) {
+                    proc_terminate($process, 9);
+                }
+                proc_close($process);
+                return TRUE;
+            }
+        }
+        if (function_exists('exec')) {
+            @exec($cmd . ' 2>&1', $unused_output, $unused_status);
+            return TRUE;
+        }
+        return FALSE;
+    }
+}
+
+if (!function_exists('_loan_form_remove_dir')) {
+
+    /**
+     * Remove a throw-away directory (e.g. a headless browser profile). Refuses to
+     * touch anything outside the system temp directory.
+     */
+    function _loan_form_remove_dir($dir) {
+        if (!is_dir($dir)) {
+            return;
+        }
+        $temp_root = realpath(sys_get_temp_dir());
+        $target = realpath($dir);
+        if ($temp_root === false || $target === false || strpos($target, $temp_root) !== 0) {
+            return;
+        }
+        $items = @scandir($target);
+        if (is_array($items)) {
+            foreach ($items as $item) {
+                if ($item === '.' || $item === '..') {
+                    continue;
+                }
+                $path = $target . DIRECTORY_SEPARATOR . $item;
+                if (is_dir($path)) {
+                    _loan_form_remove_dir($path);
+                } else {
+                    @unlink($path);
+                }
+            }
+        }
+        @rmdir($target);
+    }
+}
+
+if (!function_exists('loan_form_html_to_pdf')) {
+
+    /**
+     * Render an HTML string to a PDF file with the headless browser, so a
+     * downloaded form keeps the exact layout of the HTML preview. The sheet size
+     * comes from the form's own @page rule (long bond / Folio, 8.5in x 13in).
+     *
+     * @param string $html fully rendered form page
+     * @return string|false absolute path of the PDF (the caller deletes it), or false
+     */
+    function loan_form_html_to_pdf($html) {
+        if (!is_string($html) || trim($html) === '') {
+            return false;
+        }
+        $binary = loan_form_pdf_binary();
+        if ($binary === null) {
+            return false;
+        }
+
+        $dir = sys_get_temp_dir();
+        if ($dir === '' || !is_dir($dir) || !is_writable($dir)) {
+            return false;
+        }
+
+        $base = $dir . DIRECTORY_SEPARATOR . 'loanform_' . getmypid() . '_' . mt_rand(1000, 9999);
+        $html_file = $base . '.html';
+        $pdf_file = $base . '.pdf';
+        $log_file = $base . '.log';
+        $profile_dir = $base . '_profile';
+
+        if (file_put_contents($html_file, $html) === false) {
+            return false;
+        }
+
+        if (stripos($binary, 'wkhtmltopdf') !== false) {
+            // Long bond (Folio): 8.5in x 13in = 216mm x 330mm.
+            $cmd = escapeshellarg($binary) . ' --quiet --print-media-type --enable-local-file-access'
+                . ' --page-width 216mm --page-height 330mm'
+                . ' --margin-top 8mm --margin-bottom 8mm --margin-left 8mm --margin-right 8mm'
+                . ' ' . escapeshellarg($html_file) . ' ' . escapeshellarg($pdf_file);
+        } else {
+            // --virtual-time-budget gives the Tailwind CDN pass time to finish
+            // before the page is printed.
+            $url = 'file:///' . str_replace('\\', '/', $html_file);
+            $cmd = escapeshellarg($binary)
+                . ' --headless=new --disable-gpu --no-sandbox --hide-scrollbars --disable-extensions'
+                . ' --no-pdf-header-footer --run-all-compositor-stages-before-draw'
+                . ' --virtual-time-budget=10000'
+                . ' --user-data-dir=' . escapeshellarg($profile_dir)
+                . ' --print-to-pdf=' . escapeshellarg($pdf_file)
+                . ' ' . escapeshellarg($url);
+        }
+
+        _loan_form_run_command($cmd, $log_file, 45);
+
+        @unlink($html_file);
+        _loan_form_remove_dir($profile_dir);
+
+        if (is_file($pdf_file) && filesize($pdf_file) > 0) {
+            @unlink($log_file);
+            return $pdf_file;
+        }
+
+        // Keep the browser's own message in the application log: without it a
+        // failed launch (missing binary, quoting, sandbox) is invisible.
+        if (function_exists('log_message') && is_file($log_file)) {
+            log_message('error', 'Loan form PDF: headless render failed. ' . substr(trim((string) file_get_contents($log_file)), 0, 500));
+        }
+        @unlink($log_file);
+        @unlink($pdf_file);
+        return false;
     }
 }

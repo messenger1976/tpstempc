@@ -10,6 +10,7 @@ $penalt_method_list = isset($penalt_method_list) ? $penalt_method_list : array()
 $is_edit = !empty($product);
 $list_url = site_url(current_lang() . '/setting/loan_product_list');
 $page_title = $is_edit ? lang('loanproduct_edit') : lang('loanproduct_add');
+$system_grace = defined('MAX_NUMBER_DAYS_OVERDUE_PENALT') ? (int) MAX_NUMBER_DAYS_OVERDUE_PENALT : 5;
 
 $val = function ($field, $fallback = '') use ($product) {
     if ($product && isset($product->$field)) {
@@ -22,9 +23,15 @@ $grace_val = '';
 if ($product && isset($product->penalt_grace_days) && $product->penalt_grace_days !== null && $product->penalt_grace_days !== '') {
     $grace_val = $product->penalt_grace_days;
 } else {
-    $grace_val = set_value('penalt_grace_days');
+    $grace_val = set_value('penalt_grace_days', $system_grace);
 }
-$system_grace = defined('MAX_NUMBER_DAYS_OVERDUE_PENALT') ? (int) MAX_NUMBER_DAYS_OVERDUE_PENALT : 3;
+$policy_penalty_warning = false;
+if ($product) {
+    $policy_penalty_warning = ((float) $product->penalt_percentage !== 2.0
+        || (int) $product->penalt_method !== 2
+        || (isset($product->penalt_grace_days) && $product->penalt_grace_days !== null
+            && $product->penalt_grace_days !== '' && (int) $product->penalt_grace_days !== $system_grace));
+}
 
 $penalt_period_val = '';
 if ($product && isset($product->penalt_period_days) && $product->penalt_period_days !== null && $product->penalt_period_days !== '') {
@@ -51,7 +58,7 @@ $selected_penalt_waived = $product && isset($product->loan_penalt_waived_account
 $selected_interest_waived = $product && isset($product->loan_interest_waived_account) ? $product->loan_interest_waived_account : set_value('loan_interest_waived_account');
 $selected_interval = $product ? $product->interval : set_value('interval');
 $selected_interest_method = $product ? $product->interest_method : set_value('interest_method');
-$selected_penalt_method = $product ? $product->penalt_method : set_value('penalt_method');
+$selected_penalt_method = $product ? $product->penalt_method : set_value('penalt_method', 2);
 $contribution_times = $product ? $product->loan_security_contribution_times : set_value('loanproduct_contribution_times');
 ?>
 
@@ -292,12 +299,18 @@ $contribution_times = $product ? $product->loan_security_contribution_times : se
                     <div class="form-group">
                         <label class="col-lg-4 control-label"><?php echo lang('loanproduct_penalt_percentage'); ?> : <span class="required">*</span></label>
                         <div class="col-lg-8">
-                            <input type="text" name="penalt_percentage" value="<?php echo htmlspecialchars($val('penalt_percentage'), ENT_QUOTES, 'UTF-8'); ?>" class="form-control amountformat"/>
+                            <input type="text" name="penalt_percentage" value="<?php echo htmlspecialchars($val('penalt_percentage', '2'), ENT_QUOTES, 'UTF-8'); ?>" class="form-control amountformat"/>
                             <?php echo form_error('penalt_percentage'); ?>
                         </div>
                     </div>
                 </div>
             </div>
+
+            <?php if ($policy_penalty_warning): ?>
+                <div class="alert alert-warning">
+                    <?php echo lang('loanproduct_policy_penalty_warning'); ?>
+                </div>
+            <?php endif; ?>
 
             <div class="row">
                 <div class="col-md-6">

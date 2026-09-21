@@ -94,6 +94,7 @@ $lang['loanproduct_penalt_percentage'] = 'Penalty Percentage (%)';
 $lang['loanproduct_penalt_grace_days'] = 'Siku za Neema baada ya Tarehe';
 $lang['loanproduct_penalt_grace_days_placeholder'] = 'Weka tupu = chaguo-msingi la mfumo (siku %s)';
 $lang['loanproduct_penalt_grace_days_help'] = 'Si lazima. Siku baada ya tarehe ya kikomo kabla adhabu ya kuchelewa kuanza. Acha tupu kutumia chaguo-msingi la mfumo (siku %s).';
+$lang['loanproduct_policy_penalty_warning'] = 'Bidhaa hii inatofautiana na mipangilio ya kawaida ya adhabu ya sera ya mikopo. Kagua asilimia 2, Principal pamoja na Riba, na siku 5 za neema kabla ya kuhifadhi.';
 $lang['loanproduct_penalt_period'] = 'Kipindi cha Adhabu';
 $lang['loanproduct_penalt_period_default'] = 'Chaguo-msingi la mfumo (siku %s)';
 $lang['loanproduct_penalt_period_once'] = 'Mara moja kwa kikomo';

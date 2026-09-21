@@ -3705,10 +3705,9 @@ class Loan_Model extends CI_Model {
      * Grace = product penalt_grace_days when set, else MAX_NUMBER_DAYS_OVERDUE_PENALT.
      * Method 1 = % of the instalment principal, method 2 = % of principal + interest.
      *
-     * TAPSTEMCO_PENALTY_PRORATE (default TRUE) pro-rates the penalty over 30-day
-     * periods counted from the end of the grace period, so 15 days past grace is
-     * half a month. When FALSE the legacy rule applies: any part of a month past
-     * the grace period is charged as a whole month.
+        * TAPSTEMCO_PENALTY_PRORATE (default FALSE) charges a full monthly penalty
+        * period after grace, matching the cooperative policy. When explicitly TRUE,
+        * the configured period is prorated by days past the grace end.
      *
      * @param object|null $product loan_product row
      * @param object      $row     loan_contract_repayment_schedule row
@@ -3766,8 +3765,8 @@ class Loan_Model extends CI_Model {
             if ($prorate) {
                 $months = $days / $period_days;
             } else if (!$this->_product_sets_penalt_period($product)) {
-                // Legacy (unchanged when the product sets no period): count calendar
-                // months past the grace end and round up.
+                // Policy fallback when the product leaves the period blank: charge
+                // one full period immediately after grace, then another per period.
                 $d1 = new DateTime($grace_end);
                 $d2 = new DateTime($paydate);
                 $months = (float) (($d1->diff($d2)->m + ($d1->diff($d2)->y * 12)) + 1);

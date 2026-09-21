@@ -91,5 +91,6 @@ $lang['loanproduct_penalt_percentage'] = 'Penalty Percentage (%)';
 $lang['loanproduct_penalt_grace_days'] = 'Overdue Grace Days';
 $lang['loanproduct_penalt_grace_days_placeholder'] = 'Blank = system default (%s days)';
 $lang['loanproduct_penalt_grace_days_help'] = 'Optional. Days after the installment due date before overdue penalty starts. Leave blank to use the system default (%s days).';
+$lang['loanproduct_policy_penalty_warning'] = 'This product differs from the standard lending policy penalty settings. Review the 2% rate, Principal + Interest method, and 5-day grace period before saving.';
 
 ?>

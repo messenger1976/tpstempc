@@ -38,7 +38,7 @@ define('FOPEN_READ_WRITE_CREATE_STRICT',		'x+b');
 
 
 
-define('MAX_NUMBER_DAYS_OVERDUE_PENALT', 3);
+define('MAX_NUMBER_DAYS_OVERDUE_PENALT', 5);
 define('API_TOKEN', '8155bc545f84d9652f1012ef2bdfb6eb');
 define('PUSH_URL', '#');
 define('API_URL', '#');
@@ -69,14 +69,15 @@ define('TAPSTEMCO_FORM_EMPLOYER', '');
 | TAPSTEMCO_PENALTY_PRORATE
 |   TRUE  - penalty is pro-rated over 30-day periods counted from the end of
 |           the grace period (15 days past grace = half a month).
-|   FALSE - legacy behaviour: any part of a month past the grace period is
-|           charged as a whole month.
-| Switch this off only if a past-due review shows the pro-rated figures are
-| not the intended policy. It affects every past-due collection, not just
-| waivers, and never rewrites penalties that are already posted.
+|   FALSE - policy mode: after the grace period, charge a full monthly penalty
+|           period; a partial month is not prorated.
+| The cooperative Lending Policy specifies 5 days grace and 2% of the unpaid
+| monthly amortization including interest. Product-specific settings still
+| override the grace/period defaults when explicitly configured. This affects
+| future previews and postings only; posted penalties are not rewritten.
 */
 if (!defined('TAPSTEMCO_PENALTY_PRORATE')) {
-    define('TAPSTEMCO_PENALTY_PRORATE', TRUE);
+    define('TAPSTEMCO_PENALTY_PRORATE', FALSE);
 }
 
 /**

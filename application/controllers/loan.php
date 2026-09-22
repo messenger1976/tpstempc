@@ -2266,6 +2266,38 @@ $pin = current_user()->PIN;
                 'PIN' => $pin,
             );
 
+            // Validate the repayment schedule BEFORE anything is written. Building it
+            // from the contract's own terms is the only way to know whether those terms
+            // amortise; when they do not, the rows carry negative interest and both the
+            // Amount Due panels and the GL split inherit it. Refuse the release here so
+            // the terms are corrected instead of storing a schedule that cannot be posted.
+            $infodata = $this->loan_model->loan_info($LID)->row();
+            if (!$infodata) {
+                $this->session->set_flashdata('warning', lang('loan_form_not_found'));
+                redirect(current_lang() . '/loan/loan_disburse_action/' . $loanid, 'refresh');
+                return;
+            }
+            $product = $this->setting_model->loanproduct($infodata->product_type)->row();
+            if (!$product) {
+                $this->session->set_flashdata('warning', lang('loan_beginning_balance_product_not_found'));
+                redirect(current_lang() . '/loan/loan_disburse_action/' . $loanid, 'refresh');
+                return;
+            }
+            // First installment falls due one period after the disbursement
+            // (1 month monthly / 7 days weekly), matching Beginning Balance activation.
+            $first_due = date('Y-m-d', strtotime($array_data['disbursedate'] . (((int) $product->interval === 2) ? ' +7 days' : ' +1 month')));
+            $schedule = $this->loanbase->create_repayment_schedule($infodata->installment_amount, $infodata->rate, $infodata->number_istallment, $first_due, $infodata->basic_amount, $LID, $product->interest_method, $product->interval);
+            $overrun = $this->loanbase->schedule_overrun($schedule, $infodata->basic_amount);
+            if (!$overrun['ok']) {
+                $this->session->set_flashdata('warning', sprintf(
+                    lang('loan_schedule_overrun'),
+                    number_format($overrun['total_principle'], 2),
+                    number_format((float) $infodata->basic_amount, 2)
+                ));
+                redirect(current_lang() . '/loan/loan_disburse_action/' . $loanid, 'refresh');
+                return;
+            }
+
             $this->db->trans_start();
             $create = $this->db->insert('loan_contract_disburse', $array_data);
             if ($create) {
@@ -2324,13 +2356,7 @@ $pin = current_user()->PIN;
                 $this->db->insert('general_ledger', $ledger);
 
 
-                // First installment falls due one period after the disbursement
-                // (1 month monthly / 7 days weekly), matching Beginning Balance activation.
-                $first_due = date('Y-m-d', strtotime($array_data['disbursedate'] . (((int) $product->interval === 2) ? ' +7 days' : ' +1 month')));
-                $schedule = $this->loanbase->create_repayment_schedule($infodata->installment_amount, $infodata->rate, $infodata->number_istallment, $first_due, $infodata->basic_amount, $LID, $product->interest_method, $product->interval);
-
-                // foreach ($schedule as $key => $value) {
-                //   $value['LID'] = $LID;
+                // The schedule was built and validated before the transaction opened.
                 $this->db->insert_batch('loan_contract_repayment_schedule', $schedule);
                 // }
 
@@ -3413,6 +3439,21 @@ $pin = current_user()->PIN;
             redirect($redirect);
             return;
         }
+
+        // A schedule whose rows repay more principal than was lent cannot be posted:
+        // its Interest column is negative and the GL split would credit principal that
+        // the loan never had. Refuse it and let the terms be corrected first.
+        $overrun = $this->loanbase->schedule_overrun($schedule, $loaninfo->basic_amount);
+        if (!$overrun['ok']) {
+            $this->session->set_flashdata('warning', sprintf(
+                lang('loan_schedule_overrun'),
+                number_format($overrun['total_principle'], 2),
+                number_format((float) $loaninfo->basic_amount, 2)
+            ));
+            redirect($redirect);
+            return;
+        }
+
         foreach ($schedule as $key => $row) {
             $schedule[$key]['status'] = 0;
             $schedule[$key]['sms_sent'] = 0;

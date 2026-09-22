@@ -594,6 +594,74 @@ window.location = "' . current_url() . '/?' . $query_string . '&row_per_pg="+val
     echo $return;
 }
 
+if (!function_exists('can_access_cashiering')) {
+
+    function can_access_cashiering() {
+        $CI = &get_instance();
+        if (empty($CI->session->userdata('user_id'))) {
+            return FALSE;
+        }
+
+        if ($CI->ion_auth->is_admin()) {
+            return TRUE;
+        }
+
+        return has_role(6, 'View_cashiering_dashboard')
+            || has_role(6, 'Create_cash_receipt')
+            || has_role(6, 'Create_cash_disbursement')
+            || has_role(6, 'Submit_cash_count');
+    }
+
+}
+
+if (!function_exists('cashiering_denominations')) {
+
+    /**
+     * Cash denominations for the cashiering module, defined once so the count
+     * sheet and the printed/PDF sheet can never disagree.
+     *
+     * 'key' is the base of the posted field names and of the keys stored in
+     * cashiering_reports.cash_breakdown: bundles use 'bundles_<key>', loose bills
+     * and loose coins use 'loose_<key>', rolls use 'rolls_<key>'.
+     *
+     * @return array ['bills' => [...], 'coins' => [...], 'pieces_per_unit' => int,
+     *                'legacy_keys' => [old key => current key]]
+     */
+    function cashiering_denominations() {
+        return array(
+            'bills' => array(
+                array('key' => 'bill_1000', 'value' => 1000),
+                array('key' => 'bill_500', 'value' => 500),
+                array('key' => 'bill_200', 'value' => 200),
+                array('key' => 'bill_100', 'value' => 100),
+                array('key' => 'bill_50', 'value' => 50),
+                array('key' => 'bill_20', 'value' => 20),
+                array('key' => 'bill_10', 'value' => 10),
+            ),
+            'coins' => array(
+                array('key' => 'coin_10', 'value' => 10),
+                array('key' => 'coin_5', 'value' => 5),
+                array('key' => 'coin_1', 'value' => 1),
+                array('key' => 'coin_025', 'value' => 0.25),
+                array('key' => 'coin_010', 'value' => 0.10),
+                array('key' => 'coin_005', 'value' => 0.05),
+            ),
+            /* Pieces in one bundle or roll - the sheet's "Per Bundle (100 pcs. each)". */
+            'pieces_per_unit' => 100,
+            /*
+             * Keys written by the first version of this sheet. coin_05 held 0.10 and
+             * coin_25 held 0.25, so the VALUE decides the mapping, not the name; the
+             * old coin_05 name was misleading but its stored amount was 0.10.
+             */
+            'legacy_keys' => array(
+                'coin_25' => 'coin_025',
+                'coin_05' => 'coin_010',
+            ),
+        );
+    }
+
+}
+
 if (!function_exists("has_role")) {
 
     function has_role($module_id, $link) {

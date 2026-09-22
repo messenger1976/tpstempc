@@ -2,16 +2,23 @@
 /**
  * Penalty recalibration review.
  *
- * Read-only comparison of every past-due loan under the legacy penalty rule
- * (any part of a month past the grace period is charged as a whole month) and the
- * current pro-rated rule (30-day periods counted from the end of the grace
- * period). Use it to sign off TAPSTEMCO_PENALTY_PRORATE before the change affects
- * live collections. Nothing here writes to the database.
+ * Read-only comparison of every past-due loan between the two readings of the
+ * Lending Policy penalty:
+ *
+ *   escalating - whole penalty periods (never a fraction) that keep growing while
+ *                the installment is unpaid: this is the 'legacy' column, produced
+ *                by _penalty_state($product, $row, $paydate, TRUE).
+ *   in force   - the rule the system actually bills today (the 'current' column,
+ *                the normal calculation path): since the 2026-09-22 cooperative
+ *                decision an overdue installment is charged ONE full penalty.
+ *
+ * Nothing here writes to the database.
  */
 $review = isset($review) ? $review : array('rows' => array(), 'totals' => array(), 'count' => 0, 'as_of' => date('Y-m-d'));
 $rows = isset($review['rows']) ? $review['rows'] : array();
 $totals = isset($review['totals']) ? $review['totals'] : array();
 $prorate_enabled = !empty($prorate_enabled);
+$once_rule_enabled = isset($once_rule_enabled) ? !empty($once_rule_enabled) : true;
 $money = function ($value) {
     return number_format((float) $value, 2);
 };
@@ -43,9 +50,12 @@ $money = function ($value) {
                     <?php if ($prorate_enabled) { ?>
                     <span class="label label-info">Pro-rated rule is ACTIVE</span>
                     &nbsp;Penalties below are charged pro-rated over 30-day periods from the end of the grace period.
+                    <?php } else if ($once_rule_enabled) { ?>
+                    <span class="label label-success">One penalty per overdue installment is ACTIVE</span>
+                    &nbsp;An overdue installment is charged a single full penalty that never grows. The table contrasts that with the escalating whole-period reading.
                     <?php } else { ?>
-                    <span class="label label-warning">Legacy rule is ACTIVE</span>
-                    &nbsp;Penalties below still charge any part of a month as a whole month.
+                    <span class="label label-warning">Whole-period rule is ACTIVE</span>
+                    &nbsp;Penalties below charge whole periods (never a fraction) and keep growing while the installment is unpaid.
                     <?php } ?>
                 </div>
                 <div class="pr-summary">
@@ -54,19 +64,19 @@ $money = function ($value) {
                         <span class="val"><?php echo (int) $review['count']; ?></span>
                     </div>
                     <div class="pr-metric">
-                        <span class="lbl">Penalty under legacy rule</span>
+                        <span class="lbl">Penalty if escalating</span>
                         <span class="val"><?php echo $money(isset($totals['legacy_penalty']) ? $totals['legacy_penalty'] : 0); ?></span>
                     </div>
                     <div class="pr-metric">
-                        <span class="lbl">Penalty under pro-rated rule</span>
+                        <span class="lbl">Penalty billed today</span>
                         <span class="val"><?php echo $money(isset($totals['current_penalty']) ? $totals['current_penalty'] : 0); ?></span>
                     </div>
                     <div class="pr-metric">
-                        <span class="lbl">Reduction in collectible penalty</span>
+                        <span class="lbl">Penalty not collected</span>
                         <span class="val down"><?php echo $money(isset($totals['penalty_delta']) ? $totals['penalty_delta'] : 0); ?></span>
                     </div>
                     <div class="pr-metric">
-                        <span class="lbl">Reduction in total amount due</span>
+                        <span class="lbl">Amount due not billed</span>
                         <span class="val down"><?php echo $money(isset($totals['due_delta']) ? $totals['due_delta'] : 0); ?></span>
                     </div>
                 </div>
@@ -78,12 +88,12 @@ $money = function ($value) {
                                 <th>Member</th>
                                 <th>Product</th>
                                 <th class="num">Overdue items</th>
-                                <th class="num">Penalty (legacy)</th>
-                                <th class="num">Penalty (pro-rated)</th>
-                                <th class="num">Penalty reduction</th>
-                                <th class="num">Amount due (legacy)</th>
-                                <th class="num">Amount due (pro-rated)</th>
-                                <th class="num">Due reduction</th>
+                                <th class="num">Penalty (escalating)</th>
+                                <th class="num">Penalty (billed today)</th>
+                                <th class="num">Penalty not collected</th>
+                                <th class="num">Amount due (escalating)</th>
+                                <th class="num">Amount due (billed today)</th>
+                                <th class="num">Due not billed</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -129,9 +139,10 @@ $money = function ($value) {
                 </div>
                 <div style="padding:14px 16px;" class="text-muted">
                     <i class="fa fa-info-circle"></i>
-                    Already-posted penalties are never rewritten. Reducing collectible penalty means the coop
-                    bills the smaller pro-rated figure from the next collection onwards. Review this table before
-                    relying on it, and use the waiver workflow to clear any penalty already billed at the old rate.
+                    Already-posted penalties are never rewritten. The right-hand columns are what the system
+                    bills from the next collection onwards (one full penalty per overdue installment); the
+                    left-hand columns show the escalating reading it deliberately does not charge. Use the
+                    waiver workflow to clear any penalty already billed at an older rate.
                 </div>
             </div>
         </div>

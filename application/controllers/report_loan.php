@@ -63,7 +63,22 @@ class Report_Loan extends CI_Controller {
         $this->data['title'] = 'Penalty recalibration review';
         $this->data['review'] = $this->loan_model->penalty_recalibration_review(1000);
         $this->data['prorate_enabled'] = (!defined('TAPSTEMCO_PENALTY_PRORATE') || TAPSTEMCO_PENALTY_PRORATE);
+        // System period 0 = the penalty is charged once per overdue installment, which
+        // is the rule billed since the 2026-09-22 cooperative decision.
+        $this->data['once_rule_enabled'] = (!defined('TAPSTEMCO_PENALTY_PERIOD_DAYS') || (int) TAPSTEMCO_PENALTY_PERIOD_DAYS === 0);
         $this->data['content'] = 'report/loan/loan_penalty_review';
+        $this->load->view('template', $this->data);
+    }
+
+    /**
+     * Audit of loans whose stored repayment schedule does not amortise the contract
+     * (negative-interest rows / schedule repaying more principal than was lent).
+     * Read-only; the repair is to correct the contract terms and regenerate.
+     */
+    function loan_schedule_overrun_review() {
+        $this->data['title'] = 'Schedule overrun review';
+        $this->data['review'] = $this->loan_model->schedule_overrun_review(1000);
+        $this->data['content'] = 'report/loan/loan_schedule_overrun_review';
         $this->load->view('template', $this->data);
     }
 

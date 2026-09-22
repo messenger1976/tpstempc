@@ -202,6 +202,18 @@ $current_member_id = ($current_user_data && isset($current_user_data->member_id)
 
 
 
+            <?php if (can_access_cashiering()) { ?>
+                <li class="<?php echo (($active == 'cashiering') ? 'active' : ''); ?>">
+                    <a href="#"><i class="fa fa-money"></i> <span class="nav-label">Cashiering</span><span class="fa arrow"></span></a>
+                    <ul class="nav nav-second-level">
+                        <li class="<?php echo ($activefunction == 'dashboard' ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/cashiering/dashboard'); ?>">Dashboard</a></li>
+                        <li class="<?php echo ($activefunction == 'cash_count_sheet' ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/cashiering/cash_count_sheet'); ?>">Cash Count Sheet</a></li>
+                        <li class="<?php echo ($activefunction == 'cash_receipt_list' ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/cash_receipt/cash_receipt_list'); ?>">Cash Receipts</a></li>
+                        <li class="<?php echo ($activefunction == 'cash_disbursement_list' ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/cash_disbursement/cash_disbursement_list'); ?>">Cash Disbursements</a></li>
+                    </ul>
+                </li>
+            <?php } ?>
+
             <?php if (access_module(6)) { ?>
 
                 <li class="<?php echo (($active == 'finance' || $active == 'customer' || $active == 'supplier' || $active == 'cash_receipt' || $active == 'cash_disbursement' || $active == 'ar') ? 'active' : ''); ?>">

@@ -96,13 +96,14 @@ $lang['loanproduct_penalt_grace_days_placeholder'] = 'Weka tupu = chaguo-msingi 
 $lang['loanproduct_penalt_grace_days_help'] = 'Si lazima. Siku baada ya tarehe ya kikomo kabla adhabu ya kuchelewa kuanza. Acha tupu kutumia chaguo-msingi la mfumo (siku %s).';
 $lang['loanproduct_policy_penalty_warning'] = 'Bidhaa hii inatofautiana na mipangilio ya kawaida ya adhabu ya sera ya mikopo. Kagua asilimia 2, Principal pamoja na Riba, na siku 5 za neema kabla ya kuhifadhi.';
 $lang['loanproduct_penalt_period'] = 'Kipindi cha Adhabu';
-$lang['loanproduct_penalt_period_default'] = 'Chaguo-msingi la mfumo (siku %s)';
+$lang['loanproduct_penalt_period_default'] = 'Chaguo-msingi la mfumo (%s)';
+$lang['loanproduct_penalt_period_days'] = 'kila siku %s';
 $lang['loanproduct_penalt_period_once'] = 'Mara moja kwa kikomo';
 $lang['loanproduct_penalt_period_day'] = 'Kwa siku';
 $lang['loanproduct_penalt_period_week'] = 'Kwa wiki (siku 7)';
 $lang['loanproduct_penalt_period_half'] = 'Kwa siku 15';
 $lang['loanproduct_penalt_period_month'] = 'Kwa mwezi (siku 30)';
-$lang['loanproduct_penalt_period_help'] = 'Ni mara ngapi asilimia ya adhabu juu inatozwa wakati kikomo hakijalipwa. Acha tupu kutumia chaguo-msingi la mfumo (siku %s). Chagua "Mara moja kwa kikomo" kwa adhabu ya mara moja.';
+$lang['loanproduct_penalt_period_help'] = 'Ni mara ngapi asilimia ya adhabu juu inatozwa wakati kikomo hakijalipwa. Acha tupu kutumia chaguo-msingi la mfumo (%s), ambalo linatoza adhabu mara moja. Chagua kipindi tu ikiwa bidhaa hii inapaswa kuendelea kutoza wakati kikomo hakijalipwa.';
 
 $lang['app_name'] = 'COOP';
 

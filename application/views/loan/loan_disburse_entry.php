@@ -950,7 +950,19 @@ $disburse_deductions = isset($disburse_deductions) ? $disburse_deductions : arra
          * function created (data-source="sys") are replaced, so any extra lines
          * added by hand survive.
          */
+        function toggleOffsetRowState($row, isSelected) {
+            var $controls = $row.find('.offset-amount, .offset-waive-input, .offset-waive-reason, input[type="text"][name^="offset_reason_note["]');
+            $controls.prop('disabled', !isSelected);
+            $row.next('.offset-waive-row').find('.offset-waive-input, .offset-waive-reason, input[type="text"][name^="offset_reason_note["]').prop('disabled', !isSelected);
+        }
+
         function rebuildGlLinesFromOffset() {
+            $('.offset-loan-row').each(function() {
+                var $row = $(this);
+                var checked = $row.find('.offset-loan-cb').is(':checked');
+                toggleOffsetRowState($row, checked);
+            });
+
             var offsets = getSelectedOffsets();
             var deductions = getDeductions();
             var offsetTotal = 0;
@@ -980,20 +992,29 @@ $disburse_deductions = isset($disburse_deductions) ? $disburse_deductions : arra
 
             $('#offsetTotalAmt').text(offsetTotal.toFixed(2));
             $('#offsetWaivedAmt').text(waivedTotal.toFixed(2));
-            $('#offsetNetProceeds').text(Math.abs(net).toFixed(2));
-            var isTopup = net < -0.009;
-            $('#offsetNetLabel').text(isTopup
-                ? <?php echo json_encode(lang('loan_offset_topup_label')); ?>
-                : <?php echo json_encode(lang('loan_offset_net_proceeds')); ?>);
 
             var $warning = $('#offsetWarning').hide().text('');
             var offsetWarnings = [];
             var $topup = $('#offsetTopupNote').hide().text('');
-            if (isTopup) {
-                $topup.text(<?php echo json_encode(lang('loan_offset_topup_hint')); ?>).show();
-            }
-            if (waivedTotal > 0.009 && !canApproveWaiver) {
-                offsetWarnings.push(<?php echo json_encode(lang('loan_waiver_pending_hint')); ?>);
+            var isTopup = net < -0.009;
+
+            if (offsets.length === 0) {
+                $('#offsetNetProceeds').text(newLoanAmount.toFixed(2));
+                $('#offsetNetLabel').text(<?php echo json_encode(lang('loan_offset_net_proceeds')); ?>);
+                $warning.hide();
+                $topup.hide();
+            } else {
+                $('#offsetNetProceeds').text(Math.abs(net).toFixed(2));
+                $('#offsetNetLabel').text(isTopup
+                    ? <?php echo json_encode(lang('loan_offset_topup_label')); ?>
+                    : <?php echo json_encode(lang('loan_offset_net_proceeds')); ?>);
+
+                if (isTopup) {
+                    $topup.text(<?php echo json_encode(lang('loan_offset_topup_hint')); ?>).show();
+                }
+                if (waivedTotal > 0.009 && !canApproveWaiver) {
+                    offsetWarnings.push(<?php echo json_encode(lang('loan_waiver_pending_hint')); ?>);
+                }
             }
 
             var cashAccount = firstCreditAccount || '';

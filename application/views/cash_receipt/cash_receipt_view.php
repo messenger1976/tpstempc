@@ -338,53 +338,6 @@ $je_balanced = abs($je_total_debit - $je_total_credit) <= 0.001;
     <div class="cbu-panel">
         <div class="panel-head">
             <div class="head-left">
-                <i class="fa fa-list-alt icon-badge"></i>
-                <h4><?php echo lang('cash_receipt_line_items'); ?></h4>
-            </div>
-        </div>
-        <div class="panel-body">
-            <?php if (!empty($line_items)) { ?>
-                <div class="table-responsive">
-                    <table class="table table-striped view-table">
-                        <thead>
-                            <tr>
-                                <th width="8%">#</th>
-                                <th width="32%"><?php echo lang('cash_receipt_account'); ?></th>
-                                <th width="30%"><?php echo lang('cash_receipt_line_description'); ?></th>
-                                <th width="15%" class="text-right"><?php echo lang('journalentry_debit'); ?></th>
-                                <th width="15%" class="text-right"><?php echo lang('journalentry_credit'); ?></th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <?php $index = 1; foreach ($line_items as $item) {
-                                $item_debit = isset($item->debit) ? (float) $item->debit : 0;
-                                $item_credit = isset($item->credit) ? (float) $item->credit : (isset($item->amount) ? (float) $item->amount : 0);
-                            ?>
-                                <tr>
-                                    <td><?php echo $index++; ?></td>
-                                    <td><?php echo htmlspecialchars((isset($item->account_name) ? $item->account_name : '') . ' (' . (isset($item->account) ? $item->account : '') . ')', ENT_QUOTES, 'UTF-8'); ?></td>
-                                    <td><?php echo htmlspecialchars(isset($item->description) ? $item->description : '', ENT_QUOTES, 'UTF-8'); ?></td>
-                                    <td class="amount-cell debit-cell"><?php echo number_format($item_debit, 2); ?></td>
-                                    <td class="amount-cell credit-cell"><?php echo number_format($item_credit, 2); ?></td>
-                                </tr>
-                            <?php } ?>
-                            <tr class="totals-row">
-                                <td colspan="3" class="text-right"><strong><?php echo lang('total'); ?>:</strong></td>
-                                <td class="amount-cell debit-cell"><strong><?php echo number_format($li_total_debit, 2); ?></strong></td>
-                                <td class="amount-cell credit-cell"><strong><?php echo number_format($li_total_credit, 2); ?></strong></td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-            <?php } else { ?>
-                <div class="empty-note"><?php echo lang('no_records_found'); ?></div>
-            <?php } ?>
-        </div>
-    </div>
-
-    <div class="cbu-panel">
-        <div class="panel-head">
-            <div class="head-left">
                 <i class="fa fa-book icon-badge"></i>
                 <h4>
                     <?php echo lang('accounting_entries'); ?>

@@ -112,6 +112,19 @@ class Cashiering_model extends CI_Model {
         }
         $expected_cash = $beginning_cash + $cash_in - $cash_out;
 
+        /*
+         * The figure above is what the drawer should hold after the day's movements.
+         * A submitted sheet records its own reconciled figure instead - the cashier
+         * may override "CASH ON HAND PER BOOKS" - and the two can legitimately differ,
+         * typically by an unfunded disbursement. Returning only the computed value let
+         * the dashboard contradict a filed sheet without saying so, so both figures are
+         * returned and the caller surfaces the gap.
+         */
+        $filed_expected_cash = !empty($report_row) && isset($report_row->expected_cash)
+            ? floatval($report_row->expected_cash)
+            : NULL;
+        $unreconciled = ($filed_expected_cash === NULL) ? NULL : ($expected_cash - $filed_expected_cash);
+
         return array(
             'beginning_cash' => $beginning_cash,
             'beginning_cash_carried_from' => $carried_from,
@@ -119,6 +132,8 @@ class Cashiering_model extends CI_Model {
             'cash_out' => $cash_out,
             'net_cash' => $cash_in - $cash_out,
             'expected_cash' => $expected_cash,
+            'filed_expected_cash' => $filed_expected_cash,
+            'unreconciled' => $unreconciled,
             'last_report' => $report_row,
         );
     }

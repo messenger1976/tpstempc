@@ -53,6 +53,24 @@ $recent_reports = isset($recent_reports) ? $recent_reports : array();
                     <div class="stat-box box-green">
                         <div class="label">Expected Cash</div>
                         <div class="value"><?php echo number_format(floatval($summary['expected_cash'] ?? 0), 2); ?></div>
+                        <?php
+                        /*
+                         * A submitted sheet carries its own reconciled figure. When the two
+                         * disagree, say so here rather than showing a number that silently
+                         * contradicts the filed sheet - this is the tile the cashier
+                         * reconciles against, so the gap has to be visible.
+                         */
+                        $filed_expected_cash = isset($summary['filed_expected_cash']) ? $summary['filed_expected_cash'] : NULL;
+                        $unreconciled = isset($summary['unreconciled']) ? $summary['unreconciled'] : NULL;
+                        ?>
+                        <?php if ($filed_expected_cash !== NULL && $unreconciled !== NULL && abs($unreconciled) >= 0.005): ?>
+                            <div class="note">
+                                Filed sheet: <?php echo number_format($filed_expected_cash, 2); ?> &mdash;
+                                <?php echo number_format(abs($unreconciled), 2); ?> unreconciled
+                            </div>
+                        <?php elseif ($filed_expected_cash !== NULL): ?>
+                            <div class="note">Agrees with the filed sheet</div>
+                        <?php endif; ?>
                     </div>
                 </div>
             </div>
@@ -101,6 +119,10 @@ $recent_reports = isset($recent_reports) ? $recent_reports : array();
                             <li><span>Receipts</span><strong><?php echo number_format(floatval($summary['cash_in'] ?? 0), 2); ?></strong></li>
                             <li><span>Disbursements</span><strong><?php echo number_format(floatval($summary['cash_out'] ?? 0), 2); ?></strong></li>
                             <li><span>Remaining Cash</span><strong><?php echo number_format(floatval($summary['expected_cash'] ?? 0), 2); ?></strong></li>
+                            <?php if (isset($summary['filed_expected_cash']) && $summary['filed_expected_cash'] !== NULL): ?>
+                                <li><span>Filed Expected Cash</span><strong><?php echo number_format(floatval($summary['filed_expected_cash']), 2); ?></strong></li>
+                                <li><span>Unreconciled</span><strong><?php echo number_format(floatval($summary['unreconciled'] ?? 0), 2); ?></strong></li>
+                            <?php endif; ?>
                         </ul>
                     </div>
                 </div>

@@ -80,6 +80,9 @@ class Cashiering_model extends CI_Model {
             ->get('cash_receipts')
             ->row();
 
+        $cash_in_receipts = floatval(isset($receipt_row->total) ? $receipt_row->total : 0);
+        $cash_in_repayments = $this->_loan_repayments_cash_in($date, $pin);
+
         $disbursement_row = $this->db
             ->select('COALESCE(SUM(total_amount), 0) AS total', false)
             ->where('PIN', $pin)
@@ -97,7 +100,7 @@ class Cashiering_model extends CI_Model {
             ->get('cashiering_reports')
             ->row();
 
-        $cash_in = floatval(isset($receipt_row->total) ? $receipt_row->total : 0);
+        $cash_in = $cash_in_receipts + $cash_in_repayments;
         $cash_out = floatval(isset($disbursement_row->total) ? $disbursement_row->total : 0);
         $beginning_cash = floatval(isset($report_row->beginning_cash) ? $report_row->beginning_cash : 0);
         $carried_from = null;
@@ -129,6 +132,9 @@ class Cashiering_model extends CI_Model {
             'beginning_cash' => $beginning_cash,
             'beginning_cash_carried_from' => $carried_from,
             'cash_in' => $cash_in,
+            /* Split so the figure can be traced back to where the cash came from. */
+            'cash_in_receipts' => $cash_in_receipts,
+            'cash_in_repayments' => $cash_in_repayments,
             'cash_out' => $cash_out,
             'net_cash' => $cash_in - $cash_out,
             'expected_cash' => $expected_cash,
@@ -136,6 +142,60 @@ class Cashiering_model extends CI_Model {
             'unreconciled' => $unreconciled,
             'last_report' => $report_row,
         );
+    }
+
+    /**
+     * Cash a loan repayment put in the drawer on a given date.
+     *
+     * Loan repayments are recorded in the loan module, not the Cash Receipts module,
+     * so they never reach cash_receipts. Summing that table alone left CASH IN at 0.00
+     * on a day a member actually paid in - LN1325 paid P39,780.16 on 2026-09-23 while
+     * the dashboard reported nothing. This is the missing half of cash in.
+     *
+     * The cash a row represents is principle + interest + penalt, NOT the stored
+     * `amount`: that column is inconsistent in this table (it holds principle +
+     * interest on some rows and principle + interest + penalt on others, 12 vs 25
+     * rows out of 36), so `amount + penalt` would double count the penalty on the
+     * rows that already include it. Summing the components matches the general ledger
+     * to the centavo - P39,780.16 for LN1325's four rows.
+     *
+     * Two exclusions stop the figure over-counting:
+     *   - a repayment already applied to a Cash Receipt is counted in that receipt
+     *     instead (see cash_receipt_model::mark_loan_repayment_applied());
+     *   - a voided repayment is not cash. The is_voided column only exists on some
+     *     installs, so it is probed rather than assumed.
+     */
+    private function _loan_repayments_cash_in($date, $pin) {
+        if (!$this->db->table_exists('loan_contract_repayment')) {
+            return 0.0;
+        }
+
+        $where = array(
+            'r.PIN = ' . $this->db->escape($pin),
+            'r.paydate = ' . $this->db->escape($date),
+        );
+
+        if ($this->db->query("SHOW COLUMNS FROM loan_contract_repayment LIKE 'is_voided'")->row()) {
+            $where[] = '(r.is_voided IS NULL OR r.is_voided = 0)';
+        }
+
+        /* Only exclude via the cash receipt link when that column is present - it is
+           created on demand by cash_receipt_model::ensure_received_from_columns(). */
+        $dedupe = '';
+        if ($this->db->table_exists('cash_receipts')
+            && $this->db->query("SHOW COLUMNS FROM cash_receipts LIKE 'loan_repayment_receipt'")->row()) {
+            $dedupe = ' AND NOT EXISTS (SELECT 1 FROM cash_receipts cr'
+                . ' WHERE cr.PIN = r.PIN AND cr.loan_repayment_receipt = r.receipt'
+                . ' AND (cr.cancelled IS NULL OR cr.cancelled = 0))';
+        }
+
+        $row = $this->db->query(
+            'SELECT COALESCE(SUM(r.principle + r.interest + r.penalt), 0) AS total'
+            . ' FROM loan_contract_repayment r'
+            . ' WHERE ' . implode(' AND ', $where) . $dedupe
+        )->row();
+
+        return floatval($row ? $row->total : 0);
     }
 
     /**

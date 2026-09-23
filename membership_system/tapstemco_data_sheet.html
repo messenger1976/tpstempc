@@ -1,0 +1,803 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TAPSTEMCO - Member's Personal Data Sheet</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        coopGreen: {
+                            50: '#f0fdf4',
+                            100: '#dcfce7',
+                            600: '#16a34a',
+                            700: '#15803d',
+                            800: '#166534',
+                            900: '#14532d',
+                        },
+                        coopGold: {
+                            400: '#facc15',
+                            500: '#eab308',
+                            600: '#ca8a04',
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* Custom print stylesheet to mirror physical form structure */
+        @media print {
+            body {
+                background: white !important;
+                color: black !important;
+                font-size: 11px !important;
+            }
+            .no-print {
+                display: none !important;
+            }
+            .print-border-box {
+                border: 1.5px solid #000 !important;
+            }
+            .print-border-b {
+                border-bottom: 1px solid #000 !important;
+            }
+            .print-border-r {
+                border-right: 1px solid #000 !important;
+            }
+            .print-bg-gray {
+                background-color: #f3f4f6 !important;
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+            }
+            .print-grid {
+                display: grid !important;
+            }
+            input, select, textarea {
+                border: none !important;
+                background: transparent !important;
+                padding: 1px 2px !important;
+                font-weight: 600 !important;
+                color: #000 !important;
+                box-shadow: none !important;
+            }
+            .page-container {
+                max-width: 100% !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                box-shadow: none !important;
+            }
+        }
+        /* Touch friendly tweaks */
+        .input-field {
+            transition: all 0.2s ease-in-out;
+        }
+        .input-field:focus {
+            outline: none;
+            border-color: #16a34a;
+            box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.15);
+        }
+    </style>
+</head>
+<body class="bg-slate-100 text-slate-800 font-sans min-h-screen pb-12">
+
+    <!-- Top Bar Navigation / Quick Actions -->
+    <header class="bg-coopGreen-900 text-white shadow-md sticky top-0 z-40 no-print">
+        <div class="max-w-6xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+            <div class="flex items-center space-x-3">
+                <span class="bg-coopGold-500 text-coopGreen-900 font-bold p-1.5 rounded-lg text-xs uppercase tracking-wider">TAPSTEMCO</span>
+                <h1 class="text-sm md:text-base font-semibold text-white">Personal Data Sheet Form</h1>
+            </div>
+            <div class="flex items-center space-x-2 text-sm">
+                <button onclick="saveDraft()" class="bg-white/10 hover:bg-white/20 text-white px-3 py-1.5 rounded-md flex items-center gap-1.5 transition">
+                    <i class="fa-solid fa-floppy-disk text-coopGold-400"></i>
+                    <span class="hidden sm:inline">Save Draft</span>
+                </button>
+                <button onclick="exportJSON()" class="bg-white/10 hover:bg-white/20 text-white px-3 py-1.5 rounded-md flex items-center gap-1.5 transition">
+                    <i class="fa-solid fa-file-export text-coopGold-400"></i>
+                    <span class="hidden sm:inline">Export JSON</span>
+                </button>
+                <button onclick="window.print()" class="bg-coopGold-500 hover:bg-coopGold-600 text-coopGreen-900 font-medium px-4 py-1.5 rounded-md flex items-center gap-1.5 transition shadow">
+                    <i class="fa-solid fa-print"></i>
+                    <span>Print / PDF</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Container Card -->
+    <div class="max-w-5xl mx-auto mt-4 md:mt-8 px-2 sm:px-4 page-container">
+        <div class="bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden print-border-box">
+            
+            <!-- Toast Alert Bar -->
+            <div id="toast" class="hidden no-print bg-emerald-600 text-white text-sm px-4 py-2 text-center transition-all duration-300">
+                <i class="fa-solid fa-circle-check mr-2"></i> <span id="toast-message">Data saved successfully!</span>
+            </div>
+
+            <form id="pdsForm" onsubmit="event.preventDefault();">
+                
+                <!-- HEADER SECTION -->
+                <div class="p-4 sm:p-6 bg-emerald-50/50 border-b border-slate-300 print:bg-transparent print-border-b">
+                    <div class="flex flex-col sm:flex-row items-center justify-between gap-4 text-center sm:text-left">
+                        
+                        <!-- TAPSTEMCO SVG Logo Replica -->
+                        <div class="flex items-center gap-4">
+                            <div class="w-20 h-20 sm:w-24 sm:h-24 flex-shrink-0 relative">
+                                <svg viewBox="0 0 100 100" class="w-full h-full drop-shadow">
+                                    <!-- Outer Circular Ring -->
+                                    <circle cx="50" cy="50" r="48" fill="#15803d" stroke="#ca8a04" stroke-width="3" />
+                                    <!-- Inner White Ring -->
+                                    <circle cx="50" cy="50" r="41" fill="#ffffff" stroke="#15803d" stroke-width="1.5" />
+                                    <!-- Inner Yellow Circle -->
+                                    <circle cx="50" cy="50" r="32" fill="#facc15" />
+                                    
+                                    <!-- Circular Curved Text Top -->
+                                    <path id="textPathTop" d="M 16,50 A 34,34 0 1,1 84,50" fill="none" />
+                                    <text font-size="6.5" font-weight="bold" fill="#ffffff">
+                                        <textPath href="#textPathTop" startOffset="50%" text-anchor="middle">
+                                            TALIBON PUB. SCH. TEACHERS & EMP.
+                                        </textPath>
+                                    </text>
+
+                                    <!-- Circular Curved Text Bottom -->
+                                    <path id="textPathBottom" d="M 84,50 A 34,34 0 0,1 16,50" fill="none" />
+                                    <text font-size="6.5" font-weight="bold" fill="#ffffff">
+                                        <textPath href="#textPathBottom" startOffset="50%" text-anchor="middle">
+                                            MULTIPURPOSE COOPERATIVE
+                                        </textPath>
+                                    </text>
+
+                                    <!-- Torch & Open Book Symbol -->
+                                    <g transform="translate(50, 48) scale(0.85)">
+                                        <!-- Book -->
+                                        <path d="M-15,8 Q-7,3 0,8 Q7,3 15,8 L15,-4 Q7,-8 0,-4 Q-7,-8 -15,-4 Z" fill="#ffffff" stroke="#166534" stroke-width="1"/>
+                                        <!-- Flame -->
+                                        <path d="M0,-16 C-4,-10 -2,-4 0,-2 C2,-4 4,-10 0,-16 Z" fill="#dc2626"/>
+                                        <path d="M0,-12 C-2,-8 -1,-4 0,-3 C1,-4 2,-8 0,-12 Z" fill="#f97316"/>
+                                        <!-- Torch Handle -->
+                                        <rect x="-2" y="-3" width="4" height="12" fill="#854d0e"/>
+                                    </g>
+                                    
+                                    <!-- TAPSTEMCO Banner -->
+                                    <rect x="22" y="70" width="56" height="12" rx="3" fill="#166534" stroke="#ffffff" stroke-width="1"/>
+                                    <text x="50" y="79" font-size="7.5" font-weight="900" fill="#facc15" text-anchor="middle" font-family="sans-serif">TAPSTEMCO</text>
+                                </svg>
+                            </div>
+                            
+                            <!-- Header Text -->
+                            <div class="sm:text-left">
+                                <h2 class="text-xs sm:text-sm md:text-base font-bold text-slate-900 uppercase tracking-tight">
+                                    Talibon Public School Teachers & Employees
+                                </h2>
+                                <h1 class="text-sm sm:text-lg md:text-xl font-extrabold text-coopGreen-800 uppercase tracking-wide">
+                                    Multipurpose Cooperative (TAPSTEMCO)
+                                </h1>
+                                <p class="text-xs text-slate-600 mt-0.5">
+                                    Purok 1, North Road, San Jose, Talibon, Bohol
+                                </p>
+                            </div>
+                        </div>
+
+                        <!-- 1x1 Photo Box -->
+                        <div class="flex flex-col items-center">
+                            <div class="relative w-28 h-28 sm:w-32 sm:h-32 border-2 border-dashed border-slate-400 bg-slate-50 flex flex-col items-center justify-center text-slate-400 rounded-md overflow-hidden group hover:border-coopGreen-600 cursor-pointer print-border-box">
+                                <img id="photoPreview" class="hidden w-full h-full object-cover" alt="Member Photo">
+                                <div id="photoPlaceholder" class="flex flex-col items-center p-2 text-center">
+                                    <i class="fa-solid fa-camera text-2xl mb-1 text-slate-400 group-hover:text-coopGreen-600"></i>
+                                    <span class="text-[10px] font-semibold text-slate-500 uppercase">Picture (1x1)</span>
+                                    <span class="text-[9px] text-slate-400 no-print">Click to upload</span>
+                                </div>
+                                <input type="file" id="photoInput" accept="image/*" class="absolute inset-0 opacity-0 cursor-pointer no-print" onchange="previewImage(this)">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Title Banner -->
+                    <div class="mt-4 bg-coopGreen-800 text-white py-2 px-4 rounded text-center print:bg-gray-200 print:text-black print:rounded-none">
+                        <h3 class="text-sm sm:text-base font-bold uppercase tracking-wider print:text-black">Member's Personal Data Sheet</h3>
+                    </div>
+                </div>
+
+                <!-- FORM FIELDS SECTION -->
+                <div class="p-4 sm:p-6 space-y-6">
+
+                    <!-- Basic Info Grid -->
+                    <div class="grid grid-cols-1 md:grid-cols-12 gap-4">
+                        
+                        <!-- 1. NAME -->
+                        <div class="md:col-span-12 bg-slate-50 p-3 rounded-lg border border-slate-200 print:bg-transparent print:border-b">
+                            <label class="block text-xs font-bold text-coopGreen-900 uppercase mb-2">1. Name</label>
+                            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                <div>
+                                    <span class="text-[10px] text-slate-500 uppercase font-semibold block mb-0.5">Surname</span>
+                                    <input type="text" name="surname" required class="input-field w-full px-3 py-1.5 bg-white border border-slate-300 rounded text-sm focus:bg-white" placeholder="e.g. Dela Cruz">
+                                </div>
+                                <div>
+                                    <span class="text-[10px] text-slate-500 uppercase font-semibold block mb-0.5">First Name</span>
+                                    <input type="text" name="firstName" required class="input-field w-full px-3 py-1.5 bg-white border border-slate-300 rounded text-sm focus:bg-white" placeholder="e.g. Juan">
+                                </div>
+                                <div>
+                                    <span class="text-[10px] text-slate-500 uppercase font-semibold block mb-0.5">Middle Name</span>
+                                    <input type="text" name="middleName" class="input-field w-full px-3 py-1.5 bg-white border border-slate-300 rounded text-sm focus:bg-white" placeholder="e.g. Santos">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 2. SEX -->
+                        <div class="md:col-span-4 bg-slate-50 p-3 rounded-lg border border-slate-200 print:bg-transparent print:border-b">
+                            <label class="block text-xs font-bold text-coopGreen-900 uppercase mb-2">2. Sex</label>
+                            <div class="flex items-center space-x-6 pt-1">
+                                <label class="inline-flex items-center cursor-pointer">
+                                    <input type="radio" name="sex" value="Male" class="w-4 h-4 text-coopGreen-600 focus:ring-coopGreen-500 border-slate-300">
+                                    <span class="ml-2 text-sm text-slate-700 font-medium">Male</span>
+                                </label>
+                                <label class="inline-flex items-center cursor-pointer">
+                                    <input type="radio" name="sex" value="Female" class="w-4 h-4 text-coopGreen-600 focus:ring-coopGreen-500 border-slate-300">
+                                    <span class="ml-2 text-sm text-slate-700 font-medium">Female</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <!-- 3. CIVIL STATUS -->
+                        <div class="md:col-span-8 bg-slate-50 p-3 rounded-lg border border-slate-200 print:bg-transparent print:border-b">
+                            <label class="block text-xs font-bold text-coopGreen-900 uppercase mb-2">3. Civil Status</label>
+                            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
+                                <label class="inline-flex items-center cursor-pointer">
+                                    <input type="radio" name="civilStatus" value="Single" class="w-4 h-4 text-coopGreen-600 focus:ring-coopGreen-500 border-slate-300">
+                                    <span class="ml-2 text-sm text-slate-700">Single</span>
+                                </label>
+                                <label class="inline-flex items-center cursor-pointer">
+                                    <input type="radio" name="civilStatus" value="Married" class="w-4 h-4 text-coopGreen-600 focus:ring-coopGreen-500 border-slate-300">
+                                    <span class="ml-2 text-sm text-slate-700">Married</span>
+                                </label>
+                                <label class="inline-flex items-center cursor-pointer">
+                                    <input type="radio" name="civilStatus" value="Widow/Widower" class="w-4 h-4 text-coopGreen-600 focus:ring-coopGreen-500 border-slate-300">
+                                    <span class="ml-2 text-sm text-slate-700">Widower/Widow</span>
+                                </label>
+                                <label class="inline-flex items-center cursor-pointer">
+                                    <input type="radio" name="civilStatus" value="Separated" class="w-4 h-4 text-coopGreen-600 focus:ring-coopGreen-500 border-slate-300">
+                                    <span class="ml-2 text-sm text-slate-700">Separated</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <!-- 4. IF MARRIED, WRITE MAIDEN NAME -->
+                        <div class="md:col-span-6 bg-slate-50 p-3 rounded-lg border border-slate-200 print:bg-transparent">
+                            <label class="block text-xs font-bold text-coopGreen-900 uppercase mb-1">4. If Married, Write Maiden Name</label>
+                            <input type="text" name="maidenName" class="input-field w-full px-3 py-1.5 bg-white border border-slate-300 rounded text-sm" placeholder="Full maiden name">
+                        </div>
+
+                        <!-- 5. NAME OF SPOUSE & OCCUPATION -->
+                        <div class="md:col-span-6 bg-slate-50 p-3 rounded-lg border border-slate-200 print:bg-transparent">
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                <div>
+                                    <label class="block text-xs font-bold text-coopGreen-900 uppercase mb-1">5. Name of Spouse</label>
+                                    <input type="text" name="spouseName" class="input-field w-full px-3 py-1.5 bg-white border border-slate-300 rounded text-sm" placeholder="Spouse full name">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-bold text-coopGreen-900 uppercase mb-1">Occupation</label>
+                                    <input type="text" name="spouseOccupation" class="input-field w-full px-3 py-1.5 bg-white border border-slate-300 rounded text-sm" placeholder="Spouse occupation">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 6. DATE OF BIRTH -->
+                        <div class="md:col-span-3 bg-slate-50 p-3 rounded-lg border border-slate-200 print:bg-transparent">
+                            <label class="block text-xs font-bold text-coopGreen-900 uppercase mb-1">6. Date of Birth</label>
+                            <input type="date" id="dobInput" name="dateOfBirth" onchange="calculateAge()" class="input-field w-full px-3 py-1.5 bg-white border border-slate-300 rounded text-sm">
+                        </div>
+
+                        <!-- 7. PLACE OF BIRTH -->
+                        <div class="md:col-span-4 bg-slate-50 p-3 rounded-lg border border-slate-200 print:bg-transparent">
+                            <label class="block text-xs font-bold text-coopGreen-900 uppercase mb-1">7. Place of Birth</label>
+                            <input type="text" name="placeOfBirth" class="input-field w-full px-3 py-1.5 bg-white border border-slate-300 rounded text-sm" placeholder="Municipality / Province">
+                        </div>
+
+                        <!-- 8. CITIZENSHIP -->
+                        <div class="md:col-span-3 bg-slate-50 p-3 rounded-lg border border-slate-200 print:bg-transparent">
+                            <label class="block text-xs font-bold text-coopGreen-900 uppercase mb-1">8. Citizenship</label>
+                            <input type="text" name="citizenship" value="Filipino" class="input-field w-full px-3 py-1.5 bg-white border border-slate-300 rounded text-sm">
+                        </div>
+
+                        <!-- 13. AGE (Auto calculated or manual) -->
+                        <div class="md:col-span-2 bg-slate-50 p-3 rounded-lg border border-slate-200 print:bg-transparent">
+                            <label class="block text-xs font-bold text-coopGreen-900 uppercase mb-1">13. Age</label>
+                            <input type="number" id="ageInput" name="age" class="input-field w-full px-3 py-1.5 bg-white border border-slate-300 rounded text-sm" placeholder="Years">
+                        </div>
+
+                        <!-- 9. OCCUPATION -->
+                        <div class="md:col-span-4 bg-slate-50 p-3 rounded-lg border border-slate-200 print:bg-transparent">
+                            <label class="block text-xs font-bold text-coopGreen-900 uppercase mb-1">9. Occupation</label>
+                            <input type="text" name="occupation" class="input-field w-full px-3 py-1.5 bg-white border border-slate-300 rounded text-sm" placeholder="e.g. Teacher II / Administrative Staff">
+                        </div>
+
+                        <!-- 10. HEIGHT -->
+                        <div class="md:col-span-3 bg-slate-50 p-3 rounded-lg border border-slate-200 print:bg-transparent">
+                            <label class="block text-xs font-bold text-coopGreen-900 uppercase mb-1">10. Height (Meters)</label>
+                            <input type="text" name="height" class="input-field w-full px-3 py-1.5 bg-white border border-slate-300 rounded text-sm" placeholder="e.g. 1.65 m">
+                        </div>
+
+                        <!-- 11. WEIGHT -->
+                        <div class="md:col-span-3 bg-slate-50 p-3 rounded-lg border border-slate-200 print:bg-transparent">
+                            <label class="block text-xs font-bold text-coopGreen-900 uppercase mb-1">11. Weight (Kilos)</label>
+                            <input type="text" name="weight" class="input-field w-full px-3 py-1.5 bg-white border border-slate-300 rounded text-sm" placeholder="e.g. 60 kg">
+                        </div>
+
+                        <!-- 12. BLOOD TYPE -->
+                        <div class="md:col-span-2 bg-slate-50 p-3 rounded-lg border border-slate-200 print:bg-transparent">
+                            <label class="block text-xs font-bold text-coopGreen-900 uppercase mb-1">12. Blood Type</label>
+                            <select name="bloodType" class="input-field w-full px-3 py-1.5 bg-white border border-slate-300 rounded text-sm">
+                                <option value="">--</option>
+                                <option value="A+">A+</option>
+                                <option value="A-">A-</option>
+                                <option value="B+">B+</option>
+                                <option value="B-">B-</option>
+                                <option value="O+">O+</option>
+                                <option value="O-">O-</option>
+                                <option value="AB+">AB+</option>
+                                <option value="AB-">AB-</option>
+                            </select>
+                        </div>
+
+                        <!-- 14. ADDRESS -->
+                        <div class="md:col-span-8 bg-slate-50 p-3 rounded-lg border border-slate-200 print:bg-transparent">
+                            <label class="block text-xs font-bold text-coopGreen-900 uppercase mb-1">14. Address</label>
+                            <input type="text" name="address" class="input-field w-full px-3 py-1.5 bg-white border border-slate-300 rounded text-sm" placeholder="House No, Street, Barangay, Municipality, Province">
+                        </div>
+
+                        <!-- 15. CONTACT NO & DATE EMPLOYED -->
+                        <div class="md:col-span-4 bg-slate-50 p-3 rounded-lg border border-slate-200 print:bg-transparent">
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                <div>
+                                    <label class="block text-xs font-bold text-coopGreen-900 uppercase mb-1">15. Contact No.</label>
+                                    <input type="tel" name="contactNo" class="input-field w-full px-3 py-1.5 bg-white border border-slate-300 rounded text-sm" placeholder="0912 345 6789">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-bold text-coopGreen-900 uppercase mb-1">Date Employed</label>
+                                    <input type="date" name="dateEmployed" class="input-field w-full px-3 py-1.5 bg-white border border-slate-300 rounded text-sm">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 16. TIN -->
+                        <div class="md:col-span-4 bg-slate-50 p-3 rounded-lg border border-slate-200 print:bg-transparent">
+                            <label class="block text-xs font-bold text-coopGreen-900 uppercase mb-1">16. Taxpayer's ID No. (TIN)</label>
+                            <input type="text" name="tinNo" class="input-field w-full px-3 py-1.5 bg-white border border-slate-300 rounded text-sm" placeholder="000-000-000-000">
+                        </div>
+
+                        <!-- 17. ANNUAL INCOME -->
+                        <div class="md:col-span-4 bg-slate-50 p-3 rounded-lg border border-slate-200 print:bg-transparent">
+                            <label class="block text-xs font-bold text-coopGreen-900 uppercase mb-1">17. Annual Income</label>
+                            <input type="text" name="annualIncome" class="input-field w-full px-3 py-1.5 bg-white border border-slate-300 rounded text-sm" placeholder="₱ 0.00">
+                        </div>
+
+                        <!-- 18. RELIGION & BP/GSIS NO -->
+                        <div class="md:col-span-4 bg-slate-50 p-3 rounded-lg border border-slate-200 print:bg-transparent">
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                <div>
+                                    <label class="block text-xs font-bold text-coopGreen-900 uppercase mb-1">18. Religion</label>
+                                    <input type="text" name="religion" class="input-field w-full px-3 py-1.5 bg-white border border-slate-300 rounded text-sm" placeholder="Religion">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-bold text-coopGreen-900 uppercase mb-1">BP No. / GSIS No.</label>
+                                    <input type="text" name="gsisNo" class="input-field w-full px-3 py-1.5 bg-white border border-slate-300 rounded text-sm" placeholder="GSIS / BP Number">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 19. FATHER'S NAME & PLACE OF BIRTH -->
+                        <div class="md:col-span-12 bg-slate-50 p-3 rounded-lg border border-slate-200 print:bg-transparent">
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <div>
+                                    <label class="block text-xs font-bold text-coopGreen-900 uppercase mb-1">19. Name of Father</label>
+                                    <input type="text" name="fatherName" class="input-field w-full px-3 py-1.5 bg-white border border-slate-300 rounded text-sm" placeholder="Full name of father">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-bold text-coopGreen-900 uppercase mb-1">Place of Birth</label>
+                                    <input type="text" name="fatherBirthPlace" class="input-field w-full px-3 py-1.5 bg-white border border-slate-300 rounded text-sm" placeholder="Father's place of birth">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 20. MOTHER'S MAIDEN NAME & PLACE OF BIRTH -->
+                        <div class="md:col-span-12 bg-slate-50 p-3 rounded-lg border border-slate-200 print:bg-transparent">
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <div>
+                                    <label class="block text-xs font-bold text-coopGreen-900 uppercase mb-1">20. Name of Mother (Maiden Name)</label>
+                                    <input type="text" name="motherName" class="input-field w-full px-3 py-1.5 bg-white border border-slate-300 rounded text-sm" placeholder="Full maiden name of mother">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-bold text-coopGreen-900 uppercase mb-1">Place of Birth</label>
+                                    <input type="text" name="motherBirthPlace" class="input-field w-full px-3 py-1.5 bg-white border border-slate-300 rounded text-sm" placeholder="Mother's place of birth">
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
+
+                    <!-- 21. BENEFICIARIES TABLE / CARDS -->
+                    <div class="bg-slate-50 p-3 sm:p-4 rounded-lg border border-slate-200 print:bg-transparent">
+                        <div class="flex items-center justify-between mb-3">
+                            <label class="text-xs font-bold text-coopGreen-900 uppercase">21. Name of Beneficiaries</label>
+                            <button type="button" onclick="addBeneficiaryRow()" class="no-print bg-coopGreen-700 hover:bg-coopGreen-800 text-white text-xs px-3 py-1 rounded flex items-center gap-1 shadow-sm transition">
+                                <i class="fa-solid fa-plus text-[10px]"></i> Add Beneficiary
+                            </button>
+                        </div>
+
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left text-xs border-collapse">
+                                <thead>
+                                    <tr class="bg-slate-200 text-slate-700 uppercase font-semibold print:bg-gray-100">
+                                        <th class="p-2 border border-slate-300">Name of Beneficiaries</th>
+                                        <th class="p-2 border border-slate-300">Relationship</th>
+                                        <th class="p-2 border border-slate-300">Date of Birth</th>
+                                        <th class="p-2 border border-slate-300 w-20">Age</th>
+                                        <th class="p-2 border border-slate-300 w-10 text-center no-print">Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="beneficiariesTableBody">
+                                    <!-- Dynamic Rows inserted here -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- 22. HIGHEST EDUCATIONAL ATTAINMENT -->
+                    <div class="bg-slate-50 p-3 rounded-lg border border-slate-200 print:bg-transparent">
+                        <label class="block text-xs font-bold text-coopGreen-900 uppercase mb-1">22. Highest Educational Attainment</label>
+                        <input type="text" name="educationalAttainment" class="input-field w-full px-3 py-2 bg-white border border-slate-300 rounded text-sm" placeholder="e.g. Bachelor of Elementary Education / Master of Arts in Education">
+                    </div>
+
+                    <!-- 23. RECORD OF IN-SERVICE TRAINING -->
+                    <div class="bg-slate-50 p-3 sm:p-4 rounded-lg border border-slate-200 print:bg-transparent">
+                        <div class="flex flex-col sm:flex-row sm:items-center justify-between mb-3 gap-2">
+                            <div>
+                                <label class="text-xs font-bold text-coopGreen-900 uppercase block">23. Record of In-Service Training</label>
+                                <span class="text-[10px] text-slate-500 font-medium">(Accredited by the CSC) Study and Scholarship Grants</span>
+                            </div>
+                            <button type="button" onclick="addTrainingRow()" class="no-print bg-coopGreen-700 hover:bg-coopGreen-800 text-white text-xs px-3 py-1 rounded flex items-center gap-1 shadow-sm transition self-start sm:self-auto">
+                                <i class="fa-solid fa-plus text-[10px]"></i> Add Training
+                            </button>
+                        </div>
+
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left text-xs border-collapse">
+                                <thead>
+                                    <tr class="bg-slate-200 text-slate-700 uppercase font-semibold print:bg-gray-100">
+                                        <th class="p-2 border border-slate-300">Title of Seminar/Conference Course/Training</th>
+                                        <th class="p-2 border border-slate-300">Inclusive Dates</th>
+                                        <th class="p-2 border border-slate-300 w-24">No. of Hours</th>
+                                        <th class="p-2 border border-slate-300">Conducted By</th>
+                                        <th class="p-2 border border-slate-300 w-10 text-center no-print">Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="trainingsTableBody">
+                                    <!-- Dynamic Rows inserted here -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- 24 & 25. IDENTIFICATION NO & DATE ISSUED -->
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-50 p-3 rounded-lg border border-slate-200 print:bg-transparent">
+                        <div>
+                            <label class="block text-xs font-bold text-coopGreen-900 uppercase mb-1">24. Identification No.</label>
+                            <input type="text" name="identificationNo" class="input-field w-full px-3 py-1.5 bg-white border border-slate-300 rounded text-sm" placeholder="ID Number">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-coopGreen-900 uppercase mb-1">25. Date Issued</label>
+                            <input type="date" name="dateIssued" class="input-field w-full px-3 py-1.5 bg-white border border-slate-300 rounded text-sm">
+                        </div>
+                    </div>
+
+                    <!-- PRINT ONLY SIGNATURE BLOCK -->
+                    <div class="hidden print:block pt-12 mt-8">
+                        <div class="flex justify-between items-end px-8">
+                            <div class="text-center w-64">
+                                <div class="border-b border-black mb-1"></div>
+                                <span class="text-xs font-bold uppercase">Signature of Applicant</span>
+                            </div>
+                            <div class="text-center w-64">
+                                <div class="border-b border-black mb-1"></div>
+                                <span class="text-xs font-bold uppercase">Date Signed</span>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+
+                <!-- Bottom Action Controls -->
+                <div class="p-4 bg-slate-100 border-t border-slate-200 flex flex-wrap items-center justify-between gap-3 no-print">
+                    <button type="button" onclick="clearForm()" class="text-slate-600 hover:text-red-600 text-xs font-semibold uppercase tracking-wider py-2 px-3 transition">
+                        <i class="fa-solid fa-trash-can mr-1"></i> Clear Form
+                    </button>
+                    <div class="flex items-center space-x-3">
+                        <button type="button" onclick="saveDraft()" class="bg-slate-200 hover:bg-slate-300 text-slate-700 font-semibold text-xs py-2 px-4 rounded transition">
+                            Save Draft
+                        </button>
+                        <button type="button" onclick="submitForm()" class="bg-coopGreen-700 hover:bg-coopGreen-800 text-white font-semibold text-xs py-2 px-5 rounded shadow transition flex items-center gap-1.5">
+                            <i class="fa-solid fa-check"></i> Submit Data
+                        </button>
+                    </div>
+                </div>
+
+            </form>
+        </div>
+    </div>
+
+    <script>
+        window.onload = function() {
+            // Seed initial rows
+            addBeneficiaryRow();
+            addBeneficiaryRow();
+            addTrainingRow();
+            addTrainingRow();
+
+            // Load stored draft if present
+            loadDraftOnStart();
+        };
+
+        // Photo Upload Preview
+        function previewImage(input) {
+            const preview = document.getElementById('photoPreview');
+            const placeholder = document.getElementById('photoPlaceholder');
+            
+            if (input.files && input.files[0]) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    preview.src = e.target.result;
+                    preview.classList.remove('hidden');
+                    placeholder.classList.add('hidden');
+                }
+                reader.readAsDataURL(input.files[0]);
+            }
+        }
+
+        // Auto Calculate Age from DOB
+        function calculateAge() {
+            const dobInput = document.getElementById('dobInput').value;
+            if (!dobInput) return;
+
+            const dob = new Date(dobInput);
+            const today = new Date();
+            let age = today.getFullYear() - dob.getFullYear();
+            const monthDiff = today.getMonth() - dob.getMonth();
+
+            if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < dob.getDate())) {
+                age--;
+            }
+
+            document.getElementById('ageInput').value = age >= 0 ? age : 0;
+        }
+
+        // Dynamic Beneficiaries Row Management
+        function addBeneficiaryRow(data = {}) {
+            const tbody = document.getElementById('beneficiariesTableBody');
+            const tr = document.createElement('tr');
+            tr.className = "hover:bg-slate-100/50 transition";
+            
+            tr.innerHTML = `
+                <td class="p-1 border border-slate-300">
+                    <input type="text" name="benName[]" value="${data.name || ''}" class="input-field w-full px-2 py-1 bg-white border border-slate-200 rounded text-xs" placeholder="Full Name">
+                </td>
+                <td class="p-1 border border-slate-300">
+                    <input type="text" name="benRel[]" value="${data.rel || ''}" class="input-field w-full px-2 py-1 bg-white border border-slate-200 rounded text-xs" placeholder="e.g. Child / Spouse">
+                </td>
+                <td class="p-1 border border-slate-300">
+                    <input type="date" name="benDob[]" value="${data.dob || ''}" onchange="calcBenAge(this)" class="input-field w-full px-2 py-1 bg-white border border-slate-200 rounded text-xs">
+                </td>
+                <td class="p-1 border border-slate-300">
+                    <input type="number" name="benAge[]" value="${data.age || ''}" class="input-field w-full px-2 py-1 bg-white border border-slate-200 rounded text-xs" placeholder="Age">
+                </td>
+                <td class="p-1 border border-slate-300 text-center no-print">
+                    <button type="button" onclick="removeRow(this)" class="text-slate-400 hover:text-red-500 p-1 transition">
+                        <i class="fa-solid fa-circle-minus text-sm"></i>
+                    </button>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        }
+
+        function calcBenAge(element) {
+            const row = element.closest('tr');
+            const ageInput = row.querySelector('input[name="benAge[]"]');
+            if (element.value) {
+                const dob = new Date(element.value);
+                const today = new Date();
+                let age = today.getFullYear() - dob.getFullYear();
+                const m = today.getMonth() - dob.getMonth();
+                if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) age--;
+                ageInput.value = age >= 0 ? age : 0;
+            }
+        }
+
+        // Dynamic In-Service Training Row Management
+        function addTrainingRow(data = {}) {
+            const tbody = document.getElementById('trainingsTableBody');
+            const tr = document.createElement('tr');
+            tr.className = "hover:bg-slate-100/50 transition";
+            
+            tr.innerHTML = `
+                <td class="p-1 border border-slate-300">
+                    <input type="text" name="trnTitle[]" value="${data.title || ''}" class="input-field w-full px-2 py-1 bg-white border border-slate-200 rounded text-xs" placeholder="Seminar/Course Title">
+                </td>
+                <td class="p-1 border border-slate-300">
+                    <input type="text" name="trnDates[]" value="${data.dates || ''}" class="input-field w-full px-2 py-1 bg-white border border-slate-200 rounded text-xs" placeholder="e.g. Oct 12-14, 2024">
+                </td>
+                <td class="p-1 border border-slate-300">
+                    <input type="text" name="trnHours[]" value="${data.hours || ''}" class="input-field w-full px-2 py-1 bg-white border border-slate-200 rounded text-xs" placeholder="e.g. 24 hrs">
+                </td>
+                <td class="p-1 border border-slate-300">
+                    <input type="text" name="trnBy[]" value="${data.by || ''}" class="input-field w-full px-2 py-1 bg-white border border-slate-200 rounded text-xs" placeholder="Organizer/Sponsor">
+                </td>
+                <td class="p-1 border border-slate-300 text-center no-print">
+                    <button type="button" onclick="removeRow(this)" class="text-slate-400 hover:text-red-500 p-1 transition">
+                        <i class="fa-solid fa-circle-minus text-sm"></i>
+                    </button>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        }
+
+        function removeRow(btn) {
+            const row = btn.closest('tr');
+            row.remove();
+        }
+
+        // Get Form Data Object
+        function getFormData() {
+            const form = document.getElementById('pdsForm');
+            const formData = new FormData(form);
+            const data = {};
+
+            // Standard fields
+            formData.forEach((value, key) => {
+                if (!key.endsWith('[]')) {
+                    data[key] = value;
+                }
+            });
+
+            // Radio sex & civil status explicit captures
+            const sex = document.querySelector('input[name="sex"]:checked');
+            data.sex = sex ? sex.value : '';
+
+            const civilStatus = document.querySelector('input[name="civilStatus"]:checked');
+            data.civilStatus = civilStatus ? civilStatus.value : '';
+
+            // Beneficiaries Array
+            data.beneficiaries = [];
+            const benNames = document.getElementsByName('benName[]');
+            const benRels = document.getElementsByName('benRel[]');
+            const benDobs = document.getElementsByName('benDob[]');
+            const benAges = document.getElementsByName('benAge[]');
+            for (let i = 0; i < benNames.length; i++) {
+                if (benNames[i].value || benRels[i].value) {
+                    data.beneficiaries.push({
+                        name: benNames[i].value,
+                        rel: benRels[i].value,
+                        dob: benDobs[i].value,
+                        age: benAges[i].value
+                    });
+                }
+            }
+
+            // Trainings Array
+            data.trainings = [];
+            const trnTitles = document.getElementsByName('trnTitle[]');
+            const trnDates = document.getElementsByName('trnDates[]');
+            const trnHours = document.getElementsByName('trnHours[]');
+            const trnBys = document.getElementsByName('trnBy[]');
+            for (let i = 0; i < trnTitles.length; i++) {
+                if (trnTitles[i].value || trnBys[i].value) {
+                    data.trainings.push({
+                        title: trnTitles[i].value,
+                        dates: trnDates[i].value,
+                        hours: trnHours[i].value,
+                        by: trnBys[i].value
+                    });
+                }
+            }
+
+            return data;
+        }
+
+        // Save Draft to LocalStorage
+        function saveDraft() {
+            const data = getFormData();
+            localStorage.setItem('tapstemco_pds_draft', JSON.stringify(data));
+            showToast('Draft saved successfully to local browser!');
+        }
+
+        // Load Draft
+        function loadDraftOnStart() {
+            const draft = localStorage.getItem('tapstemco_pds_draft');
+            if (!draft) return;
+
+            try {
+                const data = JSON.parse(draft);
+                const form = document.getElementById('pdsForm');
+
+                // Populate regular fields
+                Object.keys(data).forEach(key => {
+                    const field = form.elements[key];
+                    if (field && !Array.isArray(data[key])) {
+                        if (field.type === 'radio') {
+                            const radio = form.querySelector(`input[name="${key}"][value="${data[key]}"]`);
+                            if (radio) radio.checked = true;
+                        } else {
+                            field.value = data[key];
+                        }
+                    }
+                });
+
+                // Populate beneficiaries
+                if (data.beneficiaries && data.beneficiaries.length > 0) {
+                    document.getElementById('beneficiariesTableBody').innerHTML = '';
+                    data.beneficiaries.forEach(b => addBeneficiaryRow(b));
+                }
+
+                // Populate trainings
+                if (data.trainings && data.trainings.length > 0) {
+                    document.getElementById('trainingsTableBody').innerHTML = '';
+                    data.trainings.forEach(t => addTrainingRow(t));
+                }
+
+            } catch(e) {
+                console.error("Error loading draft", e);
+            }
+        }
+
+        // Export JSON Data File
+        function exportJSON() {
+            const data = getFormData();
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(data, null, 2));
+            const downloadAnchor = document.createElement('a');
+            downloadAnchor.setAttribute("href", dataStr);
+            downloadAnchor.setAttribute("download", `TAPSTEMCO_PDS_${data.surname || 'Member'}.json`);
+            document.body.appendChild(downloadAnchor);
+            downloadAnchor.click();
+            downloadAnchor.remove();
+            showToast('Exported form JSON file!');
+        }
+
+        // Submit Form Handler
+        function submitForm() {
+            saveDraft();
+            showToast('Form submitted successfully!');
+        }
+
+        // Clear Form Reset
+        function clearForm() {
+            if (confirm('Are you sure you want to clear all fields?')) {
+                document.getElementById('pdsForm').reset();
+                localStorage.removeItem('tapstemco_pds_draft');
+                document.getElementById('photoPreview').classList.add('hidden');
+                document.getElementById('photoPlaceholder').classList.remove('hidden');
+                showToast('Form cleared.');
+            }
+        }
+
+        // Toast Alert Helper
+        function showToast(message) {
+            const toast = document.getElementById('toast');
+            const msg = document.getElementById('toast-message');
+            msg.textContent = message;
+            toast.classList.remove('hidden');
+            setTimeout(() => {
+                toast.classList.add('hidden');
+            }, 3000);
+        }
+    </script>
+</body>
+</html>

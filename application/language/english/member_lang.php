@@ -175,5 +175,8 @@ $lang['member_current_loan'] = 'Loan Amount';
 $lang['member_current_loan_payment'] = 'Loan Paid Amount';
 $lang['member_current_savings'] = 'Savings';
 
+// Membership documents screen (PDS / Application for Membership / Subscription Agreement)
+$lang['member_membership_documents'] = 'Membership Documents (PDS)';
+
 
 ?>

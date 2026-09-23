@@ -1,0 +1,2445 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TAPSTEMCO - Unified Cooperative Management System & API Hub</title>
+    <script>
+        // The membership_documents controller replaces both placeholders below.
+        //
+        // APP_BASE  = base_url()                 -> assets (/logo/...)
+        // API_BASE  = site_url('membership_documents/') -> JSON endpoints
+        //
+        // They differ on purpose. This app (MY_Config::site_url) prepends the
+        // current language segment, so the API lives at /en/membership_documents/.
+        // Calling the un-prefixed path still 'works' but hits a redirect that
+        // DROPS the query string, which would silently break search and paging.
+        // Assets live at the web root, outside the language segment.
+        //
+        // Left untouched when the file is opened directly from /membership_system/.
+        window.TAPSTEMCO_APP_BASE = '__TAPSTEMCO_APP_BASE__';
+        window.TAPSTEMCO_API_BASE = '__TAPSTEMCO_API_BASE__';
+        // Default Registration Fee (global_setting.REGISTRATION_FEE), so the
+        // new-member panel starts from Default Settings. Left as a placeholder
+        // when the file is opened directly.
+        window.TAPSTEMCO_REGISTRATION_FEE = '__TAPSTEMCO_REGISTRATION_FEE__';
+    </script>
+    <!-- Official TAPSTEMCO crest (same asset as TAPSTEMCO_FORM_LOGO in application/config/constants.php).
+         The base is injected by the controller; when the file is opened directly the
+         placeholder survives and the crest is hidden. -->
+    <link rel="icon" type="image/png" href="__TAPSTEMCO_APP_BASE__logo/1761642549tapstemco-logo.png">
+    <link rel="apple-touch-icon" href="__TAPSTEMCO_APP_BASE__logo/1761642549tapstemco-logo.png">
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts Inter & Serif -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&family=Merriweather:wght@400;700&display=swap" rel="stylesheet">
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        coopGreen: {
+                            50: '#f0fdf4',
+                            100: '#dcfce7',
+                            600: '#16a34a',
+                            700: '#15803d',
+                            800: '#166534',
+                            900: '#14532d',
+                        },
+                        coopGold: {
+                            400: '#facc15',
+                            500: '#eab308',
+                            600: '#ca8a04',
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        serif: ['Merriweather', 'serif'],
+                        mono: ['JetBrains Mono', 'monospace']
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        @media print {
+            body * {
+                visibility: hidden !important;
+            }
+            #printModalContent, #printModalContent * {
+                visibility: visible !important;
+            }
+            #printModalContent {
+                position: absolute !important;
+                left: 0 !important;
+                top: 0 !important;
+                width: 100% !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                box-shadow: none !important;
+                border: none !important;
+                background: white !important;
+                color: black !important;
+            }
+            .no-print, .no-print-modal {
+                display: none !important;
+            }
+        }
+        .tab-btn.active {
+            background-color: #15803d;
+            color: #ffffff;
+            font-weight: 600;
+        }
+        .input-field {
+            transition: all 0.2s;
+        }
+        .input-field:focus {
+            border-color: #16a34a;
+            box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.15);
+            outline: none;
+        }
+        #sigCanvas {
+            touch-action: none;
+        }
+    </style>
+</head>
+<body class="bg-slate-100 text-slate-800 font-sans min-h-screen flex flex-col">
+
+    <!-- TOP NAVIGATION HEADER -->
+    <header class="bg-coopGreen-900 text-white shadow-lg sticky top-0 z-50 no-print">
+        <div class="max-w-7xl mx-auto px-4 py-2.5 flex flex-wrap items-center justify-between gap-3">
+            
+            <!-- Logo & Brand Title -->
+            <div class="flex items-center space-x-3 cursor-pointer" onclick="switchMainTab('directory')">
+                <div class="w-10 h-10 flex-shrink-0 rounded-full bg-white overflow-hidden ring-2 ring-coopGold-500/70 shadow-md">
+                    <img src="__TAPSTEMCO_APP_BASE__logo/1761642549tapstemco-logo.png"
+                         alt="TAPSTEMCO official logo"
+                         class="w-full h-full object-contain"
+                         onerror="this.parentElement.classList.add('hidden')">
+                </div>
+                <div>
+                    <h1 class="text-sm md:text-base font-bold text-white leading-tight">TAPSTEMCO Management System</h1>
+                    <p class="text-[11px] text-coopGold-400 font-medium">Talibon Public School Teachers & Employees Multipurpose Cooperative</p>
+                </div>
+            </div>
+
+            <!-- Global Action Bar -->
+            <div class="flex items-center space-x-2 text-xs">
+                <span id="sessionChip" class="hidden sm:flex items-center gap-1.5 bg-white/10 text-white/90 px-3 py-1.5 rounded-lg" title="Signed-in user">
+                    <i class="fa-solid fa-user-shield text-coopGold-400"></i>
+                    <span id="sessionUser">&mdash;</span>
+                </span>
+
+                <span id="dbStatus" class="flex items-center gap-1.5 bg-white/10 text-white/90 px-3 py-1.5 rounded-lg" title="Live database">
+                    <i class="fa-solid fa-database text-coopGold-400"></i>
+                    <span id="dbStatusText">Connecting&hellip;</span>
+                </span>
+
+                <button onclick="reloadAll()" class="bg-white/10 hover:bg-white/20 text-white px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition">
+                    <i class="fa-solid fa-rotate text-coopGold-400"></i>
+                    <span class="hidden sm:inline">Refresh</span>
+                </button>
+
+                <button onclick="triggerGlobalPrint()" class="bg-coopGold-500 hover:bg-coopGold-600 text-coopGreen-900 font-bold px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition shadow">
+                    <i class="fa-solid fa-print"></i>
+                    <span>Print / PDF</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- MAIN NAVIGATION TABS -->
+        <nav class="bg-coopGreen-800 border-t border-coopGreen-700/60 px-4">
+            <div class="max-w-7xl mx-auto flex items-center gap-2 overflow-x-auto py-1 text-xs">
+                <div class="flex space-x-1">
+                    <button onclick="switchMainTab('directory')" id="tab-btn-directory" class="tab-btn active px-3.5 py-2 rounded-md flex items-center gap-2 transition text-slate-200">
+                        <i class="fa-solid fa-address-book"></i> Member Directory
+                    </button>
+
+                    <button onclick="switchMainTab('pds')" id="tab-btn-pds" class="tab-btn px-3.5 py-2 rounded-md flex items-center gap-2 transition text-slate-200">
+                        <i class="fa-solid fa-id-card"></i> Personal Data Sheet (PDS)
+                    </button>
+
+                    <button onclick="switchMainTab('membership')" id="tab-btn-membership" class="tab-btn px-3.5 py-2 rounded-md flex items-center gap-2 transition text-slate-200">
+                        <i class="fa-solid fa-file-pen"></i> Membership Application
+                    </button>
+
+                    <button onclick="switchMainTab('agreement')" id="tab-btn-agreement" class="tab-btn px-3.5 py-2 rounded-md flex items-center gap-2 transition text-slate-200">
+                        <i class="fa-solid fa-file-signature"></i> Subscription Agreement
+                    </button>
+                </div>
+
+                <!-- Primary action. Creates a member record with the same logic
+                     as Members -> Register New Member, then stores this Data
+                     Sheet (and its 25 fields) against the new member. -->
+                <button onclick="startNewMember()" data-new-member class="ml-auto bg-coopGold-500 hover:bg-coopGold-600 text-coopGreen-900 font-bold px-3.5 py-2 rounded-md flex items-center gap-2 transition shadow whitespace-nowrap">
+                    <i class="fa-solid fa-user-plus"></i> New Member
+                </button>
+            </div>
+        </nav>
+    </header>
+
+    <!-- GLOBAL TOAST NOTIFICATION -->
+    <div id="toast" class="hidden fixed top-16 right-4 z-50 bg-emerald-700 text-white text-xs sm:text-sm px-4 py-3 rounded-lg shadow-2xl flex items-center gap-2 border border-emerald-500 transition-all duration-300">
+        <i class="fa-solid fa-circle-check text-coopGold-400 text-lg"></i>
+        <span id="toast-message">Action processed successfully</span>
+    </div>
+
+    <!-- MAIN BODY CONTENT AREA -->
+    <main class="flex-grow max-w-7xl w-full mx-auto p-3 sm:p-6 no-print">
+
+        <!-- SESSION / CONNECTION BANNER -->
+        <div id="sessionBanner" class="hidden mb-4 bg-amber-50 border border-amber-300 text-amber-900 rounded-xl p-4 flex items-start gap-3">
+            <i class="fa-solid fa-lock text-amber-600 mt-0.5"></i>
+            <div class="text-xs space-y-1">
+                <p class="font-bold uppercase">Not connected to the cooperative database</p>
+                <p id="sessionBannerText">The live database is only available inside a signed-in session.</p>
+                <a id="sessionBannerLink" href="../auth/login" class="inline-flex items-center gap-1.5 font-bold text-coopGreen-800 hover:underline">
+                    <i class="fa-solid fa-right-to-bracket"></i> Sign in to TAPSTEMCO
+                </a>
+            </div>
+        </div>
+
+        <!-- TAB 1: MEMBER DIRECTORY (LIVE DATABASE) -->
+        <section id="tab-directory" class="main-tab-content space-y-4">
+            
+            <!-- Directory Filter Bar -->
+            <div class="bg-white p-4 rounded-xl shadow-md border border-slate-200 flex flex-wrap items-center justify-between gap-3">
+                <div class="flex flex-wrap items-center gap-3 flex-1">
+                    <div class="relative min-w-[240px] flex-1 sm:flex-initial">
+                        <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-slate-400 text-xs"></i>
+                        <input type="text" id="searchInput" oninput="onSearchInput()" placeholder="Search real members by name, member no., PID or address..." class="w-full pl-8 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-300 rounded-lg focus:bg-white focus:ring-1 focus:ring-coopGreen-600">
+                    </div>
+
+                    <select id="statusFilter" onchange="loadMembers()" class="text-xs bg-slate-50 border border-slate-300 rounded-lg px-3 py-1.5 focus:bg-white">
+                        <option value="ALL">All Application Statuses</option>
+                        <option value="APPROVED">Approved</option>
+                        <option value="PENDING">Pending</option>
+                        <option value="DISAPPROVED">Disapproved</option>
+                        <option value="NONE">No application yet</option>
+                    </select>
+
+                    <label class="flex items-center gap-1.5 text-[11px] font-semibold text-slate-600 whitespace-nowrap">
+                        <input type="checkbox" id="includeNoneMember" onchange="loadMembers()" class="rounded border-slate-300">
+                        Include non-members
+                    </label>
+
+                    <span id="resultCount" class="text-[11px] font-semibold text-slate-500 whitespace-nowrap"></span>
+                </div>
+
+                <div class="flex items-center space-x-2">
+                    <!-- Same action as the tab-strip button: create a new member. -->
+                    <button onclick="startNewMember()" data-new-member class="bg-coopGreen-700 hover:bg-coopGreen-800 text-white font-semibold text-xs px-4 py-2 rounded-lg flex items-center gap-1.5 transition shadow">
+                        <i class="fa-solid fa-user-plus"></i> New Member
+                    </button>
+                </div>
+            </div>
+
+            <!-- Records Data Table -->
+            <div class="bg-white rounded-xl shadow-md border border-slate-200 overflow-hidden">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse text-xs">
+                        <thead>
+                            <tr class="bg-slate-100 text-slate-700 uppercase font-bold border-b border-slate-200">
+                                <th class="p-3">Member ID</th>
+                                <th class="p-3">Full Name</th>
+                                <th class="p-3">Sex / Status</th>
+                                <th class="p-3">Contact / Address</th>
+                                <th class="p-3">Shares Subscribed</th>
+                                <th class="p-3">Status</th>
+                                <th class="p-3 text-center">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="directoryTableBody" class="divide-y divide-slate-200">
+                            <!-- Populated via JavaScript -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Table Empty State -->
+                <div id="emptyDirectoryState" class="hidden p-8 text-center text-slate-400 space-y-2">
+                    <i class="fa-solid fa-folder-open text-4xl text-slate-300"></i>
+                    <p class="text-sm font-medium text-slate-500">No cooperative records found matching your filters.</p>
+                </div>
+
+                <!-- Paging: the directory is fetched 300 rows at a time -->
+                <div id="loadMoreWrap" class="hidden p-4 text-center border-t border-slate-200 bg-slate-50">
+                    <button onclick="loadMembers(true)" class="bg-white hover:bg-slate-100 border border-slate-300 text-coopGreen-800 font-semibold text-xs px-4 py-2 rounded-lg transition shadow-sm inline-flex items-center gap-2">
+                        <i class="fa-solid fa-arrow-down"></i>
+                        <span id="loadMoreText">Load more</span>
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- TAB 2: PERSONAL DATA SHEET FORM (PDS) -->
+        <section id="tab-pds" class="main-tab-content hidden space-y-4">
+            <div class="bg-white p-6 rounded-xl shadow-lg border border-slate-200">
+                <div class="flex flex-wrap items-center justify-between border-b pb-4 mb-6 gap-3">
+                    <div>
+                        <h2 class="text-lg font-bold text-coopGreen-900 uppercase">1. Member's Personal Data Sheet (PDS) - Full 25 Fields</h2>
+                        <p class="text-xs text-slate-500">Form 1: Complete official record matching the paper Data Sheet document.</p>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button type="button" onclick="previewCurrentForm('pds')" class="bg-coopGreen-700 hover:bg-coopGreen-800 text-white text-xs font-semibold px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition shadow">
+                            <i class="fa-solid fa-file-lines text-coopGold-400"></i> Preview & Print Document
+                        </button>
+                        <span class="bg-coopGreen-100 text-coopGreen-800 text-xs font-bold px-3 py-1 rounded-full">Form 1 of 3</span>
+                    </div>
+                </div>
+
+                <!-- NEW MEMBER MODE - the three fields the Data Sheet does not
+                     carry. Shown only while a record is being created. -->
+                <div id="newMemberPanel" class="hidden mb-6 bg-amber-50 border border-amber-300 rounded-lg p-4">
+                    <div class="flex flex-wrap items-start justify-between gap-3">
+                        <div class="max-w-3xl">
+                            <p class="text-xs font-bold uppercase text-amber-900">
+                                <i class="fa-solid fa-user-plus mr-1"></i> Creating a new member
+                            </p>
+                            <p class="text-[11px] text-amber-800 leading-relaxed mt-1">
+                                Saving now <span class="font-bold">creates the member record</span> the same way
+                                <span class="font-mono">Members &rarr; Register New Member</span> does: the member number is checked for
+                                duplicates, the registration fee is validated against Default Settings and posted to the ledger, and the
+                                member's login account is created. Everything encoded in the Data Sheet below is saved to that same
+                                record in one step.
+                            </p>
+                        </div>
+                        <button type="button" onclick="cancelNewMember()" class="bg-white hover:bg-amber-100 border border-amber-400 text-amber-900 font-semibold text-[11px] px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition whitespace-nowrap">
+                            <i class="fa-solid fa-rotate-left"></i> Cancel - open an existing member instead
+                        </button>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+                        <div>
+                            <label class="block text-[11px] font-bold text-amber-900 uppercase mb-1">Member No. *</label>
+                            <input type="text" id="pds_memberNo" class="input-field w-full px-3 py-1.5 bg-white border rounded text-xs" placeholder="e.g. 2026-00123">
+                            <p class="text-[10px] text-amber-700 mt-1">Must be unique - the same rule as the old registration form.</p>
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-bold text-amber-900 uppercase mb-1">Date Joined</label>
+                            <input type="date" id="pds_joiningDate" class="input-field w-full px-3 py-1.5 bg-white border rounded text-xs">
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-bold text-amber-900 uppercase mb-1">Registration Fee (&#8369;) *</label>
+                            <input type="text" id="pds_fee" class="input-field w-full px-3 py-1.5 bg-white border rounded text-xs" placeholder="0.00">
+                            <p class="text-[10px] text-amber-700 mt-1">Defaults to the configured fee and cannot be below it.</p>
+                        </div>
+                    </div>
+
+                    <!-- Member photo - the old registration form's file field. -->
+                    <div class="mt-4 pt-4 border-t border-amber-200 flex flex-wrap items-center gap-4">
+                        <div class="w-16 h-16 rounded-full bg-white border-2 border-amber-300 overflow-hidden flex items-center justify-center flex-shrink-0">
+                            <img id="pds_photoPreview" alt="Member photo preview" class="w-full h-full object-cover hidden">
+                            <i id="pds_photoPlaceholder" class="fa-solid fa-user text-amber-400 text-2xl"></i>
+                        </div>
+                        <div class="flex-1 min-w-[240px]">
+                            <label class="block text-[11px] font-bold text-amber-900 uppercase mb-1">Member Photo</label>
+                            <input type="file" id="pds_photo" onchange="previewMemberPhoto(this)"
+                                   accept=".jpg,.jpeg,.png,.gif,image/jpeg,image/png,image/gif"
+                                   class="block w-full text-[11px] text-amber-900 cursor-pointer file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:bg-coopGreen-700 file:text-white file:text-[11px] file:font-semibold hover:file:bg-coopGreen-800">
+                            <p class="text-[10px] text-amber-700 mt-1">
+                                Optional. JPG, JPEG, PNG or GIF - the same rule and folder
+                                (<span class="font-mono">uploads/memberphoto</span>) the old registration form uses.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- WHICH REAL MEMBER THIS PDS BELONGS TO -->
+                <div class="bg-emerald-50 border border-emerald-200 rounded-lg p-4 mb-6 flex flex-wrap items-center gap-3">
+                    <div class="flex-grow min-w-[260px]">
+                        <label class="block text-xs font-bold text-coopGreen-900 uppercase mb-1">Member this Data Sheet belongs to</label>
+                        <select id="pds_memberSelect" onchange="onMemberPicked(this.value)" class="input-field w-full px-3 py-1.5 bg-white border rounded text-xs font-semibold">
+                            <!-- Options populated from the database -->
+                        </select>
+                    </div>
+                    <div class="text-[11px] text-slate-600">
+                        <div>Saves to <span class="font-mono font-bold">members</span> (PID <span id="pds_currentPid" class="font-mono font-bold">-</span>)</div>
+                        <div>plus <span class="font-mono font-bold">members_contact</span>, <span class="font-mono font-bold">beneficiaries</span>, <span class="font-mono font-bold">member_trainings</span></div>
+                    </div>
+                </div>
+
+                <form id="pdsForm" onsubmit="handlePDSSubmit(event)" class="space-y-6">
+                    <!-- 1. NAME -->
+                    <div class="bg-slate-50 p-4 rounded-lg border border-slate-200">
+                        <label class="block text-xs font-bold text-coopGreen-900 uppercase mb-2">1. Name *</label>
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div>
+                                <label class="block text-[11px] font-bold text-slate-600 uppercase mb-1">Surname *</label>
+                                <input type="text" id="pds_surname" required class="input-field w-full px-3 py-1.5 bg-white border rounded text-xs" placeholder="e.g. Dela Cruz">
+                            </div>
+                            <div>
+                                <label class="block text-[11px] font-bold text-slate-600 uppercase mb-1">First Name *</label>
+                                <input type="text" id="pds_firstName" required class="input-field w-full px-3 py-1.5 bg-white border rounded text-xs" placeholder="e.g. Juan">
+                            </div>
+                            <div>
+                                <label class="block text-[11px] font-bold text-slate-600 uppercase mb-1">Middle Name</label>
+                                <input type="text" id="pds_middleName" class="input-field w-full px-3 py-1.5 bg-white border rounded text-xs" placeholder="e.g. Santos">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 2 & 3. SEX & CIVIL STATUS -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div class="bg-slate-50 p-4 rounded-lg border border-slate-200">
+                            <label class="block text-xs font-bold text-coopGreen-900 uppercase mb-2">2. Sex</label>
+                            <select id="pds_sex" class="input-field w-full px-3 py-1.5 bg-white border rounded text-xs">
+                                <option value="M">Male</option>
+                                <option value="F">Female</option>
+                            </select>
+                            <p class="text-[10px] text-slate-400 mt-1">Stored as <span class="font-mono">members.gender</span> (M/F)</p>
+                        </div>
+                        <div class="bg-slate-50 p-4 rounded-lg border border-slate-200">
+                            <label class="block text-xs font-bold text-coopGreen-900 uppercase mb-2">3. Civil Status</label>
+                            <select id="pds_civilStatus" class="input-field w-full px-3 py-1.5 bg-white border rounded text-xs">
+                                <option value="Single">Single</option>
+                                <option value="Married">Married</option>
+                                <option value="Divorced">Divorced / Separated</option>
+                                <option value="Widow/er">Widow / Widower</option>
+                            </select>
+                            <p class="text-[10px] text-slate-400 mt-1">Stored as <span class="font-mono">members.maritalstatus</span></p>
+                        </div>
+                    </div>
+
+                    <!-- 4 & 5. MAIDEN NAME & SPOUSE DETAILS -->
+                    <div class="grid grid-cols-1 md:grid-cols-12 gap-4 bg-slate-50 p-4 rounded-lg border border-slate-200">
+                        <div class="md:col-span-4">
+                            <label class="block text-xs font-bold text-coopGreen-900 uppercase mb-1">4. If Married, Write Maiden Name</label>
+                            <input type="text" id="pds_maidenName" class="input-field w-full px-3 py-1.5 bg-white border rounded text-xs" placeholder="Full Maiden Name">
+                        </div>
+                        <div class="md:col-span-4">
+                            <label class="block text-xs font-bold text-coopGreen-900 uppercase mb-1">5. Name of Spouse</label>
+                            <input type="text" id="pds_spouseName" class="input-field w-full px-3 py-1.5 bg-white border rounded text-xs" placeholder="Spouse Full Name">
+                        </div>
+                        <div class="md:col-span-4">
+                            <label class="block text-xs font-bold text-coopGreen-900 uppercase mb-1">Spouse Occupation</label>
+                            <input type="text" id="pds_spouseOccupation" class="input-field w-full px-3 py-1.5 bg-white border rounded text-xs" placeholder="Spouse Occupation">
+                        </div>
+                    </div>
+
+                    <!-- 6, 7, 8, 13. BIRTH & CITIZENSHIP & AGE -->
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 bg-slate-50 p-4 rounded-lg border border-slate-200">
+                        <div>
+                            <label class="block text-xs font-bold text-coopGreen-900 uppercase mb-1">6. Date of Birth</label>
+                            <input type="date" id="pds_dob" onchange="calcPDSAge()" class="input-field w-full px-3 py-1.5 bg-white border rounded text-xs">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-coopGreen-900 uppercase mb-1">7. Place of Birth</label>
+                            <input type="text" id="pds_pob" class="input-field w-full px-3 py-1.5 bg-white border rounded text-xs" placeholder="Municipality, Province">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-coopGreen-900 uppercase mb-1">8. Citizenship</label>
+                            <input type="text" id="pds_citizenship" value="Filipino" class="input-field w-full px-3 py-1.5 bg-white border rounded text-xs">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-coopGreen-900 uppercase mb-1">13. Age</label>
+                            <input type="number" id="pds_age" class="input-field w-full px-3 py-1.5 bg-white border rounded text-xs" placeholder="Years">
+                        </div>
+                    </div>
+
+                    <!-- 9, 10, 11, 12. PHYSICAL & OCCUPATION METRICS -->
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 bg-slate-50 p-4 rounded-lg border border-slate-200">
+                        <div>
+                            <label class="block text-xs font-bold text-coopGreen-900 uppercase mb-1">9. Occupation</label>
+                            <input type="text" id="pds_occupation" class="input-field w-full px-3 py-1.5 bg-white border rounded text-xs" placeholder="e.g. Teacher II">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-coopGreen-900 uppercase mb-1">10. Height (Meters)</label>
+                            <input type="text" id="pds_height" class="input-field w-full px-3 py-1.5 bg-white border rounded text-xs" placeholder="e.g. 1.65 m">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-coopGreen-900 uppercase mb-1">11. Weight (Kilos)</label>
+                            <input type="text" id="pds_weight" class="input-field w-full px-3 py-1.5 bg-white border rounded text-xs" placeholder="e.g. 60 kg">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-coopGreen-900 uppercase mb-1">12. Blood Type</label>
+                            <select id="pds_bloodType" class="input-field w-full px-3 py-1.5 bg-white border rounded text-xs">
+                                <option value="">-- Select --</option>
+                                <option value="A+">A+</option>
+                                <option value="A-">A-</option>
+                                <option value="B+">B+</option>
+                                <option value="B-">B-</option>
+                                <option value="O+">O+</option>
+                                <option value="O-">O-</option>
+                                <option value="AB+">AB+</option>
+                                <option value="AB-">AB-</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- 14, 15, 16. ADDRESS, CONTACT, EMPLOYED, TIN -->
+                    <div class="grid grid-cols-1 md:grid-cols-12 gap-4 bg-slate-50 p-4 rounded-lg border border-slate-200">
+                        <div class="md:col-span-6">
+                            <label class="block text-xs font-bold text-coopGreen-900 uppercase mb-1">14. Complete Address</label>
+                            <input type="text" id="pds_address" class="input-field w-full px-3 py-1.5 bg-white border rounded text-xs" placeholder="Purok, Barangay, Municipality, Province">
+                        </div>
+                        <div class="md:col-span-3">
+                            <label class="block text-xs font-bold text-coopGreen-900 uppercase mb-1">15. Contact No.</label>
+                            <input type="tel" id="pds_contact" class="input-field w-full px-3 py-1.5 bg-white border rounded text-xs" placeholder="0912 345 6789">
+                        </div>
+                        <div class="md:col-span-3">
+                            <label class="block text-xs font-bold text-coopGreen-900 uppercase mb-1">Date Employed</label>
+                            <input type="date" id="pds_dateEmployed" class="input-field w-full px-3 py-1.5 bg-white border rounded text-xs">
+                        </div>
+                    </div>
+
+                    <!-- 16, 17, 18. FINANCIAL, RELIGION, GSIS/BP -->
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 bg-slate-50 p-4 rounded-lg border border-slate-200">
+                        <div>
+                            <label class="block text-xs font-bold text-coopGreen-900 uppercase mb-1">16. Taxpayer's ID No. (TIN)</label>
+                            <input type="text" id="pds_tin" class="input-field w-full px-3 py-1.5 bg-white border rounded text-xs" placeholder="000-000-000">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-coopGreen-900 uppercase mb-1">17. Annual Income (₱)</label>
+                            <input type="text" id="pds_annualIncome" class="input-field w-full px-3 py-1.5 bg-white border rounded text-xs" placeholder="e.g. 300,000.00">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-coopGreen-900 uppercase mb-1">18. Religion</label>
+                            <input type="text" id="pds_religion" class="input-field w-full px-3 py-1.5 bg-white border rounded text-xs" placeholder="Religion">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-coopGreen-900 uppercase mb-1">BP No. / GSIS No.</label>
+                            <input type="text" id="pds_gsis" class="input-field w-full px-3 py-1.5 bg-white border rounded text-xs" placeholder="GSIS / BP No.">
+                        </div>
+                    </div>
+
+                    <!-- 19 & 20. PARENTS BACKGROUND -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-50 p-4 rounded-lg border border-slate-200">
+                        <div class="space-y-3">
+                            <label class="block text-xs font-bold text-coopGreen-900 uppercase">19. Name of Father & Birthplace</label>
+                            <input type="text" id="pds_fatherName" class="input-field w-full px-3 py-1.5 bg-white border rounded text-xs" placeholder="Father's Full Name">
+                            <input type="text" id="pds_fatherBirthPlace" class="input-field w-full px-3 py-1.5 bg-white border rounded text-xs" placeholder="Father's Place of Birth">
+                        </div>
+                        <div class="space-y-3">
+                            <label class="block text-xs font-bold text-coopGreen-900 uppercase">20. Name of Mother (Maiden) & Birthplace</label>
+                            <input type="text" id="pds_motherName" class="input-field w-full px-3 py-1.5 bg-white border rounded text-xs" placeholder="Mother's Maiden Name">
+                            <input type="text" id="pds_motherBirthPlace" class="input-field w-full px-3 py-1.5 bg-white border rounded text-xs" placeholder="Mother's Place of Birth">
+                        </div>
+                    </div>
+
+                    <!-- 21. BENEFICIARIES TABLE -->
+                    <div class="bg-slate-50 p-4 rounded-lg border border-slate-200">
+                        <div class="flex items-center justify-between mb-3">
+                            <label class="text-xs font-bold text-coopGreen-900 uppercase">21. Name of Beneficiaries</label>
+                            <button type="button" onclick="addSysBenRow()" class="bg-coopGreen-700 hover:bg-coopGreen-800 text-white text-xs px-3 py-1 rounded flex items-center gap-1 shadow-sm transition">
+                                <i class="fa-solid fa-plus text-[10px]"></i> Add Beneficiary
+                            </button>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left text-xs border-collapse">
+                                <thead>
+                                    <tr class="bg-slate-200 text-slate-700 uppercase font-semibold">
+                                        <th class="p-2 border">Name of Beneficiaries</th>
+                                        <th class="p-2 border">Relationship</th>
+                                        <th class="p-2 border">Date of Birth</th>
+                                        <th class="p-2 border w-20">Age</th>
+                                        <th class="p-2 border w-10 text-center">Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="sysBenTableBody">
+                                    <!-- Dynamic Rows -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- 22. HIGHEST EDUCATIONAL ATTAINMENT -->
+                    <div class="bg-slate-50 p-4 rounded-lg border border-slate-200">
+                        <label class="block text-xs font-bold text-coopGreen-900 uppercase mb-1">22. Highest Educational Attainment</label>
+                        <input type="text" id="pds_educationalAttainment" class="input-field w-full px-3 py-2 bg-white border rounded text-xs" placeholder="e.g. Bachelor of Elementary Education / MA in Education">
+                    </div>
+
+                    <!-- 23. RECORD OF IN-SERVICE TRAINING -->
+                    <div class="bg-slate-50 p-4 rounded-lg border border-slate-200">
+                        <div class="flex items-center justify-between mb-3">
+                            <div>
+                                <label class="text-xs font-bold text-coopGreen-900 uppercase block">23. Record of In-Service Training (Accredited by CSC)</label>
+                                <span class="text-[10px] text-slate-500 font-medium">Study and Scholarship Grants</span>
+                            </div>
+                            <button type="button" onclick="addSysTrnRow()" class="bg-coopGreen-700 hover:bg-coopGreen-800 text-white text-xs px-3 py-1 rounded flex items-center gap-1 shadow-sm transition">
+                                <i class="fa-solid fa-plus text-[10px]"></i> Add Training
+                            </button>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left text-xs border-collapse">
+                                <thead>
+                                    <tr class="bg-slate-200 text-slate-700 uppercase font-semibold">
+                                        <th class="p-2 border">Title of Seminar / Course / Training</th>
+                                        <th class="p-2 border">Inclusive Dates</th>
+                                        <th class="p-2 border w-24">No. of Hours</th>
+                                        <th class="p-2 border">Conducted By</th>
+                                        <th class="p-2 border w-10 text-center">Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="sysTrnTableBody">
+                                    <!-- Dynamic Rows -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- 24 & 25. IDENTIFICATION NO & DATE ISSUED -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-50 p-4 rounded-lg border border-slate-200">
+                        <div>
+                            <label class="block text-xs font-bold text-coopGreen-900 uppercase mb-1">24. Identification No.</label>
+                            <input type="text" id="pds_identificationNo" class="input-field w-full px-3 py-1.5 bg-white border rounded text-xs" placeholder="Government / Member ID No.">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-coopGreen-900 uppercase mb-1">25. Date Issued</label>
+                            <input type="date" id="pds_dateIssued" class="input-field w-full px-3 py-1.5 bg-white border rounded text-xs">
+                        </div>
+                    </div>
+
+                    <div class="pt-4 flex justify-end gap-2 border-t">
+                        <button type="submit" id="pdsSubmitBtn" class="bg-coopGreen-700 hover:bg-coopGreen-800 text-white font-semibold text-xs px-6 py-2 rounded-lg shadow transition">
+                            Save Complete PDS Record
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </section>
+
+        <!-- TAB 3: APPLICATION FOR MEMBERSHIP -->
+        <section id="tab-membership" class="main-tab-content hidden space-y-4">
+            <div class="bg-white p-6 rounded-xl shadow-lg border border-slate-200">
+                <div class="flex flex-wrap items-center justify-between border-b pb-4 mb-6 gap-3">
+                    <div>
+                        <h2 class="text-lg font-bold text-coopGreen-900 uppercase">2. Application for Membership</h2>
+                        <p class="text-xs text-slate-500">Form 2: Board application pledge and official action approval record.</p>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button type="button" onclick="previewCurrentForm('membership')" class="bg-coopGreen-700 hover:bg-coopGreen-800 text-white text-xs font-semibold px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition shadow">
+                            <i class="fa-solid fa-file-lines text-coopGold-400"></i> Preview & Print Document
+                        </button>
+                        <span class="bg-coopGreen-100 text-coopGreen-800 text-xs font-bold px-3 py-1 rounded-full">Form 2 of 3</span>
+                    </div>
+                </div>
+
+                <form id="membershipForm" onsubmit="handleMembershipSubmit(event)" class="space-y-6">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Select Associated Member</label>
+                            <select id="mem_memberSelect" class="input-field w-full px-3 py-1.5 bg-slate-50 border rounded text-xs font-semibold">
+                                <!-- Options populated dynamically -->
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Application Date</label>
+                            <input type="date" id="mem_appDate" class="input-field w-full px-3 py-1.5 bg-slate-50 border rounded text-xs">
+                        </div>
+                    </div>
+
+                    <!-- Action Taken Block -->
+                    <div class="bg-slate-50 p-4 rounded-lg border space-y-3">
+                        <span class="text-xs font-bold text-coopGreen-900 uppercase">Action Taken by Management / Board</span>
+                        
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div>
+                                <label class="block text-[11px] font-bold text-slate-600 mb-1">Status</label>
+                                <select id="mem_status" class="input-field w-full px-3 py-1.5 bg-white border rounded text-xs font-semibold">
+                                    <option value="PENDING">PENDING</option>
+                                    <option value="APPROVED">APPROVED</option>
+                                    <option value="DISAPPROVED">DISAPPROVED</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-[11px] font-bold text-slate-600 mb-1">OR Number</label>
+                                <input type="text" id="mem_orNo" class="input-field w-full px-3 py-1.5 bg-white border rounded text-xs" placeholder="e.g. OR-88421">
+                            </div>
+                            <div>
+                                <label class="block text-[11px] font-bold text-slate-600 mb-1">Amount Paid (₱)</label>
+                                <input type="text" id="mem_amountPaid" class="input-field w-full px-3 py-1.5 bg-white border rounded text-xs" value="2100.00">
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-[11px] font-bold text-slate-600 mb-1">Board Resolution No.</label>
+                                <input type="text" id="mem_boardResNo" class="input-field w-full px-3 py-1.5 bg-white border rounded text-xs" placeholder="e.g. Res No. 12 S. 2026">
+                            </div>
+                            <div>
+                                <label class="block text-[11px] font-bold text-slate-600 mb-1">Approval Date</label>
+                                <input type="date" id="mem_approvalDate" class="input-field w-full px-3 py-1.5 bg-white border rounded text-xs">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="pt-4 flex justify-end gap-2 border-t">
+                        <button type="submit" class="bg-coopGreen-700 hover:bg-coopGreen-800 text-white font-semibold text-xs px-6 py-2 rounded-lg shadow transition">
+                            Save Membership Application
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </section>
+
+        <!-- TAB 4: MEMBERSHIP AND SUBSCRIPTION AGREEMENT -->
+        <section id="tab-agreement" class="main-tab-content hidden space-y-4">
+            <div class="bg-white p-6 rounded-xl shadow-lg border border-slate-200">
+                <div class="flex flex-wrap items-center justify-between border-b pb-4 mb-6 gap-3">
+                    <div>
+                        <h2 class="text-lg font-bold text-coopGreen-900 uppercase">3. Membership and Subscription Agreement</h2>
+                        <p class="text-xs text-slate-500">Form 3: Share capital pledge, installment terms, and sworn acknowledgement.</p>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button type="button" onclick="previewCurrentForm('agreement')" class="bg-coopGreen-700 hover:bg-coopGreen-800 text-white text-xs font-semibold px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition shadow">
+                            <i class="fa-solid fa-file-lines text-coopGold-400"></i> Preview & Print Document
+                        </button>
+                        <span class="bg-coopGreen-100 text-coopGreen-800 text-xs font-bold px-3 py-1 rounded-full">Form 3 of 3</span>
+                    </div>
+                </div>
+
+                <form id="agreementForm" onsubmit="handleAgreementSubmit(event)" class="space-y-6">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Select Associated Member</label>
+                            <select id="agr_memberSelect" onchange="syncAgreementMember()" class="input-field w-full px-3 py-1.5 bg-slate-50 border rounded text-xs font-semibold">
+                                <!-- Options populated dynamically -->
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Payment Frequency</label>
+                            <select id="agr_frequency" class="input-field w-full px-3 py-1.5 bg-slate-50 border rounded text-xs font-semibold">
+                                <option value="monthly">Monthly</option>
+                                <option value="semi-monthly">Semi-Monthly</option>
+                                <option value="weekly">Weekly</option>
+                                <option value="quarterly">Quarterly</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Member on Record</label>
+                            <p id="agr_memberSummary" class="text-[11px] text-slate-500">&mdash;</p>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Total Par Value on Record</label>
+                            <input type="text" id="agr_dbTotal" readonly class="w-full px-3 py-1.5 bg-slate-200 border rounded text-xs font-bold text-slate-600" value="&mdash;">
+                        </div>
+                    </div>
+
+                    <!-- Share Capital Calculation Block -->
+                    <div class="bg-emerald-50/50 p-4 rounded-lg border border-emerald-200 grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        <div>
+                            <label class="block text-xs font-bold text-coopGreen-900 uppercase mb-1">Subscribed Shares</label>
+                            <input type="number" id="agr_shares" value="4" min="1" oninput="calcAgrTotal()" class="input-field w-full px-3 py-1.5 bg-white border rounded text-xs font-bold">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-coopGreen-900 uppercase mb-1">Par Value per Share</label>
+                            <input type="text" value="₱ 500.00" readonly class="w-full px-3 py-1.5 bg-slate-200 border rounded text-xs font-bold text-slate-600">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-coopGreen-900 uppercase mb-1">Total Par Value</label>
+                            <input type="text" id="agr_totalValue" value="₱ 2,000.00" readonly class="w-full px-3 py-1.5 bg-coopGreen-100 border border-coopGreen-300 rounded text-xs font-extrabold text-coopGreen-900">
+                        </div>
+                    </div>
+
+                    <!-- Digital Signature Pad -->
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Subscriber Digital Signature</label>
+                        <div class="border-2 border-dashed border-slate-300 rounded-lg bg-slate-50 relative p-1 max-w-sm">
+                            <canvas id="sigCanvas" width="350" height="110" class="w-full h-28 bg-transparent cursor-crosshair rounded"></canvas>
+                        </div>
+                        <button type="button" onclick="clearSignature()" class="mt-1 text-[11px] text-slate-500 hover:text-red-600 transition">
+                            <i class="fa-solid fa-eraser"></i> Clear Canvas
+                        </button>
+                        <p id="sigStoredNote" class="hidden text-[11px] text-emerald-700 font-semibold mt-1">
+                            <i class="fa-solid fa-circle-check"></i> A signature is already stored. Draw again only to replace it.
+                        </p>
+                    </div>
+
+                    <!-- WITNESSES & ADMINISTERING OFFICER -->
+                    <div class="bg-slate-50 p-4 rounded-lg border border-slate-200 grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div>
+                            <label class="block text-xs font-bold text-coopGreen-900 uppercase mb-1">Witness 1</label>
+                            <input type="text" id="agr_witness1" class="input-field w-full px-3 py-1.5 bg-white border rounded text-xs" placeholder="Witness name">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-coopGreen-900 uppercase mb-1">Witness 2</label>
+                            <input type="text" id="agr_witness2" class="input-field w-full px-3 py-1.5 bg-white border rounded text-xs" placeholder="Witness name">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-coopGreen-900 uppercase mb-1">Administering Officer</label>
+                            <input type="text" id="agr_officer" class="input-field w-full px-3 py-1.5 bg-white border rounded text-xs" placeholder="Officer name">
+                        </div>
+                    </div>
+
+                    <div class="pt-4 flex justify-end gap-2 border-t">
+                        <button type="submit" class="bg-coopGreen-700 hover:bg-coopGreen-800 text-white font-semibold text-xs px-6 py-2 rounded-lg shadow transition">
+                            Save Subscription Agreement
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- PRINT & PDF PREVIEW MODAL -->
+    <div id="printModal" class="hidden fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
+        <div class="bg-white w-full max-w-4xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[95vh]">
+            
+            <!-- Modal Controls Bar (Hidden during actual print) -->
+            <div class="bg-coopGreen-900 text-white p-4 flex flex-wrap items-center justify-between gap-3 no-print-modal">
+                <div class="flex items-center space-x-3">
+                    <span class="bg-coopGold-500 text-coopGreen-900 font-extrabold px-2.5 py-1 rounded text-xs">DOCUMENT PREVIEW</span>
+                    <span id="printModalTitle" class="text-sm font-semibold text-slate-100">TAPSTEMCO Official Form</span>
+                </div>
+
+                <div class="flex items-center space-x-2">
+                    <!-- Document Switcher -->
+                    <select id="modalDocSelector" onchange="switchModalDoc(this.value)" class="text-xs bg-coopGreen-800 border border-coopGreen-700 text-white rounded-lg px-2.5 py-1.5 focus:outline-none">
+                        <option value="pds">Form 1: Personal Data Sheet (PDS)</option>
+                        <option value="membership">Form 2: Application for Membership</option>
+                        <option value="agreement">Form 3: Subscription Agreement</option>
+                    </select>
+
+                    <button onclick="executeModalPrint()" class="bg-coopGold-500 hover:bg-coopGold-600 text-coopGreen-900 font-bold px-3.5 py-1.5 rounded-lg text-xs flex items-center gap-1.5 transition shadow">
+                        <i class="fa-solid fa-print"></i> Print / Save PDF
+                    </button>
+
+                    <button onclick="closePrintModal()" class="text-slate-300 hover:text-white p-1.5 rounded-lg transition">
+                        <i class="fa-solid fa-xmark text-lg"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Modal Content Area -->
+            <div class="p-6 overflow-y-auto flex-1 bg-slate-100" id="printModalBody">
+                <div id="printModalContent" class="bg-white p-6 sm:p-10 rounded-xl border shadow-sm max-w-3xl mx-auto font-sans text-xs sm:text-sm leading-relaxed text-slate-800">
+                    <!-- Dynamic Document Rendered via JavaScript -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ---------------------------------------------------------------------
+        // LIVE DATABASE LAYER
+        //
+        // This screen no longer keeps its own copy of anything. Every read and
+        // write below goes through the CodeIgniter controller
+        // /membership_documents/ (JSON), which touches:
+        //
+        //   members (+ members_contact)   the Personal Data Sheet
+        //   beneficiaries                 PDS dependants table
+        //   member_trainings              PDS training table
+        //   membership_applications       Form 2  (one row per member)
+        //   subscription_agreements       Form 3  (one row per member)
+        //
+        // Members are keyed by members.PID - the same key the members_* and
+        // loan_* tables use. Selecting a member edits THEIR documents; this
+        // screen never invents its own member.
+        // ---------------------------------------------------------------------
+
+        // CodeIgniter's site_url()/base_url() strip the trailing slash, which
+        // would make new URL('session', base) resolve one level too high.
+        function withSlash(url) {
+            return url.charAt(url.length - 1) === '/' ? url : url + '/';
+        }
+
+        const APP_BASE = (function () {
+            const injected = window.TAPSTEMCO_APP_BASE;
+            if (typeof injected === 'string' && injected !== '' && injected.indexOf('__') !== 0) {
+                return withSlash(injected);
+            }
+            // Opened as a plain file from /membership_system/.
+            return new URL('../', window.location.href).href;
+        })();
+
+        // Must keep the language segment (see the note in <head>).
+        const API_BASE = (function () {
+            const injected = window.TAPSTEMCO_API_BASE;
+            if (typeof injected === 'string' && injected !== '' && injected.indexOf('__') !== 0) {
+                return withSlash(injected);
+            }
+            return new URL('membership_documents/', APP_BASE).href;
+        })();
+
+        const LOGO_SRC = new URL('logo/1761642549tapstemco-logo.png', APP_BASE).href;
+
+        // Member pictures are stored in the folder both registration screens
+        // upload to (base_url() is the web root, outside the language segment).
+        const MEMBER_PHOTO_BASE = new URL('uploads/memberphoto/', APP_BASE).href;
+
+        // Rows currently rendered in the directory.
+        let database = [];
+        // PID -> record, so print preview can look a member up without a round trip.
+        let databaseByPid = {};
+        // Paging state for the directory listing.
+        const MEMBER_PAGE_SIZE = 300;
+        let memberTotal = 0;
+        let memberOffset = 0;
+        // Option lists come from the app's own language file, so the codes we
+        // store always match what the Members module writes.
+        let OPTIONS = { gender: { M: 'Male', F: 'Female' }, civil_status: {} };
+
+        // What the signed-in user's group may do (from the session endpoint).
+        let PERMS = { view: false, edit: false, create: false, delete: false };
+
+        // The member the PDS / status badges currently point at.
+        let currentPid = null;
+
+        // True while the Data Sheet is standing in for "create a new member"
+        // (Members -> Register New Member, with this screen's 25 PDS fields).
+        let NEW_MEMBER = false;
+
+        // Registration fee default injected from Default Settings; empty when the
+        // file is opened directly.
+        const REGISTRATION_FEE_DEFAULT = (function () {
+            const injected = window.TAPSTEMCO_REGISTRATION_FEE;
+            if (injected === undefined || injected === null) return '';
+            return String(injected).indexOf('__') === 0 ? '' : String(injected);
+        })();
+
+        function apiUrl(path, params) {
+            const url = new URL(path, API_BASE);
+            if (params) {
+                Object.keys(params).forEach(k => {
+                    if (params[k] !== null && params[k] !== undefined && params[k] !== '') {
+                        url.searchParams.set(k, params[k]);
+                    }
+                });
+            }
+            return url.href;
+        }
+
+        async function apiGet(path, params) {
+            const res = await fetch(apiUrl(path, params), {
+                headers: { 'Accept': 'application/json' },
+                credentials: 'same-origin'
+            });
+            return handleApiResponse(res);
+        }
+
+        async function apiPost(path, body) {
+            const res = await fetch(apiUrl(path), {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                body: JSON.stringify(body)
+            });
+            return handleApiResponse(res);
+        }
+
+        /**
+         * Same as apiPost(), but for a multipart body. No Content-Type header:
+         * the browser has to set it itself, together with the boundary.
+         */
+        async function apiPostForm(path, form) {
+            const res = await fetch(apiUrl(path), {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { 'Accept': 'application/json' },
+                body: form
+            });
+            return handleApiResponse(res);
+        }
+
+        async function handleApiResponse(res) {
+            let payload = null;
+            try { payload = await res.json(); } catch (e) { payload = null; }
+
+            if (res.status === 401) {
+                showSessionBanner(
+                    (payload && payload.login_url) || '../auth/login',
+                    payload && payload.message
+                );
+                throw new Error((payload && payload.message) || 'Not signed in.');
+            }
+            if (res.status === 403) {
+                showPermissionDenied(payload && payload.message);
+                throw new Error((payload && payload.message) || 'Access denied.');
+            }
+            if (!payload) {
+                throw new Error('The server did not return JSON (HTTP ' + res.status + ').');
+            }
+            if (!res.ok || payload.success === false) {
+                throw new Error(payload.message || ('Request failed (HTTP ' + res.status + ').'));
+            }
+            return payload;
+        }
+
+        function showSessionBanner(loginUrl, message) {
+            document.getElementById('sessionBannerText').textContent =
+                message || 'Sign in with your cooperative account to reach the live database.';
+            const link = document.getElementById('sessionBannerLink');
+            link.href = loginUrl;
+            link.innerHTML = '<i class="fa-solid fa-right-to-bracket"></i> Sign in to TAPSTEMCO';
+            document.getElementById('sessionBanner').classList.remove('hidden');
+            setDbStatus('No session', false);
+        }
+
+        /**
+         * Signed in, but the group lacks the role. Roles are Module 1
+         * (Member Registration) and are granted on the Group Role page.
+         */
+        function showPermissionDenied(message) {
+            document.getElementById('sessionBannerText').textContent = message ||
+                'You are signed in, but your group does not have permission to open membership documents.';
+            const link = document.getElementById('sessionBannerLink');
+            link.href = APP_BASE;
+            link.innerHTML = '<i class="fa-solid fa-gauge"></i> Back to the dashboard';
+            document.getElementById('sessionBanner').classList.remove('hidden');
+            setDbStatus('No permission', false);
+        }
+
+        function setDbStatus(text, ok) {
+            document.getElementById('dbStatusText').textContent = text;
+            document.getElementById('dbStatus').className =
+                'flex items-center gap-1.5 px-3 py-1.5 rounded-lg ' +
+                (ok ? 'bg-white/10 text-white/90' : 'bg-red-500/30 text-red-50');
+        }
+
+        window.onload = async function() {
+            initSignatureCanvas();
+            addSysBenRow();
+            addSysTrnRow();
+
+            // Guard: without the controller-injected bases this file is being
+            // opened directly. It will still talk to the API, but the un-prefixed
+            // path is redirected and loses the query string, so search, filters
+            // and paging would silently do nothing. Say so instead of pretending.
+            if (typeof window.TAPSTEMCO_API_BASE !== 'string' ||
+                window.TAPSTEMCO_API_BASE.indexOf('__') === 0) {
+                setDbStatus('Opened directly', false);
+                showToast('Open this screen at ' + APP_BASE + 'membership_documents/page - ' +
+                          'search, filters and paging need the app-served URL.', true);
+                return;
+            }
+
+            // Resolve the crest. When the controller injected the app base the
+            // paths are already correct; this also fixes the standalone case
+            // where the placeholder survived.
+            document.querySelectorAll('[src^="__TAPSTEMCO_APP_BASE__"], [href^="__TAPSTEMCO_APP_BASE__"]')
+                .forEach(el => {
+                    const target = el.hasAttribute('src') ? 'src' : 'href';
+                    el[target] = el[target].replace('__TAPSTEMCO_APP_BASE__', APP_BASE);
+                });
+
+            try {
+                const session = await apiGet('session');
+                PERMS = session.can || PERMS;
+                document.getElementById('sessionUser').textContent =
+                    session.user.name + ' (PIN ' + session.user.PIN + ')';
+                document.getElementById('sessionChip').classList.remove('hidden');
+                applyPermissions();
+                await loadMembers();
+                setDbStatus('Live database', true);
+            } catch (err) {
+                setDbStatus('Offline', false);
+                showToast(err.message, true);
+            }
+        };
+
+        /**
+         * Disable the write controls when the group only has View, and note why.
+         * The clear button is handled per row in renderDirectoryTable.
+         */
+        function applyPermissions() {
+            const submitButtons = document.querySelectorAll(
+                '#pdsForm button[type=submit], #membershipForm button[type=submit], #agreementForm button[type=submit]');
+
+            submitButtons.forEach(btn => {
+                btn.disabled = !PERMS.edit;
+                btn.classList.toggle('opacity-50', !PERMS.edit);
+                btn.classList.toggle('cursor-not-allowed', !PERMS.edit);
+                btn.title = PERMS.edit ? '' : 'View-only: your group lacks Edit_membership_documents.';
+            });
+
+            // Creating members is Module 1's Register_new_member, so it can be
+            // granted (or refused) separately from editing documents.
+            document.querySelectorAll('[data-new-member]').forEach(btn => {
+                btn.disabled = !PERMS.create;
+                btn.classList.toggle('opacity-50', !PERMS.create);
+                btn.classList.toggle('cursor-not-allowed', !PERMS.create);
+                btn.title = PERMS.create ? '' : 'Your group lacks Register_new_member.';
+            });
+
+            if (!PERMS.create) {
+                document.getElementById('newMemberPanel').classList.add('hidden');
+            }
+
+            if (!PERMS.edit) {
+                showToast('View-only: your group can open membership documents but not save them.', true);
+            }
+        }
+
+        async function reloadAll() {
+            try {
+                if (!document.getElementById('sessionChip').classList.contains('hidden')) {
+                    await loadMembers();
+                } else {
+                    await window.onload();
+                    return;
+                }
+                showToast('Reloaded from the live database.');
+            } catch (err) {
+                showToast(err.message, true);
+            }
+        }
+
+        /**
+         * Fetch the directory. Pass append = true to fetch the next page.
+         */
+        async function loadMembers(append = false) {
+            const q = document.getElementById('searchInput').value.trim();
+            const status = document.getElementById('statusFilter').value;
+            const includeNone = document.getElementById('includeNoneMember').checked;
+
+            if (!append) {
+                memberOffset = 0;
+            }
+
+            const payload = await apiGet('members', {
+                q: q,
+                status: status,
+                include_none_member: includeNone ? 1 : 0,
+                limit: MEMBER_PAGE_SIZE,
+                offset: memberOffset
+            });
+
+            if (payload.options) {
+                OPTIONS = payload.options;
+            }
+
+            memberTotal = payload.total;
+            database = append ? database.concat(payload.members) : payload.members;
+            memberOffset = database.length;
+
+            database.forEach(m => { databaseByPid[m.id] = m; });
+
+            const count = document.getElementById('resultCount');
+            count.textContent = memberTotal + ' member' + (memberTotal === 1 ? '' : 's') +
+                (memberTotal > database.length ? ' (showing ' + database.length + ')' : '');
+
+            renderDirectoryTable(database);
+            populateMemberDropdowns();
+            updateLoadMore();
+            return payload;
+        }
+
+        function updateLoadMore() {
+            const wrap = document.getElementById('loadMoreWrap');
+            const remaining = memberTotal - database.length;
+            if (remaining > 0) {
+                document.getElementById('loadMoreText').textContent =
+                    'Load ' + Math.min(MEMBER_PAGE_SIZE, remaining) + ' more of ' + memberTotal;
+                wrap.classList.remove('hidden');
+            } else {
+                wrap.classList.add('hidden');
+            }
+        }
+
+        // Search hits the server, so debounce it.
+        let searchTimer = null;
+        function onSearchInput() {
+            clearTimeout(searchTimer);
+            searchTimer = setTimeout(function() {
+                loadMembers().catch(e => showToast(e.message, true));
+            }, 300);
+        }
+
+        // Auto calculate PDS Age from DOB
+        function calcPDSAge() {
+            const dob = document.getElementById('pds_dob').value;
+            if (!dob) return;
+            const bdate = new Date(dob);
+            const today = new Date();
+            let age = today.getFullYear() - bdate.getFullYear();
+            const m = today.getMonth() - bdate.getMonth();
+            if (m < 0 || (m === 0 && today.getDate() < bdate.getDate())) age--;
+            document.getElementById('pds_age').value = age >= 0 ? age : 0;
+        }
+
+        // Dynamic Beneficiaries Rows for System PDS
+        function addSysBenRow(data = {}) {
+            const tbody = document.getElementById('sysBenTableBody');
+            if (!tbody) return;
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td class="p-1 border"><input type="text" name="sysBenName[]" value="${data.name || ''}" class="w-full p-1 border rounded text-xs" placeholder="Full Name"></td>
+                <td class="p-1 border"><input type="text" name="sysBenRel[]" value="${data.rel || ''}" class="w-full p-1 border rounded text-xs" placeholder="Relationship"></td>
+                <td class="p-1 border"><input type="date" name="sysBenDob[]" value="${data.dob || ''}" onchange="calcBenRowAge(this)" class="w-full p-1 border rounded text-xs"></td>
+                <td class="p-1 border"><input type="number" name="sysBenAge[]" value="${data.age || ''}" class="w-full p-1 border rounded text-xs" placeholder="Age"></td>
+                <td class="p-1 border text-center">
+                    <button type="button" onclick="this.closest('tr').remove()" class="text-red-500 hover:text-red-700 p-1"><i class="fa-solid fa-circle-minus"></i></button>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        }
+
+        function calcBenRowAge(el) {
+            const row = el.closest('tr');
+            const ageInput = row.querySelector('input[name="sysBenAge[]"]');
+            if (el.value) {
+                const dob = new Date(el.value);
+                const today = new Date();
+                let age = today.getFullYear() - dob.getFullYear();
+                const m = today.getMonth() - dob.getMonth();
+                if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) age--;
+                ageInput.value = age >= 0 ? age : 0;
+            }
+        }
+
+        // Dynamic In-Service Training Rows for System PDS
+        function addSysTrnRow(data = {}) {
+            const tbody = document.getElementById('sysTrnTableBody');
+            if (!tbody) return;
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td class="p-1 border"><input type="text" name="sysTrnTitle[]" value="${data.title || ''}" class="w-full p-1 border rounded text-xs" placeholder="Training Title"></td>
+                <td class="p-1 border"><input type="text" name="sysTrnDates[]" value="${data.dates || ''}" class="w-full p-1 border rounded text-xs" placeholder="Inclusive Dates"></td>
+                <td class="p-1 border"><input type="text" name="sysTrnHours[]" value="${data.hours || ''}" class="w-full p-1 border rounded text-xs" placeholder="Hours"></td>
+                <td class="p-1 border"><input type="text" name="sysTrnBy[]" value="${data.by || ''}" class="w-full p-1 border rounded text-xs" placeholder="Conducted By"></td>
+                <td class="p-1 border text-center">
+                    <button type="button" onclick="this.closest('tr').remove()" class="text-red-500 hover:text-red-700 p-1"><i class="fa-solid fa-circle-minus"></i></button>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        }
+
+        // Complete 25-field PDS Form Submit Handler
+        async function handlePDSSubmit(e) {
+            e.preventDefault();
+
+            if (!NEW_MEMBER && !currentPid && !document.getElementById('pds_memberSelect').value) {
+                showToast('Choose the member this Data Sheet belongs to, or use New Member to create one.', true);
+                return;
+            }
+            const pid = NEW_MEMBER ? null
+                : parseInt(currentPid || document.getElementById('pds_memberSelect').value, 10);
+
+            // Extract Beneficiaries
+            const beneficiaries = [];
+            const benNames = document.getElementsByName('sysBenName[]');
+            const benRels = document.getElementsByName('sysBenRel[]');
+            const benDobs = document.getElementsByName('sysBenDob[]');
+            const benAges = document.getElementsByName('sysBenAge[]');
+            for (let i = 0; i < benNames.length; i++) {
+                if (benNames[i].value.trim()) {
+                    beneficiaries.push({
+                        name: benNames[i].value,
+                        rel: benRels[i].value,
+                        dob: benDobs[i].value,
+                        age: benAges[i].value
+                    });
+                }
+            }
+
+            // Extract Trainings
+            const trainings = [];
+            const trnTitles = document.getElementsByName('sysTrnTitle[]');
+            const trnDates = document.getElementsByName('sysTrnDates[]');
+            const trnHours = document.getElementsByName('sysTrnHours[]');
+            const trnBys = document.getElementsByName('sysTrnBy[]');
+            for (let i = 0; i < trnTitles.length; i++) {
+                if (trnTitles[i].value.trim()) {
+                    trainings.push({
+                        title: trnTitles[i].value,
+                        dates: trnDates[i].value,
+                        hours: trnHours[i].value,
+                        by: trnBys[i].value
+                    });
+                }
+            }
+
+            const payload = {
+                member_id: pid,
+                surname: document.getElementById('pds_surname').value,
+                firstName: document.getElementById('pds_firstName').value,
+                middleName: document.getElementById('pds_middleName').value,
+                sex: document.getElementById('pds_sex').value,
+                civilStatus: document.getElementById('pds_civilStatus').value,
+                maidenName: document.getElementById('pds_maidenName').value,
+                spouseName: document.getElementById('pds_spouseName').value,
+                spouseOccupation: document.getElementById('pds_spouseOccupation').value,
+                dob: document.getElementById('pds_dob').value,
+                pob: document.getElementById('pds_pob').value,
+                citizenship: document.getElementById('pds_citizenship').value || 'Filipino',
+                age: document.getElementById('pds_age').value,
+                occupation: document.getElementById('pds_occupation').value,
+                height: document.getElementById('pds_height').value,
+                weight: document.getElementById('pds_weight').value,
+                bloodType: document.getElementById('pds_bloodType').value,
+                address: document.getElementById('pds_address').value,
+                contact: document.getElementById('pds_contact').value,
+                dateEmployed: document.getElementById('pds_dateEmployed').value,
+                tin: document.getElementById('pds_tin').value,
+                annualIncome: document.getElementById('pds_annualIncome').value,
+                religion: document.getElementById('pds_religion').value,
+                gsis: document.getElementById('pds_gsis').value,
+                fatherName: document.getElementById('pds_fatherName').value,
+                fatherBirthPlace: document.getElementById('pds_fatherBirthPlace').value,
+                motherName: document.getElementById('pds_motherName').value,
+                motherBirthPlace: document.getElementById('pds_motherBirthPlace').value,
+                educationalAttainment: document.getElementById('pds_educationalAttainment').value,
+                identificationNo: document.getElementById('pds_identificationNo').value,
+                dateIssued: document.getElementById('pds_dateIssued').value,
+                beneficiaries: beneficiaries,
+                trainings: trainings
+            };
+
+            if (NEW_MEMBER) {
+                await createMember(payload);
+                return;
+            }
+
+            try {
+                const res = await apiPost('save_pds', payload);
+                if (res.warnings && res.warnings.length) {
+                    showToast(res.message + ' ' + res.warnings.join(' '), true);
+                } else {
+                    showToast(res.message);
+                }
+                await loadMembers();
+                switchMainTab('directory');
+            } catch (err) {
+                showToast(err.message, true);
+            }
+        }
+
+        /**
+         * New-member submit. Member No., Date Joined and Registration Fee travel
+         * with the Data Sheet payload.
+         *
+         * The server creates the member the same way Members -> Register New
+         * Member does - duplicate member-number check, fee validated against
+         * Default Settings, member_registrationfee + ledger entries, login
+         * account - and then saves this Data Sheet against the new PID, which is
+         * what comes back as res.PID.
+         */
+        async function createMember(payload) {
+            payload.memberNo = document.getElementById('pds_memberNo').value.trim();
+            payload.joiningDate = document.getElementById('pds_joiningDate').value;
+            payload.fee = document.getElementById('pds_fee').value;
+
+            if (!payload.memberNo) {
+                showToast('Member No. is required to create the record.', true);
+                document.getElementById('pds_memberNo').focus();
+                return;
+            }
+
+            // The old registration form makes these mandatory; the server checks
+            // them again, this just saves a round trip.
+            if (!payload.dob) {
+                showToast('Date of birth is required to create the record.', true);
+                document.getElementById('pds_dob').focus();
+                return;
+            }
+
+            const btn = document.getElementById('pdsSubmitBtn');
+            if (btn) btn.disabled = true;
+
+            try {
+                const photoInput = document.getElementById('pds_photo');
+                const photo = (photoInput && photoInput.files) ? photoInput.files[0] : null;
+
+                // A file cannot ride in a JSON body, so the same payload is posted
+                // as multipart as soon as a photo is attached.
+                const res = photo
+                    ? await apiPostForm('create_member', buildMemberForm(payload, photo))
+                    : await apiPost('create_member', payload);
+
+                NEW_MEMBER = false;
+                document.getElementById('newMemberPanel').classList.add('hidden');
+                setPdsSubmitLabel('Save Complete PDS Record');
+                if (photoInput) {
+                    photoInput.value = '';
+                    previewMemberPhoto(photoInput);
+                }
+
+                await loadMembers();
+                await loadMemberIntoForms(res.PID, 'pds');
+
+                let message = res.message;
+                if (res.login && res.login.username) {
+                    message += ' Login account: ' + res.login.username + '.';
+                }
+                if (res.warnings && res.warnings.length) {
+                    showToast(message + ' ' + res.warnings.join(' '), true);
+                } else {
+                    showToast(message);
+                }
+            } catch (err) {
+                showToast(err.message, true);
+            } finally {
+                if (btn) btn.disabled = !PERMS.edit;
+            }
+        }
+
+        // Open a member's three documents for editing (read from the database).
+        async function editRecord(pid) {
+            await loadMemberIntoForms(pid, 'pds');
+        }
+
+        /**
+         * "New Member" - both entry points (the tab-strip button and the
+         * directory filter-bar button) land here.
+         *
+         * Opens the Data Sheet in new-member mode: the form is blanked, the
+         * member picker is parked on its "not saved yet" option, and the
+         * Member No. / Date Joined / Registration Fee box appears. Saving then
+         * creates the member with the same logic as Members -> Register New
+         * Member and stores this Data Sheet against the new PID.
+         */
+        function startNewMember() {
+            if (!PERMS.create) {
+                showToast('Your group lacks Register_new_member, so it cannot create members.', true);
+                return;
+            }
+
+            NEW_MEMBER = true;
+            clearPDSForm();
+            document.getElementById('newMemberPanel').classList.remove('hidden');
+            document.getElementById('pds_joiningDate').value = todayISO();
+            document.getElementById('pds_fee').value = REGISTRATION_FEE_DEFAULT;
+            setPdsSubmitLabel('Create Member & Save PDS');
+
+            // Also (re)fills the member pickers - including the placeholder.
+            switchMainTab('pds');
+
+            document.getElementById('pds_memberNo').focus();
+            showToast('New member: encode the Data Sheet, then Save to create the record.');
+        }
+
+        /**
+         * Leave new-member mode and go back to editing an existing member.
+         * Nothing typed is thrown away - the values stay in the form.
+         */
+        function cancelNewMember() {
+            NEW_MEMBER = false;
+            document.getElementById('newMemberPanel').classList.add('hidden');
+            setPdsSubmitLabel('Save Complete PDS Record');
+            populateMemberDropdowns();
+
+            const selected = document.getElementById('pds_memberSelect').value;
+            if (selected) {
+                loadMemberIntoForms(selected, 'pds');
+            } else {
+                showToast('Pick the member whose PDS and forms you want to open.');
+                document.getElementById('pds_memberSelect').focus();
+            }
+        }
+
+        /**
+         * The Data Sheet member picker. An empty value is the "new member"
+         * placeholder this screen inserts while a record is being created, so it
+         * is ignored; picking a real member leaves new-member mode.
+         */
+        function onMemberPicked(pid) {
+            if (!pid) return;
+
+            if (NEW_MEMBER) {
+                NEW_MEMBER = false;
+                document.getElementById('newMemberPanel').classList.add('hidden');
+                setPdsSubmitLabel('Save Complete PDS Record');
+            }
+            loadMemberIntoForms(pid, 'pds');
+        }
+
+        function setPdsSubmitLabel(text) {
+            const btn = document.getElementById('pdsSubmitBtn');
+            if (btn) btn.textContent = text;
+        }
+
+        function todayISO() {
+            const d = new Date();
+            const pad = n => String(n).padStart(2, '0');
+            return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+        }
+
+        /**
+         * Blank the 25 Data Sheet fields and the two child tables so the form
+         * starts empty for a new member. The Application and Agreement tabs
+         * belong to a member that does not exist yet, so they are left alone.
+         */
+        function clearPDSForm() {
+            ['pds_surname', 'pds_firstName', 'pds_middleName', 'pds_maidenName', 'pds_spouseName',
+             'pds_spouseOccupation', 'pds_dob', 'pds_pob', 'pds_age', 'pds_occupation', 'pds_height',
+             'pds_weight', 'pds_address', 'pds_contact', 'pds_dateEmployed', 'pds_tin',
+             'pds_annualIncome', 'pds_religion', 'pds_gsis', 'pds_fatherName', 'pds_fatherBirthPlace',
+             'pds_motherName', 'pds_motherBirthPlace', 'pds_educationalAttainment',
+             'pds_identificationNo', 'pds_dateIssued'
+            ].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.value = '';
+            });
+
+            ['pds_sex', 'pds_civilStatus', 'pds_bloodType'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.selectedIndex = 0;
+            });
+            document.getElementById('pds_citizenship').value = 'Filipino';
+
+            document.getElementById('sysBenTableBody').innerHTML = '';
+            document.getElementById('sysTrnTableBody').innerHTML = '';
+            addSysBenRow();
+            addSysTrnRow();
+
+            const photoInput = document.getElementById('pds_photo');
+            if (photoInput) {
+                photoInput.value = '';
+                previewMemberPhoto(photoInput);
+            }
+
+            currentPid = null;
+            document.getElementById('pds_currentPid').textContent = '-';
+        }
+
+        /**
+         * Preview the chosen member photo. The previous object URL is revoked so
+         * the page does not hold on to replaced files.
+         */
+        function previewMemberPhoto(input) {
+            const img = document.getElementById('pds_photoPreview');
+            const placeholder = document.getElementById('pds_photoPlaceholder');
+            if (!img || !input) return;
+
+            if (img.dataset.objectUrl) {
+                URL.revokeObjectURL(img.dataset.objectUrl);
+                delete img.dataset.objectUrl;
+            }
+
+            const file = (input.files && input.files[0]) ? input.files[0] : null;
+            if (!file) {
+                img.classList.add('hidden');
+                img.removeAttribute('src');
+                if (placeholder) placeholder.classList.remove('hidden');
+                return;
+            }
+
+            const url = URL.createObjectURL(file);
+            img.dataset.objectUrl = url;
+            img.src = url;
+            img.classList.remove('hidden');
+            if (placeholder) placeholder.classList.add('hidden');
+        }
+
+        /**
+         * Turn the Data Sheet payload into a multipart body - the create request
+         * is the only one that can carry a file.
+         *
+         * The two child tables travel as PHP-style arrays
+         * (`beneficiaries[0][name]`), which is exactly what $this->input->post()
+         * hands the server, so the stored rows match the JSON path byte for byte.
+         */
+        function buildMemberForm(payload, file) {
+            const form = new FormData();
+
+            Object.keys(payload).forEach(function(key) {
+                const value = payload[key];
+                if (value === null || value === undefined) return;
+
+                if (key === 'beneficiaries' || key === 'trainings') {
+                    value.forEach(function(row, index) {
+                        Object.keys(row).forEach(function(field) {
+                            const cell = row[field];
+                            form.append(key + '[' + index + '][' + field + ']',
+                                (cell === null || cell === undefined) ? '' : cell);
+                        });
+                    });
+                    return;
+                }
+
+                form.append(key, value);
+            });
+
+            form.append('photo', file);
+            return form;
+        }
+
+        /**
+         * Fetch one member plus their three documents and populate the PDS,
+         * Membership and Agreement forms. `tab` is where to leave the user.
+         */
+        async function loadMemberIntoForms(pid, tab) {
+            pid = parseInt(pid, 10);
+            if (isNaN(pid)) return;
+
+            let payload;
+            try {
+                payload = await apiGet('member/' + pid);
+            } catch (err) {
+                showToast(err.message, true);
+                return;
+            }
+
+            const rec = payload.member;
+            currentPid = rec.id;
+
+            // Keep all three selectors pointing at the same member.
+            ['pds_memberSelect', 'mem_memberSelect', 'agr_memberSelect'].forEach(function(id) {
+                const el = document.getElementById(id);
+                if (el) el.value = String(rec.id);
+            });
+            document.getElementById('pds_currentPid').textContent = rec.id;
+
+            applyRecordToPDS(rec);
+            applyRecordToMembership(rec);
+            applyRecordToAgreement(rec);
+
+            databaseByPid[rec.id] = Object.assign({}, databaseByPid[rec.id] || {}, rec);
+
+            if (tab) switchMainTab(tab);
+        }
+
+        /**
+         * Selects only accept values that exist as options. If the database holds
+         * a code our list does not know (legacy data), append it instead of
+         * silently blanking the field - otherwise saving would erase it.
+         */
+        function setSelectValue(el, value) {
+            if (!el) return;
+            const v = (value === null || value === undefined) ? '' : String(value);
+            if (v !== '' && !Array.from(el.options).some(o => o.value === v)) {
+                const opt = document.createElement('option');
+                opt.value = v;
+                opt.textContent = v + ' (existing value)';
+                el.appendChild(opt);
+            }
+            el.value = v;
+        }
+
+        function applyRecordToPDS(rec) {
+            const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v || ''; };
+
+            set('pds_surname', rec.surname);
+            set('pds_firstName', rec.firstName);
+            set('pds_middleName', rec.middleName);
+            setSelectValue(document.getElementById('pds_sex'), rec.sex);
+            setSelectValue(document.getElementById('pds_civilStatus'), rec.civilStatus);
+            set('pds_maidenName', rec.maidenName);
+            set('pds_spouseName', rec.spouseName);
+            set('pds_spouseOccupation', rec.spouseOccupation);
+            set('pds_dob', rec.dob);
+            set('pds_pob', rec.pob);
+            set('pds_citizenship', rec.citizenship || 'Filipino');
+            set('pds_age', rec.age);
+            set('pds_occupation', rec.occupation);
+            set('pds_height', rec.height);
+            set('pds_weight', rec.weight);
+            set('pds_bloodType', rec.bloodType);
+            set('pds_address', rec.address);
+            set('pds_contact', rec.contact);
+            set('pds_dateEmployed', rec.dateEmployed);
+            set('pds_tin', rec.tin);
+            set('pds_annualIncome', rec.annualIncome);
+            set('pds_religion', rec.religion);
+            set('pds_gsis', rec.gsis);
+            set('pds_fatherName', rec.fatherName);
+            set('pds_fatherBirthPlace', rec.fatherBirthPlace);
+            set('pds_motherName', rec.motherName);
+            set('pds_motherBirthPlace', rec.motherBirthPlace);
+            set('pds_educationalAttainment', rec.educationalAttainment);
+            set('pds_identificationNo', rec.identificationNo);
+            set('pds_dateIssued', rec.dateIssued);
+
+            const benTbody = document.getElementById('sysBenTableBody');
+            if (benTbody) {
+                benTbody.innerHTML = '';
+                (rec.beneficiaries && rec.beneficiaries.length ? rec.beneficiaries : [{}]).forEach(b => addSysBenRow(b));
+            }
+
+            const trnTbody = document.getElementById('sysTrnTableBody');
+            if (trnTbody) {
+                trnTbody.innerHTML = '';
+                (rec.trainings && rec.trainings.length ? rec.trainings : [{}]).forEach(t => addSysTrnRow(t));
+            }
+        }
+
+        function applyRecordToMembership(rec) {
+            const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v || ''; };
+
+            setSelectValue(document.getElementById('mem_status'), rec.hasApplication ? rec.status : 'PENDING');
+            set('mem_appDate', rec.applicationDate);
+            set('mem_orNo', rec.orNo);
+            set('mem_amountPaid', rec.amountPaid || '2100.00');
+            set('mem_boardResNo', rec.boardResNo);
+            set('mem_approvalDate', rec.approvalDate);
+        }
+
+        function applyRecordToAgreement(rec) {
+            const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v || ''; };
+
+            set('agr_shares', rec.shares || 4);
+            setSelectValue(document.getElementById('agr_frequency'), rec.frequency || 'monthly');
+            set('agr_witness1', rec.witness1);
+            set('agr_witness2', rec.witness2);
+            set('agr_officer', rec.officer);
+            calcAgrTotal();
+
+            document.getElementById('agr_dbTotal').value =
+                rec.hasAgreement ? (rec.totalParValueLabel || '') : 'no agreement saved yet';
+            document.getElementById('agr_memberSummary').textContent =
+                '#' + rec.id + '  ' + rec.surname + ', ' + rec.firstName +
+                (rec.member_id ? '   (Member No. ' + rec.member_id + ')' : '');
+
+            document.getElementById('sigStoredNote').classList.toggle('hidden', !rec.has_signature);
+            signatureDirty = false;
+            clearSignature();
+        }
+
+        function esc(value) {
+            return String(value === null || value === undefined ? '' : value)
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+        }
+
+        // Render Directory Table Rows (live members)
+        function renderDirectoryTable(records = database) {
+            const tbody = document.getElementById('directoryTableBody');
+            const emptyState = document.getElementById('emptyDirectoryState');
+
+            tbody.innerHTML = '';
+
+            if (records.length === 0) {
+                emptyState.classList.remove('hidden');
+                return;
+            } else {
+                emptyState.classList.add('hidden');
+            }
+
+            records.forEach(rec => {
+                const tr = document.createElement('tr');
+                tr.className = "hover:bg-slate-50/80 transition";
+
+                let statusBadge = '';
+                if (rec.status === 'APPROVED') {
+                    statusBadge = `<span class="bg-emerald-100 text-emerald-800 font-bold px-2.5 py-1 rounded-full text-[10px]">APPROVED</span>`;
+                } else if (rec.status === 'DISAPPROVED') {
+                    statusBadge = `<span class="bg-red-100 text-red-800 font-bold px-2.5 py-1 rounded-full text-[10px]">DISAPPROVED</span>`;
+                } else if (rec.status === 'PENDING') {
+                    statusBadge = `<span class="bg-amber-100 text-amber-800 font-bold px-2.5 py-1 rounded-full text-[10px]">PENDING</span>`;
+                } else {
+                    statusBadge = `<span class="bg-slate-100 text-slate-500 font-bold px-2.5 py-1 rounded-full text-[10px]">NO APPLICATION</span>`;
+                }
+
+                const docs = [];
+                if (rec.beneficiaryCount) docs.push(rec.beneficiaryCount + ' ben.');
+                if (rec.trainingCount) docs.push(rec.trainingCount + ' trn.');
+                if (rec.hasAgreement) docs.push('agreement');
+                const docsLine = docs.length ? docs.join(' \u00b7 ') : 'no documents yet';
+
+                const sharesLabel = rec.hasAgreement
+                    ? `${rec.shares} Shares (${esc(rec.totalParValueLabel || '')})`
+                    : '<span class="text-slate-400">not subscribed</span>';
+
+                tr.innerHTML = `
+                    <td class="p-3">
+                        <div class="font-mono font-bold text-coopGreen-800">${esc(rec.member_id)}</div>
+                        <div class="text-[10px] text-slate-400 font-mono">PID ${rec.id}</div>
+                    </td>
+                    <td class="p-3">
+                        <div class="font-bold text-slate-900">${esc(rec.surname)}, ${esc(rec.firstName)} ${esc(rec.middleName)}</div>
+                        <div class="text-[10px] text-slate-500">${esc(rec.occupation) || 'N/A'} &middot; ${docsLine}</div>
+                    </td>
+                    <td class="p-3 text-slate-600">${esc(rec.sexLabel) || '--'} &bull; ${esc(rec.civilStatusLabel) || '--'}</td>
+                    <td class="p-3">
+                        <div>${esc(rec.contact) || '--'}</div>
+                        <div class="text-[10px] text-slate-400 truncate max-w-[180px]">${esc(rec.address) || '--'}</div>
+                    </td>
+                    <td class="p-3 font-medium">${sharesLabel}</td>
+                    <td class="p-3">${statusBadge}</td>
+                    <td class="p-3 text-center">
+                        <div class="flex items-center justify-center space-x-1">
+                            <button onclick="openPrintModalForMember(${rec.id})" class="p-1.5 text-emerald-700 hover:bg-emerald-50 rounded transition" title="Print the three forms">
+                                <i class="fa-solid fa-print"></i>
+                            </button>
+                            <button onclick="editRecord(${rec.id})" class="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition" title="Open this member's forms">
+                                <i class="fa-solid fa-pen-to-square"></i>
+                            </button>
+                            ${PERMS.delete ? `
+                            <button onclick="clearMemberDocuments(${rec.id})" class="p-1.5 text-red-600 hover:bg-red-50 rounded transition" title="Clear this member's PDS / application / agreement">
+                                <i class="fa-solid fa-eraser"></i>
+                            </button>` : ''}
+                        </div>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        // Tab Switcher
+        function switchMainTab(tabName) {
+            document.querySelectorAll('.main-tab-content').forEach(el => el.classList.add('hidden'));
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+
+            document.getElementById(`tab-${tabName}`).classList.remove('hidden');
+            document.getElementById(`tab-btn-${tabName}`).classList.add('active');
+
+            if (tabName === 'membership' || tabName === 'agreement' || tabName === 'pds') {
+                populateMemberDropdowns();
+            }
+        }
+
+        // Populate the three member dropdowns from the live listing.
+        function populateMemberDropdowns() {
+            const selects = [
+                document.getElementById('pds_memberSelect'),
+                document.getElementById('mem_memberSelect'),
+                document.getElementById('agr_memberSelect')
+            ];
+
+            selects.forEach(sel => {
+                if (!sel) return;
+                const previous = sel.value;
+                // While a record is being created the Data Sheet belongs to a
+                // member that does not exist yet, so the picker holds a
+                // placeholder instead of an existing member.
+                const needsPlaceholder = NEW_MEMBER && sel.id === 'pds_memberSelect';
+                sel.innerHTML = '';
+
+                if (needsPlaceholder) {
+                    const hold = document.createElement('option');
+                    hold.value = '';
+                    hold.textContent = '-- new member, not saved yet --';
+                    sel.appendChild(hold);
+                }
+
+                if (database.length === 0) {
+                    if (!needsPlaceholder) {
+                        const opt = document.createElement('option');
+                        opt.value = '';
+                        opt.textContent = '-- no members match the current filter --';
+                        sel.appendChild(opt);
+                    }
+                    return;
+                }
+
+                database.forEach(rec => {
+                    const opt = document.createElement('option');
+                    opt.value = String(rec.id);
+                    opt.textContent = rec.surname + ', ' + rec.firstName + '  (#PID ' + rec.id +
+                        (rec.member_id ? ' / ' + rec.member_id : '') + ')';
+                    sel.appendChild(opt);
+                });
+
+                if (needsPlaceholder) {
+                    sel.value = '';
+                    return;
+                }
+
+                // Keep whatever the user had selected, if it is still listed.
+                if (previous && database.some(r => String(r.id) === previous)) {
+                    sel.value = previous;
+                }
+            });
+        }
+
+        // Membership Application Submit Handler
+        async function handleMembershipSubmit(e) {
+            e.preventDefault();
+            const memberId = parseInt(document.getElementById('mem_memberSelect').value, 10);
+
+            if (isNaN(memberId)) {
+                showToast('Select a member first.', true);
+                return;
+            }
+
+            try {
+                const res = await apiPost('save_application', {
+                    member_id: memberId,
+                    status: document.getElementById('mem_status').value,
+                    applicationDate: document.getElementById('mem_appDate').value,
+                    orNo: document.getElementById('mem_orNo').value,
+                    amountPaid: document.getElementById('mem_amountPaid').value,
+                    boardResNo: document.getElementById('mem_boardResNo').value,
+                    approvalDate: document.getElementById('mem_approvalDate').value
+                });
+                showToast(res.message);
+                await loadMembers();
+                switchMainTab('directory');
+            } catch (err) {
+                showToast(err.message, true);
+            }
+        }
+
+        // Agreement Submit Handler
+        async function handleAgreementSubmit(e) {
+            e.preventDefault();
+            const memberId = parseInt(document.getElementById('agr_memberSelect').value, 10);
+
+            if (isNaN(memberId)) {
+                showToast('Select a member first.', true);
+                return;
+            }
+
+            try {
+                const res = await apiPost('save_agreement', {
+                    member_id: memberId,
+                    shares: document.getElementById('agr_shares').value,
+                    parValuePerShare: 500,
+                    frequency: document.getElementById('agr_frequency').value,
+                    witness1: document.getElementById('agr_witness1').value,
+                    witness2: document.getElementById('agr_witness2').value,
+                    officer: document.getElementById('agr_officer').value,
+                    // Only send a signature when one was actually drawn, so a
+                    // stored signature is never overwritten with a blank canvas.
+                    signature: signatureDirty ? canvas.toDataURL('image/png') : ''
+                });
+                showToast(res.message);
+                await loadMembers();
+                switchMainTab('directory');
+            } catch (err) {
+                showToast(err.message, true);
+            }
+        }
+
+        /**
+         * Clearing removes the three documents for a member. It deliberately
+         * does NOT delete the member - that belongs to the Members module, and
+         * a member with loans/savings must never disappear from here.
+         */
+        async function clearMemberDocuments(pid) {
+            const rec = databaseByPid[pid];
+            const who = rec ? (rec.surname + ', ' + rec.firstName + ' (PID ' + pid + ')') : ('PID ' + pid);
+
+            if (!confirm('Clear the Personal Data Sheet, Membership Application and Subscription Agreement for:\n\n' +
+                         who + '\n\nThe member record itself will be kept. Continue?')) {
+                return;
+            }
+
+            try {
+                const res = await apiPost('clear_documents', { member_id: pid });
+                showToast(res.message);
+                await loadMembers();
+            } catch (err) {
+                showToast(err.message, true);
+            }
+        }
+
+        // Sync Selected Member in Agreement Form
+        function syncAgreementMember() {
+            const memberId = parseInt(document.getElementById('agr_memberSelect').value, 10);
+            if (!isNaN(memberId)) {
+                loadMemberIntoForms(memberId, null);
+            }
+        }
+
+        // Auto calculate Agreement Par Value
+        function calcAgrTotal() {
+            const shares = parseInt(document.getElementById('agr_shares').value) || 0;
+            const total = shares * 500;
+            document.getElementById('agr_totalValue').value = '₱ ' + total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+
+        // Signature Canvas Mechanics
+        let canvas, ctx, isDrawing = false, signatureDirty = false;
+        function initSignatureCanvas() {
+            canvas = document.getElementById('sigCanvas');
+            if (!canvas) return;
+            ctx = canvas.getContext('2d');
+            ctx.strokeStyle = '#000000';
+            ctx.lineWidth = 2;
+
+            canvas.addEventListener('mousedown', () => isDrawing = true);
+            canvas.addEventListener('mouseup', () => isDrawing = false);
+            canvas.addEventListener('mouseleave', () => isDrawing = false);
+            canvas.addEventListener('mousemove', (e) => {
+                if (!isDrawing) return;
+                const rect = canvas.getBoundingClientRect();
+                ctx.lineTo(e.clientX - rect.left, e.clientY - rect.top);
+                ctx.stroke();
+                signatureDirty = true;
+                document.getElementById('sigStoredNote').classList.add('hidden');
+            });
+        }
+
+        function clearSignature() {
+            if (ctx && canvas) ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
+
+        // Toast Helper
+        function showToast(msg, isError = false) {
+            const toast = document.getElementById('toast');
+            document.getElementById('toast-message').textContent = msg;
+            toast.classList.remove('hidden');
+            toast.classList.toggle('bg-emerald-700', !isError);
+            toast.classList.toggle('border-emerald-500', !isError);
+            toast.classList.toggle('bg-red-700', isError);
+            toast.classList.toggle('border-red-500', isError);
+            clearTimeout(toast._timer);
+            toast._timer = setTimeout(() => toast.classList.add('hidden'), isError ? 6000 : 3000);
+        }
+
+        // PRINT & PREVIEW MODAL LOGIC
+        let activeModalMemberId = null;
+
+        function triggerGlobalPrint() {
+            if (database.length > 0) {
+                openPrintModalForMember(database[0].id);
+            } else {
+                showToast("No member records available to preview.");
+            }
+        }
+
+        function previewCurrentForm(formType) {
+            const pid = (currentPid !== null) ? currentPid : (database.length > 0 ? database[0].id : null);
+            if (pid !== null) {
+                openPrintModalForMember(pid, formType);
+            } else {
+                showToast('Pick a member first to generate the preview.', true);
+            }
+        }
+
+        async function openPrintModalForMember(memberId, defaultDoc = 'pds') {
+            activeModalMemberId = memberId;
+            document.getElementById('modalDocSelector').value = defaultDoc;
+            document.getElementById('printModal').classList.remove('hidden');
+
+            // The directory rows carry counts, not the rows themselves - pull the
+            // full member so beneficiaries/trainings print correctly.
+            try {
+                const payload = await apiGet('member/' + memberId);
+                databaseByPid[memberId] = Object.assign({}, databaseByPid[memberId] || {}, payload.member);
+            } catch (err) {
+                showToast(err.message, true);
+            }
+
+            renderModalDocument(defaultDoc, memberId);
+        }
+
+        function closePrintModal() {
+            document.getElementById('printModal').classList.add('hidden');
+        }
+
+        function switchModalDoc(docType) {
+            if (activeModalMemberId) {
+                renderModalDocument(docType, activeModalMemberId);
+            }
+        }
+
+        function executeModalPrint() {
+            window.print();
+        }
+
+        function renderModalDocument(docType, memberId) {
+            const rec = databaseByPid[memberId] || database.find(r => r.id === memberId) || database[0];
+            const content = document.getElementById('printModalContent');
+            if (!rec || !content) return;
+
+            // The database stores codes (M/F, Single/Married/...). The printed
+            // forms are tick-box documents, so map them to the paper wording.
+            const sexLabel = rec.sexLabel || (OPTIONS.gender && OPTIONS.gender[rec.sex]) || rec.sex || '';
+            const civilLabel = rec.civilStatusLabel || rec.civilStatus || '';
+
+            // Common TAPSTEMCO header crest — official logo asset (TAPSTEMCO_FORM_LOGO).
+            // LOGO_SRC is resolved from the injected app base so the crest loads
+            // whether the page is opened directly or served at /membership_documents/page.
+            const logoCrest = `
+                <div class="w-20 h-20 sm:w-24 sm:h-24 flex-shrink-0 rounded-full bg-white overflow-hidden ring-1 ring-slate-300">
+                    <img src="${LOGO_SRC}"
+                         alt="TAPSTEMCO official logo"
+                         class="w-full h-full object-contain"
+                         onerror="this.parentElement.classList.add('hidden')">
+                </div>
+            `;
+
+            // Member Full Name helper
+            const fullName = `${rec.surname || ''}, ${rec.firstName || ''} ${rec.middleName || ''}`.trim();
+            const firstMiddleFamily = `${rec.firstName || ''} ${rec.middleName || ''} ${rec.surname || ''}`.trim();
+
+            if (docType === 'pds') {
+                document.getElementById('printModalTitle').textContent = `Form 1: PDS - ${fullName}`;
+
+                // Render beneficiaries rows
+                let benRowsHtml = '';
+                if (rec.beneficiaries && rec.beneficiaries.length > 0) {
+                    rec.beneficiaries.forEach(b => {
+                        benRowsHtml += `
+                            <tr>
+                                <td class="p-1 border border-slate-400 font-semibold">${b.name || ''}</td>
+                                <td class="p-1 border border-slate-400">${b.rel || ''}</td>
+                                <td class="p-1 border border-slate-400 text-center">${b.dob || ''}</td>
+                                <td class="p-1 border border-slate-400 text-center">${b.age || ''}</td>
+                            </tr>
+                        `;
+                    });
+                } else {
+                    benRowsHtml = `
+                        <tr>
+                            <td class="p-2 border border-slate-400 italic text-slate-400" colspan="4">No beneficiaries listed</td>
+                        </tr>
+                    `;
+                }
+
+                // Render training rows
+                let trnRowsHtml = '';
+                if (rec.trainings && rec.trainings.length > 0) {
+                    rec.trainings.forEach(t => {
+                        trnRowsHtml += `
+                            <tr>
+                                <td class="p-1 border border-slate-400 font-semibold">${t.title || ''}</td>
+                                <td class="p-1 border border-slate-400 text-center">${t.dates || ''}</td>
+                                <td class="p-1 border border-slate-400 text-center">${t.hours || ''}</td>
+                                <td class="p-1 border border-slate-400">${t.by || ''}</td>
+                            </tr>
+                        `;
+                    });
+                } else {
+                    trnRowsHtml = `
+                        <tr>
+                            <td class="p-2 border border-slate-400 italic text-slate-400" colspan="4">No training records listed</td>
+                        </tr>
+                    `;
+                }
+
+                // 1x1 picture: the member's own photo when one was uploaded, and
+                // the paper form's printed placeholder when there is none. If the
+                // file cannot be loaded the image hides itself and the placeholder
+                // appears, so a broken path never prints an empty box.
+                const pictureHtml = rec.photo
+                    ? `<img src="${MEMBER_PHOTO_BASE}${encodeURIComponent(rec.photo)}" alt="Member photo" class="w-full h-full object-cover" onerror="this.classList.add('hidden');this.nextElementSibling.classList.remove('hidden');"><span class="text-[10px] font-bold uppercase text-slate-600 hidden">Picture (1x1)</span>`
+                    : `<span class="text-[10px] font-bold uppercase text-slate-600">Picture (1x1)</span>`;
+
+                content.innerHTML = `
+                    <div class="border-2 border-slate-900 p-4 font-sans text-xs text-slate-900 leading-tight">
+                        <!-- HEADER -->
+                        <div class="flex flex-col sm:flex-row items-center justify-between pb-3 border-b-2 border-slate-900 gap-3">
+                            <div class="flex items-center gap-3">
+                                ${logoCrest}
+                                <div>
+                                    <h2 class="text-xs sm:text-sm font-bold uppercase tracking-tight">Talibon Public School Teachers & Employees</h2>
+                                    <h1 class="text-sm sm:text-lg font-black text-coopGreen-800 uppercase tracking-wide">Multipurpose Cooperative (TAPSTEMCO)</h1>
+                                    <p class="text-[11px] text-slate-600 mt-0.5">Purok 1, North Road, San Jose, Talibon, Bohol</p>
+                                </div>
+                            </div>
+                            <div class="w-28 h-28 border-2 border-slate-900 flex items-center justify-center text-center p-1 bg-slate-50 flex-shrink-0 overflow-hidden">
+                                ${pictureHtml}
+                            </div>
+                        </div>
+
+                        <!-- TITLE BANNER -->
+                        <div class="bg-coopGreen-800 text-white font-bold text-center py-1.5 my-3 uppercase tracking-wider text-xs sm:text-sm border border-slate-900">
+                            Member's Personal Data Sheet
+                        </div>
+
+                        <!-- GRID FORM STRUCTURE (EXACT PHYSICAL COPY MATCH) -->
+                        <div class="border border-slate-900 divide-y divide-slate-900 text-[11px]">
+                            
+                            <!-- 1. NAME -->
+                            <div class="p-2 bg-slate-50">
+                                <span class="font-bold text-coopGreen-900 uppercase block mb-1">1. NAME</span>
+                                <div class="grid grid-cols-3 gap-2">
+                                    <div><span class="text-[9px] text-slate-500 block uppercase">Surname:</span> <strong class="text-xs">${rec.surname || ''}</strong></div>
+                                    <div><span class="text-[9px] text-slate-500 block uppercase">First Name:</span> <strong class="text-xs">${rec.firstName || ''}</strong></div>
+                                    <div><span class="text-[9px] text-slate-500 block uppercase">Middle Name:</span> <strong class="text-xs">${rec.middleName || 'N/A'}</strong></div>
+                                </div>
+                            </div>
+
+                            <!-- 2 & 3. SEX & CIVIL STATUS -->
+                            <div class="grid grid-cols-12 divide-x divide-slate-900 p-2">
+                                <div class="col-span-4 pr-2">
+                                    <span class="font-bold text-coopGreen-900 uppercase block">2. SEX:</span>
+                                    <span class="font-semibold text-xs">[ ${sexLabel === 'Male' ? '✓' : ' '} ] Male &nbsp;&nbsp; [ ${sexLabel === 'Female' ? '✓' : ' '} ] Female</span>
+                                </div>
+                                <div class="col-span-8 pl-2">
+                                    <span class="font-bold text-coopGreen-900 uppercase block">3. CIVIL STATUS:</span>
+                                    <span class="font-semibold text-xs">
+                                        [ ${civilLabel === 'Single' ? '✓' : ' '} ] Single &nbsp;
+                                        [ ${civilLabel === 'Married' ? '✓' : ' '} ] Married &nbsp;
+                                        [ ${(civilLabel === 'Widow/er' || civilLabel === 'Widow/Widower') ? '✓' : ' '} ] Widower/Widow &nbsp;
+                                        [ ${civilLabel === 'Divorced' ? '✓' : ' '} ] Separated
+                                    </span>
+                                </div>
+                            </div>
+
+                            <!-- 4 & 5. MAIDEN NAME & SPOUSE DETAILS -->
+                            <div class="grid grid-cols-12 divide-x divide-slate-900 p-2">
+                                <div class="col-span-6 pr-2">
+                                    <span class="font-bold text-coopGreen-900 uppercase block">4. IF MARRIED, WRITE MAIDEN NAME:</span>
+                                    <span class="font-semibold">${rec.maidenName || 'N/A'}</span>
+                                </div>
+                                <div class="col-span-6 pl-2 grid grid-cols-2 gap-1">
+                                    <div><span class="font-bold text-coopGreen-900 uppercase block">5. NAME OF SPOUSE:</span><span class="font-semibold">${rec.spouseName || 'N/A'}</span></div>
+                                    <div><span class="font-bold text-coopGreen-900 uppercase block">OCCUPATION:</span><span class="font-semibold">${rec.spouseOccupation || 'N/A'}</span></div>
+                                </div>
+                            </div>
+
+                            <!-- 6, 7, 8, 13. DOB, POB, CITIZENSHIP, AGE -->
+                            <div class="grid grid-cols-12 divide-x divide-slate-900 p-2">
+                                <div class="col-span-3 pr-1"><span class="font-bold text-coopGreen-900 uppercase block">6. DATE OF BIRTH:</span><span class="font-semibold">${rec.dob || 'N/A'}</span></div>
+                                <div class="col-span-4 px-1"><span class="font-bold text-coopGreen-900 uppercase block">7. PLACE OF BIRTH:</span><span class="font-semibold">${rec.pob || 'N/A'}</span></div>
+                                <div class="col-span-3 px-1"><span class="font-bold text-coopGreen-900 uppercase block">8. CITIZENSHIP:</span><span class="font-semibold">${rec.citizenship || 'Filipino'}</span></div>
+                                <div class="col-span-2 pl-1"><span class="font-bold text-coopGreen-900 uppercase block">13. AGE:</span><span class="font-semibold">${rec.age || 'N/A'}</span></div>
+                            </div>
+
+                            <!-- 9, 10, 11, 12. OCCUPATION, HEIGHT, WEIGHT, BLOOD TYPE -->
+                            <div class="grid grid-cols-12 divide-x divide-slate-900 p-2">
+                                <div class="col-span-4 pr-1"><span class="font-bold text-coopGreen-900 uppercase block">9. OCCUPATION:</span><span class="font-semibold">${rec.occupation || 'N/A'}</span></div>
+                                <div class="col-span-3 px-1"><span class="font-bold text-coopGreen-900 uppercase block">10. HEIGHT (Meters):</span><span class="font-semibold">${rec.height || 'N/A'}</span></div>
+                                <div class="col-span-3 px-1"><span class="font-bold text-coopGreen-900 uppercase block">11. WEIGHT (Kilos):</span><span class="font-semibold">${rec.weight || 'N/A'}</span></div>
+                                <div class="col-span-2 pl-1"><span class="font-bold text-coopGreen-900 uppercase block">12. BLOOD TYPE:</span><span class="font-semibold">${rec.bloodType || 'N/A'}</span></div>
+                            </div>
+
+                            <!-- 14, 15, 16. ADDRESS, CONTACT, EMPLOYED, TIN -->
+                            <div class="grid grid-cols-12 divide-x divide-slate-900 p-2">
+                                <div class="col-span-6 pr-1"><span class="font-bold text-coopGreen-900 uppercase block">14. ADDRESS:</span><span class="font-semibold">${rec.address || 'N/A'}</span></div>
+                                <div class="col-span-3 px-1"><span class="font-bold text-coopGreen-900 uppercase block">15. CONTACT NO.:</span><span class="font-semibold">${rec.contact || 'N/A'}</span><br><span class="text-[9px] text-slate-500">DATE EMPLOYED: ${rec.dateEmployed || 'N/A'}</span></div>
+                                <div class="col-span-3 pl-1"><span class="font-bold text-coopGreen-900 uppercase block">16. TAXPAYER'S IDENTIFICATION NO. (TIN):</span><span class="font-semibold">${rec.tin || 'N/A'}</span></div>
+                            </div>
+
+                            <!-- 17, 18. ANNUAL INCOME, RELIGION, GSIS -->
+                            <div class="grid grid-cols-12 divide-x divide-slate-900 p-2">
+                                <div class="col-span-6 pr-1"><span class="font-bold text-coopGreen-900 uppercase block">17. ANNUAL INCOME:</span><span class="font-semibold">₱ ${rec.annualIncome || '0.00'}</span></div>
+                                <div class="col-span-6 pl-1 grid grid-cols-2 gap-1">
+                                    <div><span class="font-bold text-coopGreen-900 uppercase block">18. RELIGION:</span><span class="font-semibold">${rec.religion || 'N/A'}</span></div>
+                                    <div><span class="font-bold text-coopGreen-900 uppercase block">BP NO. / GSIS NO.:</span><span class="font-semibold">${rec.gsis || 'N/A'}</span></div>
+                                </div>
+                            </div>
+
+                            <!-- 19, 20. PARENTS -->
+                            <div class="p-2 space-y-1">
+                                <div class="grid grid-cols-2 gap-2">
+                                    <div><span class="font-bold text-coopGreen-900 uppercase">19. NAME OF FATHER:</span> <span class="font-semibold">${rec.fatherName || 'N/A'}</span></div>
+                                    <div><span class="font-bold text-coopGreen-900 uppercase">PLACE OF BIRTH:</span> <span class="font-semibold">${rec.fatherBirthPlace || 'N/A'}</span></div>
+                                </div>
+                                <div class="grid grid-cols-2 gap-2">
+                                    <div><span class="font-bold text-coopGreen-900 uppercase">20. NAME OF MOTHER:</span> <span class="font-semibold">${rec.motherName || 'N/A'}</span></div>
+                                    <div><span class="font-bold text-coopGreen-900 uppercase">PLACE OF BIRTH:</span> <span class="font-semibold">${rec.motherBirthPlace || 'N/A'}</span></div>
+                                </div>
+                            </div>
+
+                            <!-- 21. BENEFICIARIES TABLE -->
+                            <div class="p-2">
+                                <span class="font-bold text-coopGreen-900 uppercase block mb-1">21. NAME OF BENEFICIARIES</span>
+                                <table class="w-full text-left border-collapse border border-slate-400">
+                                    <thead>
+                                        <tr class="bg-slate-200 uppercase text-[10px] font-bold">
+                                            <th class="p-1 border border-slate-400">Name of Beneficiaries</th>
+                                            <th class="p-1 border border-slate-400">Relationship</th>
+                                            <th class="p-1 border border-slate-400 text-center">Date of Birth</th>
+                                            <th class="p-1 border border-slate-400 text-center">Age</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>${benRowsHtml}</tbody>
+                                </table>
+                            </div>
+
+                            <!-- 22. EDUCATIONAL ATTAINMENT -->
+                            <div class="p-2">
+                                <span class="font-bold text-coopGreen-900 uppercase block">22. HIGHEST EDUCATIONAL ATTAINMENT:</span>
+                                <span class="font-semibold text-xs">${rec.educationalAttainment || 'N/A'}</span>
+                            </div>
+
+                            <!-- 23. IN-SERVICE TRAINING TABLE -->
+                            <div class="p-2">
+                                <span class="font-bold text-coopGreen-900 uppercase block">23. RECORD OF IN-SERVICE TRAINING (Accredited by the CSC) STUDY AND SCHOLARSHIP GRANTS</span>
+                                <table class="w-full text-left border-collapse border border-slate-400 mt-1">
+                                    <thead>
+                                        <tr class="bg-slate-200 uppercase text-[10px] font-bold">
+                                            <th class="p-1 border border-slate-400">Title of Seminar / Conference Course / Training</th>
+                                            <th class="p-1 border border-slate-400 text-center">Inclusive Dates</th>
+                                            <th class="p-1 border border-slate-400 text-center">No. of Hours</th>
+                                            <th class="p-1 border border-slate-400">Conducted By</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>${trnRowsHtml}</tbody>
+                                </table>
+                            </div>
+
+                            <!-- 24 & 25. IDENTIFICATION & DATE ISSUED -->
+                            <div class="grid grid-cols-2 divide-x divide-slate-900 p-2">
+                                <div><span class="font-bold text-coopGreen-900 uppercase block">24. IDENTIFICATION NO.:</span><span class="font-semibold">${rec.identificationNo || 'N/A'}</span></div>
+                                <div class="pl-2"><span class="font-bold text-coopGreen-900 uppercase block">25. DATE ISSUED:</span><span class="font-semibold">${rec.dateIssued || 'N/A'}</span></div>
+                            </div>
+
+                        </div>
+
+                        <!-- SIGNATURE FOOTER -->
+                        <div class="pt-10 flex justify-between items-end px-6">
+                            <div class="text-center w-56 border-t border-slate-900 pt-1 font-bold uppercase text-xs">
+                                Signature of Applicant
+                            </div>
+                            <div class="text-center w-56 border-t border-slate-900 pt-1 font-bold uppercase text-xs">
+                                Date Signed
+                            </div>
+                        </div>
+                    </div>
+                `;
+            } else if (docType === 'membership') {
+                document.getElementById('printModalTitle').textContent = `Form 2: Membership App - ${fullName}`;
+
+                content.innerHTML = `
+                    <div class="p-6 font-serif leading-relaxed text-slate-900 text-xs sm:text-sm">
+                        <!-- HEADER WITH FULL METADATA -->
+                        <div class="flex flex-col sm:flex-row items-center justify-center gap-4 mb-3 text-center">
+                            ${logoCrest}
+                            <div>
+                                <h2 class="text-sm sm:text-base font-extrabold uppercase font-serif">Talibon Public School Teachers and Employees</h2>
+                                <h3 class="text-xs sm:text-sm font-bold text-coopGreen-800 uppercase font-serif">Multipurpose Cooperative</h3>
+                                <p class="text-[11px] font-medium text-slate-700 uppercase">Purok 1 North Road San Jose, Talibon, Bohol</p>
+                                <div class="text-[10px] text-slate-600 mt-0.5 space-y-0.5 font-sans">
+                                    <p><strong>Tel #:</strong> 412-5182 &nbsp;|&nbsp; <strong>Email:</strong> tpstemultipurposecoop@gmail.com</p>
+                                    <p><strong>CDA Reg.</strong> 9520-07014825-3 &nbsp;|&nbsp; <strong>CIN No.</strong> 0103070148</p>
+                                    <p class="italic text-slate-500">" Registered with Cooperative Development Authority – Cebu Extension Office "</p>
+                                    <p class="font-semibold">NON VAT Reg. TIN: 005-885-755-000</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="text-center border-t border-slate-300 pt-3 my-4">
+                            <h1 class="text-sm sm:text-base font-black uppercase tracking-widest font-serif">Application for Membership</h1>
+                        </div>
+
+                        <div class="text-right font-sans text-xs font-semibold mb-4">
+                            Date: <span class="border-b border-slate-900 px-4 py-0.5">${new Date().toLocaleDateString()}</span>
+                        </div>
+
+                        <div class="space-y-1 font-semibold mb-4">
+                            <p>The Board of Directors</p>
+                            <p class="uppercase">TALIBON PUBLIC SCHOOL TEACHERS & EMPLOYEES</p>
+                            <p class="uppercase">MULTIPURPOSE COOPERATIVE ( TAPSTEMCO )</p>
+                            <p class="uppercase text-xs font-normal text-slate-700">PUROK 1 NORTH ROAD SAN JOSE, TALIBON, BOHOL</p>
+                        </div>
+
+                        <p class="font-bold mb-3">Gentlemen:</p>
+
+                        <p class="text-justify leading-loose mb-4">
+                            I, <strong class="border-b border-slate-900 px-2 uppercase font-sans text-coopGreen-900">${firstMiddleFamily || '__________________________'}</strong>
+                            of <strong class="border-b border-slate-900 px-2 font-sans">${rec.address || 'Talibon, Bohol'}</strong>, 
+                            hereby apply for membership in the <strong>TALIBON PUBLIC SCHOOL TEACHERS AND EMPLOYEES MULTIPURPOSE COOPERATIVE (TAPSTEMCO), PUROK 1 NORTH ROAD SAN JOSE, TALIBON, BOHOL</strong>. 
+                            I agree to obey faithfully its rules and regulations as set in the Articles of cooperation and By-Laws, the decisions of the General Assembly, the Board of Directors and those of the Cooperative Development Authority.
+                        </p>
+
+                        <p class="font-bold mb-2">I hereby pledge to:</p>
+                        <ol class="list-decimal list-outside pl-6 space-y-2 text-xs sm:text-sm leading-normal mb-4">
+                            <li>Attend and finish the prescribed Cooperative Membership Education Seminar (PMES) and other education and information activities of the cooperative;</li>
+                            <li>Pay the Memberships Fee of One Hundred Pesos (Php100.00) upon application.</li>
+                            <li>Subscribed for at least <strong>FOUR Shares</strong> with a par value of <strong>FIVE HUNDRED PESOS (Php.500.00)</strong>, bearing the amount of <strong>TWO THOUSAND PESOS</strong> upon application for membership and the remaining unpaid subscription shall be paid on amortization within <strong>ONE (1) year</strong> from approval of this application.</li>
+                            <li>Participate in Coop's capital build-up and savings program.</li>
+                            <li>Patronize regularly the coop's business product.</li>
+                            <li>Observed faithfully the duties and responsibilities of a cooperative member.</li>
+                        </ol>
+
+                        <p class="italic mb-8">For your consideration, I hereby attached my Information Sheet.</p>
+
+                        <!-- APPLICANT SIGNATURE BLOCK -->
+                        <div class="flex justify-end mb-8 font-sans">
+                            <div class="text-center w-64 space-y-1">
+                                <div class="border-b border-slate-900 pb-1">
+                                    <strong class="uppercase text-sm block text-slate-900">${firstMiddleFamily}</strong>
+                                </div>
+                                <span class="text-[11px] text-slate-600 italic block">Signature of Applicant Over Printed Name</span>
+                                <span class="text-xs block mt-1">Date: ____________________</span>
+                            </div>
+                        </div>
+
+                        <!-- ACTION TAKEN BLOCK -->
+                        <div class="border-t-2 border-slate-800 pt-4 font-sans text-xs space-y-4">
+                            <div class="grid grid-cols-2 gap-4 items-end">
+                                <div>
+                                    <p class="font-bold uppercase mb-2">Action Taken</p>
+                                    <p class="font-semibold text-sm">( ${rec.status === 'APPROVED' ? '✓' : ' '} ) Approved</p>
+                                    <p class="font-semibold text-sm">( ${rec.status === 'DISAPPROVED' ? '✓' : ' '} ) Disapproved by: ____________________</p>
+                                </div>
+                                <div class="text-center">
+                                    <strong class="uppercase text-sm border-b border-slate-900 pb-0.5 block">REMEDIOS T. AUXTERO</strong>
+                                    <span class="text-xs text-slate-600 italic block mt-0.5">Manager</span>
+                                    <span class="text-xs block mt-2">Date of approval: ____________________</span>
+                                </div>
+                            </div>
+
+                            <div class="grid grid-cols-3 gap-2 pt-3 border-t border-slate-300 text-xs">
+                                <div><strong>OR No.</strong> <span class="border-b border-slate-800 px-2 font-mono">${rec.orNo || '__________'}</span></div>
+                                <div><strong>Amount:</strong> <span class="border-b border-slate-800 px-2 font-mono">₱ ${rec.amountPaid || '2,100.00'}</span></div>
+                                <div><strong>Board Resolution No.</strong> <span class="border-b border-slate-800 px-2 font-mono">${rec.boardResNo || '__________'}</span> S. 2026</div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            } else {
+                document.getElementById('printModalTitle').textContent = `Form 3: Subscription Agreement - ${fullName}`;
+
+                content.innerHTML = `
+                    <div class="p-6 font-serif leading-relaxed text-slate-900 text-xs sm:text-sm space-y-6">
+                        <!-- HEADER WITH FULL METADATA -->
+                        <div class="flex flex-col sm:flex-row items-center justify-center gap-4 text-center">
+                            ${logoCrest}
+                            <div>
+                                <h2 class="text-sm sm:text-base font-extrabold uppercase font-serif">Talibon Public School Teachers and Employees</h2>
+                                <h3 class="text-xs sm:text-sm font-bold text-coopGreen-800 uppercase font-serif">Multipurpose Cooperative</h3>
+                                <p class="text-[11px] font-semibold text-slate-700 uppercase">Purok 1, North Road, San Jose, Talibon, Bohol</p>
+                                <div class="text-[10px] text-slate-600 mt-0.5 space-y-0.5 font-sans">
+                                    <p><strong>Tel #:</strong> 412-5182 &nbsp;|&nbsp; <strong>Email:</strong> tpstemultipurposecoop@gmail.com</p>
+                                    <p><strong>Reg./Conf. No:</strong> 9520-07014825-3 &nbsp;|&nbsp; <strong>CIN No.</strong> 0103070148</p>
+                                    <p class="italic text-slate-500">" Registered with Cooperative Development Authority – Cebu Extension Office "</p>
+                                    <p class="font-semibold">TIN No. 005-885-755-000</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="text-center border-t border-slate-300 pt-3">
+                            <h1 class="text-sm sm:text-base font-black uppercase tracking-widest font-serif">Membership and Subscription Agreement</h1>
+                        </div>
+
+                        <p class="text-justify leading-loose">
+                            I, <strong class="border-b border-slate-900 px-2 font-sans uppercase font-bold text-coopGreen-900">${firstMiddleFamily || '__________________________'}</strong>, 
+                            a member of the <strong>TALIBON PUBLIC SCHOOL TEACHERS AND EMPLOYEES MULTIPURPOSE COOPERATIVE (TAPSTEMCO)</strong>, do hereby subscribe for 
+                            <strong class="border-b border-slate-900 px-2 font-sans">${rec.shares || 4}</strong> shares with a par value of <strong>₱ 500.00</strong> per share at TAPSTEMCO, a cooperative duly organized and registered under the laws of the Philippines.
+                        </p>
+
+                        <p class="text-justify leading-loose">
+                            I, shall pay <strong class="border-b border-slate-900 px-2 font-sans">${rec.shares || 4}</strong> shares with the total par value of 
+                            <strong class="border-b border-slate-900 px-2 font-sans text-coopGreen-900">${rec.totalParValueLabel || '₱ 0.00'}</strong> 
+                            through <strong class="border-b border-slate-900 px-2 font-sans uppercase">${rec.frequency || 'monthly'}</strong> installments through voluntary payment of chosen schedule.
+                        </p>
+
+                        <!-- SUBSCRIBER SIGNATURE -->
+                        <div class="flex justify-end pt-4 font-sans">
+                            <div class="text-center w-64 space-y-1 border-t border-slate-900 pt-1">
+                                <strong class="uppercase text-sm block text-slate-900">${firstMiddleFamily}</strong>
+                                <span class="text-xs text-slate-600 italic block">Signature over Printed Name of Member/Subscriber</span>
+                            </div>
+                        </div>
+
+                        <!-- CONFORME -->
+                        <div class="pt-4 space-y-3 font-sans">
+                            <p class="font-bold text-xs uppercase tracking-wider">Conforme:</p>
+                            <p class="font-bold text-sm uppercase">TALIBON PUBLIC SCHOOL TEACHERS AND EMPLOYEES MULTIPURPOSE COOPERATIVE</p>
+                            <div class="pt-6 w-56">
+                                <strong class="uppercase text-sm border-b border-slate-900 pb-0.5 block">REMEDIOS T. AUXTERO</strong>
+                                <span class="text-xs text-slate-600 italic block mt-0.5">Manager</span>
+                            </div>
+                        </div>
+
+                        <!-- WITNESSES -->
+                        <div class="pt-6 space-y-4 font-sans">
+                            <p class="font-bold text-center uppercase tracking-widest text-xs">SIGNED IN THE PRESENCE OF</p>
+                            <div class="grid grid-cols-2 gap-8 pt-2">
+                                <div class="text-center border-t border-slate-900 pt-1">
+                                    <span class="text-xs text-slate-600 italic">Witness Signature over Printed Name</span>
+                                </div>
+                                <div class="text-center border-t border-slate-900 pt-1">
+                                    <span class="text-xs text-slate-600 italic">Witness Signature over Printed Name</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- ACKNOWLEDGEMENT -->
+                        <div class="pt-6 border-t-2 border-slate-800 space-y-3 font-sans text-xs">
+                            <p class="font-bold uppercase tracking-widest text-sm font-serif">ACKNOWLEDGEMENT</p>
+                            <p class="text-justify leading-relaxed">
+                                I declare under oath that I <strong>PERSONALLY ACCOMPLISHED</strong> this Membership and subscription Agreement, and I acknowledge it to be my true, correct and complete statement pursuant to the provisions of pertinent laws, rules and regulations of the Philippines.
+                            </p>
+                            <p class="text-justify leading-relaxed">
+                                I also authorize the Manager of TAPSTEMCO or any duly designated to verify/validate the contents stated herein. I trust that this information shall remain confidential.
+                            </p>
+                            <div class="flex justify-end pt-8">
+                                <div class="text-center w-64 border-t border-slate-900 pt-1">
+                                    <span class="font-bold text-xs uppercase block">Administering Officer</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+        }
+    </script>
+</body>
+</html>

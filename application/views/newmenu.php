@@ -54,6 +54,13 @@ $current_member_id = ($current_user_data && isset($current_user_data->member_id)
                         <?php if (has_role(1, 'View_member_list')) { ?>
                             <li class="<?php echo ($activefunction == 'member_list' ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/member/member_list'); ?>"><?php echo lang('member_list'); ?></a></li>
                         <?php } ?>
+                        <?php if (has_role(1, 'View_membership_documents')) { ?>
+                            <?php /* Member's PDS / Application for Membership / Subscription Agreement.
+                                     Served by the membership_documents controller; the $active test is
+                                     forward-looking (no controller sets $active today, so no menu entry
+                                     highlights - existing behaviour, not specific to this link). */ ?>
+                            <li class="<?php echo ($active == 'membership_documents' ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/membership_documents/page'); ?>"><?php echo lang('member_membership_documents'); ?></a></li>
+                        <?php } ?>
                         <?php if (has_role(1, 'Manage_member_group')) { ?>
                             <li class="<?php echo ($activefunction == 'add_group' ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/member/add_group'); ?>"><?php echo lang('member_add_group'); ?></a></li>
                         <?php } ?>

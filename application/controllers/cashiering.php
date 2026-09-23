@@ -209,20 +209,37 @@ class Cashiering extends CI_Controller {
             return;
         }
 
-        $this->data['report'] = $report;
-        $this->data['breakdown'] = $this->cashiering_model->normalize_breakdown($report->cash_breakdown);
-        $this->data['totals'] = $this->cashiering_model->breakdown_totals($this->data['breakdown']);
-        $this->data['voided_by_name'] = $this->_voided_by_name($report);
+        $this->data = array_merge($this->data, $this->_sheet_print_data(
+            $report,
+            $this->cashiering_model->normalize_breakdown($report->cash_breakdown)
+        ));
         $this->data['autoprint'] = !empty($autoprint);
+        $this->data['pdf_url'] = site_url(current_lang() . '/cashiering/export_cash_count_pdf/' . (int) $report->id);
         $this->load->view('cashiering/print_cash_count_sheet', $this->data);
     }
 
     /**
-     * PDF download of a submitted sheet.
+     * View data shared by the browser preview and the PDF export.
      *
-     * Preferred path: print the HTML with a headless browser, so the download keeps
-     * the exact layout of the sheet - the same renderer the loan forms use. When no
-     * browser can be launched (typical on shared hosting) it falls back to TCPDF.
+     * $report is a cashiering_reports row or a draft object built by
+     * export_cash_count_pdf_draft(); $breakdown is already normalised. Keeping the
+     * two callers on one helper is what stops the preview and the PDF from drifting.
+     */
+    private function _sheet_print_data($report, $breakdown, $is_draft = FALSE) {
+        return array(
+            'report' => $report,
+            'breakdown' => $breakdown,
+            'totals' => $this->cashiering_model->breakdown_totals($breakdown),
+            'voided_by_name' => $this->_voided_by_name($report),
+            'is_draft' => $is_draft,
+            'sheet_url' => site_url(current_lang() . '/cashiering/cash_count_sheet'),
+            /* Read by both print views; only the Print tab turns it on. */
+            'autoprint' => FALSE,
+        );
+    }
+
+    /**
+     * PDF download of a submitted sheet.
      */
     public function export_cash_count_pdf($report_id) {
         $report = $this->cashiering_model->get_report($report_id);
@@ -232,32 +249,128 @@ class Cashiering extends CI_Controller {
             return;
         }
 
-        $this->data['report'] = $report;
-        $this->data['breakdown'] = $this->cashiering_model->normalize_breakdown($report->cash_breakdown);
-        $this->data['totals'] = $this->cashiering_model->breakdown_totals($this->data['breakdown']);
-        $this->data['voided_by_name'] = $this->_voided_by_name($report);
-        $this->data['autoprint'] = FALSE;
-        $html = $this->load->view('cashiering/print_cash_count_sheet', $this->data, TRUE);
-        $filename = 'cash_count_sheet_' . date('Ymd', strtotime($report->report_date)) . '.pdf';
+        $data = $this->_sheet_print_data(
+            $report,
+            $this->cashiering_model->normalize_breakdown($report->cash_breakdown)
+        );
+        $this->_cash_count_pdf_output(
+            $data,
+            'cash_count_sheet_' . date('Ymd', strtotime($report->report_date)) . '.pdf'
+        );
+    }
 
-        $pdf_file = FALSE;
-        if ($this->_cashiering_pdf_renderer()) {
-            $pdf_file = loan_form_html_to_pdf($html);
-        }
-
-        if ($pdf_file !== FALSE) {
-            $bytes = file_get_contents($pdf_file);
-            @unlink($pdf_file);
-            $this->output
-                ->set_content_type('application/pdf')
-                ->set_header('Content-Disposition: attachment; filename="' . $filename . '"')
-                ->set_header('Content-Length: ' . strlen($bytes))
-                ->set_output($bytes);
+    /**
+     * PDF of the sheet exactly as it stands on screen, WITHOUT saving it.
+     *
+     * The Export to PDF button on an unsubmitted sheet posts the form here rather
+     * than to cash_count_sheet(), so a cashier can check the printed layout - or hand
+     * it to the auditor - before committing the count. Nothing is written: the same
+     * flat field names are read, totalled and printed, and the sheet is stamped
+     * "Draft - not yet submitted" so it cannot be mistaken for the filed copy.
+     */
+    public function export_cash_count_pdf_draft() {
+        if (!$this->input->post()) {
+            redirect(current_lang() . '/cashiering/cash_count_sheet', 'refresh');
             return;
         }
 
-        log_message('error', 'Cashiering PDF: no headless browser for report ' . (int) $report->id . '; using TCPDF.');
-        $this->_cashiering_tcpdf_output($this->_html_body($html), $filename);
+        $denoms = cashiering_denominations();
+
+        /* Rebuild the nested grid from the flat posted field names, exactly as the
+           save path in cash_count_sheet() does. */
+        $grid = array('bills' => array(), 'coins' => array());
+        foreach ($denoms['bills'] as $denom) {
+            $grid['bills'][$denom['key']] = array(
+                'bundles' => $this->input->post('bundles_' . $denom['key']),
+                'loose' => $this->input->post('loose_' . $denom['key']),
+            );
+        }
+        foreach ($denoms['coins'] as $denom) {
+            $grid['coins'][$denom['key']] = array(
+                'rolls' => $this->input->post('rolls_' . $denom['key']),
+                'loose' => $this->input->post('loose_' . $denom['key']),
+            );
+        }
+        $grid['other'] = array(
+            'checks' => $this->input->post('checks'),
+            'advances' => $this->input->post('advances'),
+            'others' => $this->input->post('others'),
+        );
+        $grid['meta'] = array(
+            'fund_name' => trim((string) $this->input->post('fund_name')),
+            'accountable_person' => trim((string) $this->input->post('accountable_person')),
+            'counted_by' => trim((string) $this->input->post('counted_by')),
+            'other_funds' => trim((string) $this->input->post('other_funds')),
+            'others_specify' => trim((string) $this->input->post('others_specify')),
+        );
+
+        $breakdown = $this->cashiering_model->normalize_breakdown($grid);
+        $totals = $this->cashiering_model->breakdown_totals($breakdown);
+
+        $report_date = $this->input->post('report_date') ?: date('Y-m-d');
+
+        /* Cash on hand per books defaults to the system figure but the cashier may
+           override it, so an empty box falls back to the day's expectation. */
+        $posted_on_hand = $this->input->post('cash_on_hand_books');
+        if ($posted_on_hand === NULL || $posted_on_hand === '') {
+            $day = $this->cashiering_model->get_daily_summary($report_date);
+            $cash_on_hand = floatval($day['expected_cash']);
+        } else {
+            $cash_on_hand = floatval(str_replace(',', '', $posted_on_hand));
+        }
+
+        /* Shaped like a cashiering_reports row, so the print views need no special case. */
+        $report = (object) array(
+            'id' => NULL,
+            'status' => 'draft',
+            'report_date' => $report_date,
+            'cashier_name' => $grid['meta']['accountable_person'] !== ''
+                ? $grid['meta']['accountable_person']
+                : trim((string) $this->input->post('cashier_name')),
+            'expected_cash' => $cash_on_hand,
+            'over_short' => $totals['grand_total'] - $cash_on_hand,
+            'notes' => trim((string) $this->input->post('notes')),
+        );
+
+        $this->_cash_count_pdf_output(
+            $this->_sheet_print_data($report, $breakdown, TRUE),
+            'cash_count_sheet_draft_' . date('Ymd', strtotime($report_date)) . '.pdf'
+        );
+    }
+
+    /**
+     * Stream a PDF of the sheet.
+     *
+     * Preferred path: print the Tailwind sheet with a headless browser, so the
+     * download keeps the exact layout of the sheet the cashier sees - the same
+     * renderer the loan forms use.
+     *
+     * When no browser can be launched (typical on shared hosting) it falls back to
+     * print_cash_count_sheet_tcpdf.php, a separate table-based view written for a
+     * renderer that understands neither CSS nor Tailwind class names. That is a
+     * plainer sheet by necessity - it is a legibility net, not a second design - so
+     * the Tailwind view stays the one that defines the sheet's look.
+     */
+    private function _cash_count_pdf_output($data, $filename) {
+        $html = $this->load->view('cashiering/print_cash_count_sheet', $data, TRUE);
+
+        if ($this->_cashiering_pdf_renderer()) {
+            $pdf_file = loan_form_html_to_pdf($html);
+            if ($pdf_file !== FALSE) {
+                $bytes = file_get_contents($pdf_file);
+                @unlink($pdf_file);
+                $this->output
+                    ->set_content_type('application/pdf')
+                    ->set_header('Content-Disposition: attachment; filename="' . $filename . '"')
+                    ->set_header('Content-Length: ' . strlen($bytes))
+                    ->set_output($bytes);
+                return;
+            }
+        }
+
+        log_message('error', 'Cashiering PDF: no headless browser; using the TCPDF fallback view.');
+        $fallback = $this->load->view('cashiering/print_cash_count_sheet_tcpdf', $data, TRUE);
+        $this->_cashiering_tcpdf_output($this->_html_body($fallback), $filename);
     }
 
     /**

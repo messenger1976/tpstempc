@@ -28,6 +28,20 @@ $pieces = (int) $denoms['pieces_per_unit'];
 $company_name = !empty($company->name) ? strtoupper($company->name) : 'TALIBON PUBLIC SCHOOL TEACHERS & EMPLOYEES';
 $company_address = !empty($company->address) ? $company->address : 'Purok 1 North Road San Jose, Talibon, Bohol';
 
+/* Official cooperative crest. config/constants.php owns the file name so every
+   printed form re-brands from one place; the company logo is the fallback, and
+   when neither file exists the sheet falls back to the drawn text badge. */
+$logo_file = (defined('TAPSTEMCO_FORM_LOGO') && TAPSTEMCO_FORM_LOGO !== '')
+    ? TAPSTEMCO_FORM_LOGO
+    : (!empty($company->logo) ? $company->logo : '');
+$logo_src = '';
+if ($logo_file !== '') {
+    $logo_path = defined('FCPATH') ? FCPATH . 'logo/' . $logo_file : '';
+    if ($logo_path !== '' && is_file($logo_path)) {
+        $logo_src = base_url('logo/' . $logo_file);
+    }
+}
+
 $accountable = !empty($meta['accountable_person'])
     ? $meta['accountable_person']
     : (!empty($report->cashier_name) ? $report->cashier_name : current_user()->first_name . ' ' . current_user()->last_name);
@@ -63,9 +77,17 @@ $voided_on = !empty($report->voided_at) ? date('d-m-Y H:i', strtotime($report->v
             <a class="cc-btn cc-btn-light" href="<?php echo site_url(current_lang() . '/cashiering/dashboard'); ?>">Back</a>
             <?php if (!empty($report->id)): ?>
                 <a class="cc-btn cc-btn-dark" target="_blank" href="<?php echo site_url(current_lang() . '/cashiering/cash_count_sheet_print/' . $report->id . '/1'); ?>">Print</a>
-                <a class="cc-btn cc-btn-light" href="<?php echo site_url(current_lang() . '/cashiering/export_cash_count_pdf/' . $report->id); ?>">Export PDF</a>
+                <a class="cc-btn cc-btn-light" href="<?php echo site_url(current_lang() . '/cashiering/export_cash_count_pdf/' . $report->id); ?>">Export to PDF</a>
             <?php else: ?>
                 <button type="button" class="cc-btn cc-btn-dark" onclick="window.print();">Print</button>
+                <?php /*
+                 * An unsubmitted sheet has no row to export, so the form is posted to a
+                 * read-only route that renders the PDF from the values on screen and
+                 * writes nothing. The response is an attachment, so this page stays put.
+                 */ ?>
+                <button type="submit" form="ccSheetForm"
+                        formaction="<?php echo site_url(current_lang() . '/cashiering/export_cash_count_pdf_draft'); ?>"
+                        formmethod="post" class="cc-btn cc-btn-light">Export to PDF</button>
             <?php endif; ?>
             <?php if ($is_void): ?>
                 <a class="cc-btn cc-btn-green" href="<?php echo site_url(current_lang() . '/cashiering/cash_count_sheet'); ?>">Start a New Count</a>
@@ -93,7 +115,11 @@ $voided_on = !empty($report->voided_at) ? date('d-m-Y H:i', strtotime($report->v
 
             <div class="cc-head">
                 <div class="cc-emblem">
-                    <div><b>TAPSTEMCO</b><span>Cooperative</span></div>
+                    <?php if ($logo_src !== ''): ?>
+                        <img src="<?php echo htmlspecialchars($logo_src, ENT_QUOTES, 'UTF-8'); ?>" alt="<?php echo htmlspecialchars($company_name, ENT_QUOTES, 'UTF-8'); ?>" />
+                    <?php else: ?>
+                        <div><b>TAPSTEMCO</b><span>Cooperative</span></div>
+                    <?php endif; ?>
                 </div>
                 <h2 class="cc-coop"><?php echo htmlspecialchars($company_name, ENT_QUOTES, 'UTF-8'); ?></h2>
                 <h3 class="cc-coop-sub">Multipurpose Cooperative</h3>
@@ -387,9 +413,9 @@ $voided_on = !empty($report->voided_at) ? date('d-m-Y H:i', strtotime($report->v
     .cash-count-sheet .cc-head { position: relative; text-align: center; padding-bottom: 14px;
         margin-bottom: 18px; border-bottom: 1px solid #cbd5e1; }
     .cash-count-sheet .cc-emblem { position: absolute; left: 0; top: 0; width: 74px; height: 74px;
-        border-radius: 50%; border: 2px solid #047857; background: #ecfdf5; display: none;
-        align-items: center; justify-content: center; text-align: center; line-height: 1.15;
-        color: #065f46; font-weight: 700; box-shadow: inset 0 0 0 3px #fff; }
+        display: none; align-items: center; justify-content: center; text-align: center;
+        line-height: 1.15; color: #065f46; font-weight: 700; }
+    .cash-count-sheet .cc-emblem img { display: block; width: 100%; height: 100%; object-fit: contain; }
     .cash-count-sheet .cc-emblem b { display: block; font-size: 9px; color: #0f172a; }
     .cash-count-sheet .cc-emblem span { font-size: 7px; font-weight: 400; }
     @media (min-width: 640px) { .cash-count-sheet .cc-emblem { display: flex; } }

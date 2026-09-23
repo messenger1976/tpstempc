@@ -101,9 +101,12 @@ class Loanbase {
                 $array['interest'] = round($interest, 2);
                 $array['principle'] = round(($repayamount - $interest), 2);
                 $balance = ($initialprinciple - $array['principle']);
+                // Clamp the running principal, not just the stored balance: a negative
+                // running figure bills interest on a negative principal and makes every
+                // later row negative. schedule_overrun() is what refuses such a contract.
                 $array['balance'] = ($balance > 0 ? round($balance, 2) : 0);
                 $schedule[] = $array;
-                $initialprinciple = $balance;
+                $initialprinciple = $array['balance'];
                 $date1 = date("Y-m-d", strtotime(date("Y-m-d", strtotime($date)) .$increase_day));
                 $date = $date1;
             }
@@ -125,9 +128,10 @@ class Loanbase {
                 $array['interest'] = round($interest, 2);
                 $array['principle'] = round(($repayamount - $interest), 2);
                 $balance = ($initialprinciple - $array['principle']);
+                // Same clamp as the declining-balance block above.
                 $array['balance'] = ($balance > 0 ? round($balance, 2) : 0);
                 $schedule[] = $array;
-                $initialprinciple = $balance;
+                $initialprinciple = $array['balance'];
                 $date1 = date("Y-m-d", strtotime(date("Y-m-d", strtotime($date)) . $increase_day));
                 $date = $date1;
             }
@@ -135,8 +139,49 @@ class Loanbase {
         return $schedule;
     }
 
-    function rowd($repay, $rate, $installment, $interval = 1) {
+    /**
+     * Does a generated schedule actually amortise the principal it was built from?
+     *
+     * create_repayment_schedule() spreads the contract's own installment_amount over
+     * the contract's own basic_amount / number_istallment / rate. When those figures
+     * disagree (a contract edited after the fact, a reloan, an imported schedule), the
+     * term either repays the whole principal long before it ends - which is what used
+     * to leave a negative running balance and negative interest on every later row -
+     * or never repays it at all. Those rows are what the Amount Due panels show as
+     * Principal / Interest and what the repayment planner posts to the GL, so such a
+     * contract must be corrected rather than stored.
+     *
+     * Read-only. Call it before writing a schedule.
+     *
+     * @param array $schedule         rows from create_repayment_schedule()
+     * @param float $initialprinciple loan_contract.basic_amount
+     * @return array{ok:bool,total_principle:float,overrun:float,shortfall:float,negative_rows:int}
+     */
+    function schedule_overrun(array $schedule, $initialprinciple) {
+        $principal = round((float) $initialprinciple, 2);
+        $total_principle = 0.0;
+        $negative_rows = 0;
+        foreach ($schedule as $row) {
+            $total_principle += isset($row['principle']) ? (float) $row['principle'] : 0.0;
+            if (isset($row['interest']) && (float) $row['interest'] < 0) {
+                $negative_rows++;
+            }
+        }
+        $total_principle = round($total_principle, 2);
+        // Rounding across the term moves this by cents; half a percent (or a peso, for a
+        // small loan) is the boundary between rounding and terms that disagree.
+        $tolerance = round(max(1.00, abs($principal) * 0.005), 2);
+        $delta = round($total_principle - $principal, 2);
+        return array(
+            'ok' => ($negative_rows === 0 && abs($delta) <= $tolerance),
+            'total_principle' => $total_principle,
+            'overrun' => round(max(0, $delta), 2),
+            'shortfall' => round(max(0, -$delta), 2),
+            'negative_rows' => (int) $negative_rows,
+        );
+    }
 
+    function rowd($repay, $rate, $installment, $interval = 1) {
         $rate_required = 0;
         //$increate_day//
         if ($interval == 1) {

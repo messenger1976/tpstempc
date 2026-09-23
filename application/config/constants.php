@@ -76,25 +76,54 @@ if (!defined('TAPSTEMCO_FORM_LOGO')) {
 |--------------------------------------------------------------------------
 | Loan penalty assessment
 |--------------------------------------------------------------------------
+| An installment whose repayment date is past its due date + grace period is
+| charged the FULL penalty percentage ONCE on that installment:
+|
+|   method 2  penalty = penalt_percentage / 100 x (row principal + row interest)
+|   method 1  penalty = penalt_percentage / 100 x (row principal)
+|
+| The penalty base is the unpaid installment, never the loan amount (Lending
+| Policy wording: "2% of the unpaid monthly amortization including interest" -
+| see ESKB 10_LOANS/LOAN_LENDING_POLICY_PENALTY_COMPLIANCE.md).
+|
+| Cooperative decision 2026-09-22:
+|   1. The penalty is NEVER pro-rated. As soon as the repayment date is past the
+|      grace end the whole percentage is charged - an installment 1 day past
+|      grace pays the same penalty as one 29 days past grace.
+|   2. The penalty does NOT grow while an installment stays unpaid. It is charged
+|      once for that installment; two missed installments are two penalties, one
+|      each. (The Amount Due panel therefore prints Penalty months = 1.)
+|
+| That is what TAPSTEMCO_PENALTY_PERIOD_DAYS = 0 means below ("once"), and it is
+| the setting every PIN 105 product inherits (all nine store a blank penalty
+| period). A product that explicitly stores a period of N days re-enables the
+| escalating reading for that product: whole N-day periods past the grace end,
+| rounded up, still never a fraction.
+|
 | TAPSTEMCO_PENALTY_PRORATE
-|   TRUE  - penalty is pro-rated over 30-day periods counted from the end of
-|           the grace period (15 days past grace = half a month).
-|   FALSE - policy mode: after the grace period, charge a full monthly penalty
-|           period; a partial month is not prorated.
-| The cooperative Lending Policy specifies 5 days grace and 2% of the unpaid
-| monthly amortization including interest. Product-specific settings still
-| override the grace/period defaults when explicitly configured. This affects
-| future previews and postings only; posted penalties are not rewritten.
+|   TRUE  - the period factor is days past the grace end / the period, i.e. a
+|           FRACTION of a penalty unit (the reading in force during 2026-09-22
+|           until the decision above reverted it).
+|   FALSE - whole periods only, rounded up, never a fraction. Restored on
+|           2026-09-22 with the once rule, so a product that does set its own
+|           period can never bill a fraction of it either.
+|
+| This affects future previews and postings only; posted penalties are not
+| rewritten. Compare the once rule now in force against the escalating (whole
+| period, growing) counterfactual at report_loan/loan_penalty_review.
 */
 if (!defined('TAPSTEMCO_PENALTY_PRORATE')) {
     define('TAPSTEMCO_PENALTY_PRORATE', FALSE);
 }
 
 /**
- * Days in the pro-rated penalty period (30-day month convention).
+ * Days per penalty period.
+ *   0 = charge the penalty ONCE per overdue installment (system policy).
+ *   N = charge another whole period each N days past the grace end.
+ * Products that store their own penalt_period_days override this entirely.
  */
 if (!defined('TAPSTEMCO_PENALTY_PERIOD_DAYS')) {
-    define('TAPSTEMCO_PENALTY_PERIOD_DAYS', 30);
+    define('TAPSTEMCO_PENALTY_PERIOD_DAYS', 0);
 }
 
 /*

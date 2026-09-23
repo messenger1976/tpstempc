@@ -37,13 +37,21 @@ if ($interval) {
 
 $loan_lid = $loaninfo ? $loaninfo->LID : '';
 $sum_paid = 0;
+$sum_principle = 0;
+$sum_interest = 0;
+$sum_penalt = 0;
 $total_debit = 0;
 $total_credit = 0;
 foreach ($ledger_transactions as $r) {
     $total_debit += (float) $r->debit;
     $total_credit += (float) $r->credit;
-    if (isset($r->type) && $r->type === 'repayment' && !empty($r->amount_paid)) {
-        $sum_paid += (float) $r->amount_paid;
+    if (isset($r->type) && $r->type === 'repayment') {
+        $sum_principle += isset($r->principle) ? (float) $r->principle : 0;
+        $sum_interest += isset($r->interest) ? (float) $r->interest : 0;
+        $sum_penalt += isset($r->penalt) ? (float) $r->penalt : 0;
+        if (!empty($r->amount_paid)) {
+            $sum_paid += (float) $r->amount_paid;
+        }
     }
 }
 $closing_balance = $total_credit - $total_debit;
@@ -466,6 +474,7 @@ $closing_balance = $total_credit - $total_debit;
                                 <th><?php echo lang('loan_ledger_date'); ?></th>
                                 <th><?php echo lang('loan_ledger_description'); ?></th>
                                 <th><?php echo lang('loan_ledger_schedule'); ?></th>
+                                <th style="text-align:right;"><?php echo lang('loan_ledger_principal'); ?></th>
                                 <th style="text-align:right;"><?php echo lang('loan_ledger_interest'); ?></th>
                                 <th style="text-align:right;"><?php echo lang('loan_ledger_penalty'); ?></th>
                                 <th style="text-align:right;"><?php echo lang('loan_ledger_amount_paid'); ?></th>
@@ -505,6 +514,7 @@ $closing_balance = $total_credit - $total_debit;
                                         <span class="type-pill <?php echo $pill_class; ?>"><?php echo htmlspecialchars($desc, ENT_QUOTES, 'UTF-8'); ?></span>
                                     </td>
                                     <td><?php echo $schedule_text; ?></td>
+                                    <td class="amount-cell"><?php echo $is_repayment && isset($row->principle) && $row->principle > 0 ? number_format($row->principle, 2) : '&mdash;'; ?></td>
                                     <td class="amount-cell"><?php echo $is_repayment && isset($row->interest) && $row->interest > 0 ? number_format($row->interest, 2) : '&mdash;'; ?></td>
                                     <td class="amount-cell"><?php echo $is_repayment && isset($row->penalt) && $row->penalt > 0 ? number_format($row->penalt, 2) : '&mdash;'; ?></td>
                                     <td class="amount-cell"><?php echo $is_repayment && isset($row->amount_paid) && $row->amount_paid > 0 ? number_format($row->amount_paid, 2) : '&mdash;'; ?></td>
@@ -525,7 +535,10 @@ $closing_balance = $total_credit - $total_debit;
                         </tbody>
                         <tfoot>
                             <tr>
-                                <th colspan="5" style="text-align:right;"><?php echo lang('loan_ledger_total'); ?></th>
+                                <th colspan="3" style="text-align:right;"><?php echo lang('loan_ledger_total'); ?></th>
+                                <th class="amount-cell"><?php echo number_format($sum_principle, 2); ?></th>
+                                <th class="amount-cell"><?php echo number_format($sum_interest, 2); ?></th>
+                                <th class="amount-cell"><?php echo number_format($sum_penalt, 2); ?></th>
                                 <th class="amount-cell"><?php echo number_format($sum_paid, 2); ?></th>
                                 <th class="amount-cell debit-cell"><?php echo number_format($total_debit, 2); ?></th>
                                 <th class="amount-cell credit-cell"><?php echo number_format($total_credit, 2); ?></th>

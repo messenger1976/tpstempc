@@ -26,6 +26,29 @@
     gap: 6px 16px;
     margin-top: 8px;
 }
+.loan-repayment-terms {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px 16px;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px dashed #c9ebe3;
+}
+.loan-repayment-terms .terms-head {
+    grid-column: 1 / -1;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    color: #0e7c69;
+}
+@media (max-width: 991px) {
+    .loan-repayment-terms { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 767px) {
+    .loan-repayment-meta { grid-template-columns: 1fr; }
+    .loan-repayment-terms { grid-template-columns: 1fr; }
+}
 .received-from-detail {
     background: #fafbfc;
     border: 1px solid #e7eaec;
@@ -622,7 +645,14 @@ if (isset($message) && !empty($message)) {
                 statusOverdue: <?php echo json_encode(lang('loan_repay_status_overdue')); ?>,
                 nothingDue: <?php echo json_encode(lang('loan_repay_nothing_due')); ?>,
                 dueExplanation: <?php echo json_encode(lang('loan_repay_due_explanation')); ?>,
-                minApply: <?php echo json_encode(lang('loan_repay_amount_insufficient')); ?>
+                minApply: <?php echo json_encode(lang('loan_repay_amount_insufficient')); ?>,
+                loanTerms: <?php echo json_encode(lang('cash_receipt_loan_terms')); ?>,
+                loanTerm: <?php echo json_encode(lang('cash_receipt_loan_term')); ?>,
+                loanAmount: <?php echo json_encode(lang('cash_receipt_loan_amount')); ?>,
+                loanInterestRate: <?php echo json_encode(lang('cash_receipt_loan_interest_rate')); ?>,
+                loanMonthly: <?php echo json_encode(lang('cash_receipt_loan_monthly_installment')); ?>,
+                loanFirstInstallment: <?php echo json_encode(lang('cash_receipt_loan_first_installment')); ?>,
+                loanTotalObligation: <?php echo json_encode(lang('cash_receipt_loan_total_obligation')); ?>
             };
             var loanDueState = { suggested: 0, minimum: 0 };
             var currentReceiptId = <?php echo isset($receipt->id) ? (int) $receipt->id : 0; ?>;
@@ -884,6 +914,22 @@ if (isset($message) && !empty($message)) {
                 return v.toFixed(2);
             }
 
+            // Amount that means nothing when the contract has no value yet.
+            function moneyOrDash(v) {
+                var n = parseFloat(v);
+                return (isNaN(n) || n <= 0) ? '&mdash;' : formatMoney(n);
+            }
+
+            // Schedule dates arrive as Y-m-d; the rest of the form shows d-m-Y.
+            function formatDateDmy(value) {
+                var raw = String(value || '').substr(0, 10);
+                var parts = raw.split('-');
+                if (parts.length !== 3 || parts[0].length !== 4) {
+                    return raw || '&mdash;';
+                }
+                return parts[2] + '-' + parts[1] + '-' + parts[0];
+            }
+
             // Footer total for a component: prefer the server total, fall back to the rows.
             function dueTotalOf(due, itemField, totalField) {
                 if (due && due[totalField] != null) {
@@ -957,6 +1003,26 @@ if (isset($message) && !empty($message)) {
                 $('#loanRepaymentDueWrap').show();
             }
 
+            // Contract terms behind the balance, so the cashier can answer the
+            // member without leaving the receipt (term, amount, rate, installment,
+            // first due date, total obligation).
+            function loanTermsHtml(loan) {
+                var interval = loan.interval_label || '';
+                var term = loan.term ? String(loan.term) : '';
+                if (term && interval) { term += ' ' + interval; }
+                var rate = parseFloat(loan.interest_rate);
+                var html = '<div class="loan-repayment-terms">';
+                html += '<div class="terms-head">' + i18n.loanTerms + '</div>';
+                html += '<div><strong>' + i18n.loanTerm + ':</strong> ' + (term || '&mdash;') + '</div>';
+                html += '<div><strong>' + i18n.loanAmount + ':</strong> ' + moneyOrDash(loan.loan_amount) + '</div>';
+                html += '<div><strong>' + i18n.loanInterestRate + ':</strong> ' + ((!isNaN(rate) && rate > 0) ? formatMoney(rate) + '%' : '&mdash;') + '</div>';
+                html += '<div><strong>' + i18n.loanMonthly + ':</strong> ' + moneyOrDash(loan.monthly_installment) + '</div>';
+                html += '<div><strong>' + i18n.loanFirstInstallment + ':</strong> ' + formatDateDmy(loan.first_installment_date) + '</div>';
+                html += '<div><strong>' + i18n.loanTotalObligation + ':</strong> ' + moneyOrDash(loan.total_loan) + '</div>';
+                html += '</div>';
+                return html;
+            }
+
             function renderLinkedLoan(loan){
                 if (!loan) {
                     $('#loanRepaymentPanel').hide();
@@ -972,6 +1038,7 @@ if (isset($message) && !empty($message)) {
                 html += '<div><strong>Outstanding:</strong> ' + formatMoney(loan.outstanding) + '</div>';
                 html += '<div><strong>Amount Due:</strong> ' + formatMoney(loan.amount_due || loan.suggested_amount) + '</div>';
                 html += '</div>';
+                html += loanTermsHtml(loan);
                 $('#loanRepaymentPanelBody').html(html);
                 $('#loanRepaymentPanel').show();
                 if (loan.due) {

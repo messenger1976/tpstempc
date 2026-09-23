@@ -309,4 +309,14 @@ $lang['myclient_religion_structure']='Create Client Account';
 $lang['myclients_list']='Client List';
 $lang['account_no']='Account#';
 
+// Cash Receipt — loan panel terms
+$lang['cash_receipt_loan_panel'] = 'Loan';
+$lang['cash_receipt_loan_terms'] = 'Loan Terms';
+$lang['cash_receipt_loan_term'] = 'Term';
+$lang['cash_receipt_loan_amount'] = 'Loan Amount';
+$lang['cash_receipt_loan_interest_rate'] = 'Interest Rate';
+$lang['cash_receipt_loan_monthly_installment'] = 'Monthly Installment';
+$lang['cash_receipt_loan_first_installment'] = 'First Installment';
+$lang['cash_receipt_loan_total_obligation'] = 'Total Loan Obligation';
+
 ?>

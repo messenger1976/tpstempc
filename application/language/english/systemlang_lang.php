@@ -23,6 +23,17 @@ $lang['cic_export_menu'] = 'CIC Credit Export';
 $lang['page_report'] = 'Reports';
 $lang['page_supplier'] = 'Supplier';
 $lang['page_account'] = 'Client Account';
+$lang['page_cashiering'] = 'Cashiering';
+$lang['cashiering_dashboard'] = 'Cashiering Dashboard';
+$lang['cashiering_cash_count_sheet'] = 'Cash Count Sheet';
+$lang['cashiering_report_saved'] = 'Cash count report saved successfully.';
+$lang['cashiering_report_fail'] = 'Failed to save cash count report.';
+$lang['cashiering_no_report'] = 'Cash count report not found.';
+$lang['cashiering_void_title'] = 'Void Cash Count Report';
+$lang['cashiering_report_voided'] = 'Cash count report voided. Submit a corrected count.';
+$lang['cashiering_report_void_fail'] = 'Failed to void the cash count report.';
+$lang['cashiering_void_reason_required'] = 'Enter the reason for voiding this report.';
+$lang['cashiering_void_not_allowed'] = 'You cannot void this report. Only an admin, or the cashier who submitted the current report, may void it.';
 
 
 $lang['home'] = 'Home';
@@ -478,6 +489,13 @@ $lang['cash_receipt_no_repayable_loans'] = 'This member has no disbursed loans w
 $lang['cash_receipt_loan_not_found'] = 'The selected loan was not found.';
 $lang['cash_receipt_loan_list_hint'] = 'Select a loan to tag this cash receipt to that member loan.';
 $lang['cash_receipt_loan_panel'] = 'Loan';
+$lang['cash_receipt_loan_terms'] = 'Loan Terms';
+$lang['cash_receipt_loan_term'] = 'Term';
+$lang['cash_receipt_loan_amount'] = 'Loan Amount';
+$lang['cash_receipt_loan_interest_rate'] = 'Interest Rate';
+$lang['cash_receipt_loan_monthly_installment'] = 'Monthly Installment';
+$lang['cash_receipt_loan_first_installment'] = 'First Installment';
+$lang['cash_receipt_loan_total_obligation'] = 'Total Loan Obligation';
 $lang['cash_receipt_loan_payment_amount'] = 'Payment amount';
 $lang['cash_receipt_select_member_first'] = 'Select a member to show their loans.';
 $lang['cash_receipt_payment_method_account_missing'] = 'No GL account is mapped for this payment method.';
@@ -517,6 +535,26 @@ $lang['all_dates'] = 'All dates';
 $lang['account_code'] = 'Account Code';
 $lang['report_generated'] = 'Report Generated';
 $lang['close'] = 'Close';
+
+// Cashiering Module
+$lang['cashiering_dashboard'] = 'Cashiering Dashboard';
+$lang['cashiering_cash_count_sheet'] = 'Cash Count Sheet';
+$lang['cashiering_beginning_cash'] = 'Beginning Cash';
+$lang['cashiering_cash_in'] = 'Cash In';
+$lang['cashiering_cash_out'] = 'Cash Out';
+$lang['cashiering_net_cash'] = 'Net Cash';
+$lang['cashiering_expected_cash'] = 'Expected Cash on Hand';
+$lang['cashiering_over_short'] = 'Overage / Shortage';
+$lang['cashiering_submit_report'] = 'Submit Daily Cash Report';
+$lang['cashiering_print_report'] = 'Print Report';
+$lang['cashiering_export_pdf'] = 'Export PDF';
+$lang['cashiering_report_saved'] = 'Daily cash report saved successfully.';
+$lang['cashiering_report_fail'] = 'Failed to save the cash report.';
+$lang['cashiering_no_report'] = 'No report exists for the selected date.';
+$lang['cashiering_report_date'] = 'Report Date';
+$lang['cashiering_cashier'] = 'Cashier';
+$lang['cashiering_admin_approval'] = 'Admin Approval';
+$lang['cashiering_report_list'] = 'Cash Count Reports';
 
 // Cash Disbursement Module
 $lang['page_cash_disbursement'] = 'Cash Disbursement';

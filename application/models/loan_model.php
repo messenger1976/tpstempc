@@ -394,12 +394,50 @@ class Loan_Model extends CI_Model {
         }
         $breakdown = $this->get_loan_outstanding_for_offset($lid);
 
+        // Loan terms for the collection panel: the cashier needs the contract
+        // behind the balance (term, amount, rate, installment, first due date)
+        // to answer the member's questions without leaving the receipt.
+        $interval_label = '';
+        if (isset($loan->interval) && $loan->interval !== '' && $loan->interval !== null) {
+            $interval_row = $this->setting_model->intervalinfo($loan->interval)->row();
+            if ($interval_row) {
+                $interval_label = isset($interval_row->description) && $interval_row->description !== ''
+                    ? $interval_row->description
+                    : (isset($interval_row->name) ? $interval_row->name : '');
+            }
+        }
+        // The first scheduled installment (earliest row), falling back to the
+        // release + one period rule for a loan whose schedule was never built.
+        $first_installment_date = '';
+        $first_schedule = $this->db->select('repaydate')
+            ->where('LID', $lid)
+            ->where('PIN', $pin)
+            ->order_by('installment_number', 'ASC')
+            ->limit(1)
+            ->get('loan_contract_repayment_schedule')
+            ->row();
+        if ($first_schedule && !empty($first_schedule->repaydate)) {
+            $first_installment_date = $first_schedule->repaydate;
+        } else {
+            $fallback_first_due = $this->loan_first_due_date($lid, $pin);
+            if (!empty($fallback_first_due)) {
+                $first_installment_date = $fallback_first_due;
+            }
+        }
+
         return array(
             'LID' => $lid,
             'PID' => isset($loan->PID) ? $loan->PID : '',
             'member_id' => isset($loan->member_id) ? $loan->member_id : '',
             'product_name' => $product ? $product->name : '',
             'status_name' => $status_name,
+            'loan_amount' => isset($loan->basic_amount) ? round(floatval($loan->basic_amount), 2) : 0,
+            'interest_rate' => isset($loan->rate) && $loan->rate !== '' && $loan->rate !== null ? floatval($loan->rate) : 0,
+            'term' => isset($loan->number_istallment) ? (int) $loan->number_istallment : 0,
+            'interval_label' => $interval_label,
+            'monthly_installment' => isset($loan->installment_amount) ? round(floatval($loan->installment_amount), 2) : 0,
+            'first_installment_date' => $first_installment_date,
+            'total_loan' => isset($loan->total_loan) ? round(floatval($loan->total_loan), 2) : 0,
             'outstanding' => $breakdown ? round(floatval($breakdown['total']), 2) : 0,
             'amount_due' => isset($due->suggested_amount) ? round(floatval($due->suggested_amount), 2) : $cash_total,
             'suggested_amount' => isset($due->suggested_amount) ? round(floatval($due->suggested_amount), 2) : $cash_total,
@@ -931,8 +969,10 @@ class Loan_Model extends CI_Model {
     }
 
     /**
-     * Add penalty_days to loan_contract_repayment so a pro-rated (fractional
-     * month) penalty keeps its day count for audit; penalty_months is an INT.
+     * Add penalty_days to loan_contract_repayment so the days an overdue penalty
+     * covers keep their count for audit. penalty_months is an INT and now always
+     * stores 1 for an overdue row, because the penalty is a single flat charge
+     * (see _penalty_state()).
      */
     function ensure_repayment_penalty_days_column() {
         if (!$this->db->table_exists('loan_contract_repayment')) {
@@ -3677,16 +3717,19 @@ class Loan_Model extends CI_Model {
      * Penalty accrual period for a product, in days.
      * 0 = the penalty percentage is charged ONCE per overdue installment;
      * N>0 = charged per N days past the grace end (30 = monthly, 7 = weekly, 1 = daily).
-     * The product's penalt_period_days wins; blank/NULL falls back to the system default
-     * (TAPSTEMCO_PENALTY_PERIOD_DAYS, 30 days).
+     * The product's penalt_period_days wins; blank/NULL falls back to the system
+     * default (TAPSTEMCO_PENALTY_PERIOD_DAYS, **0 = once** since the 2026-09-22
+     * cooperative decision: no proration and no growth while an installment sits
+     * unpaid). Only a product that explicitly stores a period of its own
+     * re-enables the escalating reading, for that product only.
      *
      * @param object|null $product loan_product row
      * @return int days per penalty period (0 = once)
      */
     function get_penalt_period_days($product = null) {
-        $default = defined('TAPSTEMCO_PENALTY_PERIOD_DAYS') ? (int) TAPSTEMCO_PENALTY_PERIOD_DAYS : 30;
-        if ($default < 1) {
-            $default = 30;
+        $default = defined('TAPSTEMCO_PENALTY_PERIOD_DAYS') ? (int) TAPSTEMCO_PENALTY_PERIOD_DAYS : 0;
+        if ($default < 0) {
+            $default = 0;
         }
         if (!$this->_product_sets_penalt_period($product)) {
             return $default;
@@ -3705,15 +3748,27 @@ class Loan_Model extends CI_Model {
      * Grace = product penalt_grace_days when set, else MAX_NUMBER_DAYS_OVERDUE_PENALT.
      * Method 1 = % of the instalment principal, method 2 = % of principal + interest.
      *
-        * TAPSTEMCO_PENALTY_PRORATE (default FALSE) charges a full monthly penalty
-        * period after grace, matching the cooperative policy. When explicitly TRUE,
-        * the configured period is prorated by days past the grace end.
+     * The repayment date decides everything (cooperative decision 2026-09-22):
+     *
+     *   paydate <= due date + grace          -> not overdue, no penalty
+     *   paydate >  due date + grace          -> OVERDUE, charged ONE full penalty on
+     *                                           this installment, never a fraction of
+     *                                           it and never more than once, however
+     *                                           long the installment then sits unpaid
+     *
+     * With the system period at 0 a product inherits "once" (see
+     * get_penalt_period_days()); a product that stores its own period of N days
+     * charges whole N-day periods past the grace end, rounded up, and
+     * TAPSTEMCO_PENALTY_PRORATE = FALSE keeps those whole too, so nothing is ever
+     * billed as a fraction of a period.
      *
      * @param object|null $product loan_product row
      * @param object      $row     loan_contract_repayment_schedule row
      * @param string      $paydate Y-m-d
-     * @param bool        $legacy  force the legacy month rule (used by the
-     *                             recalibration review to show old vs new)
+     * @param bool        $legacy  counterfactual for the recalibration review:
+     *                             charge the escalating whole-period rule even when
+     *                             the period resolves to 0 ("once"). Never set on a
+     *                             live calculation path.
      * @return array
      */
     function _penalty_state($product, $row, $paydate, $legacy = false) {
@@ -3757,8 +3812,18 @@ class Loan_Model extends CI_Model {
         }
 
         $period_days = $state['period_days'];
+        $is_once = ($period_days === 0);
+        if ($is_once && $legacy) {
+            // Review tool only: show what the older escalating rule would charge on
+            // a product that now charges once, so the cooperative can see the delta.
+            $period_days = (defined('TAPSTEMCO_PENALTY_PERIOD_DAYS') && (int) TAPSTEMCO_PENALTY_PERIOD_DAYS > 0)
+                ? (int) TAPSTEMCO_PENALTY_PERIOD_DAYS
+                : 30;
+        }
         if ($period_days === 0) {
-            // Product charges the penalty ONCE per overdue installment (("Once On ..." methods).
+            // Cooperative policy: charge the penalty ONCE per overdue installment.
+            // The full percentage is billed the moment the grace end passes - it is
+            // never pro-rated by days and never grows while the row stays open.
             $months = 1.0;
         } else {
             $prorate = (!$legacy) && (!defined('TAPSTEMCO_PENALTY_PRORATE') || TAPSTEMCO_PENALTY_PRORATE);
@@ -3783,7 +3848,7 @@ class Loan_Model extends CI_Model {
         $state['penalty_days'] = $days;
         $state['penalt_unit'] = round($unit, 4);
         $state['penalty'] = round($unit * $months, 2);
-        $state['is_once'] = ($period_days === 0);
+        $state['is_once'] = $is_once;
         return $state;
     }
 
@@ -3956,11 +4021,24 @@ class Loan_Model extends CI_Model {
     }
 
     /**
-     * Past-due loans compared under the legacy penalty rule and the current
-     * (pro-rated) rule. Read-only: nothing is written.
+     * Past-due loans compared under two readings of the Lending Policy penalty.
+     * Read-only: nothing is written.
      *
-     * This is the review gate for enabling TAPSTEMCO_PENALTY_PRORATE, because the
-     * change affects what every past-due member is billed from deploy day on.
+     *   legacy  ("escalating") - whole penalty periods that keep growing while the
+     *                            installment stays unpaid: one full period after the
+     *                            grace end, then another per period (calendar month)
+     *                            after that.
+     *   current ("in force")   - what the system bills today, i.e. the normal
+     *                            calculation path: since the 2026-09-22 cooperative
+     *                            decision an overdue installment is charged ONE full
+     *                            penalty of penalt_percentage x (principal + interest)
+     *                            and never a fraction of it.
+     *
+     * The delta is therefore the penalty the cooperative deliberately does not
+     * charge. The legacy column is produced by forcing the escalating rule through
+     * calculate_repayment_due($LID, $paydate, TRUE); the array keys keep their
+     * historical names so the view can stay stable. Re-read this table after any
+     * change to the penalty rule before relying on it for billing.
      *
      * @param int $limit
      * @return array
@@ -4013,6 +4091,107 @@ class Loan_Model extends CI_Model {
         $totals['penalty_delta'] = round($totals['legacy_penalty'] - $totals['current_penalty'], 2);
         $totals['due_delta'] = round($totals['legacy_due'] - $totals['current_due'], 2);
         return array('rows' => $out, 'totals' => $totals, 'count' => count($out), 'as_of' => $today);
+    }
+
+    /**
+     * Loans whose stored repayment schedule does not amortise the contract: rows
+     * carrying negative interest, or a schedule that repays more principal than was
+     * lent. Read-only: nothing is written.
+     *
+     * These rows are exactly what the Amount Due panels print as Principal /
+     * Interest, and what plan_loan_repayment_applications() posts, so such a loan is
+     * crediting principal it never had and crediting interest income with a negative
+     * amount. The audit list exists to correct the contract terms and regenerate the
+     * schedule after the cooperative signs off.
+     *
+     * @param int $limit
+     * @return array
+     */
+    function schedule_overrun_review($limit = 500) {
+        $pin = current_user()->PIN;
+        $limit = max(1, min(2000, (int) $limit));
+        $CI =& get_instance();
+        if (!isset($CI->loanbase) || !is_object($CI->loanbase)) {
+            $CI->load->library('loanbase');
+        }
+
+        $select = "SELECT lc.LID, lc.PID, lc.member_id, lc.basic_amount, lc.installment_amount,
+                       lc.number_istallment, lc.rate, lc.`interval`, lc.product_type,
+                       lc.status, lc.disburse, lc.applicationdate,
+                       lp.name AS product_name, lp.interest_method,
+                       lp.`interval` AS product_interval,
+                       m.firstname, m.middlename, m.lastname,
+                       agg.total_rows, agg.negative_rows, agg.min_interest,
+                       agg.open_rows, agg.paid_rows, agg.schedule_principle, agg.schedule_interest";
+        $from = "FROM loan_contract lc
+                INNER JOIN (
+                    SELECT LID, PIN,
+                           COUNT(*) AS total_rows,
+                           SUM(CASE WHEN interest < 0 THEN 1 ELSE 0 END) AS negative_rows,
+                           MIN(interest) AS min_interest,
+                           SUM(CASE WHEN status = 0 THEN 1 ELSE 0 END) AS open_rows,
+                           SUM(CASE WHEN status = 1 THEN 1 ELSE 0 END) AS paid_rows,
+                           SUM(principle) AS schedule_principle,
+                           SUM(interest) AS schedule_interest
+                    FROM loan_contract_repayment_schedule
+                    GROUP BY LID, PIN
+                ) agg ON agg.LID = lc.LID AND agg.PIN = lc.PIN
+                LEFT JOIN loan_product lp ON lp.id = lc.product_type AND lp.PIN = lc.PIN
+                LEFT JOIN members m ON m.PID = lc.PID AND m.PIN = lc.PIN
+                WHERE lc.PIN = ?
+                  AND (agg.negative_rows > 0 OR agg.schedule_principle > lc.basic_amount + 0.05)
+                ORDER BY agg.min_interest ASC, lc.LID ASC";
+        // True number of affected loans - the table below is capped by $limit, and the
+        // headline must not be read as "only this many loans are wrong".
+        $affected_total = (int) $this->db->query("SELECT COUNT(*) AS cnt " . $from, array($pin))->row()->cnt;
+        $rows = $this->db->query($select . ' ' . $from . ' LIMIT ' . $limit, array($pin))->result();
+
+        $out = array();
+        $totals = array('lent' => 0.0, 'schedule_principle' => 0.0, 'overrun' => 0.0, 'negative_rows' => 0);
+        foreach ($rows as $row) {
+            $interval = !empty($row->product_interval) ? (int) $row->product_interval : (int) $row->interval;
+            if ($interval !== 1 && $interval !== 2) {
+                $interval = 1;
+            }
+            $method = ((int) $row->interest_method === 2) ? 2 : 1;
+            $rate = (float) $row->rate;
+            $term = (int) $row->number_istallment;
+            // The installment these terms should carry. Guarded because get_installment()
+            // divides by pow(1+rate,term)-1, which is zero for a 0% declining-balance loan.
+            $correct = 0.0;
+            if ($term > 0 && ($method === 2 || $rate > 0)) {
+                $correct = $CI->loanbase->get_installment($rate, $row->basic_amount, $term, $method, $interval);
+            }
+            $lent = round((float) $row->basic_amount, 2);
+            $schedule_principle = round((float) $row->schedule_principle, 2);
+            $overrun = round(max(0, $schedule_principle - $lent), 2);
+
+            $totals['lent'] = round($totals['lent'] + $lent, 2);
+            $totals['schedule_principle'] = round($totals['schedule_principle'] + $schedule_principle, 2);
+            $totals['overrun'] = round($totals['overrun'] + $overrun, 2);
+            $totals['negative_rows'] += (int) $row->negative_rows;
+
+            $out[] = array(
+                'loan' => $row,
+                'lent' => $lent,
+                'schedule_principle' => $schedule_principle,
+                'schedule_interest' => round((float) $row->schedule_interest, 2),
+                'overrun' => $overrun,
+                'negative_rows' => (int) $row->negative_rows,
+                'min_interest' => round((float) $row->min_interest, 2),
+                'open_rows' => (int) $row->open_rows,
+                'paid_rows' => (int) $row->paid_rows,
+                'correct_installment' => $correct,
+                'installment_delta' => round((float) $row->installment_amount - $correct, 2),
+            );
+        }
+        return array(
+            'rows' => $out,
+            'totals' => $totals,
+            'count' => $affected_total,
+            'shown' => count($out),
+            'as_of' => date('Y-m-d'),
+        );
     }
 
     function loan_repay_receipt($LID, $amount, $paydate, $receipt_no = null) {
@@ -4214,7 +4393,10 @@ class Loan_Model extends CI_Model {
                         'amount' => $payoff_amount,
                         'paydate' => $paydate,
                         'interest' => $interest_recorded,
-                        'principle' => round($payoff_amount - $interest_recorded, 2),
+                        // $payoff_amount already carries the penalty (line + balance + penalty),
+                        // so it must come out of the principal portion as well - otherwise the
+                        // penalty is counted twice and the split exceeds the amount recorded.
+                        'principle' => round($payoff_amount - $interest_recorded - $penalt_recorded, 2),
                         'duedate' => $value->repaydate,
                         'balance' => 0,
                         'iliyobaki' => round($amount_tmp, 2),
@@ -5108,7 +5290,11 @@ class Loan_Model extends CI_Model {
     /**
      * Get loan ledger transactions for a single loan (disbursement + repayments) in date order.
      * Returns array of objects: date, description, debit, credit, type ('disbursement'|'repayment'),
-     * and for repayments: schedule_installment, duedate, interest, penalt, amount_paid.
+     * and for repayments: schedule_installment, duedate, interest, principle, penalt, amount_paid.
+     *
+     * `principle` is the principal portion of the instalment as stored on
+     * loan_contract_repayment (it mirrors loan_contract_repayment_schedule.principle);
+     * `amount_paid` (the debit) is principal + interest, so the two columns reconcile.
      */
     function get_loan_ledger_transactions($LID) {
         $pin = current_user()->PIN;
@@ -5144,6 +5330,7 @@ class Loan_Model extends CI_Model {
                     'schedule_installment' => null,
                     'duedate' => null,
                     'interest' => null,
+                    'principle' => null,
                     'penalt' => null,
                     'amount_paid' => null
                 );
@@ -5151,7 +5338,7 @@ class Loan_Model extends CI_Model {
         }
 
         // Repayment rows from loan_contract_repayment (with full detail: schedule, interest, penalty, amount)
-        $this->db->select('paydate as date, installment as schedule_installment, duedate, interest, penalt, amount, receipt');
+        $this->db->select('paydate as date, installment as schedule_installment, duedate, interest, principle, penalt, amount, receipt');
         $this->db->where('LID', $LID);
         $this->db->where('PIN', $pin);
         if ($this->db->query("SHOW COLUMNS FROM loan_contract_repayment LIKE 'is_voided'")->row()) {
@@ -5170,6 +5357,7 @@ class Loan_Model extends CI_Model {
                 'schedule_installment' => isset($r->schedule_installment) ? $r->schedule_installment : null,
                 'duedate' => isset($r->duedate) ? $r->duedate : null,
                 'interest' => isset($r->interest) ? floatval($r->interest) : 0,
+                'principle' => isset($r->principle) ? floatval($r->principle) : 0,
                 'penalt' => isset($r->penalt) ? floatval($r->penalt) : 0,
                 'amount_paid' => $amount,
                 'receipt' => isset($r->receipt) ? $r->receipt : null,

@@ -39,10 +39,16 @@ if ($product && isset($product->penalt_period_days) && $product->penalt_period_d
 } else {
     $penalt_period_val = (string) set_value('penalt_period_days');
 }
-$system_period = defined('TAPSTEMCO_PENALTY_PERIOD_DAYS') ? (int) TAPSTEMCO_PENALTY_PERIOD_DAYS : 30;
-if ($system_period < 1) {
-    $system_period = 30;
+$system_period = defined('TAPSTEMCO_PENALTY_PERIOD_DAYS') ? (int) TAPSTEMCO_PENALTY_PERIOD_DAYS : 0;
+if ($system_period < 0) {
+    $system_period = 0;
 }
+// 0 = the system charges the penalty ONCE per overdue installment (cooperative
+// policy since 2026-09-22). Blank products inherit that, so the hint has to read
+// "Once per installment" rather than "(0 days)", which looks like no penalty at all.
+$system_period_display = ($system_period === 0)
+    ? lang('loanproduct_penalt_period_once')
+    : sprintf(lang('loanproduct_penalt_period_days'), $system_period);
 $penalt_period_options = array(
     '0' => lang('loanproduct_penalt_period_once'),
     '1' => lang('loanproduct_penalt_period_day'),
@@ -343,12 +349,12 @@ $contribution_times = $product ? $product->loan_security_contribution_times : se
                         <label class="col-lg-4 control-label"><?php echo lang('loanproduct_penalt_period'); ?> :</label>
                         <div class="col-lg-8">
                             <select name="penalt_period_days" class="form-control">
-                                <option value=""><?php echo htmlspecialchars(sprintf(lang('loanproduct_penalt_period_default'), $system_period), ENT_QUOTES, 'UTF-8'); ?></option>
+                                <option value=""><?php echo htmlspecialchars(sprintf(lang('loanproduct_penalt_period_default'), $system_period_display), ENT_QUOTES, 'UTF-8'); ?></option>
                                 <?php foreach ($penalt_period_options as $pvalue => $plabel) { ?>
                                     <option value="<?php echo htmlspecialchars($pvalue, ENT_QUOTES, 'UTF-8'); ?>" <?php echo ((string) $pvalue === (string) $penalt_period_val) ? 'selected="selected"' : ''; ?>><?php echo htmlspecialchars($plabel, ENT_QUOTES, 'UTF-8'); ?></option>
                                 <?php } ?>
                             </select>
-                            <span class="help-block"><?php echo sprintf(lang('loanproduct_penalt_period_help'), $system_period); ?></span>
+                            <span class="help-block"><?php echo sprintf(lang('loanproduct_penalt_period_help'), $system_period_display); ?></span>
                             <?php echo form_error('penalt_period_days'); ?>
                         </div>
                     </div>

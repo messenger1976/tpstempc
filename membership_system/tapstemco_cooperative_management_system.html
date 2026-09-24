@@ -1430,6 +1430,9 @@
             const photoInput = document.getElementById('pds_photo');
             const photo = (photoInput && photoInput.files) ? photoInput.files[0] : null;
 
+            const submitBtn = document.getElementById('pdsSubmitBtn');
+            setSaveBtnBusy(submitBtn, true, 'Saving Data Sheet...');
+
             try {
                 // A file cannot ride in a JSON body, so the Data Sheet switches
                 // to multipart as soon as the member's picture is attached or
@@ -1455,6 +1458,8 @@
                 switchMainTab('directory');
             } catch (err) {
                 showToast(err.message, true);
+            } finally {
+                setSaveBtnBusy(submitBtn, false);
             }
         }
 
@@ -1488,7 +1493,7 @@
             }
 
             const btn = document.getElementById('pdsSubmitBtn');
-            if (btn) btn.disabled = true;
+            setSaveBtnBusy(btn, true, 'Creating member...');
 
             try {
                 const photoInput = document.getElementById('pds_photo');
@@ -1523,7 +1528,7 @@
             } catch (err) {
                 showToast(err.message, true);
             } finally {
-                if (btn) btn.disabled = !PERMS.edit;
+                setSaveBtnBusy(btn, false);
             }
         }
 
@@ -1597,9 +1602,62 @@
             loadMemberIntoForms(pid, 'pds');
         }
 
+        /**
+         * Progress feedback for the screen's Save buttons.
+         *
+         * The button keeps its own idle label in a data attribute instead of
+         * hard-coding it here: the Data Sheet button says "Save Complete PDS
+         * Record" or "Create Member & Save PDS" depending on the mode, and has
+         * to come back to whichever one it had.
+         *
+         * While busy the button is disabled (a second click cannot double-post)
+         * and shows a spinning circle until the request settles. Every caller
+         * restores it from a finally{} clause, so a failed save releases the
+         * button too - the permission gate is re-applied on the way out.
+         */
+        function setSaveBtnBusy(btn, busy, busyText) {
+            if (!btn) return;
+
+            if (btn.dataset.idleLabel === undefined) {
+                btn.dataset.idleLabel = btn.textContent.trim();
+            }
+
+            if (busy) {
+                btn.dataset.busy = '1';
+                btn.disabled = true;
+                btn.classList.remove('opacity-50');
+                btn.classList.add('cursor-not-allowed');
+
+                const icon = document.createElement('i');
+                icon.className = 'fa-solid fa-circle-notch fa-spin mr-2';
+                btn.textContent = '';
+                btn.appendChild(icon);
+                btn.appendChild(document.createTextNode(busyText || 'Saving...'));
+                return;
+            }
+
+            btn.dataset.busy = '';
+            btn.textContent = btn.dataset.idleLabel;
+
+            // Hand the button back to the permission gate, so a group that only
+            // has View ends this save exactly as view-only as it started.
+            const viewOnly = (typeof PERMS !== 'undefined' && PERMS) ? !PERMS.edit : false;
+            btn.disabled = viewOnly;
+            btn.classList.toggle('opacity-50', viewOnly);
+            btn.classList.toggle('cursor-not-allowed', viewOnly);
+            btn.title = viewOnly ? 'View-only: your group lacks Edit_membership_documents.' : '';
+        }
+
+        /**
+         * The Data Sheet button is the one button whose wording changes, so its
+         * label is remembered as the idle label that setSaveBtnBusy() restores
+         * after the request. Nothing is written while the button is busy.
+         */
         function setPdsSubmitLabel(text) {
             const btn = document.getElementById('pdsSubmitBtn');
-            if (btn) btn.textContent = text;
+            if (!btn) return;
+            btn.dataset.idleLabel = text;
+            if (btn.dataset.busy !== '1') btn.textContent = text;
         }
 
         function todayISO() {
@@ -2144,6 +2202,9 @@
                 return;
             }
 
+            const btn = e.currentTarget.querySelector('button[type=submit]');
+            setSaveBtnBusy(btn, true, 'Saving application...');
+
             try {
                 const res = await apiPost('save_application', {
                     member_id: memberId,
@@ -2159,6 +2220,8 @@
                 switchMainTab('directory');
             } catch (err) {
                 showToast(err.message, true);
+            } finally {
+                setSaveBtnBusy(btn, false);
             }
         }
 
@@ -2171,6 +2234,9 @@
                 showToast('Select a member first.', true);
                 return;
             }
+
+            const btn = e.currentTarget.querySelector('button[type=submit]');
+            setSaveBtnBusy(btn, true, 'Saving agreement...');
 
             try {
                 const res = await apiPost('save_agreement', {
@@ -2190,6 +2256,8 @@
                 switchMainTab('directory');
             } catch (err) {
                 showToast(err.message, true);
+            } finally {
+                setSaveBtnBusy(btn, false);
             }
         }
 

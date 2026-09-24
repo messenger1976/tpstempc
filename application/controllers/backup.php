@@ -184,6 +184,11 @@ class Backup extends CI_Controller {
             $sql_content .= "-- Database: " . $this->db->database . "\n\n";
             $sql_content .= "SET SQL_MODE = \"NO_AUTO_VALUE_ON_ZERO\";\n";
             $sql_content .= "SET time_zone = \"+00:00\";\n\n";
+            // Tables are dumped in list_tables() order (alphabetical), so a child table can be
+            // created before its parent. Without these guards this file cannot be restored
+            // anywhere without a #1215 foreign key error - not even back into this app.
+            $sql_content .= "SET FOREIGN_KEY_CHECKS=0;\n";
+            $sql_content .= "SET UNIQUE_CHECKS=0;\n\n";
 
             // Get all tables
             $tables = $this->db->list_tables();
@@ -216,6 +221,9 @@ class Backup extends CI_Controller {
                 }
                 $sql_content .= "\n";
             }
+
+            $sql_content .= "SET FOREIGN_KEY_CHECKS=1;\n";
+            $sql_content .= "SET UNIQUE_CHECKS=1;\n";
 
             // Write to file
             return write_file($filepath, $sql_content);
@@ -546,12 +554,18 @@ class Backup extends CI_Controller {
 
     /**
      * Restore using mysql client (preferred for mysqldump files)
+     *
+     * The dump is fed to the client through a generated wrapper script that turns
+     * FK/unique checking off first (see build_restore_script()), so a restore no
+     * longer depends on the dump carrying its own SET FOREIGN_KEY_CHECKS=0 header.
      */
     private function restore_via_mysql_cli($file_path, $mysql_path) {
         $db_name = $this->db->database;
         $db_user = $this->db->username;
         $db_pass = $this->db->password;
         $db_host = $this->db->hostname;
+
+        $script_path = $this->build_restore_script($file_path);
 
         if (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN') {
             $command = sprintf(
@@ -561,7 +575,7 @@ class Backup extends CI_Controller {
                 $db_pass,
                 $db_host,
                 $db_name,
-                $file_path
+                $script_path
             );
         } else {
             $command = sprintf(
@@ -571,13 +585,17 @@ class Backup extends CI_Controller {
                 escapeshellarg($db_pass),
                 escapeshellarg($db_host),
                 escapeshellarg($db_name),
-                escapeshellarg($file_path)
+                escapeshellarg($script_path)
             );
         }
 
         $output = array();
         $return_var = 1;
         exec($command, $output, $return_var);
+
+        if ($script_path !== $file_path) {
+            @unlink($script_path);
+        }
 
         if ($return_var === 0) {
             return array('success' => true, 'error' => '');
@@ -587,8 +605,100 @@ class Backup extends CI_Controller {
         if ($error === '') {
             $error = 'mysql client restore failed (exit code ' . $return_var . ')';
         }
+        $error .= $this->restore_error_hint($error);
         log_message('error', 'Backup mysql CLI restore failed: ' . $error);
         return array('success' => false, 'error' => $error);
+    }
+
+    /**
+     * Prefix a dump with restore guards and return the path of the temp script.
+     *
+     * Dumps are written in alphabetical table order, so a child table is created
+     * before the parent it references (`beneficiaries` before `members`,
+     * `member_trainings` before `members`) and InnoDB can only accept that FK while
+     * foreign key checking is off. With checks on, the import aborts at the child
+     * table with "#1215 - Cannot add foreign key constraint", and the real reason
+     * ("Referenced table ... not found in the data dictionary") only shows up in
+     * SHOW WARNINGS / SHOW ENGINE INNODB STATUS. mysqldump writes the guard header
+     * into its own dumps; a phpMyAdmin or live-host export usually does not, which
+     * is why such a dump fails where an app-generated backup restores fine.
+     *
+     * The backup file itself is never modified: it is streamed into a temp script
+     * outside the web root (tempnam() also creates it owner-only). The original
+     * path is returned when the temp script cannot be created, so the restore then
+     * behaves exactly as it did before.
+     */
+    private function build_restore_script($file_path) {
+        $tmp_path = @tempnam(sys_get_temp_dir(), 'tapstemco_restore_');
+        if ($tmp_path === false) {
+            log_message('error', 'Backup restore: could not create a temp script; restoring the dump as-is.');
+            return $file_path;
+        }
+
+        $source = @fopen($file_path, 'rb');
+        $target = @fopen($tmp_path, 'wb');
+
+        if (!$source || !$target) {
+            if ($source) {
+                fclose($source);
+            }
+            if ($target) {
+                fclose($target);
+            }
+            @unlink($tmp_path);
+            log_message('error', 'Backup restore: could not open files for the temp script; restoring the dump as-is.');
+            return $file_path;
+        }
+
+        // Same session guards mysqldump writes into its own dumps. Private @vars (not
+        // @OLD_*) so the dump's own header/footer keeps working on its own variables.
+        $header  = "-- TAPSTEMCO restore script for " . basename($file_path) . "\n";
+        $header .= "-- Generated " . date('Y-m-d H:i:s') . "\n";
+        $header .= "-- FK checking is off: a dump creates child tables before their parent.\n";
+        $header .= "SET @TAPSTEMCO_OLD_FOREIGN_KEY_CHECKS=@@FOREIGN_KEY_CHECKS, FOREIGN_KEY_CHECKS=0;\n";
+        $header .= "SET @TAPSTEMCO_OLD_UNIQUE_CHECKS=@@UNIQUE_CHECKS, UNIQUE_CHECKS=0;\n";
+        $header .= "SET @TAPSTEMCO_OLD_SQL_MODE=@@SQL_MODE, SQL_MODE='NO_AUTO_VALUE_ON_ZERO';\n\n";
+
+        fwrite($target, $header);
+
+        while (!feof($source)) {
+            $chunk = fread($source, 1048576);
+            if ($chunk === false) {
+                break;
+            }
+            fwrite($target, $chunk);
+        }
+
+        // The client session dies with its process, so this footer only matters when
+        // the script is run by hand. The leading newline keeps it off the dump's last line.
+        fwrite($target, "\nSET FOREIGN_KEY_CHECKS=@TAPSTEMCO_OLD_FOREIGN_KEY_CHECKS;\n");
+        fwrite($target, "SET UNIQUE_CHECKS=@TAPSTEMCO_OLD_UNIQUE_CHECKS;\n");
+
+        fclose($source);
+        fclose($target);
+
+        return $tmp_path;
+    }
+
+    /**
+     * Plain-language hint appended to a failed restore message.
+     */
+    private function restore_error_hint($error) {
+        $error_lower = strtolower($error);
+
+        // Matched on the server wording, never on a bare "1215" — the PHP fallback
+        // prefixes the message with the dump's line number, which can also be 1215.
+        if (strpos($error_lower, 'errno: 150') !== false
+            || strpos($error_lower, 'foreign key') !== false) {
+            return ' Hint: a foreign key failure on a child table (e.g. `beneficiaries`) is almost always'
+                . ' an import-order problem - the dump creates the child before its parent `members`, which'
+                . ' requires FOREIGN_KEY_CHECKS=0 during the import (the mysql restore path sets that'
+                . ' automatically; a phpMyAdmin import needs `SET FOREIGN_KEY_CHECKS=0;` as the first line'
+                . ' of the .sql). If it still fails, the parent key is missing: `members`.`PID` needs the'
+                . ' UNIQUE KEY `uq_members_pid` (sql/membership_documents_module.sql).';
+        }
+
+        return '';
     }
 
     /**
@@ -650,7 +760,15 @@ class Backup extends CI_Controller {
 
                 $result = $this->db->query($sql);
                 if ($result === FALSE) {
-                    $error = 'SQL error near line ' . $line_number . ': ' . $this->db->_error_message();
+                    // The statement head makes a bare "1215" actionable without re-reading the dump.
+                    $statement_head = trim(preg_replace('/\s+/', ' ', $sql));
+                    if (strlen($statement_head) > 160) {
+                        $statement_head = substr($statement_head, 0, 157) . '...';
+                    }
+
+                    $error = 'SQL error near line ' . $line_number . ': ' . $this->db->_error_message()
+                        . ' [statement: ' . $statement_head . ']';
+                    $error .= $this->restore_error_hint($error);
                     log_message('error', 'Backup PHP restore failed: ' . $error);
                     break;
                 }

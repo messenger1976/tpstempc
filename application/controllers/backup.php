@@ -491,6 +491,18 @@ class Backup extends CI_Controller {
         $previous_db_debug = $this->db->db_debug;
         $this->db->db_debug = FALSE;
 
+        // A restore replaces every table, but the dump creates them in alphabetical order: when
+        // `beneficiaries` is created the OLD `members` table is still in place, and InnoDB only
+        // accepts that foreign key if members.PID carries a unique index. FOREIGN_KEY_CHECKS=0
+        // does not help there (verified on MariaDB 10.4: an unindexed parent is rejected with
+        // errno 150, an absent parent is accepted).
+        $prepared = $this->ensure_members_pid_key();
+        if (empty($prepared['ok'])) {
+            $this->db->db_debug = $previous_db_debug;
+            $this->session->set_flashdata('error', 'Restore aborted: ' . $prepared['error']);
+            redirect(current_lang() . '/backup/index', 'refresh');
+        }
+
         $success = false;
         $error_detail = '';
 
@@ -540,7 +552,23 @@ class Backup extends CI_Controller {
                 log_message('error', 'Backup restore logging failed: ' . $e->getMessage());
             }
 
-            $this->session->set_flashdata('message', 'Database restored successfully from: ' . $filename);
+            // members now comes from the dump; without the key the member child tables just
+            // restored would carry a foreign key that cannot be satisfied.
+            $previous_debug = $this->db->db_debug;
+            $this->db->db_debug = FALSE;
+            $verified = $this->ensure_members_pid_key();
+            $this->db->db_debug = $previous_debug;
+
+            $message = 'Database restored successfully from: ' . $filename;
+            if (!empty($verified['changed'])) {
+                $message .= ' (added the missing unique key `uq_members_pid` on members.PID)';
+            }
+            if (empty($verified['ok'])) {
+                $message .= ' Warning: ' . $verified['error'];
+                log_message('error', 'Backup restore: ' . $verified['error']);
+            }
+
+            $this->session->set_flashdata('message', $message);
         } else {
             $message = 'Failed to restore database from: ' . $filename;
             if ($error_detail !== '') {
@@ -681,21 +709,98 @@ class Backup extends CI_Controller {
     }
 
     /**
+     * Guarantee that `members`.`PID` is uniquely indexed - before and after a restore.
+     *
+     * `members` is the only FK parent in this schema whose key is not a primary key, and the
+     * member child tables (`beneficiaries`, `member_trainings`, ...) reference `members.PID`.
+     * Dumps are alphabetical, so while the dump builds `beneficiaries` the database still holds
+     * the OLD `members` table, and InnoDB accepts that foreign key only when the referenced
+     * column has a unique index - with FOREIGN_KEY_CHECKS off or on alike. So: make the key
+     * exist first, then confirm the restored table still carries it.
+     *
+     * Returns array('ok' => bool, 'changed' => bool, 'error' => string). Callers run it with
+     * db_debug off: it reports instead of throwing, and it never guesses - duplicate PIDs make
+     * the key impossible, and that is surfaced as a hard failure rather than silently skipped.
+     */
+    private function ensure_members_pid_key() {
+        if (!$this->db->table_exists('members') || !$this->db->field_exists('PID', 'members')) {
+            // The dump defines `members` itself, or this install has no PID column to key.
+            return array('ok' => TRUE, 'changed' => FALSE, 'error' => '');
+        }
+
+        if ($this->has_unique_pid_index()) {
+            return array('ok' => TRUE, 'changed' => FALSE, 'error' => '');
+        }
+
+        $result = $this->db->query(
+            'SELECT PID, COUNT(*) AS copies FROM members GROUP BY PID HAVING copies > 1 LIMIT 5'
+        );
+        $duplicates = $result ? $result->result_array() : array();
+
+        if (!empty($duplicates)) {
+            $sample = array();
+            foreach ($duplicates as $row) {
+                $sample[] = $row['PID'] . ' (x' . $row['copies'] . ')';
+            }
+
+            return array(
+                'ok' => FALSE,
+                'changed' => FALSE,
+                'error' => 'members.PID holds duplicate values (' . implode(', ', $sample) . ') and the unique key '
+                    . '`uq_members_pid` the member child tables need cannot be created until those members are '
+                    . 'merged or renumbered (see sql/membership_documents_module.sql). Restoring now would fail '
+                    . 'at the `beneficiaries` table.'
+            );
+        }
+
+        $this->db->query('ALTER TABLE `members` ADD UNIQUE KEY `uq_members_pid` (`PID`)');
+
+        // Re-read the dictionary instead of trusting the ALTER: db_debug is off here and the
+        // app's DB layer logs writes on the same connection.
+        if (!$this->has_unique_pid_index()) {
+            return array(
+                'ok' => FALSE,
+                'changed' => FALSE,
+                'error' => 'the unique key `uq_members_pid` on members.PID could not be created.'
+            );
+        }
+
+        log_message('info', 'Backup restore: added UNIQUE KEY uq_members_pid on members.PID (the member child tables reference it).');
+
+        return array('ok' => TRUE, 'changed' => TRUE, 'error' => '');
+    }
+
+    /**
+     * Is there a unique index whose first column is members.PID?
+     */
+    private function has_unique_pid_index() {
+        $result = $this->db->query(
+            "SELECT INDEX_NAME FROM information_schema.STATISTICS
+             WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'members'
+               AND NON_UNIQUE = 0 AND SEQ_IN_INDEX = 1 AND COLUMN_NAME = 'PID'
+             LIMIT 1"
+        );
+
+        return ($result && $result->num_rows() > 0);
+    }
+
+    /**
      * Plain-language hint appended to a failed restore message.
      */
     private function restore_error_hint($error) {
         $error_lower = strtolower($error);
 
-        // Matched on the server wording, never on a bare "1215" — the PHP fallback
-        // prefixes the message with the dump's line number, which can also be 1215.
+        // Matched on the server wording, never on a bare "1215" - the PHP fallback prefixes the
+        // message with the dump's line number, which can also be 1215.
         if (strpos($error_lower, 'errno: 150') !== false
             || strpos($error_lower, 'foreign key') !== false) {
-            return ' Hint: a foreign key failure on a child table (e.g. `beneficiaries`) is almost always'
-                . ' an import-order problem - the dump creates the child before its parent `members`, which'
-                . ' requires FOREIGN_KEY_CHECKS=0 during the import (the mysql restore path sets that'
-                . ' automatically; a phpMyAdmin import needs `SET FOREIGN_KEY_CHECKS=0;` as the first line'
-                . ' of the .sql). If it still fails, the parent key is missing: `members`.`PID` needs the'
-                . ' UNIQUE KEY `uq_members_pid` (sql/membership_documents_module.sql).';
+            return ' Hint: a 1215/errno 150 on a child table has two causes. (1) With foreign key checks off'
+                . ' - which the restore path sets - it means the referenced key is missing in the database being'
+                . ' restored: while the dump builds `beneficiaries` the old `members` table is still in place,'
+                . ' and InnoDB only accepts that FK when members.PID has a unique index. The restore adds'
+                . ' `uq_members_pid` for you; seeing this anyway means it could not, normally because'
+                . ' members.PID holds duplicate values. (2) With foreign key checks on, it is import order -'
+                . ' a phpMyAdmin import needs `SET FOREIGN_KEY_CHECKS=0;` as the first line of the .sql.';
         }
 
         return '';

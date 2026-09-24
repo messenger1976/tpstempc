@@ -116,6 +116,7 @@ $lang['report_share_balance'] = 'Members Share Balance ';
 $lang['report_share_statement'] = 'Members Share Statement ';
 $lang['report_share_transactions'] = 'Members Share Transactions ';
 $lang['report_share_transactions_summary'] = 'Members Share Transactions Summary';
-
+// Membership documents screen (PDS / Application for Membership / Subscription Agreement)
+$lang['member_membership_documents'] = 'Membership Documents (PDS)';
 
 ?>

@@ -65,6 +65,44 @@
         }
     </script>
 
+    <!-- Select2 4.0.0 - the same bundled copy and default theme the rest of the app uses
+         for its member lookups. With ~500 members a search box beats scrolling.
+         The URLs are resolved at runtime from the app base (the way APP_BASE is below)
+         because a plain script tag would 404 when this file is opened directly from
+         /membership_system/. If the files cannot be fetched, the widget stays off and
+         the native selects keep working. -->
+    <script>
+        window.__tapstemcoSelect2Ready = (function () {
+            const injected = window.TAPSTEMCO_APP_BASE;
+            let base = (typeof injected === 'string' && injected !== '' && injected.indexOf('__') !== 0)
+                ? injected
+                : new URL('../', window.location.href).href;
+            if (base.charAt(base.length - 1) !== '/') base += '/';
+
+            const css = document.createElement('link');
+            css.rel = 'stylesheet';
+            css.href = base + 'assets/css/plugins/select2/select2.min.css';
+            document.head.appendChild(css);
+
+            function load(src, next) {
+                const s = document.createElement('script');
+                s.src = src;
+                s.onload = next;
+                s.onerror = next;
+                document.head.appendChild(s);
+            }
+
+            return new Promise(function (resolve) {
+                load(base + 'media/js/jquery-1.10.2.js', function () {
+                    if (!window.jQuery) { resolve(false); return; }
+                    load(base + 'assets/js/plugins/select2/select2.full.min.js', function () {
+                        resolve(!!(window.jQuery && window.jQuery.fn.select2));
+                    });
+                });
+            });
+        })();
+    </script>
+
     <style>
         @media print {
             body * {
@@ -104,6 +142,40 @@
         }
         #sigCanvas {
             touch-action: none;
+        }
+
+        /* Select2 (default theme) sized to match this screen's Tailwind inputs -
+           the same per-view tweak the app's Bootstrap screens make. */
+        .select2-container {
+            width: 100% !important;
+        }
+        .select2-container--default .select2-selection--single {
+            height: 30px;
+            padding: 1px 2px;
+            background-color: #ffffff;
+            border-color: #cbd5e1;
+            border-radius: 0.25rem;
+        }
+        .select2-container--default .select2-selection--single .select2-selection__rendered {
+            line-height: 26px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: #1e293b;
+        }
+        .select2-container--default .select2-selection--single .select2-selection__arrow {
+            height: 28px;
+        }
+        .select2-container--default.select2-container--focus .select2-selection--single,
+        .select2-container--default.select2-container--open .select2-selection--single {
+            border-color: #16a34a;
+            box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.15);
+        }
+        .select2-dropdown {
+            font-size: 0.75rem;
+            border-color: #cbd5e1;
+        }
+        .select2-container--default .select2-results__option--highlighted[aria-selected] {
+            background-color: #15803d;
         }
     </style>
 </head>
@@ -328,24 +400,6 @@
                             <p class="text-[10px] text-amber-700 mt-1">Defaults to the configured fee and cannot be below it.</p>
                         </div>
                     </div>
-
-                    <!-- Member photo - the old registration form's file field. -->
-                    <div class="mt-4 pt-4 border-t border-amber-200 flex flex-wrap items-center gap-4">
-                        <div class="w-16 h-16 rounded-full bg-white border-2 border-amber-300 overflow-hidden flex items-center justify-center flex-shrink-0">
-                            <img id="pds_photoPreview" alt="Member photo preview" class="w-full h-full object-cover hidden">
-                            <i id="pds_photoPlaceholder" class="fa-solid fa-user text-amber-400 text-2xl"></i>
-                        </div>
-                        <div class="flex-1 min-w-[240px]">
-                            <label class="block text-[11px] font-bold text-amber-900 uppercase mb-1">Member Photo</label>
-                            <input type="file" id="pds_photo" onchange="previewMemberPhoto(this)"
-                                   accept=".jpg,.jpeg,.png,.gif,image/jpeg,image/png,image/gif"
-                                   class="block w-full text-[11px] text-amber-900 cursor-pointer file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:bg-coopGreen-700 file:text-white file:text-[11px] file:font-semibold hover:file:bg-coopGreen-800">
-                            <p class="text-[10px] text-amber-700 mt-1">
-                                Optional. JPG, JPEG, PNG or GIF - the same rule and folder
-                                (<span class="font-mono">uploads/memberphoto</span>) the old registration form uses.
-                            </p>
-                        </div>
-                    </div>
                 </div>
 
                 <!-- WHICH REAL MEMBER THIS PDS BELONGS TO -->
@@ -363,6 +417,30 @@
                 </div>
 
                 <form id="pdsForm" onsubmit="handlePDSSubmit(event)" class="space-y-6">
+                    <!-- MEMBER PHOTO - the old registration form's file field,
+                         available in BOTH modes: it sets the picture while a
+                         member is being registered, and replaces it while an
+                         existing member's Data Sheet is being edited. It sits
+                         inside the form because the file travels with the save. -->
+                    <div class="bg-slate-50 p-4 rounded-lg border border-slate-200">
+                        <div class="flex flex-wrap items-center gap-4">
+                            <div class="w-20 h-20 rounded-full bg-white border-2 border-coopGreen-300 overflow-hidden flex items-center justify-center flex-shrink-0">
+                                <img id="pds_photoPreview" alt="Member photo preview" class="w-full h-full object-cover hidden">
+                                <i id="pds_photoPlaceholder" class="fa-solid fa-user text-slate-300 text-3xl"></i>
+                            </div>
+                            <div class="flex-1 min-w-[240px]">
+                                <label for="pds_photo" class="block text-xs font-bold text-coopGreen-900 uppercase mb-2">Member Photo</label>
+                                <input type="file" id="pds_photo" onchange="previewMemberPhoto(this)"
+                                       accept=".jpg,.jpeg,.png,.gif,image/jpeg,image/png,image/gif"
+                                       class="block w-full text-[11px] text-slate-600 cursor-pointer file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:bg-coopGreen-700 file:text-white file:text-[11px] file:font-semibold hover:file:bg-coopGreen-800">
+                                <p id="pds_photoHint" class="text-[10px] text-slate-500 mt-1">
+                                    Optional. JPG, JPEG, PNG or GIF - the same rule and folder
+                                    (<span class="font-mono">uploads/memberphoto</span>) the old registration form uses.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- 1. NAME -->
                     <div class="bg-slate-50 p-4 rounded-lg border border-slate-200">
                         <label class="block text-xs font-bold text-coopGreen-900 uppercase mb-2">1. Name *</label>
@@ -888,6 +966,13 @@
         // (Members -> Register New Member, with this screen's 25 PDS fields).
         let NEW_MEMBER = false;
 
+        // The photo filename the server holds for the member currently loaded in
+        // the Data Sheet ('' = no picture of their own). The file input only
+        // ever holds a REPLACEMENT, so the preview falls back to this when the
+        // picker is empty - which is what makes "no file chosen" mean "keep the
+        // picture on file" on both the create and the edit path.
+        let storedPhoto = '';
+
         // Registration fee default injected from Default Settings; empty when the
         // file is opened directly.
         const REGISTRATION_FEE_DEFAULT = (function () {
@@ -1000,6 +1085,10 @@
             addSysBenRow();
             addSysTrnRow();
 
+            // Searchable member pickers. Not awaited: it is independent of the API
+            // and simply does nothing if the Select2 assets are unavailable.
+            initMemberPickers();
+
             // Guard: without the controller-injected bases this file is being
             // opened directly. It will still talk to the API, but the un-prefixed
             // path is redirected and loses the query string, so search, filters
@@ -1059,6 +1148,18 @@
                 btn.classList.toggle('cursor-not-allowed', !PERMS.create);
                 btn.title = PERMS.create ? '' : 'Your group lacks Register_new_member.';
             });
+
+            // The photo travels with the Data Sheet, so it needs the right that
+            // can save that Data Sheet - either one, since the same control sets
+            // the picture on a new member and replaces it on an existing one.
+            const canSetPhoto = PERMS.edit || PERMS.create;
+            const photoInput = document.getElementById('pds_photo');
+            if (photoInput) {
+                photoInput.disabled = !canSetPhoto;
+                photoInput.classList.toggle('opacity-50', !canSetPhoto);
+                photoInput.classList.toggle('cursor-not-allowed', !canSetPhoto);
+                photoInput.title = canSetPhoto ? '' : 'View-only: the Data Sheet cannot be saved by your group.';
+            }
 
             if (!PERMS.create) {
                 document.getElementById('newMemberPanel').classList.add('hidden');
@@ -1289,8 +1390,25 @@
                 return;
             }
 
+            const photoInput = document.getElementById('pds_photo');
+            const photo = (photoInput && photoInput.files) ? photoInput.files[0] : null;
+
             try {
-                const res = await apiPost('save_pds', payload);
+                // A file cannot ride in a JSON body, so the Data Sheet switches
+                // to multipart as soon as the member's picture is attached or
+                // replaced. No file attached = the same JSON call as before.
+                const res = photo
+                    ? await apiPostForm('save_pds', buildMemberForm(payload, photo))
+                    : await apiPost('save_pds', payload);
+
+                // The server answers with the filename it holds now, so the
+                // preview (and the directory thumbnail) go back to the saved
+                // picture - the old one when no file travelled.
+                if (res.photo !== undefined) {
+                    resetMemberPhoto(res.photo || '');
+                    if (databaseByPid[pid]) databaseByPid[pid].photo = res.photo || '';
+                }
+
                 if (res.warnings && res.warnings.length) {
                     showToast(res.message + ' ' + res.warnings.join(' '), true);
                 } else {
@@ -1348,10 +1466,10 @@
                 NEW_MEMBER = false;
                 document.getElementById('newMemberPanel').classList.add('hidden');
                 setPdsSubmitLabel('Save Complete PDS Record');
-                if (photoInput) {
-                    photoInput.value = '';
-                    previewMemberPhoto(photoInput);
-                }
+                // The just-created member's picture comes back with the record
+                // loadMemberIntoForms() fetches below; until then the control is
+                // simply empty, ready for the next member.
+                resetMemberPhoto('');
 
                 await loadMembers();
                 await loadMemberIntoForms(res.PID, 'pds');
@@ -1481,48 +1599,118 @@
             addSysBenRow();
             addSysTrnRow();
 
-            const photoInput = document.getElementById('pds_photo');
-            if (photoInput) {
-                photoInput.value = '';
-                previewMemberPhoto(photoInput);
-            }
+            // A blank Data Sheet belongs to no member yet, so it has no picture.
+            resetMemberPhoto('');
 
             currentPid = null;
             document.getElementById('pds_currentPid').textContent = '-';
         }
 
         /**
-         * Preview the chosen member photo. The previous object URL is revoked so
-         * the page does not hold on to replaced files.
+         * Preview the chosen member photo, or - when the picker is empty - the
+         * picture the member already has on file. The previous object URL is
+         * revoked so the page does not hold on to replaced files.
          */
         function previewMemberPhoto(input) {
+            const file = (input && input.files && input.files[0]) ? input.files[0] : null;
+            if (!file) {
+                setMemberPhotoImage(storedPhotoUrl());
+                updatePhotoHint();
+                return;
+            }
+
+            setMemberPhotoImage(URL.createObjectURL(file), true);
+            updatePhotoHint();
+        }
+
+        /**
+         * Reset the photo control to the picture the server holds for the member
+         * ('' = none) and blank the file input, so a member that was just
+         * switched cannot leave the previous member's chosen file behind.
+         */
+        function resetMemberPhoto(photoFilename) {
+            storedPhoto = photoFilename || '';
+
+            const input = document.getElementById('pds_photo');
+            if (input) input.value = '';
+
+            setMemberPhotoImage(storedPhotoUrl());
+            updatePhotoHint();
+        }
+
+        /** URL of the member's stored picture, '' when there is none. */
+        function storedPhotoUrl() {
+            return storedPhoto ? MEMBER_PHOTO_BASE + encodeURIComponent(storedPhoto) : '';
+        }
+
+        /**
+         * Show a picture (or the placeholder icon when `url` is empty).
+         * `objectUrl` says whether the URL was created by the browser for a
+         * local file - those have to be revoked by us.
+         */
+        function setMemberPhotoImage(url, objectUrl) {
             const img = document.getElementById('pds_photoPreview');
             const placeholder = document.getElementById('pds_photoPlaceholder');
-            if (!img || !input) return;
+            if (!img) return;
 
             if (img.dataset.objectUrl) {
                 URL.revokeObjectURL(img.dataset.objectUrl);
                 delete img.dataset.objectUrl;
             }
 
-            const file = (input.files && input.files[0]) ? input.files[0] : null;
-            if (!file) {
+            if (!url) {
                 img.classList.add('hidden');
                 img.removeAttribute('src');
                 if (placeholder) placeholder.classList.remove('hidden');
                 return;
             }
 
-            const url = URL.createObjectURL(file);
-            img.dataset.objectUrl = url;
+            if (objectUrl) img.dataset.objectUrl = url;
             img.src = url;
             img.classList.remove('hidden');
             if (placeholder) placeholder.classList.add('hidden');
         }
 
         /**
-         * Turn the Data Sheet payload into a multipart body - the create request
-         * is the only one that can carry a file.
+         * Say what the file field will do next: set the picture on a new member,
+         * replace the one on file, add the member's first one, or - while a file
+         * is chosen but not saved - what saving will do with it.
+         */
+        function updatePhotoHint() {
+            const hint = document.getElementById('pds_photoHint');
+            if (!hint) return;
+
+            const folder = '<span class="font-mono">uploads/memberphoto</span>';
+            const input = document.getElementById('pds_photo');
+            const file = (input && input.files && input.files[0]) ? input.files[0] : null;
+
+            if (NEW_MEMBER) {
+                hint.innerHTML = 'Optional. JPG, JPEG, PNG or GIF - the same rule and folder ('
+                    + folder + ') the old registration form uses.';
+                return;
+            }
+
+            if (file) {
+                hint.innerHTML = 'Will replace '
+                    + (storedPhoto ? '<span class="font-mono">' + esc(storedPhoto) + '</span>'
+                                   : 'the placeholder')
+                    + ' when the Data Sheet is saved.';
+                return;
+            }
+
+            if (storedPhoto) {
+                hint.innerHTML = 'On file: <span class="font-mono">' + esc(storedPhoto)
+                    + '</span>. Choose a file to replace it - leaving this empty keeps the current picture.';
+                return;
+            }
+
+            hint.innerHTML = 'This member has no picture yet. JPG, JPEG, PNG or GIF, stored in '
+                + folder + '.';
+        }
+
+        /**
+         * Turn a Data Sheet payload into a multipart body - the create and the
+         * Data Sheet-save requests are the two that can carry a file.
          *
          * The two child tables travel as PHP-style arrays
          * (`beneficiaries[0][name]`), which is exactly what $this->input->post()
@@ -1577,6 +1765,7 @@
                 const el = document.getElementById(id);
                 if (el) el.value = String(rec.id);
             });
+            refreshMemberPickers();
             document.getElementById('pds_currentPid').textContent = rec.id;
 
             applyRecordToPDS(rec);
@@ -1650,6 +1839,10 @@
                 trnTbody.innerHTML = '';
                 (rec.trainings && rec.trainings.length ? rec.trainings : [{}]).forEach(t => addSysTrnRow(t));
             }
+
+            // The member's picture: the file input is cleared and the preview
+            // shows what the server holds, so "empty field" means "keep this".
+            resetMemberPhoto(rec.photo);
         }
 
         function applyRecordToMembership(rec) {
@@ -1778,6 +1971,75 @@
         }
 
         // Populate the three member dropdowns from the live listing.
+        //
+        // These are the three Select2 pickers: a 500-row list can be searched by
+        // name, member no. or PID instead of scrolled - the same widget the rest of
+        // the app uses for member lookups.
+        const MEMBER_PICKERS = ['pds_memberSelect', 'mem_memberSelect', 'agr_memberSelect'];
+        let SELECT2_ACTIVE = false;
+
+        /**
+         * Attach Select2 once its assets have loaded. Safe to call repeatedly and
+         * returns FALSE - leaving the native selects untouched - when jQuery or
+         * Select2 could not be fetched.
+         */
+        async function initMemberPickers() {
+            try {
+                await (window.__tapstemcoSelect2Ready || Promise.resolve(false));
+            } catch (e) {
+                return false;
+            }
+
+            if (!window.jQuery || !window.jQuery.fn || !window.jQuery.fn.select2) {
+                return false;
+            }
+
+            MEMBER_PICKERS.forEach(function(id) {
+                const el = document.getElementById(id);
+                if (!el) return;
+                const $el = window.jQuery(el);
+                // Re-attaching over a live instance would nest containers, so
+                // clear the old one first (the pattern the app's forms use).
+                if ($el.hasClass('select2-hidden-accessible')) {
+                    $el.select2('destroy');
+                }
+                $el.select2({ width: '100%', allowClear: false });
+            });
+
+            SELECT2_ACTIVE = true;
+            refreshMemberPickers();
+            return true;
+        }
+
+        /**
+         * Tell Select2 that the option list was rebuilt or the value changed.
+         *
+         * A change event is the only public way to make Select2 re-read a <select>
+         * whose <option>s were replaced - but jQuery's trigger() ALSO runs the
+         * element's inline onchange handler as the event's "default action", and
+         * the `change.select2` namespace does NOT suppress that (preventDefault
+         * does not either). Left alone it fires this screen's own onMemberPicked()
+         * and syncAgreementMember(), which call loadMemberIntoForms() ->
+         * switchMainTab(), yanking the user off the Member Directory tab the
+         * moment the directory loads - and then loops, because
+         * loadMemberIntoForms() syncs the pickers again.
+         *
+         * The inline handler is detached for the duration of the sync and put
+         * straight back, so a real user selection still reaches it.
+         */
+        function refreshMemberPickers() {
+            if (!SELECT2_ACTIVE || !window.jQuery) return;
+            MEMBER_PICKERS.forEach(function(id) {
+                const el = document.getElementById(id);
+                if (!el) return;
+
+                const inlineChange = el.getAttribute('onchange');
+                if (inlineChange) el.removeAttribute('onchange');
+                window.jQuery(el).trigger('change.select2');
+                if (inlineChange) el.setAttribute('onchange', inlineChange);
+            });
+        }
+
         function populateMemberDropdowns() {
             const selects = [
                 document.getElementById('pds_memberSelect'),
@@ -1829,6 +2091,10 @@
                     sel.value = previous;
                 }
             });
+
+            // The options were just rebuilt, so Select2 has to re-read them and
+            // redraw the selected label.
+            refreshMemberPickers();
         }
 
         // Membership Application Submit Handler

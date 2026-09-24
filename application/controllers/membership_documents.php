@@ -22,7 +22,8 @@ if (!defined('BASEPATH'))
  *   POST /membership_documents/create_member - create a member, using the same
  *                                              logic as Members -> Register New Member
  *                                              (multipart when a photo is attached)
- *   POST /membership_documents/save_pds
+ *   POST /membership_documents/save_pds      - the PDS (multipart when the
+ *                                              member's photo is replaced)
  *   POST /membership_documents/save_application
  *   POST /membership_documents/save_agreement
  *   POST /membership_documents/clear_documents
@@ -371,6 +372,17 @@ class Membership_documents extends CI_Controller {
         return array('file' => $filename, 'error' => NULL);
     }
 
+    /**
+     * Save the Data Sheet of an EXISTING member.
+     *
+     * The member's picture travels with the Data Sheet in both directions:
+     * create_member() sets it on a new record, and this endpoint replaces it
+     * when the user picks a file while editing. It stays optional - an empty
+     * file field means "keep the picture that is on file".
+     *
+     * The permission is Edit_membership_documents, the same right that owns
+     * every other field on this form.
+     */
     function save_pds() {
         $this->require_role_json('Edit_membership_documents');
         $payload = $this->payload();
@@ -378,7 +390,52 @@ class Membership_documents extends CI_Controller {
         if ($pid === NULL) {
             return;
         }
-        $this->save($this->membership_documents_model->save_pds($pid, $payload));
+
+        // A file cannot ride in a JSON body, so the screen switches to
+        // multipart only when a picture is attached or replaced.
+        $uploaded_photo = NULL;
+        if (!empty($_FILES['photo']['name'])) {
+            if (!isset($_FILES['photo']['error']) || $_FILES['photo']['error'] !== UPLOAD_ERR_OK) {
+                $this->json(array(
+                    'success' => FALSE,
+                    'message' => 'The photo could not be uploaded (error '
+                        . (isset($_FILES['photo']['error']) ? (int) $_FILES['photo']['error'] : 'unknown') . ').',
+                ), 400);
+                return;
+            }
+
+            $stored = $this->store_member_photo($_FILES['photo']);
+            if ($stored['file'] === NULL) {
+                $this->json(array('success' => FALSE, 'message' => $stored['error']), 400);
+                return;
+            }
+
+            $uploaded_photo = $stored['file'];
+            $payload['photo'] = $uploaded_photo;
+        }
+
+        $result = $this->membership_documents_model->save_pds($pid, $payload);
+
+        if ($uploaded_photo !== NULL) {
+            if (empty($result['success'])) {
+                // Nothing was written, so the new file must not stay behind.
+                @unlink(FCPATH . 'uploads/memberphoto/' . basename($uploaded_photo));
+            } else {
+                // The replaced picture is nobody's any more, so it goes - unless
+                // another member row still points at the same filename.
+                $replaced = isset($result['replaced_photo']) ? $result['replaced_photo'] : '';
+                if ($replaced !== ''
+                        && !$this->membership_documents_model->other_member_uses_photo($replaced, $pid)) {
+                    @unlink(FCPATH . 'uploads/memberphoto/' . basename($replaced));
+                }
+            }
+        }
+
+        // Hand the screen the filename that is stored now, so its preview goes
+        // back to the saved picture - the old one when no file travelled.
+        $this->save($result, array(
+            'photo' => isset($result['photo']) ? $result['photo'] : NULL,
+        ));
     }
 
     function save_application() {
@@ -430,12 +487,16 @@ class Membership_documents extends CI_Controller {
         return (int) $payload['member_id'];
     }
 
-    private function save($result) {
-        $this->json(array(
+    /**
+     * Answer a model result. `$extra` carries endpoint-specific fields (the PDS
+     * save reports the member photo it stored).
+     */
+    private function save($result, $extra = array()) {
+        $this->json(array_merge(array(
             'success' => !empty($result['success']),
             'message' => isset($result['message']) ? $result['message'] : '',
             'warnings' => isset($result['warnings']) ? $result['warnings'] : array(),
-        ), empty($result['success']) ? 400 : 200);
+        ), $extra), empty($result['success']) ? 400 : 200);
     }
 
     /**

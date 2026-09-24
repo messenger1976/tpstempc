@@ -397,8 +397,10 @@ class Membership_documents_model extends CI_Model {
     function save_pds($pid, $in) {
         $pin = $this->pin();
 
+        // `photo` is read too: the caller needs it to say which picture this
+        // save replaced.
         $member = $this->db->query(
-            "SELECT id, PID, dob FROM members WHERE PID = ? AND PIN = ? LIMIT 1", array($pid, $pin)
+            "SELECT id, PID, dob, photo FROM members WHERE PID = ? AND PIN = ? LIMIT 1", array($pid, $pin)
         )->row();
 
         if (!$member) {
@@ -448,6 +450,14 @@ class Membership_documents_model extends CI_Model {
             $member_data['dob'] = $dob;
         } elseif (empty($member->dob)) {
             $warnings[] = 'Date of birth is required and was not provided.';
+        }
+
+        // The member's picture. Only touched when the controller stored a new
+        // file for this member, so a Data Sheet save that carries no file can
+        // never wipe the picture that is on file.
+        $photo = trim((string) $this->input_or($in, 'photo'));
+        if ($photo !== '') {
+            $member_data['photo'] = $photo;
         }
 
         $this->db->update('members', $member_data, array('PID' => $pid, 'PIN' => $pin));
@@ -529,6 +539,10 @@ class Membership_documents_model extends CI_Model {
             'success' => TRUE,
             'message' => 'Personal Data Sheet saved for ' . $display_name . '.',
             'warnings' => $warnings,
+            // What the screen should preview now, and what this save replaced
+            // ('' when no file travelled or the member had no picture).
+            'photo' => ($photo !== '') ? $photo : $this->own_photo(isset($member->photo) ? $member->photo : ''),
+            'replaced_photo' => ($photo !== '') ? trim((string) $member->photo) : '',
         );
     }
 
@@ -680,6 +694,43 @@ class Membership_documents_model extends CI_Model {
             "SELECT id FROM members WHERE PID = ? AND PIN = ? LIMIT 1", array($pid, $this->pin())
         )->row();
         return !empty($row);
+    }
+
+    /**
+     * Is this photo filename still the picture of some other member?
+     *
+     * Asked before deleting a picture that was just replaced, so a replace never
+     * destroys a file that is still in use. Deliberately NOT scoped to the
+     * tenant: uploads/memberphoto is one shared folder, and a filename another
+     * cooperative's member row points at must survive. The placeholder
+     * (blank, '0', avatar.gif) is never a file this screen owns, so it always
+     * answers TRUE.
+     */
+    function other_member_uses_photo($filename, $pid) {
+        $filename = trim((string) $filename);
+        if ($filename === '' || $filename === '0' || strtolower($filename) === 'avatar.gif') {
+            return TRUE;
+        }
+
+        $row = $this->db->query(
+            "SELECT COUNT(*) AS total FROM members WHERE photo = ? AND PID <> ?",
+            array($filename, (int) $pid)
+        )->row();
+
+        return $row ? ((int) $row->total > 0) : FALSE;
+    }
+
+    /**
+     * The member's own photo file, or '' when they only carry the placeholder.
+     * Mirrors the controller's own_photo() so the screen and the printed form
+     * agree on what counts as "has a picture".
+     */
+    private function own_photo($photo) {
+        $photo = trim((string) $photo);
+        if ($photo === '' || $photo === '0' || strtolower($photo) === 'avatar.gif') {
+            return '';
+        }
+        return $photo;
     }
 
     /**

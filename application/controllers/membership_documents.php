@@ -163,9 +163,12 @@ class Membership_documents extends CI_Controller {
         // query string, silently breaking search, filters and paging.
         // The registration fee default is injected too, so the new-member panel
         // starts from Default Settings rather than a guess.
+        // site_url('dashboard') is the Home tab's target: MY_Config localizes it
+        // to /<lang>/dashboard, keeping the jump on the same host and language
+        // segment as the signed-in session.
         $html = str_replace(
-            array('__TAPSTEMCO_APP_BASE__', '__TAPSTEMCO_API_BASE__', '__TAPSTEMCO_REGISTRATION_FEE__'),
-            array(base_url(), site_url('membership_documents/'), (string) default_text_value('REGISTRATION_FEE')),
+            array('__TAPSTEMCO_APP_BASE__', '__TAPSTEMCO_API_BASE__', '__TAPSTEMCO_REGISTRATION_FEE__', '__TAPSTEMCO_DASHBOARD_URL__'),
+            array(base_url(), site_url('membership_documents/'), (string) default_text_value('REGISTRATION_FEE'), site_url('dashboard')),
             $html
         );
 

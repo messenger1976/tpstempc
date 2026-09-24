@@ -23,6 +23,12 @@
         // new-member panel starts from Default Settings. Left as a placeholder
         // when the file is opened directly.
         window.TAPSTEMCO_REGISTRATION_FEE = '__TAPSTEMCO_REGISTRATION_FEE__';
+        // Main Dashboard of the portal - the Home tab in the nav strip below.
+        // Injected as site_url('dashboard'), which MY_Config localizes to
+        // /<lang>/dashboard (e.g. /en/dashboard). Same host and same language
+        // segment the user is signed in to, so the session survives the jump.
+        // Left as a placeholder when the file is opened directly.
+        window.TAPSTEMCO_DASHBOARD_URL = '__TAPSTEMCO_DASHBOARD_URL__';
     </script>
     <!-- Official TAPSTEMCO crest (same asset as TAPSTEMCO_FORM_LOGO in application/config/constants.php).
          The base is injected by the controller; when the file is opened directly the
@@ -227,6 +233,17 @@
         <nav class="bg-coopGreen-800 border-t border-coopGreen-700/60 px-4">
             <div class="max-w-7xl mx-auto flex items-center gap-2 overflow-x-auto py-1 text-xs">
                 <div class="flex space-x-1">
+                    <!-- Home: leaves this screen for the portal's main dashboard
+                         (site_url('dashboard') -> /<lang>/dashboard, e.g. /en/dashboard).
+                         Deliberately an <a>, not a fifth document tab - switchMainTab()
+                         only knows the four tabs that live on this page, so this entry
+                         never takes the .active state. -->
+                    <a href="__TAPSTEMCO_DASHBOARD_URL__" id="homeTabLink"
+                       class="tab-btn bg-white/10 hover:bg-coopGold-500 hover:text-coopGreen-900 text-white border border-coopGold-500/60 px-3.5 py-2 rounded-md flex items-center gap-2 transition whitespace-nowrap"
+                       title="Back to the main dashboard">
+                        <i class="fa-solid fa-house text-coopGold-400"></i> Home
+                    </a>
+
                     <button onclick="switchMainTab('directory')" id="tab-btn-directory" class="tab-btn active px-3.5 py-2 rounded-md flex items-center gap-2 transition text-slate-200">
                         <i class="fa-solid fa-address-book"></i> Member Directory
                     </button>
@@ -939,6 +956,26 @@
         })();
 
         const LOGO_SRC = new URL('logo/1761642549tapstemco-logo.png', APP_BASE).href;
+
+        // Main Dashboard, for the Home tab in the nav strip. The controller
+        // injects site_url('dashboard') -> /<lang>/dashboard; the fallback only
+        // matters when this file is opened directly from /membership_system/,
+        // where no language segment is known.
+        const DASHBOARD_URL = (function () {
+            const injected = window.TAPSTEMCO_DASHBOARD_URL;
+            if (typeof injected === 'string' && injected !== '' && injected.indexOf('__') !== 0) {
+                return injected;
+            }
+            return new URL('dashboard', APP_BASE).href;
+        })();
+
+        // The Home entry is an anchor, so its href is already live once the
+        // controller has substituted the placeholder; this just makes sure the
+        // standalone-file fallback points somewhere sensible too.
+        (function () {
+            const homeLink = document.getElementById('homeTabLink');
+            if (homeLink) homeLink.href = DASHBOARD_URL;
+        })();
 
         // Member pictures are stored in the folder both registration screens
         // upload to (base_url() is the web root, outside the language segment).

@@ -136,8 +136,10 @@ class Map_location_model extends CI_Model {
      * Member (scoped to the current organisation) with contact address, own pin and address pin.
      */
     function get_member($member_row_id) {
+        // current_user() runs its own query, so resolve it before starting this builder chain.
+        $pin = current_user()->PIN;
         $member = $this->db->where('id', intval($member_row_id))
-                           ->where('PIN', current_user()->PIN)
+                           ->where('PIN', $pin)
                            ->get('members')->row();
         if (!$member) {
             return null;

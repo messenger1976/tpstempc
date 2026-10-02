@@ -23,6 +23,10 @@
         // new-member panel starts from Default Settings. Left as a placeholder
         // when the file is opened directly.
         window.TAPSTEMCO_REGISTRATION_FEE = '__TAPSTEMCO_REGISTRATION_FEE__';
+        // Settings -> Share Setup: par value per share and minimum shares, the
+        // Subscription Agreement defaults for a member with no saved agreement.
+        window.TAPSTEMCO_SHARE_PAR_VALUE = '__TAPSTEMCO_SHARE_PAR_VALUE__';
+        window.TAPSTEMCO_SHARE_MIN = '__TAPSTEMCO_SHARE_MIN__';
         // Main Dashboard of the portal - the Home tab in the nav strip below.
         // Injected as site_url('dashboard'), which MY_Config localizes to
         // /<lang>/dashboard (e.g. /en/dashboard). Same host and same language
@@ -825,7 +829,7 @@
                         </div>
                         <div>
                             <label class="block text-xs font-bold text-coopGreen-900 uppercase mb-1">Par Value per Share</label>
-                            <input type="text" value="₱ 500.00" readonly class="w-full px-3 py-1.5 bg-slate-200 border rounded text-xs font-bold text-slate-600">
+                            <input type="text" id="agr_parValue" value="₱ 500.00" readonly class="w-full px-3 py-1.5 bg-slate-200 border rounded text-xs font-bold text-slate-600">
                         </div>
                         <div>
                             <label class="block text-xs font-bold text-coopGreen-900 uppercase mb-1">Total Par Value</label>
@@ -1018,6 +1022,20 @@
             return String(injected).indexOf('__') === 0 ? '' : String(injected);
         })();
 
+        // Share Setup defaults; 4 x PHP 500 when the file is opened directly.
+        function injectedNumber(value, fallback) {
+            const n = parseFloat(value);
+            return isNaN(n) || n <= 0 ? fallback : n;
+        }
+        const SHARE_PAR_DEFAULT = injectedNumber(window.TAPSTEMCO_SHARE_PAR_VALUE, 500);
+        const SHARE_MIN_DEFAULT = Math.round(injectedNumber(window.TAPSTEMCO_SHARE_MIN, 4));
+        // Par value of the agreement on screen: the saved one, else the default.
+        let agrParValue = SHARE_PAR_DEFAULT;
+
+        function formatPeso(amount) {
+            return '₱ ' + Number(amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+
         function apiUrl(path, params) {
             const url = new URL(path, API_BASE);
             if (params) {
@@ -1121,6 +1139,8 @@
             initSignatureCanvas();
             addSysBenRow();
             addSysTrnRow();
+            document.getElementById('agr_shares').value = SHARE_MIN_DEFAULT;
+            calcAgrTotal();
 
             // Searchable member pickers. Not awaited: it is independent of the API
             // and simply does nothing if the Select2 assets are unavailable.
@@ -1954,7 +1974,8 @@
         function applyRecordToAgreement(rec) {
             const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v || ''; };
 
-            set('agr_shares', rec.shares || 4);
+            agrParValue = parseFloat(rec.parValuePerShare) > 0 ? parseFloat(rec.parValuePerShare) : SHARE_PAR_DEFAULT;
+            set('agr_shares', rec.shares || SHARE_MIN_DEFAULT);
             setSelectValue(document.getElementById('agr_frequency'), rec.frequency || 'monthly');
             set('agr_witness1', rec.witness1);
             set('agr_witness2', rec.witness2);
@@ -2242,7 +2263,7 @@
                 const res = await apiPost('save_agreement', {
                     member_id: memberId,
                     shares: document.getElementById('agr_shares').value,
-                    parValuePerShare: 500,
+                    parValuePerShare: agrParValue,
                     frequency: document.getElementById('agr_frequency').value,
                     witness1: document.getElementById('agr_witness1').value,
                     witness2: document.getElementById('agr_witness2').value,
@@ -2295,8 +2316,8 @@
         // Auto calculate Agreement Par Value
         function calcAgrTotal() {
             const shares = parseInt(document.getElementById('agr_shares').value) || 0;
-            const total = shares * 500;
-            document.getElementById('agr_totalValue').value = '₱ ' + total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            document.getElementById('agr_parValue').value = formatPeso(agrParValue);
+            document.getElementById('agr_totalValue').value = formatPeso(shares * agrParValue);
         }
 
         // Signature Canvas Mechanics
@@ -2752,11 +2773,11 @@
                         <p class="text-justify leading-loose">
                             I, <strong class="border-b border-slate-900 px-2 font-sans uppercase font-bold text-coopGreen-900">${firstMiddleFamily || '__________________________'}</strong>, 
                             a member of the <strong>TALIBON PUBLIC SCHOOL TEACHERS AND EMPLOYEES MULTIPURPOSE COOPERATIVE (TAPSTEMCO)</strong>, do hereby subscribe for 
-                            <strong class="border-b border-slate-900 px-2 font-sans">${rec.shares || 4}</strong> shares with a par value of <strong>₱ 500.00</strong> per share at TAPSTEMCO, a cooperative duly organized and registered under the laws of the Philippines.
+                            <strong class="border-b border-slate-900 px-2 font-sans">${rec.shares || SHARE_MIN_DEFAULT}</strong> shares with a par value of <strong>${formatPeso(parseFloat(rec.parValuePerShare) > 0 ? rec.parValuePerShare : SHARE_PAR_DEFAULT)}</strong> per share at TAPSTEMCO, a cooperative duly organized and registered under the laws of the Philippines.
                         </p>
 
                         <p class="text-justify leading-loose">
-                            I, shall pay <strong class="border-b border-slate-900 px-2 font-sans">${rec.shares || 4}</strong> shares with the total par value of 
+                            I, shall pay <strong class="border-b border-slate-900 px-2 font-sans">${rec.shares || SHARE_MIN_DEFAULT}</strong> shares with the total par value of 
                             <strong class="border-b border-slate-900 px-2 font-sans text-coopGreen-900">${rec.totalParValueLabel || '₱ 0.00'}</strong> 
                             through <strong class="border-b border-slate-900 px-2 font-sans uppercase">${rec.frequency || 'monthly'}</strong> installments through voluntary payment of chosen schedule.
                         </p>

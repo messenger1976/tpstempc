@@ -166,9 +166,14 @@ class Membership_documents extends CI_Controller {
         // site_url('dashboard') is the Home tab's target: MY_Config localizes it
         // to /<lang>/dashboard, keeping the jump on the same host and language
         // segment as the signed-in session.
+        // Share defaults come from Settings -> Share Setup, so a member without a
+        // saved agreement starts from the configured par value and minimum shares.
+        $share_defaults = $this->membership_documents_model->share_defaults();
         $html = str_replace(
-            array('__TAPSTEMCO_APP_BASE__', '__TAPSTEMCO_API_BASE__', '__TAPSTEMCO_REGISTRATION_FEE__', '__TAPSTEMCO_DASHBOARD_URL__'),
-            array(base_url(), site_url('membership_documents/'), (string) default_text_value('REGISTRATION_FEE'), site_url('dashboard')),
+            array('__TAPSTEMCO_APP_BASE__', '__TAPSTEMCO_API_BASE__', '__TAPSTEMCO_REGISTRATION_FEE__', '__TAPSTEMCO_DASHBOARD_URL__',
+                '__TAPSTEMCO_SHARE_PAR_VALUE__', '__TAPSTEMCO_SHARE_MIN__'),
+            array(base_url(), site_url('membership_documents/'), (string) default_text_value('REGISTRATION_FEE'), site_url('dashboard'),
+                (string) $share_defaults['par'], (string) $share_defaults['shares']),
             $html
         );
 
@@ -535,10 +540,11 @@ class Membership_documents extends CI_Controller {
             }
         }
 
+        $share_defaults = $this->membership_documents_model->share_defaults();
         $shares = isset($row->subscribed_shares) && $row->subscribed_shares !== NULL
-            ? (int) $row->subscribed_shares : 4;
+            ? (int) $row->subscribed_shares : $share_defaults['shares'];
         $par = isset($row->par_value_per_share) && $row->par_value_per_share !== NULL
-            ? (float) $row->par_value_per_share : 500.00;
+            ? (float) $row->par_value_per_share : $share_defaults['par'];
         $total = isset($row->total_par_value) && $row->total_par_value !== NULL
             ? (float) $row->total_par_value : round($shares * $par, 2);
 

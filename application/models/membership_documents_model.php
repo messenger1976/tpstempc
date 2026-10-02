@@ -46,6 +46,23 @@ class Membership_documents_model extends CI_Model {
         return current_user()->PIN;
     }
 
+    private $share_defaults = NULL;
+
+    /**
+     * Subscription Agreement defaults from Settings -> Share Setup
+     * (share_setting.amount = par value per share, min_share = subscribed
+     * shares). Falls back to 4 x PHP 500 when Share Setup has not been saved.
+     */
+    function share_defaults() {
+        if ($this->share_defaults === NULL) {
+            $row = $this->db->get_where('share_setting', array('PIN' => $this->pin()))->row();
+            $par = $row && (float) $row->amount > 0 ? (float) $row->amount : 500.00;
+            $shares = $row && (int) $row->min_share > 0 ? (int) $row->min_share : 4;
+            $this->share_defaults = array('par' => $par, 'shares' => $shares);
+        }
+        return $this->share_defaults;
+    }
+
     // ------------------------------------------------------------------
     // READ
     // ------------------------------------------------------------------
@@ -606,13 +623,14 @@ class Membership_documents_model extends CI_Model {
             return array('success' => FALSE, 'message' => 'Member #' . $pid . ' not found for this cooperative.');
         }
 
+        $share_defaults = $this->share_defaults();
         $shares = (int) $this->input_or($in, 'shares');
         if ($shares <= 0) {
-            $shares = 4;
+            $shares = $share_defaults['shares'];
         }
         $par = (float) $this->input_or($in, 'parValuePerShare');
         if ($par <= 0) {
-            $par = 500.00;
+            $par = $share_defaults['par'];
         }
 
         $frequency = trim((string) $this->input_or($in, 'frequency'));

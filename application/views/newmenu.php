@@ -311,13 +311,16 @@ $current_member_id = ($current_user_data && isset($current_user_data->member_id)
             <?php } ?>
 
             <?php if (access_module(9)) { ?>
-                <li class="<?php echo (($active == 'setting' || $active == 'backup' || $active == 'activity_log') ? 'active' : ''); ?>">
+                <li class="<?php echo (($active == 'setting' || $active == 'backup' || $active == 'activity_log' || $active == 'map_location') ? 'active' : ''); ?>">
                     <a href="#"><i class="fa fa-cogs"></i> <span class="nav-label"><?php echo lang('setting_account'); ?></span><span class="fa arrow"></span></a>
                     <ul class="nav nav-second-level">
                       <!--<li class="<?php echo ($activefunction == 'client_account' ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/setting/client_account');         ?>"><?php echo lang('setting_addaccount');         ?></a></li>
                         <li class="<?php echo ($activefunction == 'clientaccount_list' ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/setting/clientaccount_list');         ?>"><?php echo lang('seting_clientaccountlist');         ?></a></li>-->
                         <?php if (has_role(9, 'Manage_company_information')) { ?>
                             <li class="<?php echo ($activefunction == 'companyinfo_view' ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/setting/companyinfo_view'); ?>"><?php echo lang('seting_accountinfo'); ?></a></li>
+                        <?php } ?>
+                        <?php if (can_manage_map_locations()) { ?>
+                            <li class="<?php echo ($active == 'map_location' ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/map_location/index'); ?>">Map Locations</a></li>
                         <?php } ?>
                         <?php if (has_role(9, 'Share_settings')) { ?>
                             <li class="<?php echo ($activefunction == 'share_setup' ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/setting/share_setup'); ?>"><?php echo lang('setting_share_setup'); ?></a></li>

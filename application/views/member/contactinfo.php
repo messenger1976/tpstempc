@@ -97,6 +97,20 @@ $this->load->view('member/topmenu');
                         <div class="col-lg-7 col-md-8">
                             <input type="text" name="physical" value="<?php echo $contactinfo->physicaladdress; ?>" class="form-control"/>
                             <?php echo form_error('physical'); ?>
+                            <?php
+                            $pin_status = isset($map_pin_status) ? $map_pin_status : 'none';
+                            $pin_labels = array(
+                                'manual' => array('label-primary', 'Map pin: Manual'),
+                                'address' => array('label-info', 'Map pin: From address'),
+                                'none' => array('label-default', 'Map pin: Not plotted'),
+                            );
+                            ?>
+                            <div style="margin-top:6px;">
+                                <span class="label <?php echo $pin_labels[$pin_status][0]; ?>"><i class="fa fa-map-marker"></i> <?php echo $pin_labels[$pin_status][1]; ?></span>
+                                <?php if (can_manage_map_locations() && $this->db->field_exists('map_lat', 'members_contact')) { ?>
+                                    <a href="<?php echo site_url(current_lang() . '/map_location/member_pin/' . encode_id($basicinfo->id)); ?>" style="margin-left:6px;">Set map pin</a>
+                                <?php } ?>
+                            </div>
                         </div>
                     </div>
 

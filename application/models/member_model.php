@@ -539,18 +539,61 @@ class Member_Model extends CI_Model {
     }
 
     /**
+     * Whether members_contact has the manual pin columns (tools/install_map_locations.php).
+     */
+    function member_map_pins_ready() {
+        return $this->db->field_exists('map_lat', 'members_contact')
+            && $this->db->field_exists('map_lng', 'members_contact');
+    }
+
+    /**
      * Active members with physical addresses, grouped for the dashboard OSM map.
-     * Requires member_address_geocode (see tools/install_member_address_geocode.php).
+     * Members with their own pin (members_contact.map_lat/map_lng) get their own bucket;
+     * everyone else is grouped by address using member_address_geocode
+     * (see tools/install_member_address_geocode.php and tools/install_map_locations.php).
      *
      * @return array List of location buckets with lat/lng, count, and sample members
      */
     function get_member_map_locations() {
         $pin = current_user()->PIN;
         $locations = array();
+        $has_geocode = $this->db->table_exists('member_address_geocode');
+        $has_member_pins = $this->member_map_pins_ready();
 
-        if (!$this->db->table_exists('member_address_geocode')) {
+        if ($has_member_pins) {
+            $own = $this->db->query(
+                "SELECT m.member_id,
+                        TRIM(CONCAT(IFNULL(m.firstname,''), ' ', IFNULL(m.lastname,''))) AS name,
+                        TRIM(c.physicaladdress) AS address,
+                        c.map_lat, c.map_lng
+                 FROM members m
+                 INNER JOIN members_contact c ON c.PID = m.PID
+                 WHERE m.PIN = ?
+                   AND m.status = 1
+                   AND c.physicaladdress IS NOT NULL
+                   AND TRIM(c.physicaladdress) != ''
+                   AND c.map_lat IS NOT NULL
+                   AND c.map_lng IS NOT NULL
+                 ORDER BY m.lastname ASC, m.firstname ASC",
+                array($pin)
+            )->result();
+
+            foreach ($own as $row) {
+                $locations[] = array(
+                    'address' => $row->address,
+                    'lat' => floatval($row->map_lat),
+                    'lng' => floatval($row->map_lng),
+                    'member_count' => 1,
+                    'members' => array(array('member_id' => $row->member_id, 'name' => $row->name)),
+                );
+            }
+        }
+
+        if (!$has_geocode) {
             return $locations;
         }
+
+        $no_own_pin = $has_member_pins ? " AND (c.map_lat IS NULL OR c.map_lng IS NULL)" : "";
 
         $sql = "SELECT
                     UPPER(TRIM(c.physicaladdress)) AS address_key,
@@ -566,7 +609,7 @@ class Member_Model extends CI_Model {
                 WHERE m.PIN = ?
                   AND m.status = 1
                   AND c.physicaladdress IS NOT NULL
-                  AND TRIM(c.physicaladdress) != ''
+                  AND TRIM(c.physicaladdress) != ''" . $no_own_pin . "
                 GROUP BY UPPER(TRIM(c.physicaladdress)), g.lat, g.lng, g.geocode_status
                 ORDER BY member_count DESC";
 
@@ -584,7 +627,7 @@ class Member_Model extends CI_Model {
                  INNER JOIN members_contact c ON c.PID = m.PID
                  WHERE m.PIN = ?
                    AND m.status = 1
-                   AND UPPER(TRIM(c.physicaladdress)) = ?
+                   AND UPPER(TRIM(c.physicaladdress)) = ?" . $no_own_pin . "
                  ORDER BY m.lastname ASC, m.firstname ASC
                  LIMIT 8",
                 array($pin, $row->address_key)
@@ -604,7 +647,8 @@ class Member_Model extends CI_Model {
 
     /**
      * Office / cooperative HQ location for dashboard map directions.
-     * Uses companyinfo.address matched against the geocode cache when possible.
+     * Uses the manual office pin (companyinfo.map_lat/map_lng) when set; otherwise
+     * companyinfo.address matched against the geocode cache when possible.
      */
     function get_office_map_location() {
         $company = company_info();
@@ -617,6 +661,12 @@ class Member_Model extends CI_Model {
             'lat' => 10.1365976,
             'lng' => 124.3132049,
         );
+
+        if ($company && isset($company->map_lat, $company->map_lng)) {
+            $office['lat'] = floatval($company->map_lat);
+            $office['lng'] = floatval($company->map_lng);
+            return $office;
+        }
 
         if (!$this->db->table_exists('member_address_geocode') || $address === '') {
             return $office;
@@ -674,23 +724,30 @@ class Member_Model extends CI_Model {
         )->row();
         $stats['with_address'] = $row ? intval($row->cnt) : 0;
 
-        if (!$stats['table_ready']) {
+        $has_member_pins = $this->member_map_pins_ready();
+        if (!$stats['table_ready'] && !$has_member_pins) {
             return $stats;
         }
 
+        // A member is plotted by their own pin, else by a geocoded address. Own pins are one location each.
+        $own = $has_member_pins ? "(c.map_lat IS NOT NULL AND c.map_lng IS NOT NULL)" : "0";
+        $geo_ok = $stats['table_ready'] ? "(g.geocode_status = 'ok' AND g.lat IS NOT NULL AND g.lng IS NOT NULL)" : "0";
+        $geo_join = $stats['table_ready']
+            ? "LEFT JOIN member_address_geocode g ON g.address_key = UPPER(TRIM(c.physicaladdress))"
+            : "";
+
         $row = $this->db->query(
-            "SELECT COUNT(*) AS plotted, COUNT(DISTINCT UPPER(TRIM(c.physicaladdress))) AS locations
+            "SELECT COUNT(*) AS plotted,
+                    COUNT(DISTINCT CASE WHEN $own THEN NULL ELSE UPPER(TRIM(c.physicaladdress)) END)
+                        + SUM(CASE WHEN $own THEN 1 ELSE 0 END) AS locations
              FROM members m
              INNER JOIN members_contact c ON c.PID = m.PID
-             INNER JOIN member_address_geocode g
-                ON g.address_key = UPPER(TRIM(c.physicaladdress))
-               AND g.geocode_status = 'ok'
-               AND g.lat IS NOT NULL
-               AND g.lng IS NOT NULL
+             $geo_join
              WHERE m.PIN = ?
                AND m.status = 1
                AND c.physicaladdress IS NOT NULL
-               AND TRIM(c.physicaladdress) != ''",
+               AND TRIM(c.physicaladdress) != ''
+               AND ($own OR $geo_ok)",
             array($pin)
         )->row();
 
@@ -711,8 +768,10 @@ class Member_Model extends CI_Model {
     function get_collector_map_targets($overdue_only = true) {
         $pin = current_user()->PIN;
         $targets = array();
+        $has_geocode = $this->db->table_exists('member_address_geocode');
+        $has_member_pins = $this->member_map_pins_ready();
 
-        if (!$this->db->table_exists('member_address_geocode')) {
+        if (!$has_geocode && !$has_member_pins) {
             return $targets;
         }
 
@@ -749,19 +808,23 @@ class Member_Model extends CI_Model {
             }
         }
 
+        $own_cols = $has_member_pins ? "c.map_lat AS own_lat, c.map_lng AS own_lng," : "NULL AS own_lat, NULL AS own_lng,";
+        $geo_cols = $has_geocode ? "g.lat, g.lng, g.geocode_status" : "NULL AS lat, NULL AS lng, NULL AS geocode_status";
+        $geo_join = $has_geocode
+            ? "LEFT JOIN member_address_geocode g ON g.address_key = UPPER(TRIM(c.physicaladdress))"
+            : "";
+
         $sql = "SELECT
                     m.PID,
                     m.member_id,
                     TRIM(CONCAT(IFNULL(m.firstname,''), ' ', IFNULL(m.lastname,''))) AS name,
                     TRIM(c.physicaladdress) AS address,
                     c.phone1,
-                    g.lat,
-                    g.lng,
-                    g.geocode_status
+                    $own_cols
+                    $geo_cols
                 FROM members m
                 INNER JOIN members_contact c ON c.PID = m.PID
-                LEFT JOIN member_address_geocode g
-                    ON g.address_key = UPPER(TRIM(c.physicaladdress))
+                $geo_join
                 WHERE m.PIN = ?
                   AND m.status = 1
                   AND c.physicaladdress IS NOT NULL
@@ -784,7 +847,13 @@ class Member_Model extends CI_Model {
                 continue;
             }
 
-            if ($row->geocode_status !== 'ok' || $row->lat === null || $row->lng === null) {
+            if ($row->own_lat !== null && $row->own_lng !== null) {
+                $lat = $row->own_lat;
+                $lng = $row->own_lng;
+            } elseif ($row->geocode_status === 'ok' && $row->lat !== null && $row->lng !== null) {
+                $lat = $row->lat;
+                $lng = $row->lng;
+            } else {
                 continue;
             }
 
@@ -794,8 +863,8 @@ class Member_Model extends CI_Model {
                 'name' => trim($row->name),
                 'address' => $row->address,
                 'phone' => $row->phone1,
-                'lat' => floatval($row->lat),
-                'lng' => floatval($row->lng),
+                'lat' => floatval($lat),
+                'lng' => floatval($lng),
                 'outstanding_balance' => floatval($loan_info['outstanding_balance']),
                 'days_overdue' => intval($loan_info['days_overdue']),
                 'loan_count' => intval($loan_info['loan_count']),

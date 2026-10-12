@@ -257,6 +257,17 @@ class Dashboard extends CI_Controller {
     }
     
     /**
+     * Fixed Beginning Balance loans have no schedule to measure, so schedule-based
+     * rates leave them out while TAPSTEMCO_BB_FIXED_BALANCE is on.
+     */
+    private function _exclude_bb_fixed_sql($lc_alias) {
+        if (!defined('TAPSTEMCO_BB_FIXED_BALANCE') || !TAPSTEMCO_BB_FIXED_BALANCE) {
+            return '';
+        }
+        return " AND ({$lc_alias}.evaluated IS NULL OR {$lc_alias}.evaluated <> 'BEGINNING_BALANCE')";
+    }
+
+    /**
      * Calculate payment rate (percentage of loans paid on time)
      */
     private function calculate_payment_rate() {
@@ -270,7 +281,7 @@ class Dashboard extends CI_Controller {
                 WHERE lc.PIN = '$pin'
                 AND lc.status = 4
                 AND lc.disburse = 1
-                AND lcrs.repaydate <= CURDATE()";
+                AND lcrs.repaydate <= CURDATE()" . $this->_exclude_bb_fixed_sql('lc');
         
         $result = $this->db->query($sql)->row();
         
@@ -313,7 +324,7 @@ class Dashboard extends CI_Controller {
                     WHERE lc.PIN = '$pin'
                     AND lc.status = 4
                     AND lc.disburse = 1
-                    AND lcrs.repaydate BETWEEN '$start_date' AND '$end_date'";
+                    AND lcrs.repaydate BETWEEN '$start_date' AND '$end_date'" . $this->_exclude_bb_fixed_sql('lc');
         
         $due_result = $this->db->query($sql_due)->row();
         $total_due = floatval($due_result->total_due);

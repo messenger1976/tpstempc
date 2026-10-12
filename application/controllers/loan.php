@@ -157,6 +157,12 @@ class Loan extends CI_Controller {
             } else {
                 $member_id = $member_id_value;
             }
+            if ($this->ion_auth->in_group('Members')) {
+                // A member may only apply for themselves, whatever the form posted.
+                $self = $this->member_model->member_basic_info(null, null, current_user()->member_id)->row();
+                $pid = $self ? $self->PID : '';
+                $member_id = $self ? $self->member_id : '';
+            }
             $PID = $pid;
 
             $product_id = $this->input->post('product');
@@ -388,141 +394,36 @@ class Loan extends CI_Controller {
         ));
     }
 
-    function pass_monthly_income($monthy_income, $pid, $newinstall = 0, $exclude_lid = null) {
-        // 
-         $pin = current_user()->PIN;
-        $monthly_contribution = 0;
-        $contr_setup = $this->db->get_where('contribution_settings', array('PID' => $pid,'PIN'=>$pin))->row();
-        if ($contr_setup) {
-            $monthly_contribution = $contr_setup->amount;
-        } else {
-            $this->db->where('PIN',$pin);
-            $contr_setup = $this->db->get('contribution_global')->row();
-            $monthly_contribution = $contr_setup ? $contr_setup->amount : 0;
-        }
-        //check open_loan (when editing, exclude current loan so its installment is only counted via $newinstall)
-        $sql = "SELECT * FROM loan_contract WHERE PID='" . $this->db->escape_str($pid) . "' AND disburse=1 AND status=4";
-        if ($exclude_lid !== null && $exclude_lid !== '') {
-            $sql .= " AND LID != '" . $this->db->escape_str($exclude_lid) . "'";
-        }
-        $open_loan = $this->db->query($sql)->result();
-        $repay_installment = 0;
-        foreach ($open_loan as $key => $value) {
-
-            $repay_installment += $value->installment_amount;
-        }
-
-        $total_contr_from_salary = $repay_installment + $monthly_contribution + $newinstall;
-        $remain_theluth = ((1 / 3) * $monthy_income);
-        //$remain = $monthy_income - $total_contr_from_salary;
-        if ($total_contr_from_salary <= $remain_theluth) {
-            return TRUE;
-        }
-        return FALSE;
+    // Application rules live in Loan_eligibility so the Member Loan App applies the same ones.
+    private function _eligibility() {
+        $this->load->library('loan_eligibility');
+        return $this->loan_eligibility;
     }
 
-    function pass_share_condition($product, $share) {
-        // TEMPORARILY DISABLED - share requirement check removed for loan application
-        return TRUE;
-        /*
-        if ($product->loan_security_share_min > 0) {
-            if ($share) {
-                if ($share->totalshare >= $product->loan_security_share_min) {
-                    return TRUE;
-                } else {
-                    return FALSE;
-                }
-            } else {
-                return FALSE;
-            }
-        }
-
-        return TRUE;
-        */
+    private function pass_monthly_income($monthy_income, $pid, $newinstall = 0, $exclude_lid = null) {
+        return $this->_eligibility()->pass_monthly_income($monthy_income, $pid, $newinstall, $exclude_lid);
     }
 
-    function pass_saving_condition($product, $saving) {
-
-        if ($product->loan_security_saving_minimum > 0) {
-            if ($saving) {
-                if ($saving->balance >= $product->loan_security_saving_minimum) {
-                    return TRUE;
-                } else {
-                    return FALSE;
-                }
-            } else {
-                return FALSE;
-            }
-        }
-
-        return TRUE;
+    private function pass_share_condition($product, $share) {
+        return $this->_eligibility()->pass_share_condition($product, $share);
     }
 
-    function maximum_loan_allowed($product, $loan_amount, $contribution, $pid) {
-        // TEMPORARILY DISABLED - maximum loan amount check bypassed
-        return TRUE;
-        /*
-        $total_amount = $contribution->balance * $product->loan_security_contribution_times;
-
-        $open_loan = $this->db->query("SELECT * FROM loan_contract WHERE PID='$pid' AND approval=4")->result();
-
-        $principles = 0;
-        $amount_paid = 0;
-        foreach ($open_loan as $key => $value) {
-            $amount_paid += $this->db->query("SELECT SUM('amount') as amount FROM loan_repayment_receipt WHERE LID='$value->LID'")->row()->amount;
-            $principles += $value->basic_amount;
-        }
-        $open_principle = $principles - $amount_paid;
-        $allowed = $total_amount - $open_principle;
-        $this->loan_allowed = $allowed;
-        if ($allowed >= $loan_amount) {
-            return TRUE;
-        }
-        return FALSE;
-        */
+    private function pass_saving_condition($product, $saving) {
+        return $this->_eligibility()->pass_saving_condition($product, $saving);
     }
 
-    function maximum_contributions_times($product, $loan_amount, $contribution) {
-        // TEMPORARILY DISABLED - contribution times check bypassed
-        return TRUE;
-        /*
-        $total_amount = $contribution->balance * $product->loan_security_contribution_times;
-        if ($total_amount == 0) {
-            return TRUE;
-        } else {
-            if (count($contribution) > 0) {
-                if ($loan_amount <= $total_amount) {
-                    return TRUE;
-                } else {
-                    return FALSE;
-                }
-            } else {
-                return FALSE;
-            }
-        }
-        return TRUE;
-        */
+    private function maximum_loan_allowed($product, $loan_amount, $contribution, $pid) {
+        $ok = $this->_eligibility()->maximum_loan_allowed($product, $loan_amount, $contribution, $pid);
+        $this->loan_allowed = $this->_eligibility()->loan_allowed;
+        return $ok;
     }
 
-    function pass_contribution_condition($product, $contribution) {
-        // TEMPORARILY DISABLED - minimum contribution amount check bypassed
-        return TRUE;
-        /*
-        if ($product->loan_security_contribution_min > 0) {
-            if ($contribution) {
-                if ($contribution->balance >= $product->loan_security_contribution_min) {
+    private function maximum_contributions_times($product, $loan_amount, $contribution) {
+        return $this->_eligibility()->maximum_contributions_times($product, $loan_amount, $contribution);
+    }
 
-                    return TRUE;
-                } else {
-                    return FALSE;
-                }
-            } else {
-                return FALSE;
-            }
-        }
-
-        return TRUE;
-        */
+    private function pass_contribution_condition($product, $contribution) {
+        return $this->_eligibility()->pass_contribution_condition($product, $contribution);
     }
 
     function loan_editing($loanid) {
@@ -3378,6 +3279,11 @@ $pin = current_user()->PIN;
         }
         if (!in_array((string) $loaninfo->status, array('4', '5'), TRUE)) {
             $this->session->set_flashdata('warning', lang('loan_schedule_not_released'));
+            redirect($redirect);
+            return;
+        }
+        if ($this->loan_model->is_bb_fixed_loan($loaninfo)) {
+            $this->session->set_flashdata('warning', 'Beginning Balance loan: no repayment schedule is used. It owes the Beginning Balance principal, interest and penalty.');
             redirect($redirect);
             return;
         }

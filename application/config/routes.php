@@ -47,6 +47,16 @@ $route['^(en|sw)/(.+)$'] = "$2";
 // '/en', '/de', '/fr' and '/nl' URIs -> use default controller
 $route['^(en|sw)$'] = $route['default_controller'];
 
+// Member Loan App (PWA) - controllers live in application/controllers/memberapp/
+$route['customer_login'] = 'memberapp/auth/index';
+$route['customer_login/manifest.webmanifest'] = 'memberapp/pwa/manifest';
+$route['customer_login/sw.js'] = 'memberapp/pwa/sw';
+$route['customer_login/offline'] = 'memberapp/pwa/offline';
+$route['customer_login/paymongo/(.+)'] = 'memberapp/gateway/$1';
+$route['customer_login/(app|api|pay)'] = 'memberapp/$1/index';
+$route['customer_login/(app|api|pay)/(.+)'] = 'memberapp/$1/$2';
+$route['customer_login/(.+)'] = 'memberapp/auth/$1';
+
 
 /* End of file routes.php */
 /* Location: ./application/config/routes.php */

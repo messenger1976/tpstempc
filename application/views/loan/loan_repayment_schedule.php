@@ -453,6 +453,11 @@ $print_disburse_title = $is_bb_journal ? lang('loan_beginning_balance_journal') 
             </div>
         </div>
         <div class="panel-body">
+            <?php
+            if ($loaninfo && $this->loan_model->is_bb_fixed_loan($loaninfo)) {
+                $this->load->view('loan/_bb_fixed_balance_notice', array('bb_balance' => $this->loan_model->get_bb_loan_balance($loaninfo->LID)));
+            }
+            ?>
             <div class="table-responsive">
                 <table class="table table-striped schedule-table">
                     <thead>

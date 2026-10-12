@@ -25,6 +25,13 @@
         echo '<div class="alert alert-danger">' . $this->session->flashdata('warning') . '</div>';
     }
     ?>
+    <?php
+    $bb_balance = $this->loan_model->is_bb_fixed_loan($loaninfo) ? $this->loan_model->get_bb_loan_balance($loaninfo->LID) : null;
+    $this->load->view('loan/_bb_fixed_balance_notice', array('bb_balance' => $bb_balance));
+    if ($bb_balance) {
+        $can_generate = false;
+    }
+    ?>
     <?php if (count($schedule) < 1) { ?>
         <div class="alert alert-warning schedule-empty">
             <strong><?php echo lang('loan_schedule_none_yet'); ?></strong>

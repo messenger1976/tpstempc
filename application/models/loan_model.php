@@ -511,7 +511,11 @@ class Loan_Model extends CI_Model {
         return 'LN' . $next;
     }
 
-    function add_newloan($data, $processingfee = 0) {
+    /**
+     * @param bool $post_fee_gl FALSE for Member Loan App applications: the fee row
+     *                          is kept (0) but no GL lines are written.
+     */
+    function add_newloan($data, $processingfee = 0, $post_fee_gl = true) {
         // Use LID from $data if provided and not empty; otherwise auto-generate
         if (!empty($data['LID'])) {
             $lid = trim($data['LID']);
@@ -553,6 +557,9 @@ class Loan_Model extends CI_Model {
 
             $this->db->insert('loanprocessing_fee', $array_registration);
             $refferenceid = $this->db->insert_id();
+            if (!$post_fee_gl) {
+                return $data['LID'];
+            }
             //now insert to income journal
             $credit_account = 4000002;
             $debit_account = 1010003;
@@ -2923,10 +2930,19 @@ class Loan_Model extends CI_Model {
             $paydate = date('Y-m-d');
         }
 
-        $open = $this->open_repayment_installment($LID);
+        $is_bb_fixed = $this->is_bb_fixed_loan($loan);
+        $open = $is_bb_fixed ? array() : $this->open_repayment_installment($LID);
         $principal = 0.0;
         $interest = 0.0;
-        if (!empty($open)) {
+        $bb_penalty = 0.0;
+        if ($is_bb_fixed) {
+            $bb_balance = $this->get_bb_loan_balance($LID);
+            if ($bb_balance) {
+                $principal = $bb_balance['principal'];
+                $interest = $bb_balance['interest'];
+                $bb_penalty = $bb_balance['penalty'];
+            }
+        } else if (!empty($open)) {
             foreach ($open as $row) {
                 $principal += isset($row->principle) ? floatval($row->principle) : 0;
                 $interest += isset($row->interest) ? floatval($row->interest) : 0;
@@ -2941,8 +2957,9 @@ class Loan_Model extends CI_Model {
         }
 
         // Accrued overdue penalty as of the payoff date (same formula as the
-        // repayment screen so the two can never disagree).
-        $penalty = 0.0;
+        // repayment screen so the two can never disagree). A fixed Beginning
+        // Balance loan carries its own penalty and accrues none.
+        $penalty = $bb_penalty;
         $penalty_days = 0;
         $penalty_months = 0;
         foreach ($open as $row) {
@@ -3052,7 +3069,10 @@ class Loan_Model extends CI_Model {
         }
 
         $this->ensure_repayment_penalty_days_column();
-        $open = $this->open_repayment_installment($old_LID);
+        $is_bb_fixed = $this->is_bb_fixed_loan($loan);
+        // A fixed Beginning Balance loan settles as one installment-0 row; its
+        // schedule rows are only markers and are closed below.
+        $open = $is_bb_fixed ? array() : $this->open_repayment_installment($old_LID);
         $receipt = $this->loan_repay_receipt($old_LID, $breakdown['total'], $paydate, substr('OFFSET-' . $new_LID, 0, 20));
 
         if (!empty($open)) {
@@ -3158,6 +3178,10 @@ class Loan_Model extends CI_Model {
                 'month' => date('Ym', strtotime($paydate)),
                 'PIN' => $pin,
             ));
+            if ($is_bb_fixed) {
+                $this->db->where('LID', $old_LID)->where('PIN', $pin)->where('status', 0)
+                    ->update('loan_contract_repayment_schedule', array('status' => 2));
+            }
         }
 
         $this->db->update('loan_contract', array('status' => 5), array(
@@ -3266,13 +3290,39 @@ class Loan_Model extends CI_Model {
 
     function _sql_loan_is_past_due($lc_alias = 'loan_contract') {
         $grace = $this->_loan_list_grace_days();
-        return "EXISTS (
+        return "(EXISTS (
             SELECT 1 FROM loan_contract_repayment_schedule rs
             WHERE rs.LID = {$lc_alias}.LID
               AND rs.PIN = {$lc_alias}.PIN
               AND rs.status = 0
               AND DATE_ADD(rs.repaydate, INTERVAL {$grace} DAY) < CURDATE()
-        )";
+        )" . $this->_sql_bb_fixed_past_due_or($lc_alias) . ")";
+    }
+
+    /**
+     * SQL " AND ..." leaving fixed Beginning Balance loans out of schedule / penalty
+     * reviews (they have neither). Empty when TAPSTEMCO_BB_FIXED_BALANCE is off.
+     */
+    function _sql_exclude_bb_fixed($lc_alias = 'loan_contract') {
+        if (!defined('TAPSTEMCO_BB_FIXED_BALANCE') || !TAPSTEMCO_BB_FIXED_BALANCE) {
+            return '';
+        }
+        return " AND ({$lc_alias}.evaluated IS NULL OR {$lc_alias}.evaluated <> 'BEGINNING_BALANCE')";
+    }
+
+    /**
+     * SQL " OR ..." making a fixed Beginning Balance loan past due whenever a balance
+     * remains (its schedule rows stay open, status 0, until the balance is zero).
+     * Empty when TAPSTEMCO_BB_FIXED_BALANCE is off.
+     */
+    function _sql_bb_fixed_past_due_or($lc_alias = 'loan_contract') {
+        if (!defined('TAPSTEMCO_BB_FIXED_BALANCE') || !TAPSTEMCO_BB_FIXED_BALANCE) {
+            return '';
+        }
+        return " OR ({$lc_alias}.evaluated = 'BEGINNING_BALANCE' AND EXISTS (
+            SELECT 1 FROM loan_contract_repayment_schedule rsb
+            WHERE rsb.LID = {$lc_alias}.LID AND rsb.PIN = {$lc_alias}.PIN AND rsb.status = 0
+        ))";
     }
 
     function _lifecycle_filter_sql($lifecycle, $lc_alias = 'loan_contract') {
@@ -3301,12 +3351,12 @@ class Loan_Model extends CI_Model {
              WHERE lcd.LID = {$lc_alias}.LID AND lcd.PIN = {$lc_alias}.PIN
                AND lcd.release_status IN ('pending','draft')
              ORDER BY lcd.id DESC LIMIT 1) AS open_release_status,
-            EXISTS (
+            (EXISTS (
                 SELECT 1 FROM loan_contract_repayment_schedule rs
                 WHERE rs.LID = {$lc_alias}.LID AND rs.PIN = {$lc_alias}.PIN
                   AND rs.status = 0
                   AND DATE_ADD(rs.repaydate, INTERVAL {$grace} DAY) < CURDATE()
-            ) AS is_past_due_flag";
+            )" . $this->_sql_bb_fixed_past_due_or($lc_alias) . ") AS is_past_due_flag";
     }
 
     /**
@@ -3861,7 +3911,9 @@ class Loan_Model extends CI_Model {
      * NOT an arrears carry. Adding it here made every collection a full payoff
      * (instalment + the whole outstanding principal). The genuine "amount already on
      * account" carry is get_previous_remain_balance() and is subtracted in
-     * calculate_repayment_due().
+     * calculate_repayment_due(). The payoff amount (plan_loan_repayment_applications)
+     * is instalment + balance + this row's penalty + the interest and penalty of every
+     * later instalment already due, so a payment short of that never closes the loan.
      */
     function _schedule_line_amount($row, $fallback_installment = 0) {
         $line = (isset($row->repayamount) ? (float) $row->repayamount : 0);
@@ -3869,6 +3921,58 @@ class Loan_Model extends CI_Model {
             $line = (float) $fallback_installment;
         }
         return round($line, 2);
+    }
+
+    /**
+     * Amount due for a fixed Beginning Balance loan: one line carrying the remaining
+     * Beginning Balance principal / interest / penalty. Nothing is computed from the
+     * schedule and no penalty is assessed; any positive amount may be applied.
+     */
+    private function _bb_repayment_due($loaninfo, $paydate, $empty) {
+        $balance = $this->get_bb_loan_balance($loaninfo->LID);
+        $out = clone $empty;
+        $out->is_bb_fixed = true;
+        $out->bb_balance = $balance;
+        $out->installment_amount = round((float) $loaninfo->installment_amount, 2);
+        if (!$balance || $balance['total'] <= 0.009) {
+            $out->suggested_amount = 0;
+            return $out;
+        }
+        $first = $this->db->select_min('repaydate')
+            ->where('LID', $loaninfo->LID)
+            ->where('PIN', $loaninfo->PIN)
+            ->get('loan_contract_repayment_schedule')
+            ->row();
+        $due_date = ($first && !empty($first->repaydate)) ? $first->repaydate : $paydate;
+        $item = (object) array(
+            'installment' => 0,
+            'due_date' => $due_date,
+            'grace_end' => $due_date,
+            'status' => 'overdue',
+            'is_bb_fixed' => true,
+            'installment_amount' => round($balance['principal'] + $balance['interest'], 2),
+            'scheduled_amount' => round($balance['principal'] + $balance['interest'], 2),
+            'loan_installment_amount' => $out->installment_amount,
+            'carry' => $balance['principal'],
+            'principle' => $balance['principal'],
+            'interest' => $balance['interest'],
+            'penalty' => $balance['penalty'],
+            'penalty_months' => 0,
+            'penalty_days' => 0,
+            'total' => $balance['total'],
+        );
+        $out->items = array($item);
+        $out->total_installments = $item->installment_amount;
+        $out->total_principle = $balance['principal'];
+        $out->total_interest = $balance['interest'];
+        $out->total_penalty = $balance['penalty'];
+        $out->total_due = $balance['total'];
+        $out->net_due = $balance['total'];
+        $out->minimum_to_apply = 0;
+        $out->suggested_amount = $balance['total'];
+        $out->has_overdue = true;
+        $out->overdue_count = 1;
+        return $out;
     }
 
     /**
@@ -3903,6 +4007,10 @@ class Loan_Model extends CI_Model {
         );
         if (!$loaninfo || empty($paydate)) {
             return $empty;
+        }
+
+        if ($this->is_bb_fixed_loan($loaninfo)) {
+            return $this->_bb_repayment_due($loaninfo, $paydate, $empty);
         }
 
         $product = $this->setting_model->loanproduct($loaninfo->product_type)->row();
@@ -4060,7 +4168,7 @@ class Loan_Model extends CI_Model {
                         SELECT 1 FROM loan_contract_repayment_schedule rs
                         WHERE rs.LID = lc.LID AND rs.PIN = lc.PIN AND rs.status = 0
                           AND rs.repaydate < ?
-                  )
+                  )" . $this->_sql_exclude_bb_fixed('lc') . "
                 ORDER BY lc.LID ASC
                 LIMIT " . $limit;
         $rows = $this->db->query($sql, array($pin, $today))->result();
@@ -4139,7 +4247,7 @@ class Loan_Model extends CI_Model {
                 LEFT JOIN loan_product lp ON lp.id = lc.product_type AND lp.PIN = lc.PIN
                 LEFT JOIN members m ON m.PID = lc.PID AND m.PIN = lc.PIN
                 WHERE lc.PIN = ?
-                  AND (agg.negative_rows > 0 OR agg.schedule_principle > lc.basic_amount + 0.05)
+                  AND (agg.negative_rows > 0 OR agg.schedule_principle > lc.basic_amount + 0.05)" . $this->_sql_exclude_bb_fixed('lc') . "
                 ORDER BY agg.min_interest ASC, lc.LID ASC";
         // True number of affected loans - the table below is capped by $limit, and the
         // headline must not be read as "only this many loans are wrong".
@@ -4246,6 +4354,107 @@ class Loan_Model extends CI_Model {
     }
 
     /**
+     * Plan a payment on a fixed Beginning Balance loan (no writes): penalty first,
+     * then interest, then principal, out of the remaining Beginning Balance.
+     * Waivers reduce the penalty / interest owed before the cash is applied.
+     * A payment above what is owed is rejected; the carry balance is not used.
+     *
+     * @return array same shape as plan_loan_repayment_applications()
+     */
+    private function _plan_bb_repayment($loaninfo, $product, $amount, $paydate, $waiver = array()) {
+        $LID = $loaninfo->LID;
+        $due = $this->calculate_repayment_due($LID, $paydate);
+        $balance = isset($due->bb_balance) ? $due->bb_balance : $this->get_bb_loan_balance($LID);
+        if (!$balance || $balance['total'] <= 0.009) {
+            return array(
+                'success' => false,
+                'message' => 'This Beginning Balance loan has no remaining balance.',
+                'close_if_empty' => true,
+                'loaninfo' => $loaninfo,
+            );
+        }
+        if ($amount <= 0) {
+            return array('success' => false, 'message' => 'Amount should be greater than 0', 'loaninfo' => $loaninfo);
+        }
+
+        $waiver_request = array(
+            'penalty' => isset($waiver['penalty']) ? max(0, round((float) $waiver['penalty'], 2)) : 0.0,
+            'interest' => isset($waiver['interest']) ? max(0, round((float) $waiver['interest'], 2)) : 0.0,
+        );
+        $waived = array(
+            'penalty' => round(min($waiver_request['penalty'], $balance['penalty']), 2),
+            'interest' => round(min($waiver_request['interest'], $balance['interest']), 2),
+        );
+        $waiver_capped = ($waived['penalty'] + 0.009 < $waiver_request['penalty'])
+            || ($waived['interest'] + 0.009 < $waiver_request['interest']);
+
+        $owed_penalty = round($balance['penalty'] - $waived['penalty'], 2);
+        $owed_interest = round($balance['interest'] - $waived['interest'], 2);
+        $owed_total = round($owed_penalty + $owed_interest + $balance['principal'], 2);
+        if (round($amount, 2) > $owed_total + 0.009) {
+            return array(
+                'success' => false,
+                'message' => 'Amount exceeds the remaining Beginning Balance of ' . number_format($owed_total, 2) . '.',
+                'loaninfo' => $loaninfo,
+                'product' => $product,
+                'due' => $due,
+            );
+        }
+
+        $cash = round($amount, 2);
+        $pay_penalty = round(min($cash, $owed_penalty), 2);
+        $cash = round($cash - $pay_penalty, 2);
+        $pay_interest = round(min($cash, $owed_interest), 2);
+        $cash = round($cash - $pay_interest, 2);
+        $pay_principal = round(min($cash, $balance['principal']), 2);
+
+        $row_waiver = array('penalty' => $waived['penalty'], 'interest' => $waived['interest']);
+        $applications = array(array(
+            'mode' => 'bb',
+            'schedule_id' => null,
+            'waiver' => $row_waiver,
+            'data' => array(
+                'LID' => $LID,
+                'installment' => 0,
+                'amount' => round($pay_penalty + $pay_interest + $pay_principal, 2),
+                'paydate' => $paydate,
+                'interest' => $pay_interest,
+                'principle' => $pay_principal,
+                'balance' => round($balance['principal'] - $pay_principal, 2),
+                'duedate' => $paydate,
+                'iliyobaki' => 0,
+                'penalt' => $pay_penalty,
+                'penalty_months' => 0,
+                'penalty_days' => 0,
+                'createdby' => current_user()->id,
+                'PIN' => current_user()->PIN,
+            ),
+        ));
+
+        return array(
+            'success' => true,
+            'is_bb_fixed' => true,
+            'applications' => $applications,
+            'amount_tmp' => 0,
+            'loaninfo' => $loaninfo,
+            'product' => $product,
+            'due' => $due,
+            'minimum_to_apply' => 0,
+            'principle' => $pay_principal,
+            'interest' => $pay_interest,
+            'penalt' => $pay_penalty,
+            'amount' => round($amount, 2),
+            'remaining_after' => round($owed_total - $amount, 2),
+            'closes' => round($owed_total - $amount, 2) <= 0.009,
+            'waived_penalty' => $waived['penalty'],
+            'waived_interest' => $waived['interest'],
+            'waived_total' => round($waived['penalty'] + $waived['interest'], 2),
+            'waiver_requested' => $waiver_request,
+            'waiver_capped' => $waiver_capped,
+        );
+    }
+
+    /**
      * Plan installment applications for a payment (no writes).
      * Same carry / grace / penalty / payoff rules as Loan Management → Loan Repayment.
      *
@@ -4269,6 +4478,9 @@ class Loan_Model extends CI_Model {
         }
         $this->load->model('setting_model');
         $product = $this->setting_model->loanproduct($loaninfo->product_type)->row();
+        if ($this->is_bb_fixed_loan($loaninfo)) {
+            return $this->_plan_bb_repayment($loaninfo, $product, $amount, $paydate, $waiver);
+        }
         $open_repayment = $this->open_repayment_installment($LID);
         if (count($open_repayment) < 1) {
             return array(
@@ -4340,7 +4552,34 @@ class Loan_Model extends CI_Model {
         $applied_any = false;
         $createdby = current_user()->id;
 
-        foreach ($open_repayment as $value) {
+        // A full payoff must also settle every LATER installment already due as of the
+        // payment date (its interest, plus its penalty when overdue). Without this, a
+        // payment covering one installment + the remaining principal closed a loan whose
+        // other overdue installments were never collected. Suffix totals per position.
+        $open_list = array_values($open_repayment);
+        $later_due = array();
+        $running = array('interest' => 0.0, 'penalty' => 0.0, 'w_int' => 0.0, 'w_pen' => 0.0);
+        for ($i = count($open_list) - 1; $i >= 0; $i--) {
+            $later_due[$i] = $running;
+            $row = $open_list[$i];
+            if (empty($row->repaydate) || strtotime($row->repaydate) > strtotime($paydate)) {
+                continue;
+            }
+            $row_no = (int) $row->installment_number;
+            $row_int = round((float) $row->interest, 2);
+            $row_pen_state = $this->_penalty_state($product, $row, $paydate);
+            $row_pen = !empty($row_pen_state['is_overdue']) ? round((float) $row_pen_state['penalty'], 2) : 0.0;
+            $row_w_int = isset($waiver_alloc[$row_no]['interest']) ? min((float) $waiver_alloc[$row_no]['interest'], $row_int) : 0.0;
+            $row_w_pen = isset($waiver_alloc[$row_no]['penalty']) ? min((float) $waiver_alloc[$row_no]['penalty'], $row_pen) : 0.0;
+            $running = array(
+                'interest' => round($running['interest'] + $row_int, 2),
+                'penalty' => round($running['penalty'] + $row_pen, 2),
+                'w_int' => round($running['w_int'] + $row_w_int, 2),
+                'w_pen' => round($running['w_pen'] + $row_w_pen, 2),
+            );
+        }
+
+        foreach ($open_list as $position => $value) {
             $line_amount = $this->_schedule_line_amount($value, $loaninfo->installment_amount);
             if ($line_amount <= 0.009) {
                 break;
@@ -4376,31 +4615,42 @@ class Loan_Model extends CI_Model {
                 'interest' => round($w_int, 2),
             );
 
-            // Full payoff of the remaining loan: this installment's interest plus the
-            // whole outstanding principal (the legacy rule is repayamount + balance,
-            // plus the penalty when overdue). Only THIS case may close the rest of the
-            // schedule - record_loan_repayment_all() marks every open row as paid.
-            $payoff_amount = round($line_amount + (float) $value->balance + $penalt_recorded, 2);
+            // Full payoff of the remaining loan: this installment, the whole outstanding
+            // principal, this installment's penalty, and the interest + penalty of every
+            // later installment already due (net of waivers). Interest of installments not
+            // yet due is not charged. Only THIS case may close the rest of the schedule -
+            // record_loan_repayment_all() marks every open row as paid.
+            $later = isset($later_due[$position]) ? $later_due[$position] : array('interest' => 0.0, 'penalty' => 0.0, 'w_int' => 0.0, 'w_pen' => 0.0);
+            $later_interest = round($later['interest'] - $later['w_int'], 2);
+            $later_penalty = round($later['penalty'] - $later['w_pen'], 2);
+            $payoff_interest = round($interest_recorded + $later_interest, 2);
+            $payoff_penalty = round($penalt_recorded + $later_penalty, 2);
+            $payoff_principle = round($line_amount + (float) $value->balance - $row_interest, 2);
+            if ($payoff_principle < 0) {
+                $payoff_principle = 0;
+            }
+            $payoff_amount = round($payoff_principle + $payoff_interest + $payoff_penalty, 2);
             if ($amount_tmp + 0.00001 >= $payoff_amount) {
                 $amount_tmp -= $payoff_amount;
+                $payoff_waiver = array(
+                    'penalty' => round($row_waiver['penalty'] + $later['w_pen'], 2),
+                    'interest' => round($row_waiver['interest'] + $later['w_int'], 2),
+                );
                 $applications[] = array(
                     'mode' => 'all',
                     'schedule_id' => $value->id,
-                    'waiver' => $row_waiver,
+                    'waiver' => $payoff_waiver,
                     'data' => array(
                         'LID' => $LID,
                         'installment' => $value->installment_number,
                         'amount' => $payoff_amount,
                         'paydate' => $paydate,
-                        'interest' => $interest_recorded,
-                        // $payoff_amount already carries the penalty (line + balance + penalty),
-                        // so it must come out of the principal portion as well - otherwise the
-                        // penalty is counted twice and the split exceeds the amount recorded.
-                        'principle' => round($payoff_amount - $interest_recorded - $penalt_recorded, 2),
+                        'interest' => $payoff_interest,
+                        'principle' => $payoff_principle,
                         'duedate' => $value->repaydate,
                         'balance' => 0,
                         'iliyobaki' => round($amount_tmp, 2),
-                        'penalt' => $penalt_recorded,
+                        'penalt' => $payoff_penalty,
                         'penalty_months' => $assessed_penalty > 0.009 ? (int) $pen['penalty_months'] : 0,
                         'penalty_days' => $assessed_penalty > 0.009 ? (int) $pen['penalty_days'] : 0,
                         'createdby' => $createdby,
@@ -4508,7 +4758,7 @@ class Loan_Model extends CI_Model {
         $plan = $this->plan_loan_repayment_applications($LID, $amount, $paydate, $waiver);
         if (empty($plan['success'])) {
             if (!empty($plan['close_if_empty'])) {
-                $this->db->update('loan_contract', array('status' => 5), array('LID' => $LID, 'status' => 4, 'disburse' => 1, 'PIN' => $pin));
+                $this->close_loan_if_settled($LID, $plan);
             }
             return array('success' => false, 'message' => isset($plan['message']) ? $plan['message'] : 'Loan repayment could not be applied.', 'plan' => $plan);
         }
@@ -4545,10 +4795,7 @@ class Loan_Model extends CI_Model {
         } else {
             $this->add_remain_balance($LID, 0);
         }
-        $open_repayment_check = $this->open_repayment_installment($LID);
-        if (count($open_repayment_check) < 1) {
-            $this->db->update('loan_contract', array('status' => 5), array('LID' => $LID, 'status' => 4, 'disburse' => 1, 'PIN' => $pin));
-        }
+        $this->close_loan_if_settled($LID, $plan);
         if ($manage_transaction) {
             $this->db->trans_complete();
             if ($this->db->trans_status() === FALSE) {
@@ -4562,6 +4809,28 @@ class Loan_Model extends CI_Model {
             'waived_penalty' => isset($plan['waived_penalty']) ? $plan['waived_penalty'] : 0,
             'waived_interest' => isset($plan['waived_interest']) ? $plan['waived_interest'] : 0,
         );
+    }
+
+    /**
+     * Close a released loan (status 4 -> 5) once nothing is owed: no open schedule
+     * rows, or for a fixed Beginning Balance loan a remaining balance of zero (its
+     * leftover schedule rows are then marked closed, status 2).
+     */
+    function close_loan_if_settled($LID, $plan = array()) {
+        $pin = current_user()->PIN;
+        $is_bb = !empty($plan['is_bb_fixed']) || $this->is_bb_fixed_loan($LID);
+        if ($is_bb) {
+            $balance = $this->get_bb_loan_balance($LID);
+            if ($balance && $balance['total'] > 0.009) {
+                return false;
+            }
+            $this->db->where('LID', $LID)->where('PIN', $pin)->where('status', 0)
+                ->update('loan_contract_repayment_schedule', array('status' => 2));
+        } else if (count($this->open_repayment_installment($LID)) > 0) {
+            return false;
+        }
+        $this->db->update('loan_contract', array('status' => 5), array('LID' => $LID, 'status' => 4, 'disburse' => 1, 'PIN' => $pin));
+        return true;
     }
 
     /**
@@ -4745,7 +5014,7 @@ class Loan_Model extends CI_Model {
         $plan = $this->plan_loan_repayment_applications($LID, $amount, $paydate, $waiver);
         if (empty($plan['success'])) {
             if (!empty($plan['close_if_empty'])) {
-                $this->db->update('loan_contract', array('status' => 5), array('LID' => $LID, 'status' => 4, 'disburse' => 1, 'PIN' => $pin));
+                $this->close_loan_if_settled($LID, $plan);
             }
             return array(
                 'success' => false,
@@ -4807,10 +5076,7 @@ class Loan_Model extends CI_Model {
         } else {
             $this->add_remain_balance($LID, 0);
         }
-        $open_repayment_check = $this->open_repayment_installment($LID);
-        if (count($open_repayment_check) < 1) {
-            $this->db->update('loan_contract', array('status' => 5), array('LID' => $LID, 'status' => 4, 'disburse' => 1, 'PIN' => $pin));
-        }
+        $this->close_loan_if_settled($LID, $plan);
         if ($manage_transaction) {
             $this->db->trans_complete();
             if ($this->db->trans_status() === FALSE) {
@@ -5122,7 +5388,9 @@ class Loan_Model extends CI_Model {
         }
 
 
-        $this->db->update('loan_contract_repayment_schedule', array('status' => 1), array('id' => $repay_schedule_ref));
+        if ($repay_schedule_ref !== null && $repay_schedule_ref !== '') {
+            $this->db->update('loan_contract_repayment_schedule', array('status' => 1), array('id' => $repay_schedule_ref));
+        }
         $this->db->update('loan_repayment_receipt', array('affect_loan' => 1, 'installment' => $array_data['installment']), array('receipt' => $array_data['receipt']));
         $this->db->trans_complete();
         return $insert;
@@ -5858,15 +6126,37 @@ class Loan_Model extends CI_Model {
             'PIN' => $pin,
         );
 
-        $schedule = $CI->loanbase->create_repayment_schedule(
-            $monthly_amort, $rate, $term, $startdate, $principal, $LID, $interest_method, $interval
-        );
-        if (empty($schedule)) {
-            return array('success' => false, 'message' => lang('loan_beginning_balance_activate_fail'));
-        }
-        foreach ($schedule as $key => $row) {
-            $schedule[$key]['status'] = 0;
-            $schedule[$key]['sms_sent'] = 0;
+        if (defined('TAPSTEMCO_BB_FIXED_BALANCE') && TAPSTEMCO_BB_FIXED_BALANCE) {
+            // Fixed balance: no amortization. One marker row keeps the loan visible to
+            // the open-installment / past-due queries; nothing is billed from it -
+            // what is owed comes from get_bb_loan_balance().
+            $penalty_balance = round(floatval($balance->penalty_balance), 2);
+            $contract['total_interest_amount'] = round($interest_balance, 2);
+            $contract['total_loan'] = round($principal + $interest_balance, 2);
+            $schedule = array(array(
+                'repaydate' => $startdate,
+                'month' => date('Ym', strtotime($startdate)),
+                'LID' => $LID,
+                'PIN' => $pin,
+                'installment_number' => 1,
+                'repayamount' => round($principal + $interest_balance + $penalty_balance, 2),
+                'interest' => round($interest_balance, 2),
+                'principle' => round($principal, 2),
+                'balance' => 0,
+                'status' => 0,
+                'sms_sent' => 0,
+            ));
+        } else {
+            $schedule = $CI->loanbase->create_repayment_schedule(
+                $monthly_amort, $rate, $term, $startdate, $principal, $LID, $interest_method, $interval
+            );
+            if (empty($schedule)) {
+                return array('success' => false, 'message' => lang('loan_beginning_balance_activate_fail'));
+            }
+            foreach ($schedule as $key => $row) {
+                $schedule[$key]['status'] = 0;
+                $schedule[$key]['sms_sent'] = 0;
+            }
         }
 
         $disburse_row = array(
@@ -6148,6 +6438,95 @@ class Loan_Model extends CI_Model {
     }
 
     /**
+     * Whether a loan is billed as a fixed Beginning Balance (TAPSTEMCO_BB_FIXED_BALANCE):
+     * it owes only the Beginning Balance principal / interest / penalty less payments,
+     * with no schedule-driven amounts and no computed penalty.
+     *
+     * @param string|object $loan LID or loan_contract row
+     */
+    function is_bb_fixed_loan($loan) {
+        if (!defined('TAPSTEMCO_BB_FIXED_BALANCE') || !TAPSTEMCO_BB_FIXED_BALANCE) {
+            return false;
+        }
+        if (!is_object($loan)) {
+            $LID = trim((string) $loan);
+            if ($LID === '') {
+                return false;
+            }
+            $pin = current_user()->PIN;
+            $loan = $this->db->where('LID', $LID)->where('PIN', $pin)->limit(1)->get('loan_contract')->row();
+        }
+        if (!$loan) {
+            return false;
+        }
+        if (isset($loan->evaluated) && (string) $loan->evaluated === 'BEGINNING_BALANCE') {
+            return true;
+        }
+        return $this->is_beginning_balance_activated_loan($loan) && (bool) $this->get_beginning_balance_by_loan_id($loan->LID);
+    }
+
+    /**
+     * Remaining fixed balance of a Beginning Balance loan: the Beginning Balance
+     * principal / interest / penalty less non-voided repayments and less waivers
+     * that were not rejected or reversed.
+     *
+     * @return array|null null when the loan has no Beginning Balance record
+     */
+    function get_bb_loan_balance($LID) {
+        $pin = current_user()->PIN;
+        $bb = $this->get_beginning_balance_by_loan_id($LID);
+        if (!$bb) {
+            return null;
+        }
+        $voided_filter = $this->db->query("SHOW COLUMNS FROM loan_contract_repayment LIKE 'is_voided'")->row()
+            ? ' AND (is_voided IS NULL OR is_voided = 0)' : '';
+        $paid = $this->db->query(
+            "SELECT COALESCE(SUM(principle),0) AS principal, COALESCE(SUM(interest),0) AS interest, COALESCE(SUM(penalt),0) AS penalty
+             FROM loan_contract_repayment WHERE LID = ? AND PIN = ?" . $voided_filter,
+            array($LID, $pin)
+        )->row();
+
+        $waived = array('penalty' => 0.0, 'interest' => 0.0);
+        if ($this->db->table_exists('loan_waiver_log')) {
+            $rows = $this->db->query(
+                "SELECT waiver_type, COALESCE(SUM(waived),0) AS waived FROM loan_waiver_log
+                 WHERE LID = ? AND PIN = ? AND status IN ('approved','pending') GROUP BY waiver_type",
+                array($LID, $pin)
+            )->result();
+            foreach ($rows as $w) {
+                if (isset($waived[$w->waiver_type])) {
+                    $waived[$w->waiver_type] = round((float) $w->waived, 2);
+                }
+            }
+        }
+
+        $original = array(
+            'principal' => round((float) $bb->principal_balance, 2),
+            'interest' => round((float) $bb->interest_balance, 2),
+            'penalty' => round((float) $bb->penalty_balance, 2),
+        );
+        $remaining = array(
+            'principal' => round(max(0, $original['principal'] - (float) $paid->principal), 2),
+            'interest' => round(max(0, $original['interest'] - (float) $paid->interest - $waived['interest']), 2),
+            'penalty' => round(max(0, $original['penalty'] - (float) $paid->penalty - $waived['penalty']), 2),
+        );
+        return array(
+            'bb_id' => (int) $bb->id,
+            'original' => $original,
+            'paid' => array(
+                'principal' => round((float) $paid->principal, 2),
+                'interest' => round((float) $paid->interest, 2),
+                'penalty' => round((float) $paid->penalty, 2),
+            ),
+            'waived' => $waived,
+            'principal' => $remaining['principal'],
+            'interest' => $remaining['interest'],
+            'penalty' => $remaining['penalty'],
+            'total' => round($remaining['principal'] + $remaining['interest'] + $remaining['penalty'], 2),
+        );
+    }
+
+    /**
      * Whether a disbursed loan was created via Beginning Balance Activate (no cash GL).
      */
     function is_beginning_balance_activated_loan($loan, $release = null) {
@@ -6367,6 +6746,14 @@ class Loan_Model extends CI_Model {
             if ($active && intval($active->cnt) === 0) {
                 $this->db->where('LID', $LID)->where('status', 2)->update('loan_contract_repayment_schedule', array('status' => 0));
             }
+            // The carry (amount on account) belonged to the voided receipt; restore the
+            // leftover of the latest repayment still active, or 0 when none remain, so a
+            // re-posted payment does not count the voided leftover twice.
+            $carry_row = $this->db->query(
+                "SELECT iliyobaki FROM loan_contract_repayment WHERE LID = ? AND PIN = ? AND (is_voided IS NULL OR is_voided = 0) ORDER BY id DESC LIMIT 1",
+                array($LID, $pin)
+            )->row();
+            $this->add_remain_balance($LID, $carry_row ? round(max(0, (float) $carry_row->iliyobaki), 2) : 0);
             // If loan was marked completed (5), reopen to released (4)
             $loan = $this->db->where('LID', $LID)->get('loan_contract')->row();
             if ($loan && isset($loan->status) && intval($loan->status) === 5) {
@@ -6377,6 +6764,16 @@ class Loan_Model extends CI_Model {
         // receipt must reverse them or they linger as approved-but-unbacked.
         if ($LID) {
             $this->reverse_loan_waivers($LID, $receipt, 'Repayment voided');
+            // A fixed Beginning Balance loan's schedule rows only mark it as open
+            // (the Loan Repayment list joins on status 0), so reopen them whenever
+            // a balance is owed again.
+            if ($this->is_bb_fixed_loan($LID)) {
+                $bb_balance = $this->get_bb_loan_balance($LID);
+                if ($bb_balance && $bb_balance['total'] > 0.009) {
+                    $this->db->where('LID', $LID)->where('PIN', $pin)->where('status', 2)
+                        ->update('loan_contract_repayment_schedule', array('status' => 0));
+                }
+            }
         }
         $this->db->where('receipt', $receipt)->update('loan_repayment_receipt', array('is_voided' => 1, 'affect_loan' => 0));
         $this->db->trans_complete();

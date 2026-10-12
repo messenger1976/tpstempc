@@ -248,6 +248,65 @@ $received_from_types = array(
     margin-bottom: 0;
     background: #fff;
 }
+.payer-suggest-wrap { position: relative; }
+.payer-suggest-box {
+    display: none;
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 100%;
+    margin-top: 4px;
+    background: #fff;
+    border: 1px solid #e7eaec;
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+    max-height: 300px;
+    overflow-y: auto;
+    z-index: 10050;
+}
+.payer-suggest-box.open { display: block; }
+.payer-suggest-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 9px 12px;
+    border: 0;
+    border-bottom: 1px solid #f0f2f3;
+    background: #fff;
+    text-align: left;
+    cursor: pointer;
+}
+.payer-suggest-item:last-child { border-bottom: 0; }
+.payer-suggest-item:hover,
+.payer-suggest-item.active { background: #e8f8f5; }
+.payer-suggest-item .suggest-id {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    background: #e8f8f5;
+    color: #0e7c69;
+    font-weight: 700;
+    font-size: 11px;
+    white-space: nowrap;
+}
+.payer-suggest-item .suggest-name {
+    flex: 1;
+    font-weight: 600;
+    color: #2f4050;
+    font-size: 13px;
+}
+.payer-suggest-item .suggest-sub {
+    color: #999;
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+.payer-suggest-empty {
+    padding: 12px;
+    color: #999;
+    font-size: 12px;
+}
 </style>
 
 <select id="coaOptionsSource" style="display:none;">
@@ -327,13 +386,16 @@ $received_from_types = array(
                             <div class="received-from-detail" id="receivedFromDetail" style="display:none;">
                                 <div id="receivedFromSearchWrap" style="display:none;">
                                     <label id="receivedFromSearchLabel" class="control-label" style="padding-top:0;margin-bottom:6px;display:block;"></label>
-                                    <div class="input-group">
-                                        <input type="text" class="form-control" id="receivedFromSearchKey" autocomplete="off" placeholder=""/>
-                                        <span class="input-group-btn">
-                                            <button type="button" class="btn btn-primary" id="doReceivedFromSearch">
-                                                <i class="fa fa-search"></i> <?php echo lang('search'); ?>
-                                            </button>
-                                        </span>
+                                    <div class="payer-suggest-wrap">
+                                        <div class="input-group">
+                                            <input type="text" class="form-control" id="receivedFromSearchKey" autocomplete="off" placeholder=""/>
+                                            <span class="input-group-btn">
+                                                <button type="button" class="btn btn-primary" id="doReceivedFromSearch">
+                                                    <i class="fa fa-search"></i> <?php echo lang('search'); ?>
+                                                </button>
+                                            </span>
+                                        </div>
+                                        <div id="receivedFromSuggestBox" class="payer-suggest-box" role="listbox"></div>
                                     </div>
                                     <div class="received-from-selected" id="receivedFromSelected" style="display:none;"></div>
                                     <div class="received-from-results" id="receivedFromSearchResults"></div>
@@ -569,6 +631,7 @@ $received_from_types = array(
 <?php echo form_close(); ?>
 
 <script src="<?php echo base_url(); ?>assets/js/plugins/select2/select2.full.min.js"></script>
+<script src="<?php echo base_url(); ?>media/js/cash_receipt_payer_suggest.js?v=20261002"></script>
 <script>
 (function(){
     function loadScript(src, cb, fallback){
@@ -957,6 +1020,22 @@ $received_from_types = array(
             $('#receivedFromSearchKey').on('keypress', function(e){
                 if (e.which === 13) { e.preventDefault(); $('#doReceivedFromSearch').click(); }
             });
+            if (window.CashReceiptPayerSuggest) {
+                CashReceiptPayerSuggest.init({
+                    urls: {
+                        member: memberSearchUrl,
+                        loan_repayment: memberSearchUrl,
+                        supplier: supplierSearchUrl,
+                        customer: customerSearchUrl
+                    },
+                    emptyText: {
+                        member: i18n.noMembers,
+                        loan_repayment: i18n.noMembers,
+                        supplier: i18n.noSuppliers,
+                        customer: i18n.noCustomers
+                    }
+                });
+            }
 
             function runReceivedFromSearch(key) {
                 var type = $('#received_from_type').val();

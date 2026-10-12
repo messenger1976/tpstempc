@@ -19,7 +19,8 @@ class MY_DB_active_record extends CI_DB_active_record {
         'activity_logs',
         'sessions',
         'ci_sessions',
-        'login_attempts'
+        'login_attempts',
+        'member_app_login_attempts'
     );
     
     /**

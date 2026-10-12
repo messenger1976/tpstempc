@@ -18,7 +18,7 @@
  * NOTE: If you change these, also change the error_reporting() code below
  *
  */
-	define('ENVIRONMENT', 'development'); // Changed to development to show errors temporarily
+	define('ENVIRONMENT', 'production'); // Changed to development to show errors temporarily
 /*
  *---------------------------------------------------------------
  * ERROR REPORTING

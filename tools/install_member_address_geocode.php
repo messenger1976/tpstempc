@@ -202,8 +202,15 @@ out(($is_cli ? "" : "<div class='success'>") . "Inserted $synced new address key
 
 out($is_cli ? "Step 3: Geocode via Nominatim (+ fallback)" : "<div class='step'><h2>Step 3: Geocode addresses (Nominatim + local fallback)</h2><pre>", $is_cli);
 
+// Pins set by hand (source = 'manual') are never re-geocoded, even with --force.
 $status_filter = $force ? "1=1" : "geocode_status IN ('pending','failed') OR lat IS NULL OR lng IS NULL";
-$todo = $mysqli->query("SELECT * FROM member_address_geocode WHERE $status_filter ORDER BY id ASC");
+$manual_filter = "(source IS NULL OR source <> 'manual')";
+$manual_skipped = 0;
+$manual_res = $mysqli->query("SELECT COUNT(*) AS n FROM member_address_geocode WHERE source = 'manual'");
+if ($manual_res) {
+    $manual_skipped = intval($manual_res->fetch_assoc()['n']);
+}
+$todo = $mysqli->query("SELECT * FROM member_address_geocode WHERE ($status_filter) AND $manual_filter ORDER BY id ASC");
 $ok_count = 0;
 $fail_count = 0;
 $skip_count = 0;
@@ -257,7 +264,7 @@ while ($todo && ($row = $todo->fetch_assoc())) {
 }
 
 if (!$is_cli) echo "</pre>";
-out(($is_cli ? "" : "<div class='info'>") . "Geocoded OK: $ok_count, Failed: $fail_count, Skipped: $skip_count" . ($is_cli ? "" : "</div></div>"), $is_cli);
+out(($is_cli ? "" : "<div class='info'>") . "Geocoded OK: $ok_count, Failed: $fail_count, Skipped: $skip_count, Kept manual pins: $manual_skipped" . ($is_cli ? "" : "</div></div>"), $is_cli);
 
 $stats = $mysqli->query("SELECT
     SUM(geocode_status='ok') AS ok_n,
@@ -273,6 +280,6 @@ out($is_cli ? "Done. OK={$stats['ok_n']} Failed={$stats['fail_n']} Pending={$sta
        Failed: {$stats['fail_n']}<br>
        Pending: {$stats['pending_n']}<br><br>
        Open the Dashboard to view the Members Map above Loan Aging Summary.<br>
-       Re-run with <code>?force=1</code> (or <code>--force</code> in CLI) to re-geocode.</div></div></div></body></html>", $is_cli);
+       Re-run with <code>?force=1</code> (or <code>--force</code> in CLI) to re-geocode (manual pins are kept).</div></div></div></body></html>", $is_cli);
 
 $mysqli->close();

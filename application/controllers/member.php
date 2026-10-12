@@ -583,8 +583,29 @@ class Member extends CI_Controller {
             }
         }
 
+        $this->data['map_pin_status'] = $this->member_map_pin_status($this->data['contactinfo']);
         $this->data['content'] = 'member/contactinfo';
         $this->load->view('template', $this->data);
+    }
+
+    /**
+     * 'manual' (own pin), 'address' (geocoded address pin) or 'none' (not plotted).
+     */
+    private function member_map_pin_status($contact) {
+        if (isset($contact->map_lat, $contact->map_lng) && $contact->map_lat !== '' && $contact->map_lng !== '') {
+            return 'manual';
+        }
+        $address = isset($contact->physicaladdress) ? trim($contact->physicaladdress) : '';
+        if ($address === '' || !$this->db->table_exists('member_address_geocode')) {
+            return 'none';
+        }
+        $row = $this->db->query(
+            "SELECT id FROM member_address_geocode
+             WHERE address_key = UPPER(TRIM(?)) AND geocode_status = 'ok' AND lat IS NOT NULL AND lng IS NOT NULL
+             LIMIT 1",
+            array($address)
+        )->row();
+        return $row ? 'address' : 'none';
     }
 
     function membernextkin($id) {

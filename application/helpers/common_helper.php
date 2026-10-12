@@ -708,6 +708,26 @@ if (!function_exists("has_role")) {
 
 }
 
+if (!function_exists("can_manage_map_locations")) {
+
+    /**
+     * Whether the current user may set map pins by hand (address geocode rows,
+     * per-member pins and the office pin). Admins always can; other groups need
+     * the Manage_map_locations privilege (Module 9).
+     */
+    function can_manage_map_locations() {
+        $CI = & get_instance();
+        if (empty($CI->session->userdata('user_id'))) {
+            return FALSE;
+        }
+        if ($CI->ion_auth->is_admin()) {
+            return TRUE;
+        }
+        return has_role(9, 'Manage_map_locations');
+    }
+
+}
+
 if (!function_exists("can_approve_waivers")) {
 
     /**

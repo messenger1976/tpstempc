@@ -27,7 +27,9 @@ class MY_Lang extends CI_Lang {
   );
 
   // special URIs (not localized)
-  private $special = array ();
+  // customer_login: Member Loan App - PWA scope, PayMongo webhook POSTs and
+  // service-worker URLs must not be redirected to /en/...
+  private $special = array ('customer_login');
 
   // where to redirect if no language in URI
   private $uri;

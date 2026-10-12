@@ -128,6 +128,25 @@ if (!defined('TAPSTEMCO_PENALTY_PERIOD_DAYS')) {
 
 /*
 |--------------------------------------------------------------------------
+| Beginning Balance loans: fixed balance
+|--------------------------------------------------------------------------
+| TRUE  - a loan activated from Loan Beginning Balance owes ONLY the principal,
+|         interest and penalty on its Beginning Balance record, less what was
+|         paid. No amortization schedule and no computed penalty are used;
+|         payments go penalty -> interest -> principal and the loan closes when
+|         all three reach zero. It counts as past due while a balance remains.
+| FALSE - Beginning Balance loans use their activation schedule like any loan.
+|
+| Keep FALSE until Finance has entered the interest and penalty on every
+| Beginning Balance (deactivate, void posting, edit, post, activate): with
+| TRUE, a record with interest/penalty 0 owes principal only.
+*/
+if (!defined('TAPSTEMCO_BB_FIXED_BALANCE')) {
+    define('TAPSTEMCO_BB_FIXED_BALANCE', FALSE);
+}
+
+/*
+|--------------------------------------------------------------------------
 | Penalty / interest waiver approvals
 |--------------------------------------------------------------------------
 | Comma separated ion_auth group names allowed to approve a waiver.

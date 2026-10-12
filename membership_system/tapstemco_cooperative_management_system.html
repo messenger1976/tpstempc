@@ -23,6 +23,10 @@
         // new-member panel starts from Default Settings. Left as a placeholder
         // when the file is opened directly.
         window.TAPSTEMCO_REGISTRATION_FEE = '__TAPSTEMCO_REGISTRATION_FEE__';
+        // Settings -> Share Setup: par value per share and minimum shares, the
+        // Subscription Agreement defaults for a member with no saved agreement.
+        window.TAPSTEMCO_SHARE_PAR_VALUE = '__TAPSTEMCO_SHARE_PAR_VALUE__';
+        window.TAPSTEMCO_SHARE_MIN = '__TAPSTEMCO_SHARE_MIN__';
         // Main Dashboard of the portal - the Home tab in the nav strip below.
         // Injected as site_url('dashboard'), which MY_Config localizes to
         // /<lang>/dashboard (e.g. /en/dashboard). Same host and same language
@@ -825,7 +829,7 @@
                         </div>
                         <div>
                             <label class="block text-xs font-bold text-coopGreen-900 uppercase mb-1">Par Value per Share</label>
-                            <input type="text" value="₱ 500.00" readonly class="w-full px-3 py-1.5 bg-slate-200 border rounded text-xs font-bold text-slate-600">
+                            <input type="text" id="agr_parValue" value="₱ 500.00" readonly class="w-full px-3 py-1.5 bg-slate-200 border rounded text-xs font-bold text-slate-600">
                         </div>
                         <div>
                             <label class="block text-xs font-bold text-coopGreen-900 uppercase mb-1">Total Par Value</label>
@@ -1018,6 +1022,73 @@
             return String(injected).indexOf('__') === 0 ? '' : String(injected);
         })();
 
+        // Share Setup defaults; 4 x PHP 500 when the file is opened directly.
+        function injectedNumber(value, fallback) {
+            const n = parseFloat(String(value).replace(/,/g, ''));
+            return isNaN(n) || n <= 0 ? fallback : n;
+        }
+        const SHARE_PAR_DEFAULT = injectedNumber(window.TAPSTEMCO_SHARE_PAR_VALUE, 500);
+        const SHARE_MIN_DEFAULT = Math.round(injectedNumber(window.TAPSTEMCO_SHARE_MIN, 4));
+        // Membership fee pledged on the printed application: Default Settings
+        // Registration Fee, PHP 100 when the file is opened directly.
+        const MEMBERSHIP_FEE_DEFAULT = injectedNumber(REGISTRATION_FEE_DEFAULT, 100);
+        // Par value of the agreement on screen: the saved one, else the default.
+        let agrParValue = SHARE_PAR_DEFAULT;
+
+        function formatAmount(amount) {
+            return Number(amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+
+        function formatPeso(amount) {
+            return '₱ ' + formatAmount(amount);
+        }
+
+        // Whole number in upper-case words, e.g. 2500 -> "TWO THOUSAND FIVE HUNDRED".
+        function numberToWords(value) {
+            const ones = ['', 'ONE', 'TWO', 'THREE', 'FOUR', 'FIVE', 'SIX', 'SEVEN', 'EIGHT', 'NINE', 'TEN',
+                'ELEVEN', 'TWELVE', 'THIRTEEN', 'FOURTEEN', 'FIFTEEN', 'SIXTEEN', 'SEVENTEEN', 'EIGHTEEN', 'NINETEEN'];
+            const tens = ['', '', 'TWENTY', 'THIRTY', 'FORTY', 'FIFTY', 'SIXTY', 'SEVENTY', 'EIGHTY', 'NINETY'];
+            const scales = ['', 'THOUSAND', 'MILLION', 'BILLION'];
+
+            function belowThousand(n) {
+                const parts = [];
+                if (n >= 100) {
+                    parts.push(ones[Math.floor(n / 100)] + ' HUNDRED');
+                    n %= 100;
+                }
+                if (n >= 20) {
+                    parts.push(tens[Math.floor(n / 10)] + (n % 10 ? '-' + ones[n % 10] : ''));
+                } else if (n > 0) {
+                    parts.push(ones[n]);
+                }
+                return parts.join(' ');
+            }
+
+            let n = Math.floor(Math.abs(Number(value) || 0));
+            if (n === 0) return 'ZERO';
+            const words = [];
+            for (let i = 0; n > 0 && i < scales.length; i++) {
+                const chunk = n % 1000;
+                if (chunk) words.unshift(belowThousand(chunk) + (scales[i] ? ' ' + scales[i] : ''));
+                n = Math.floor(n / 1000);
+            }
+            return words.join(' ');
+        }
+
+        // "ONE HUNDRED PESOS" -> "One Hundred Pesos" (also "Twenty-Five").
+        function titleCase(text) {
+            return String(text).toLowerCase().replace(/\b[a-z]/g, c => c.toUpperCase());
+        }
+
+        // Peso amount in words, e.g. 500 -> "FIVE HUNDRED PESOS", 12.5 -> "TWELVE PESOS AND 50/100".
+        function pesoWords(amount) {
+            const cents = Math.round((Number(amount) || 0) * 100);
+            const pesos = Math.floor(cents / 100);
+            const rest = cents % 100;
+            return numberToWords(pesos) + (pesos === 1 ? ' PESO' : ' PESOS') +
+                (rest ? ' AND ' + String(rest).padStart(2, '0') + '/100' : '');
+        }
+
         function apiUrl(path, params) {
             const url = new URL(path, API_BASE);
             if (params) {
@@ -1121,6 +1192,8 @@
             initSignatureCanvas();
             addSysBenRow();
             addSysTrnRow();
+            document.getElementById('agr_shares').value = SHARE_MIN_DEFAULT;
+            calcAgrTotal();
 
             // Searchable member pickers. Not awaited: it is independent of the API
             // and simply does nothing if the Select2 assets are unavailable.
@@ -1954,7 +2027,8 @@
         function applyRecordToAgreement(rec) {
             const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v || ''; };
 
-            set('agr_shares', rec.shares || 4);
+            agrParValue = parseFloat(rec.parValuePerShare) > 0 ? parseFloat(rec.parValuePerShare) : SHARE_PAR_DEFAULT;
+            set('agr_shares', rec.shares || SHARE_MIN_DEFAULT);
             setSelectValue(document.getElementById('agr_frequency'), rec.frequency || 'monthly');
             set('agr_witness1', rec.witness1);
             set('agr_witness2', rec.witness2);
@@ -2242,7 +2316,7 @@
                 const res = await apiPost('save_agreement', {
                     member_id: memberId,
                     shares: document.getElementById('agr_shares').value,
-                    parValuePerShare: 500,
+                    parValuePerShare: agrParValue,
                     frequency: document.getElementById('agr_frequency').value,
                     witness1: document.getElementById('agr_witness1').value,
                     witness2: document.getElementById('agr_witness2').value,
@@ -2295,8 +2369,8 @@
         // Auto calculate Agreement Par Value
         function calcAgrTotal() {
             const shares = parseInt(document.getElementById('agr_shares').value) || 0;
-            const total = shares * 500;
-            document.getElementById('agr_totalValue').value = '₱ ' + total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            document.getElementById('agr_parValue').value = formatPeso(agrParValue);
+            document.getElementById('agr_totalValue').value = formatPeso(shares * agrParValue);
         }
 
         // Signature Canvas Mechanics
@@ -2681,8 +2755,8 @@
                         <p class="font-bold mb-2">I hereby pledge to:</p>
                         <ol class="list-decimal list-outside pl-6 space-y-2 text-xs sm:text-sm leading-normal mb-4">
                             <li>Attend and finish the prescribed Cooperative Membership Education Seminar (PMES) and other education and information activities of the cooperative;</li>
-                            <li>Pay the Memberships Fee of One Hundred Pesos (Php100.00) upon application.</li>
-                            <li>Subscribed for at least <strong>FOUR Shares</strong> with a par value of <strong>FIVE HUNDRED PESOS (Php.500.00)</strong>, bearing the amount of <strong>TWO THOUSAND PESOS</strong> upon application for membership and the remaining unpaid subscription shall be paid on amortization within <strong>ONE (1) year</strong> from approval of this application.</li>
+                            <li>Pay the Memberships Fee of ${titleCase(pesoWords(MEMBERSHIP_FEE_DEFAULT))} (Php${formatAmount(MEMBERSHIP_FEE_DEFAULT)}) upon application.</li>
+                            <li>Subscribed for at least <strong>${numberToWords(SHARE_MIN_DEFAULT)} Shares</strong> with a par value of <strong>${pesoWords(SHARE_PAR_DEFAULT)} (Php${formatAmount(SHARE_PAR_DEFAULT)})</strong>, bearing the amount of <strong>${pesoWords(SHARE_MIN_DEFAULT * SHARE_PAR_DEFAULT)}</strong> upon application for membership and the remaining unpaid subscription shall be paid on amortization within <strong>ONE (1) year</strong> from approval of this application.</li>
                             <li>Participate in Coop's capital build-up and savings program.</li>
                             <li>Patronize regularly the coop's business product.</li>
                             <li>Observed faithfully the duties and responsibilities of a cooperative member.</li>
@@ -2752,11 +2826,11 @@
                         <p class="text-justify leading-loose">
                             I, <strong class="border-b border-slate-900 px-2 font-sans uppercase font-bold text-coopGreen-900">${firstMiddleFamily || '__________________________'}</strong>, 
                             a member of the <strong>TALIBON PUBLIC SCHOOL TEACHERS AND EMPLOYEES MULTIPURPOSE COOPERATIVE (TAPSTEMCO)</strong>, do hereby subscribe for 
-                            <strong class="border-b border-slate-900 px-2 font-sans">${rec.shares || 4}</strong> shares with a par value of <strong>₱ 500.00</strong> per share at TAPSTEMCO, a cooperative duly organized and registered under the laws of the Philippines.
+                            <strong class="border-b border-slate-900 px-2 font-sans">${rec.shares || SHARE_MIN_DEFAULT}</strong> shares with a par value of <strong>${formatPeso(parseFloat(rec.parValuePerShare) > 0 ? rec.parValuePerShare : SHARE_PAR_DEFAULT)}</strong> per share at TAPSTEMCO, a cooperative duly organized and registered under the laws of the Philippines.
                         </p>
 
                         <p class="text-justify leading-loose">
-                            I, shall pay <strong class="border-b border-slate-900 px-2 font-sans">${rec.shares || 4}</strong> shares with the total par value of 
+                            I, shall pay <strong class="border-b border-slate-900 px-2 font-sans">${rec.shares || SHARE_MIN_DEFAULT}</strong> shares with the total par value of 
                             <strong class="border-b border-slate-900 px-2 font-sans text-coopGreen-900">${rec.totalParValueLabel || '₱ 0.00'}</strong> 
                             through <strong class="border-b border-slate-900 px-2 font-sans uppercase">${rec.frequency || 'monthly'}</strong> installments through voluntary payment of chosen schedule.
                         </p>

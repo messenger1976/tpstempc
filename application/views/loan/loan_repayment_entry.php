@@ -624,6 +624,11 @@ $suggested = $due && isset($due->suggested_amount) ? (float) $due->suggested_amo
             </div>
         </div>
         <div class="panel-body">
+            <?php
+            if ($due && !empty($due->is_bb_fixed)) {
+                $this->load->view('loan/_bb_fixed_balance_notice', array('bb_balance' => isset($due->bb_balance) ? $due->bb_balance : null));
+            }
+            ?>
             <p class="section-note" id="repaymentDueExplanation">
                 <?php
                 echo sprintf(

@@ -199,6 +199,12 @@ $current_member_id = ($current_user_data && isset($current_user_data->member_id)
                         <?php if (has_role(5, 'Export_CIC')) { ?>
                             <li class="<?php echo (($active == 'cic') ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/cic/index'); ?>"><?php echo lang('cic_export_menu'); ?></a></li>
                         <?php } ?>
+                        <?php if (has_role(5, 'Online_loan_payments') || $this->ion_auth->is_admin()) { ?>
+                            <li class="<?php echo ($active == 'member_app' && $activefunction == 'payments' ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/member_app/payments'); ?>">Online Loan Payments</a></li>
+                        <?php } ?>
+                        <?php if (has_role(1, 'Member_app_access') || $this->ion_auth->is_admin()) { ?>
+                            <li class="<?php echo ($active == 'member_app' && $activefunction == 'access' ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/member_app/access'); ?>">Member App Access</a></li>
+                        <?php } ?>
                         <?php if (has_role(5, 'automatic_repayment_process')) { ?>
                            <!-- <li class="<?php echo ($activefunction == 'automatic_repayment_process' ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/loan/automatic_repayment_process'); ?>"><?php echo 'Automatic Loan Repayment'; ?></a></li>-->
                         <?php } ?>
@@ -311,13 +317,16 @@ $current_member_id = ($current_user_data && isset($current_user_data->member_id)
             <?php } ?>
 
             <?php if (access_module(9)) { ?>
-                <li class="<?php echo (($active == 'setting' || $active == 'backup' || $active == 'activity_log') ? 'active' : ''); ?>">
+                <li class="<?php echo (($active == 'setting' || $active == 'backup' || $active == 'activity_log' || $active == 'map_location') ? 'active' : ''); ?>">
                     <a href="#"><i class="fa fa-cogs"></i> <span class="nav-label"><?php echo lang('setting_account'); ?></span><span class="fa arrow"></span></a>
                     <ul class="nav nav-second-level">
                       <!--<li class="<?php echo ($activefunction == 'client_account' ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/setting/client_account');         ?>"><?php echo lang('setting_addaccount');         ?></a></li>
                         <li class="<?php echo ($activefunction == 'clientaccount_list' ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/setting/clientaccount_list');         ?>"><?php echo lang('seting_clientaccountlist');         ?></a></li>-->
                         <?php if (has_role(9, 'Manage_company_information')) { ?>
                             <li class="<?php echo ($activefunction == 'companyinfo_view' ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/setting/companyinfo_view'); ?>"><?php echo lang('seting_accountinfo'); ?></a></li>
+                        <?php } ?>
+                        <?php if (can_manage_map_locations()) { ?>
+                            <li class="<?php echo ($active == 'map_location' ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/map_location/index'); ?>">Map Locations</a></li>
                         <?php } ?>
                         <?php if (has_role(9, 'Share_settings')) { ?>
                             <li class="<?php echo ($activefunction == 'share_setup' ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/setting/share_setup'); ?>"><?php echo lang('setting_share_setup'); ?></a></li>
@@ -345,6 +354,9 @@ $current_member_id = ($current_user_data && isset($current_user_data->member_id)
                         <?php } ?>
                         <?php if (has_role(9, 'Manage_payment_method') || $this->ion_auth->is_admin()) { ?>
                             <li class="<?php echo ($activefunction == 'payment_method_list' ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/setting/payment_method_list'); ?>"><?php echo lang('payment_method_list'); ?></a></li>
+                        <?php } ?>
+                        <?php if (has_role(9, 'Paymongo_settings') || $this->ion_auth->is_admin()) { ?>
+                            <li class="<?php echo ($active == 'member_app' && $activefunction == 'settings' ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/member_app/settings'); ?>">Member App &amp; PayMongo</a></li>
                         <?php } ?>
                         <?php /* Carried over from the old menu.php (it was dashboard-only before). */ ?>
                         <?php if ($this->ion_auth->is_admin()) { ?>

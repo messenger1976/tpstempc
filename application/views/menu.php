@@ -199,6 +199,12 @@ $current_member_id = ($current_user_data && isset($current_user_data->member_id)
                         <?php if (has_role(5, 'Export_CIC')) { ?>
                             <li class="<?php echo (($active == 'cic') ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/cic/index'); ?>"><?php echo lang('cic_export_menu'); ?></a></li>
                         <?php } ?>
+                        <?php if (has_role(5, 'Online_loan_payments') || $this->ion_auth->is_admin()) { ?>
+                            <li class="<?php echo ($active == 'member_app' && $activefunction == 'payments' ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/member_app/payments'); ?>">Online Loan Payments</a></li>
+                        <?php } ?>
+                        <?php if (has_role(1, 'Member_app_access') || $this->ion_auth->is_admin()) { ?>
+                            <li class="<?php echo ($active == 'member_app' && $activefunction == 'access' ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/member_app/access'); ?>">Member App Access</a></li>
+                        <?php } ?>
                         <?php if (has_role(5, 'automatic_repayment_process')) { ?>
                            <!-- <li class="<?php echo ($activefunction == 'automatic_repayment_process' ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/loan/automatic_repayment_process'); ?>"><?php echo 'Automatic Loan Repayment'; ?></a></li>-->
                         <?php } ?>
@@ -330,6 +336,9 @@ $current_member_id = ($current_user_data && isset($current_user_data->member_id)
                         <?php } ?>
                         <?php if (has_role(9, 'Manage_payment_method') || $this->ion_auth->is_admin()) { ?>
                             <li class="<?php echo ($activefunction == 'payment_method_list' ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/setting/payment_method_list'); ?>"><?php echo lang('payment_method_list'); ?></a></li>
+                        <?php } ?>
+                        <?php if (has_role(9, 'Paymongo_settings') || $this->ion_auth->is_admin()) { ?>
+                            <li class="<?php echo ($active == 'member_app' && $activefunction == 'settings' ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/member_app/settings'); ?>">Member App &amp; PayMongo</a></li>
                         <?php } ?>
                         <?php if ($this->ion_auth->is_admin()) { ?>
                             <li class="<?php echo ($activefunction == 'fiscal_year_list' ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/setting/fiscal_year_list'); ?>"><?php echo lang('fiscal_year_list'); ?></a></li>

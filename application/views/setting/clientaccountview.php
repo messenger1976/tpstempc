@@ -270,6 +270,11 @@ $safe = function ($v) {
                 <a href="<?php echo $edit_url; ?>" class="btn btn-edit">
                     <i class="fa fa-pencil"></i> <?php echo lang('clientaccount_label_btnedit'); ?>
                 </a>
+                <?php if (can_manage_map_locations() && $this->db->field_exists('map_lat', 'companyinfo')) { ?>
+                    <a href="<?php echo site_url(current_lang() . '/map_location/office'); ?>" class="btn btn-edit">
+                        <i class="fa fa-map-marker"></i> Set office map pin
+                    </a>
+                <?php } ?>
             </div>
         </div>
 

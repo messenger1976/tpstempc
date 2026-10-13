@@ -18,7 +18,8 @@
  * NOTE: If you change these, also change the error_reporting() code below
  *
  */
-	define('ENVIRONMENT', 'development'); // Changed to development to show errors temporarily
+	// Live servers run as production. A local copy sets "SetEnv CI_ENV development" in its Apache vhost to see errors.
+	define('ENVIRONMENT', isset($_SERVER['CI_ENV']) ? $_SERVER['CI_ENV'] : 'production');
 /*
  *---------------------------------------------------------------
  * ERROR REPORTING

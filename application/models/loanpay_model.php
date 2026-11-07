@@ -612,11 +612,15 @@ class Loanpay_model extends CI_Model {
     // ------------------------------------------------------------------
 
     public function report($filters = array()) {
+        // Resolve PIN before touching Active Record — current_user() runs a
+        // get_where('users') that would otherwise merge into this query and make
+        // WHERE id ambiguous across loan_online_payments / cash_receipts / users.
+        $pin = current_user()->PIN;
         $this->db->select('op.*, cr.loan_repayment_applied, cr.cancelled AS cr_cancelled, m.firstname, m.lastname', false);
         $this->db->from(self::TABLE . ' op');
         $this->db->join('cash_receipts cr', 'cr.id = op.cash_receipt_id', 'left');
         $this->db->join('members m', 'm.PID = op.PID AND m.PIN = op.PIN', 'left');
-        $this->db->where('op.PIN', current_user()->PIN);
+        $this->db->where('op.PIN', $pin);
         if (!empty($filters['status'])) {
             if ($filters['status'] === 'awaiting_posting') {
                 $this->db->where('op.status', 'paid');

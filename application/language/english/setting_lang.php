@@ -181,5 +181,6 @@ $lang['fiscal_year_delete_fail'] = 'Failed to delete fiscal year';
 $lang['fiscal_year_cannot_delete_active'] = 'Cannot delete active fiscal year';
 
 $lang['access_denied'] = 'Access Denied: You do not have permission to access this feature.';
+$lang['smtp_settings_title'] = 'Email / SMTP';
 
 ?>

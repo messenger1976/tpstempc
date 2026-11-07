@@ -106,5 +106,6 @@ $lang['loanproduct_penalt_period_month'] = 'Kwa mwezi (siku 30)';
 $lang['loanproduct_penalt_period_help'] = 'Ni mara ngapi asilimia ya adhabu juu inatozwa wakati kikomo hakijalipwa. Acha tupu kutumia chaguo-msingi la mfumo (%s), ambalo linatoza adhabu mara moja. Chagua kipindi tu ikiwa bidhaa hii inapaswa kuendelea kutoza wakati kikomo hakijalipwa.';
 
 $lang['app_name'] = 'COOP';
+$lang['smtp_settings_title'] = 'Email / SMTP';
 
 ?>

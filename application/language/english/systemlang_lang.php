@@ -381,6 +381,9 @@ $lang['items_invoice'] = 'Sales/Purchase Invoice Items';
 $lang['tax_code_list'] = 'Tax Code';
 $lang['global_setting'] = 'Global Settings';
 $lang['loan_product_list'] = 'Loan Product';
+// Sidebar label. This file is autoloaded; setting_lang.php is not, so the
+// Settings menu would render a blank entry without this line.
+$lang['smtp_settings_menu'] = 'Email / SMTP';
 
 
 //loan

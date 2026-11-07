@@ -89,7 +89,7 @@ class Dashboard extends CI_Controller {
         $this->data['active_loans_count'] = $this->get_active_loans_count();
         
         // Get new members this month
-        $this->data['new_members_month'] = $this->member_model->count_member(null, 1, date('Y-m-01'));
+        $this->data['new_members_month'] = $this->count_new_members_this_month();
         
         // Calculate collection rate
         $this->data['collection_rate'] = $this->calculate_collection_rate();
@@ -104,7 +104,7 @@ class Dashboard extends CI_Controller {
         $this->data['total_mortuary'] = $this->get_total_mortuary();
         
         // Calculate net assets
-        $this->data['net_assets'] = $this->calculate_net_assets();
+        $this->data['net_assets'] = $this->calculate_net_assets($total_active_loans);
 
         // Member address locations for OpenStreetMap widget
         $this->data['member_map_locations'] = $this->member_model->get_member_map_locations();
@@ -395,23 +395,63 @@ class Dashboard extends CI_Controller {
     }
     
     /**
-     * Calculate net assets
+     * Cash & cash equivalents from GL leaf cash accounts (11110-11199).
+     * Excludes control account 11100 and loan-receivable 112xx.
      */
-    private function calculate_net_assets() {
-        $total_savings = $this->get_total_savings();
-        $total_share_capital = $this->get_total_share_capital();
-        $total_contributions = $this->contribution_model->total_cbu_balance();
-        $total_mortuary = $this->get_total_mortuary();
-        
-        // Calculate total active loans from aging data
-        $loan_aging_data = $this->report_model->loan_aging_report(date('Y-m-d'));
-        $total_active_loans = 0;
-        foreach ($loan_aging_data as $bucket) {
-            $total_active_loans += $bucket['total_balance'];
+    private function get_total_cash() {
+        $pin = current_user()->PIN;
+        $sql = "SELECT COALESCE(SUM(debit) - SUM(credit), 0) AS total
+                FROM general_ledger
+                WHERE PIN = ?
+                  AND account >= 11110
+                  AND account < 11200";
+        $result = $this->db->query($sql, array($pin))->row();
+        return $result ? floatval($result->total) : 0;
+    }
+
+    /**
+     * New active members whose joiningdate falls in the current calendar month.
+     */
+    private function count_new_members_this_month() {
+        $pin = current_user()->PIN;
+        $start = date('Y-m-01 00:00:00');
+        $end = date('Y-m-t 23:59:59');
+        $sql = "SELECT COUNT(*) AS cnt
+                FROM members
+                WHERE PIN = ?
+                  AND status = 1
+                  AND joiningdate >= ?
+                  AND joiningdate <= ?";
+        $result = $this->db->query($sql, array($pin, $start, $end))->row();
+        return $result ? intval($result->cnt) : 0;
+    }
+
+    /**
+     * Cooperative working net assets (simplified, using dashboard KPIs):
+     *   Assets      = outstanding loan receivables + cash/bank (GL)
+     *   Liabilities = member savings deposits + mortuary fund balances
+     * Share capital and CBU are equity (shown on their own KPI cards) and are
+     * NOT subtracted here.
+     *
+     * @param float|null $total_active_loans Precomputed outstanding from aging; recomputed if null
+     */
+    private function calculate_net_assets($total_active_loans = null) {
+        if ($total_active_loans === null) {
+            $loan_aging_data = $this->report_model->loan_aging_report(date('Y-m-d'));
+            $total_active_loans = 0;
+            foreach ($loan_aging_data as $bucket) {
+                $total_active_loans += $bucket['total_balance'];
+            }
         }
-        
-        // Net assets = Assets (savings + share capital + contributions + mortuary) - Liabilities (loans)
-        return ($total_savings + $total_share_capital + $total_contributions + $total_mortuary) - $total_active_loans;
+
+        $total_cash = $this->get_total_cash();
+        $total_savings = $this->get_total_savings();
+        $total_mortuary = $this->get_total_mortuary();
+
+        $assets = floatval($total_active_loans) + floatval($total_cash);
+        $liabilities = floatval($total_savings) + floatval($total_mortuary);
+
+        return $assets - $liabilities;
     }
 
 }

@@ -615,7 +615,7 @@
                             <div class="kpi-body">
                                 <h1 class="kpi-value"><?php echo isset($net_assets) ? number_format($net_assets, 2) : '0.00'; ?></h1>
                                 <span class="kpi-sub">Cooperative Net Worth</span>
-                                <span class="kpi-tag"><i class="fa fa-check-circle"></i> Total Assets</span>
+                                <span class="kpi-tag"><i class="fa fa-check-circle"></i> Assets &minus; Liabilities</span>
                             </div>
                         </div>
                     </div>

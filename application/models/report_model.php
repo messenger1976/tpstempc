@@ -1240,49 +1240,52 @@ FROM
         
         foreach ($loans as $loan) {
             $total_repaid = floatval($loan->total_repaid ? $loan->total_repaid : 0);
-            $outstanding_balance = floatval($loan->total_loan) - $total_repaid;
-            
+            $principle_paid = floatval($loan->principle_paid ? $loan->principle_paid : 0);
+            $outstanding_penalty = 0;
+
+            // True outstanding = unpaid schedule principal + interest (same basis as
+            // loan_model->get_loan_outstanding_for_offset open installments).
+            // Do NOT add schedule.balance - that column is running principal remaining
+            // after each installment, and SUM(repayamount + balance) massively inflates totals.
+            $lid_esc = $this->db->escape($loan->LID);
+            $unpaid_sql = "SELECT
+                            COALESCE(SUM(principle), 0) AS total_principal,
+                            COALESCE(SUM(interest), 0) AS total_interest,
+                            COALESCE(SUM(principle + interest), 0) AS total_due,
+                            COUNT(*) AS unpaid_count
+                           FROM loan_contract_repayment_schedule
+                           WHERE LID = {$lid_esc} AND status = 0";
+            $unpaid_info = $this->db->query($unpaid_sql)->row();
+
+            if ($unpaid_info && intval($unpaid_info->unpaid_count) > 0) {
+                $outstanding_principal = floatval($unpaid_info->total_principal);
+                $outstanding_interest = floatval($unpaid_info->total_interest);
+                $outstanding_balance = floatval($unpaid_info->total_due);
+            } else {
+                // No open installments: fall back to contract total minus repayments
+                $outstanding_balance = floatval($loan->total_loan) - $total_repaid;
+                $outstanding_principal = max(0, floatval($loan->basic_amount) - $principle_paid);
+                $outstanding_interest = max(0, $outstanding_balance - $outstanding_principal);
+            }
+
             // Skip loans with zero or negative balance
             if ($outstanding_balance <= 0) {
                 continue;
             }
-            
+
             $days_overdue = 0;
             $oldest_unpaid_due_date = null;
-            
+
             if ($loan->oldest_unpaid_due_date) {
                 $oldest_unpaid_due_date = $loan->oldest_unpaid_due_date;
                 $due_date = new DateTime($oldest_unpaid_due_date);
                 $current_date = new DateTime($as_of_date);
                 $days_overdue = $current_date->diff($due_date)->days;
-                
+
                 // If due date is in the future, it's not overdue yet
                 if ($due_date > $current_date) {
                     $days_overdue = 0;
                 }
-            }
-            
-            // Calculate outstanding principal, interest, and penalty
-            $principle_paid = floatval($loan->principle_paid ? $loan->principle_paid : 0);
-            $interest_paid = floatval($loan->interest_paid ? $loan->interest_paid : 0);
-            $penalty_paid = floatval($loan->penalty_paid ? $loan->penalty_paid : 0);
-            
-            $outstanding_principal = floatval($loan->basic_amount) - $principle_paid;
-            $outstanding_interest = 0; // Interest is typically paid first, so this might be 0
-            $outstanding_penalty = 0; // Penalty is calculated per installment
-            
-            // Get unpaid installments to calculate interest and penalty
-            $unpaid_sql = "SELECT 
-                            SUM(repayamount + balance) as total_due,
-                            SUM(interest) as total_interest,
-                            SUM(balance) as total_balance
-                           FROM loan_contract_repayment_schedule 
-                           WHERE LID = '{$loan->LID}' AND status = 0";
-            $unpaid_info = $this->db->query($unpaid_sql)->row();
-            
-            if ($unpaid_info) {
-                $outstanding_interest = floatval($unpaid_info->total_interest ? $unpaid_info->total_interest : 0);
-                $outstanding_balance = floatval($unpaid_info->total_due ? $unpaid_info->total_due : 0);
             }
             
             // Determine aging bucket

@@ -357,8 +357,8 @@ class Dashboard extends CI_Controller {
      * Get total share capital (Paid-Up Share Capital).
      * Prefer the member share sub-ledger. When it has no rows (TAPSTEMCO share
      * balances were never migrated into members_share), fall back to GL 30130.
-     * CBU beginning-balance postings (fromtable = contribution_settings) debit
-     * 30130 by mistake and are excluded so they do not wipe out share capital.
+     * After repair_cbu_bb_equity_debit_gl.sql, contribution_settings beginning
+     * balances on 30130 are credits and are included in the GL fallback.
      */
     private function get_total_share_capital() {
         $pin = current_user()->PIN;
@@ -374,8 +374,7 @@ class Dashboard extends CI_Controller {
         $sql = "SELECT COALESCE(SUM(credit) - SUM(debit), 0) AS total
                 FROM general_ledger
                 WHERE PIN = ?
-                AND account = '30130'
-                AND (fromtable IS NULL OR fromtable <> 'contribution_settings')";
+                AND account = '30130'";
         $result = $this->db->query($sql, array($pin))->row();
         return $result ? floatval($result->total) : 0;
     }

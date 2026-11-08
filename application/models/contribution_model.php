@@ -645,30 +645,32 @@ class Contribution_Model extends CI_Model {
                     'PIN' => $pin,
                 );
                 
-                // Determine accounting entries based on Capital Build Up account type
-                // If Capital Build Up is Equity (account_type 30 or 40): Debit Cash, Credit Capital Build Up
-                // If Capital Build Up is Asset: Debit Capital Build Up, Credit Member Payable
-                $capital_account_type = $capital_account_info->account_type;
-                
-                if ($capital_account_type == 30 || $capital_account_type == 40) {
-                    // Capital Build Up is Equity - Standard entry: Debit Cash, Credit Capital Build Up
-                    // Use standard cash account (1010001) or check if exists
-                    $cash_account = 1010001; // Default cash account - adjust if needed
-                    $cash_account_info = account_row_info($cash_account);
-                    
-                    if (!$cash_account_info) {
-                        return FALSE; // Cash account not found
+                // Equity CBU (normal credit balance): Debit Opening Balance / Cash, Credit CBU.
+                // Asset-style CBU (legacy): Debit CBU, Credit Member Payable.
+                // IMPORTANT: chart equity types are usually 30000/40000 (also legacy 30/40).
+                // Checking only 30/40 previously treated equity as asset and debited CBU/30130.
+                if ($this->is_equity_account_type($capital_account_info->account_type)) {
+                    $offset_account = $this->get_cash_account_for_contribution('ADJUSTMENT');
+                    if (empty($offset_account)) {
+                        $offset_account = $this->get_cash_account_for_contribution('CASH');
                     }
-                    
-                    // Debit: Cash Account
-                    $ledger['account'] = $cash_account;
+                    if (empty($offset_account)) {
+                        $offset_account = 1010001;
+                    }
+                    $offset_account_info = account_row_info($offset_account);
+                    if (!$offset_account_info) {
+                        return FALSE;
+                    }
+
+                    // Debit: Opening Balance / Cash / Adjustment
+                    $ledger['account'] = $offset_account;
                     $ledger['debit'] = $amount;
                     $ledger['credit'] = 0;
-                    $ledger['account_type'] = $cash_account_info->account_type;
-                    $ledger['sub_account_type'] = isset($cash_account_info->sub_account_type) ? $cash_account_info->sub_account_type : null;
+                    $ledger['account_type'] = $offset_account_info->account_type;
+                    $ledger['sub_account_type'] = isset($offset_account_info->sub_account_type) ? $offset_account_info->sub_account_type : null;
                     $this->db->insert('general_ledger', $ledger);
-                    
-                    // Credit: Capital Build Up Account
+
+                    // Credit: Capital Build Up (equity increases on credit)
                     $ledger['account'] = $capital_build_up_account;
                     $ledger['debit'] = 0;
                     $ledger['credit'] = $amount;
@@ -676,30 +678,29 @@ class Contribution_Model extends CI_Model {
                     $ledger['sub_account_type'] = isset($capital_account_info->sub_account_type) ? $capital_account_info->sub_account_type : null;
                     $this->db->insert('general_ledger', $ledger);
                 } else {
-                    // Capital Build Up is Asset - Debit Capital Build Up, Credit Member Contribution Payable
-                    // Debit: Capital Build Up Account
+                    // Capital Build Up treated as Asset - Debit CBU, Credit Member Contribution Payable
                     $ledger['account'] = $capital_build_up_account;
                     $ledger['debit'] = $amount;
                     $ledger['credit'] = 0;
                     $ledger['account_type'] = $capital_account_info->account_type;
                     $ledger['sub_account_type'] = isset($capital_account_info->sub_account_type) ? $capital_account_info->sub_account_type : null;
                     $this->db->insert('general_ledger', $ledger);
-                    
-                    // Credit: Member Contribution Payable (Liability) - using default account
-                    // You may want to add this as a setting
-                    $member_payable_account = 2000002; // Default member contribution payable - adjust as needed
+
+                    $member_payable_account = 2000002;
                     $payable_account_info = account_row_info($member_payable_account);
-                    
+
                     if (!$payable_account_info) {
-                        // If payable account doesn't exist, use cash account as credit
-                        $cash_account = 1010001;
+                        $cash_account = $this->get_cash_account_for_contribution('CASH');
+                        if (empty($cash_account)) {
+                            $cash_account = 1010001;
+                        }
                         $payable_account_info = account_row_info($cash_account);
                         if (!$payable_account_info) {
                             return FALSE;
                         }
                         $member_payable_account = $cash_account;
                     }
-                    
+
                     $ledger['account'] = $member_payable_account;
                     $ledger['debit'] = 0;
                     $ledger['credit'] = $amount;
@@ -754,6 +755,24 @@ class Contribution_Model extends CI_Model {
         $this->db->where('PIN', $pin);
         $this->db->where('posted', 1);
         return $this->db->count_all_results('contribution_settings') > 0;
+    }
+
+    /**
+     * Whether a chart account_type is equity (normal credit balance).
+     * Supports legacy codes 30/40 and standard 30000/40000 ranges used in COA.
+     *
+     * @param mixed $account_type
+     * @return bool
+     */
+    function is_equity_account_type($account_type) {
+        $type = (int) $account_type;
+        if (in_array($type, array(30, 40, 30000, 40000), true)) {
+            return true;
+        }
+        if ($type >= 30000 && $type < 50000) {
+            return true;
+        }
+        return false;
     }
 
     /**

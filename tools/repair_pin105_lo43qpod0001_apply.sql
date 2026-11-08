@@ -29,13 +29,9 @@
 -- Closed books are the latest gl_books_close.closed_as_of for PIN 105.
 -- fiscal_year.status is not a close flag. There is no reopen switch.
 --
--- Take the backup first. The backup token does not look for a dump file.
---   mysqldump --single-transaction --skip-lock-tables --no-tablespaces \
---     --default-character-set=utf8 \
---     --tables account_chart fiscal_year general_journal_entry general_ledger \
---     general_ledger_entry gl_books_close journal_entry journal_entry_items \
---     savings_transaction \
---     tapstemco > tapstemco_pin105_lo43qpod0001_pre_repair.sql
+-- Take the backup first, outside this file. The backup token does not create
+-- or check a dump. Database name is the first name after --tables:
+--   mysqldump [options] --tables tapstemco account_chart fiscal_year general_journal_entry general_ledger general_ledger_entry gl_books_close journal_entry journal_entry_items savings_transaction > backup.sql
 
 DROP PROCEDURE IF EXISTS repair_pin105_lo43qpod0001;
 

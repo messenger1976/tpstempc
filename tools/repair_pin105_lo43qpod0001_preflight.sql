@@ -13,13 +13,8 @@
 --
 -- Backup is a separate command. Take it before any apply. This file does not
 -- run mysqldump and cannot see whether a dump file exists.
---
---   mysqldump --single-transaction --skip-lock-tables --no-tablespaces \
---     --default-character-set=utf8 \
---     --tables account_chart fiscal_year general_journal_entry general_ledger \
---     general_ledger_entry gl_books_close journal_entry journal_entry_items \
---     savings_transaction \
---     tapstemco > tapstemco_pin105_lo43qpod0001_pre_repair.sql
+-- Database name is the first name after --tables, then the table names:
+--   mysqldump [options] --tables tapstemco account_chart fiscal_year general_journal_entry general_ledger general_ledger_entry gl_books_close journal_entry journal_entry_items savings_transaction > backup.sql
 
 SELECT
     'PREFLIGHT' AS phase,

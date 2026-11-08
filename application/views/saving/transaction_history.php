@@ -598,6 +598,14 @@ $account_type_filter = isset($account_type_filter) && $account_type_filter !== '
                                                 <i class="fa fa-calendar"></i> <?php echo lang('saving_edit_void_date'); ?>
                                             </a>
                                         <?php } ?>
+                                        <button type="button"
+                                                class="btn btn-info btn-xs btn-ledger"
+                                                title="<?php echo lang('accounting_entries'); ?>"
+                                                data-receipt="<?php echo htmlspecialchars($value->receipt, ENT_QUOTES, 'UTF-8'); ?>"
+                                                data-transdate="<?php echo (!empty($value->trans_date) ? htmlspecialchars(date('m/d/Y', strtotime($value->trans_date)), ENT_QUOTES, 'UTF-8') : ''); ?>"
+                                                data-description="<?php echo htmlspecialchars($trans_type_label . (!empty($value->transaction_source) ? ' — ' . $value->transaction_source : ''), ENT_QUOTES, 'UTF-8'); ?>">
+                                            <i class="fa fa-list-alt"></i> <?php echo lang('accounting_entries'); ?>
+                                        </button>
                                     </div>
                                 </td>
                             </tr>
@@ -618,6 +626,67 @@ $account_type_filter = isset($account_type_filter) && $account_type_filter !== '
         <div class="list-footer">
             <div class="pagination-wrap"><?php echo $links; ?></div>
             <div class="page-size-wrap"><?php page_selector(); ?></div>
+        </div>
+    </div>
+</div>
+
+<!-- GL / Accounting entries modal -->
+<div class="modal inmodal fade" id="ledgerModal" tabindex="-1" role="dialog" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content animated fadeIn">
+            <div class="modal-header">
+                <button type="button" class="close" data-dismiss="modal"><span aria-hidden="true">&times;</span><span class="sr-only">Close</span></button>
+                <h2 class="modal-title"><i class="fa fa-book modal-icon"></i> <?php echo lang('accounting_entries'); ?></h2>
+            </div>
+            <div class="modal-body">
+                <div id="ledger-loading" style="text-align: center; padding: 20px;">
+                    <i class="fa fa-spinner fa-spin fa-3x"></i>
+                    <p>Loading accounting entries...</p>
+                </div>
+                <div id="ledger-content" style="display: none;">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <p><strong>Transaction Date:</strong> <span id="ledger-trans-date"></span></p>
+                            <p><strong>Description:</strong> <span id="ledger-description"></span></p>
+                        </div>
+                        <div class="col-md-6">
+                            <p><strong>Receipt No:</strong> <span id="ledger-receipt"></span></p>
+                            <p><strong>Reference:</strong> <span id="ledger-reference"></span></p>
+                        </div>
+                    </div>
+                    <hr>
+                    <h4>Journal Entries:</h4>
+                    <div class="table-responsive">
+                        <table class="table table-bordered table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Account Code</th>
+                                    <th>Account Name</th>
+                                    <th style="text-align: right;">Debit</th>
+                                    <th style="text-align: right;">Credit</th>
+                                </tr>
+                            </thead>
+                            <tbody id="ledger-entries-table"></tbody>
+                            <tfoot>
+                                <tr style="font-weight: bold;">
+                                    <td colspan="2" style="text-align: right;">Total:</td>
+                                    <td style="text-align: right;" id="ledger-total-debit">0.00</td>
+                                    <td style="text-align: right;" id="ledger-total-credit">0.00</td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                    <div id="ledger-no-entries" style="display: none; padding: 20px; text-align: center;">
+                        <p class="text-muted">No accounting entries found for this transaction.</p>
+                    </div>
+                </div>
+                <div id="ledger-error" style="display: none; padding: 20px; text-align: center;">
+                    <p class="text-danger"><i class="fa fa-exclamation-triangle"></i> <span id="ledger-error-message"></span></p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-default" data-dismiss="modal">Close</button>
+            </div>
         </div>
     </div>
 </div>
@@ -941,6 +1010,70 @@ $account_type_filter = isset($account_type_filter) && $account_type_filter !== '
                 }, function(isConfirm) {
                     if (isConfirm) {
                         window.location.href = postUrl;
+                    }
+                });
+            });
+
+            function number_format(number, decimals) {
+                return parseFloat(number).toFixed(decimals).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+            }
+
+            $(document).on('click', '.btn-ledger', function() {
+                var receipt = $(this).data('receipt');
+                var transDate = $(this).data('transdate') || '';
+                var description = $(this).data('description') || '';
+                $('#ledgerModal').modal('show');
+                $('#ledger-loading').show();
+                $('#ledger-content').hide();
+                $('#ledger-error').hide();
+                $('#ledger-entries-table').empty();
+                $.ajax({
+                    url: '<?php echo site_url(current_lang() . '/report_saving/get_transaction_ledger_entries'); ?>',
+                    type: 'POST',
+                    data: { receipt: receipt },
+                    dataType: 'json',
+                    success: function(response) {
+                        $('#ledger-loading').hide();
+                        if (response.success) {
+                            if (response.entries && response.entries.length > 0) {
+                                $('#ledger-trans-date').text(transDate);
+                                $('#ledger-description').text(description);
+                                $('#ledger-receipt').text(receipt);
+                                $('#ledger-reference').text(response.entries[0].linkto || 'N/A');
+                                var totalDebit = 0, totalCredit = 0, html = '';
+                                $.each(response.entries, function(index, entry) {
+                                    var d = parseFloat(entry.debit) || 0;
+                                    var c = parseFloat(entry.credit) || 0;
+                                    totalDebit += d;
+                                    totalCredit += c;
+                                    html += '<tr><td>' + escapeHtml(entry.account) + '</td><td>' + escapeHtml(entry.account_name) + '</td>'
+                                        + '<td style="text-align:right;">' + (d > 0 ? number_format(d, 2) : '') + '</td>'
+                                        + '<td style="text-align:right;">' + (c > 0 ? number_format(c, 2) : '') + '</td></tr>';
+                                });
+                                $('#ledger-entries-table').html(html);
+                                $('#ledger-total-debit').text(number_format(totalDebit, 2));
+                                $('#ledger-total-credit').text(number_format(totalCredit, 2));
+                                $('#ledger-content').show();
+                                $('#ledger-no-entries').hide();
+                            } else {
+                                $('#ledger-trans-date').text(transDate);
+                                $('#ledger-description').text(description);
+                                $('#ledger-receipt').text(receipt);
+                                $('#ledger-reference').text('N/A');
+                                $('#ledger-total-debit').text('0.00');
+                                $('#ledger-total-credit').text('0.00');
+                                $('#ledger-content').show();
+                                $('#ledger-no-entries').show();
+                            }
+                        } else {
+                            $('#ledger-error-message').text(response.message || 'Failed to load accounting entries.');
+                            $('#ledger-error').show();
+                        }
+                    },
+                    error: function(xhr, status, error) {
+                        $('#ledger-loading').hide();
+                        $('#ledger-error-message').text('An error occurred: ' + error);
+                        $('#ledger-error').show();
                     }
                 });
             });

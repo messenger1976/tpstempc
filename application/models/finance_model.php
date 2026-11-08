@@ -1,5 +1,9 @@
 <?php
 
+if (!class_exists('Savings_interest_gl')) {
+    require_once dirname(__FILE__) . '/../libraries/Savings_interest_gl.php';
+}
+
 /*
  * To change this template, choose Tools | Templates
  * and open the template in the editor.
@@ -3243,7 +3247,18 @@ $pin=current_user()->PIN;
         
         if (!empty($existing_entry)) {
             log_message('debug', 'Savings account GL entry already exists for receipt: ' . $receipt);
-            return true; // Already posted
+            return true; // Already posted, including a legacy interest void on the wrong accounts
+        }
+
+        // Interest stored as CR must not be reversed like a cash withdrawal.
+        // Mirror the original expense and liability lines before any cash or
+        // chart-name lookup. A void receipt that already has GL lines returned
+        // above and is not posted a second time.
+        if (Savings_interest_gl::is_void_source($systemcomment, '')) {
+            $interest_void = $this->savings_interest_void_context($receipt, $systemcomment);
+            if ($interest_void !== null) {
+                return $this->post_savings_interest_void_mirror($receipt, $trans_date, $interest_void['original_receipt']);
+            }
         }
         
         // Get savings account type to retrieve account_setup (GL liability account)
@@ -3891,6 +3906,118 @@ $pin=current_user()->PIN;
         );
     }
 
+    /**
+     * Interest-void context for a savings receipt, or null when this receipt
+     * is not an interest reversal. Looks up the source row so a legacy void
+     * tagged ORIG_TYPE:CR (interest stored as CR) is still recognized.
+     *
+     * @return array|null array('original_receipt' => string)
+     */
+    function savings_interest_void_context($void_receipt, $systemcomment) {
+        if (!Savings_interest_gl::is_void_source($systemcomment, '')) {
+            return null;
+        }
+        $pin = current_user()->PIN;
+        $this->db->where('receipt', $void_receipt);
+        $this->db->where('PIN', $pin);
+        $void_row = $this->db->get('savings_transaction')->row();
+
+        $orig_receipt = '';
+        $orig_type = null;
+        $orig_system = null;
+        if ($void_row) {
+            $orig_receipt = Savings_interest_gl::original_receipt_from_comment(isset($void_row->comment) ? $void_row->comment : '');
+            if ($orig_receipt !== '') {
+                $this->db->where('receipt', $orig_receipt);
+                $this->db->where('PIN', $pin);
+                $orig = $this->db->get('savings_transaction')->row();
+                if ($orig) {
+                    $orig_type = $orig->trans_type;
+                    $orig_system = isset($orig->system_comment) ? $orig->system_comment : '';
+                }
+            }
+        }
+        if (!Savings_interest_gl::should_treat_as_interest_void($systemcomment, $orig_type, $orig_system)) {
+            return null;
+        }
+        return array('original_receipt' => $orig_receipt);
+    }
+
+    /**
+     * Post the interest-void reversal by swapping the source GL lines.
+     * Already-posted void receipts (including a legacy reversal to the wrong
+     * account) are left unchanged. No source lines means there is nothing to
+     * reverse and nothing is invented.
+     *
+     * @return bool
+     */
+    function post_savings_interest_void_mirror($void_receipt, $void_date, $original_receipt) {
+        $pin = current_user()->PIN;
+        $void_ts = strtotime((string) $void_date);
+        if ($void_ts === false) {
+            log_message('error', 'Invalid interest void date for receipt ' . $void_receipt);
+            return false;
+        }
+        $void_date = date('Y-m-d', $void_ts);
+
+        $this->db->where('refferenceID', $void_receipt);
+        $this->db->where('fromtable', 'savings_transaction');
+        $this->db->where('PIN', $pin);
+        $existing = $this->db->get('general_ledger')->result();
+
+        $source_lines = array();
+        if ($original_receipt !== '') {
+            $this->db->where('refferenceID', $original_receipt);
+            $this->db->where('fromtable', 'savings_transaction');
+            $this->db->where('PIN', $pin);
+            $source_lines = $this->db->get('general_ledger')->result();
+        }
+
+        $mirrors = Savings_interest_gl::reversal_lines_to_post(
+            $source_lines,
+            $existing,
+            $void_date,
+            $void_receipt,
+            $original_receipt
+        );
+        if (empty($mirrors)) {
+            return true;
+        }
+        if (!Savings_interest_gl::lines_are_balanced($mirrors)) {
+            log_message('error', 'Refusing unbalanced interest void reversal for receipt ' . $void_receipt);
+            return false;
+        }
+        if (function_exists('gl_reject_closed_date')) {
+            $lock_msg = gl_reject_closed_date($void_date);
+            if ($lock_msg) {
+                log_message('error', $lock_msg);
+                return false;
+            }
+        }
+
+        $this->db->trans_start();
+        $this->db->insert('general_ledger_entry', array(
+            'date' => $void_date,
+            'PIN' => $pin,
+        ));
+        $entry_id = $this->db->insert_id();
+        if (!$entry_id) {
+            $this->db->trans_complete();
+            return false;
+        }
+        foreach ($mirrors as $row) {
+            $row['entryid'] = $entry_id;
+            $row['PIN'] = $pin;
+            $this->db->insert('general_ledger', $row);
+        }
+        $this->db->trans_complete();
+        if ($this->db->trans_status() === FALSE) {
+            log_message('error', 'Interest void GL reversal failed for receipt ' . $void_receipt);
+            return false;
+        }
+        return $this->is_savings_receipt_posted_to_gl($void_receipt);
+    }
+
     function void_savings_deposit_withdrawal_transaction($receipt, $reason = '', $void_date = null) {
         $pin = current_user()->PIN;
         
@@ -3901,6 +4028,10 @@ $pin=current_user()->PIN;
         
         if (!$trans) {
             return array('success' => false, 'message' => 'Transaction not found');
+        }
+
+        if ($this->is_void_entry($trans) || Savings_interest_gl::is_void_source(isset($trans->system_comment) ? $trans->system_comment : '', isset($trans->comment) ? $trans->comment : '')) {
+            return array('success' => false, 'message' => 'Cannot void a reversing entry');
         }
         
         // Check if already voided
@@ -3923,6 +4054,13 @@ $pin=current_user()->PIN;
             }
             $void_trans_date = date('Y-m-d', $void_ts);
         }
+
+        if (function_exists('gl_reject_closed_date')) {
+            $lock_msg = gl_reject_closed_date($void_trans_date);
+            if ($lock_msg) {
+                return array('success' => false, 'message' => $lock_msg);
+            }
+        }
         
         // Begin transaction
         $this->db->trans_start();
@@ -3932,7 +4070,15 @@ $pin=current_user()->PIN;
         $void_trans_type = ($trans->trans_type == 'CR' || $trans->trans_type == 'INT') ? 'DR' : 'CR';
         $void_comment = 'VOID-' . $receipt . ' - ' . $reason;
         $original_method = !empty($trans->paymethod) ? $trans->paymethod : 'N/A';
-        $void_system_comment = 'VOID TRANSACTION | ORIG_TYPE:' . $trans->trans_type . ' | ORIG_METHOD:' . $original_method;
+        $void_system_comment = Savings_interest_gl::build_void_system_comment(
+            $trans->trans_type,
+            isset($trans->system_comment) ? $trans->system_comment : '',
+            $original_method
+        );
+        $is_interest_void = Savings_interest_gl::is_interest_source(
+            $trans->trans_type,
+            isset($trans->system_comment) ? $trans->system_comment : ''
+        );
         
         // Get next receipt number
         $next_id = $this->get_next_savings_transaction_id();
@@ -3993,7 +4139,49 @@ $pin=current_user()->PIN;
         // so the period can be re-posted for this account (no-op otherwise).
         $this->void_interest_posting_by_receipt($receipt);
 
-        // Auto-post the void reversing entry to GL so accounting remains adjusted
+        // Auto-post the void reversing entry to GL so accounting remains adjusted.
+        // Interest uses the source GL accounts (expense and liability). Do not
+        // fall through to post_savings_account_to_gl, which would also post
+        // every other unposted receipt on the savings account.
+        if ($is_interest_void) {
+            $gl_posted = $this->post_savings_to_gl(
+                $trans->account,
+                floatval($trans->amount),
+                $trans->paymethod,
+                isset($trans->account_cat) ? $trans->account_cat : (($account_info && isset($account_info->account_cat)) ? $account_info->account_cat : ''),
+                $void_receipt,
+                $void_trans_date,
+                isset($trans->PID) ? $trans->PID : (($account_info && isset($account_info->RFID)) ? $account_info->RFID : ''),
+                ($account_info && isset($account_info->member_id)) ? $account_info->member_id : '',
+                isset($trans->customer_name) ? $trans->customer_name : '',
+                $void_system_comment,
+                $void_trans_type
+            );
+            $is_void_receipt_posted = $this->is_savings_receipt_posted_to_gl($void_receipt);
+            if ($is_void_receipt_posted) {
+                return array(
+                    'success' => true,
+                    'message' => 'Transaction voided and interest reversed on the general ledger',
+                    'void_receipt' => $void_receipt,
+                    'gl_posted' => true,
+                );
+            }
+            if ($gl_posted) {
+                return array(
+                    'success' => true,
+                    'message' => 'Transaction voided. Source interest had no general-ledger lines to reverse.',
+                    'void_receipt' => $void_receipt,
+                    'gl_posted' => false,
+                );
+            }
+            return array(
+                'success' => true,
+                'message' => 'Transaction voided but GL reversal is still pending. Please use Post to GL.',
+                'void_receipt' => $void_receipt,
+                'gl_posted' => false,
+            );
+        }
+
         $member_id = ($account_info && isset($account_info->member_id)) ? $account_info->member_id : '';
         $pid = isset($trans->PID) ? $trans->PID : (($account_info && isset($account_info->RFID)) ? $account_info->RFID : '');
         $customer_name = isset($trans->customer_name) ? $trans->customer_name : '';

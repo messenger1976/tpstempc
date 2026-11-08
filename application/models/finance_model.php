@@ -3232,13 +3232,7 @@ $pin=current_user()->PIN;
      */
     function post_savings_to_gl($account, $amount, $paymethod, $account_cat, $receipt, $trans_date, $pid, $member_id, $customer_name = '', $systemcomment = '', $trans_type = '') {
         $pin = current_user()->PIN;
-        
-        // Skip if amount is zero
-        if (floatval($amount) == 0) {
-            log_message('debug', 'Skipping GL posting for savings account ' . $account . ': Zero amount');
-            return true; // Not an error, just nothing to post
-        }
-        
+
         // Check if already posted to avoid duplicates
         $this->db->where('refferenceID', $receipt);
         $this->db->where('fromtable', 'savings_transaction');
@@ -3250,15 +3244,21 @@ $pin=current_user()->PIN;
             return true; // Already posted, including a legacy interest void on the wrong accounts
         }
 
-        // Interest stored as CR must not be reversed like a cash withdrawal.
-        // Mirror the original expense and liability lines before any cash or
-        // chart-name lookup. A void receipt that already has GL lines returned
-        // above and is not posted a second time.
+        // Interest voids must run before the zero-amount skip. Some interest
+        // rows were stored with savings_transaction.amount = 0 while GL still
+        // has the expense/liability lines (e.g. KVYIR4NB1001 / 20.23). Mirroring
+        // uses the source GL, not the savings amount.
         if (Savings_interest_gl::is_void_source($systemcomment, '')) {
             $interest_void = $this->savings_interest_void_context($receipt, $systemcomment);
             if ($interest_void !== null) {
                 return $this->post_savings_interest_void_mirror($receipt, $trans_date, $interest_void['original_receipt']);
             }
+        }
+
+        // Skip if amount is zero (non-interest-void paths)
+        if (floatval($amount) == 0) {
+            log_message('debug', 'Skipping GL posting for savings account ' . $account . ': Zero amount');
+            return true; // Not an error, just nothing to post
         }
         
         // Get savings account type to retrieve account_setup (GL liability account)

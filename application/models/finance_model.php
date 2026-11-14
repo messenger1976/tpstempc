@@ -4901,6 +4901,33 @@ $pin=current_user()->PIN;
         )";
     }
 
+    /**
+     * Fast cooperative-wide savings total as of a date (one aggregate, not per-account subqueries).
+     * Used by the dashboard; per-account listing still uses _savings_balance_as_of_expr.
+     */
+    function get_total_savings_amount_as_of_fast($as_of_date) {
+        if (empty($as_of_date) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $as_of_date)) {
+            return $this->get_total_savings_amount(null, null, null);
+        }
+        $pin = current_user()->PIN;
+        $until = $as_of_date . ' 23:59:59';
+        $sql = "SELECT COALESCE(SUM(CASE WHEN st.trans_type = 'CR' THEN st.amount ELSE -st.amount END), 0) AS balance
+                FROM savings_transaction st
+                INNER JOIN members_account ma ON ma.account = st.account AND ma.PIN = st.PIN
+                WHERE st.PIN = ?
+                  AND st.trans_date <= ?
+                  AND (st.comment IS NULL OR st.comment NOT LIKE 'VOID-%')
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM savings_transaction vt
+                      WHERE vt.PIN = st.PIN
+                        AND vt.account = st.account
+                        AND vt.comment LIKE CONCAT('VOID-', st.receipt, '%')
+                  )";
+        $result = $this->db->query($sql, array($pin, $until))->row();
+        return $result ? floatval($result->balance) : 0;
+    }
+
     function search_saving_account($key=null, $limit=40, $start=0, $account_type_filter=null, $status_filter=null, $gl_posted_filter=null, $as_of_date=null) {
         $pin = current_user()->PIN;
         $pin_esc = $this->db->escape($pin);

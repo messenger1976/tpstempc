@@ -1446,6 +1446,162 @@ FROM
         return $aging_buckets;
     }
 
+    /**
+     * Dashboard-only loan aging summary: bucket totals + loan counts without N+1 schedule queries.
+     * Same bucket keys as loan_aging_report(); loans arrays are empty (use loan_count).
+     */
+    function loan_aging_dashboard_summary($as_of_date = null) {
+        $pin = current_user()->PIN;
+        if (is_null($as_of_date)) {
+            $as_of_date = date('Y-m-d');
+        } else {
+            $as_of_date = date('Y-m-d', strtotime($as_of_date));
+        }
+
+        $aging_buckets = array(
+            'current' => array('label' => 'Current (0-30 days)', 'min' => 0, 'max' => 30, 'loans' => array(), 'loan_count' => 0, 'total_balance' => 0, 'total_principal' => 0, 'total_interest' => 0, 'total_penalty' => 0),
+            '31_60' => array('label' => '31-60 days', 'min' => 31, 'max' => 60, 'loans' => array(), 'loan_count' => 0, 'total_balance' => 0, 'total_principal' => 0, 'total_interest' => 0, 'total_penalty' => 0),
+            '61_90' => array('label' => '61-90 days', 'min' => 61, 'max' => 90, 'loans' => array(), 'loan_count' => 0, 'total_balance' => 0, 'total_principal' => 0, 'total_interest' => 0, 'total_penalty' => 0),
+            '91_180' => array('label' => '91-180 days', 'min' => 91, 'max' => 180, 'loans' => array(), 'loan_count' => 0, 'total_balance' => 0, 'total_principal' => 0, 'total_interest' => 0, 'total_penalty' => 0),
+            'over_180' => array('label' => 'Over 180 days', 'min' => 181, 'max' => 9999, 'loans' => array(), 'loan_count' => 0, 'total_balance' => 0, 'total_principal' => 0, 'total_interest' => 0, 'total_penalty' => 0),
+        );
+
+        $sql = "SELECT
+                    lc.LID,
+                    lc.basic_amount,
+                    lc.total_loan,
+                    COALESCE(paid.total_repaid, 0) AS total_repaid,
+                    COALESCE(paid.principle_paid, 0) AS principle_paid,
+                    unpaid.outstanding_principal,
+                    unpaid.outstanding_interest,
+                    unpaid.outstanding_balance,
+                    unpaid.unpaid_count,
+                    unpaid.oldest_unpaid_due_date
+                FROM loan_contract lc
+                INNER JOIN loan_contract_disburse lcd ON lcd.LID = lc.LID
+                LEFT JOIN (
+                    SELECT LID,
+                           SUM(amount) AS total_repaid,
+                           SUM(principle) AS principle_paid
+                    FROM loan_contract_repayment
+                    GROUP BY LID
+                ) paid ON paid.LID = lc.LID
+                LEFT JOIN (
+                    SELECT LID,
+                           COALESCE(SUM(principle), 0) AS outstanding_principal,
+                           COALESCE(SUM(interest), 0) AS outstanding_interest,
+                           COALESCE(SUM(principle + interest), 0) AS outstanding_balance,
+                           COUNT(*) AS unpaid_count,
+                           MIN(repaydate) AS oldest_unpaid_due_date
+                    FROM loan_contract_repayment_schedule
+                    WHERE status = 0
+                    GROUP BY LID
+                ) unpaid ON unpaid.LID = lc.LID
+                WHERE lc.PIN = ?
+                  AND lc.status = 4
+                  AND lc.disburse = 1
+                  AND lcd.disbursedate <= ?";
+
+        $loans = $this->db->query($sql, array($pin, $as_of_date))->result();
+        $as_of_ts = strtotime($as_of_date);
+
+        foreach ($loans as $loan) {
+            if ($loan->unpaid_count !== null && intval($loan->unpaid_count) > 0) {
+                $outstanding_principal = floatval($loan->outstanding_principal);
+                $outstanding_interest = floatval($loan->outstanding_interest);
+                $outstanding_balance = floatval($loan->outstanding_balance);
+            } else {
+                $outstanding_balance = floatval($loan->total_loan) - floatval($loan->total_repaid);
+                $outstanding_principal = max(0, floatval($loan->basic_amount) - floatval($loan->principle_paid));
+                $outstanding_interest = max(0, $outstanding_balance - $outstanding_principal);
+            }
+            if ($outstanding_balance <= 0) {
+                continue;
+            }
+
+            $days_overdue = 0;
+            if (!empty($loan->oldest_unpaid_due_date)) {
+                $due_ts = strtotime($loan->oldest_unpaid_due_date);
+                if ($due_ts !== false && $due_ts < $as_of_ts) {
+                    $days_overdue = (int) floor(($as_of_ts - $due_ts) / 86400);
+                }
+            }
+
+            $bucket_key = 'current';
+            if ($days_overdue > 180) {
+                $bucket_key = 'over_180';
+            } elseif ($days_overdue > 90) {
+                $bucket_key = '91_180';
+            } elseif ($days_overdue > 60) {
+                $bucket_key = '61_90';
+            } elseif ($days_overdue > 30) {
+                $bucket_key = '31_60';
+            }
+
+            $aging_buckets[$bucket_key]['loan_count']++;
+            $aging_buckets[$bucket_key]['total_balance'] += $outstanding_balance;
+            $aging_buckets[$bucket_key]['total_principal'] += $outstanding_principal;
+            $aging_buckets[$bucket_key]['total_interest'] += $outstanding_interest;
+        }
+
+        // Beginning balances without matching active contracts (same rules as full report).
+        $sql_bb = "SELECT
+                        loan_beginning_balances.*,
+                        members.PID,
+                        COALESCE(loan_beginning_balances.loan_id, CONCAT('BB-', loan_beginning_balances.id)) as LID
+                    FROM loan_beginning_balances
+                    INNER JOIN members ON members.member_id = loan_beginning_balances.member_id
+                    WHERE loan_beginning_balances.PIN = ?
+                        AND members.PIN = ?
+                        AND loan_beginning_balances.total_balance > 0
+                        AND (loan_beginning_balances.loan_id IS NULL
+                          OR loan_beginning_balances.loan_id NOT IN (SELECT LID FROM loan_contract WHERE PIN = ? AND status = 4 AND disburse = 1))
+                        AND (loan_beginning_balances.disbursement_date IS NULL
+                          OR loan_beginning_balances.disbursement_date <= ?)";
+        $beginning_balances = $this->db->query($sql_bb, array($pin, $pin, $pin, $as_of_date))->result();
+
+        foreach ($beginning_balances as $bb) {
+            $outstanding_balance = floatval($bb->total_balance);
+            $outstanding_principal = floatval($bb->principal_balance);
+            $outstanding_interest = floatval($bb->interest_balance);
+            if ($outstanding_balance <= 0) {
+                continue;
+            }
+
+            $days_overdue = 0;
+            if (!empty($bb->last_date_paid) && !empty($bb->monthly_amort) && !empty($bb->term)) {
+                $est_due = strtotime($bb->last_date_paid . ' +1 month');
+                if ($est_due !== false && $est_due < $as_of_ts) {
+                    $days_overdue = (int) floor(($as_of_ts - $est_due) / 86400);
+                }
+            } elseif (!empty($bb->disbursement_date)) {
+                $est_due = strtotime($bb->disbursement_date . ' +30 days');
+                if ($est_due !== false && $est_due < $as_of_ts) {
+                    $days_overdue = (int) floor(($as_of_ts - $est_due) / 86400);
+                }
+            }
+
+            $bucket_key = 'current';
+            if ($days_overdue > 180) {
+                $bucket_key = 'over_180';
+            } elseif ($days_overdue > 90) {
+                $bucket_key = '91_180';
+            } elseif ($days_overdue > 60) {
+                $bucket_key = '61_90';
+            } elseif ($days_overdue > 30) {
+                $bucket_key = '31_60';
+            }
+
+            $aging_buckets[$bucket_key]['loan_count']++;
+            $aging_buckets[$bucket_key]['total_balance'] += $outstanding_balance;
+            $aging_buckets[$bucket_key]['total_principal'] += $outstanding_principal;
+            $aging_buckets[$bucket_key]['total_interest'] += $outstanding_interest;
+            $aging_buckets[$bucket_key]['total_penalty'] += floatval($bb->penalty_balance);
+        }
+
+        return $aging_buckets;
+    }
+
     function save_edit_entry($id,$trans_date,$description,$paymethod, $trans_type, $amount, $comment=''){
         $this->db->where("id", $id);
         $this->db->set("trans_date", date('Y-m-d',strtotime($trans_date)));

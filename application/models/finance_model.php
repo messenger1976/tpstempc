@@ -1798,17 +1798,23 @@ class Finance_Model extends CI_Model {
             $this->load->model('loan_model');
             $cr = $this->cash_receipt_model->get_cash_receipt((int) $entry->reference_id);
             $cr_type = ($cr && !empty($cr->received_from_type)) ? strtolower(trim((string) $cr->received_from_type)) : '';
-            if ($cr && $cr_type === 'loan_repayment' && !empty($cr->loan_repayment_applied) && !empty($cr->loan_repayment_receipt)) {
-                $void_loan = $this->loan_model->void_loan_repayment_receipt(
-                    $cr->loan_repayment_receipt,
-                    $reason !== '' ? $reason : 'Void cash receipt loan repayment',
-                    array('reverse_gl' => false, 'from_cash_receipt_void' => true)
-                );
-                if (empty($void_loan['success'])) {
-                    return array(
-                        'success' => false,
-                        'message' => !empty($void_loan['message']) ? $void_loan['message'] : 'Failed to reverse the linked loan repayment.',
+            if ($cr && $cr_type === 'loan_repayment' && !empty($cr->loan_repayment_applied)) {
+                $linked_receipts = $this->cash_receipt_model->get_loan_repayment_applied_receipts((int) $cr->id);
+                if (empty($linked_receipts) && !empty($cr->loan_repayment_receipt)) {
+                    $linked_receipts = array(trim((string) $cr->loan_repayment_receipt));
+                }
+                foreach ($linked_receipts as $linked_receipt) {
+                    $void_loan = $this->loan_model->void_loan_repayment_receipt(
+                        $linked_receipt,
+                        $reason !== '' ? $reason : 'Void cash receipt loan repayment',
+                        array('reverse_gl' => false, 'from_cash_receipt_void' => true)
                     );
+                    if (empty($void_loan['success'])) {
+                        return array(
+                            'success' => false,
+                            'message' => !empty($void_loan['message']) ? $void_loan['message'] : 'Failed to reverse the linked loan repayment.',
+                        );
+                    }
                 }
                 $this->cash_receipt_model->clear_loan_repayment_applied((int) $cr->id);
             }

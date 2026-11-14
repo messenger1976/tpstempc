@@ -125,9 +125,18 @@ class Cash_receipt extends CI_Controller {
 
         if ($this->form_validation->run() == TRUE && !$gl_lock_block) {
             $received_from_type = $this->_normalize_received_from_type($this->input->post('received_from_type'));
+            $loan_allocations = array();
             $loan_repayment_lid = '';
             if ($received_from_type === 'loan_repayment') {
-                $loan_repayment_lid = trim((string) $this->input->post('loan_repayment_lid'));
+                $loan_allocations = $this->_parse_loan_repayment_allocations();
+                if (!empty($loan_allocations)) {
+                    $loan_repayment_lid = $loan_allocations[0]['LID'];
+                } else {
+                    $loan_repayment_lid = trim((string) $this->input->post('loan_repayment_lid'));
+                    if ($loan_repayment_lid !== '') {
+                        $loan_allocations = array(array('LID' => $loan_repayment_lid, 'amount' => 0));
+                    }
+                }
             }
 
             $payment_method_id = $this->input->post('payment_method');
@@ -182,22 +191,46 @@ class Cash_receipt extends CI_Controller {
                 }
             }
             if (!$cancelled && $received_from_type === 'loan_repayment') {
-                if ($loan_repayment_lid === '') {
+                if (empty($loan_allocations)) {
                     $this->data['warning'] = lang('cash_receipt_loan_repayment_required');
                 } else {
                     $this->load->model('loan_model');
-                    $loan = $this->loan_model->loan_info($loan_repayment_lid)->row();
-                    if (!$loan || (string) $loan->PIN !== (string) current_user()->PIN) {
-                        $this->data['warning'] = lang('cash_receipt_loan_not_found');
-                    } else {
-                        if (empty($receipt_data['description'])) {
-                            $receipt_data['description'] = 'Loan Repayment ' . $loan_repayment_lid;
+                    $alloc_sum = 0;
+                    $lid_labels = array();
+                    foreach ($loan_allocations as $idx => $alloc) {
+                        $alloc_lid = $alloc['LID'];
+                        $alloc_amount = isset($alloc['amount']) ? round((float) $alloc['amount'], 2) : 0;
+                        if ($alloc_amount <= 0 && count($loan_allocations) === 1) {
+                            $alloc_amount = round((float) $total_debit, 2);
+                            $loan_allocations[$idx]['amount'] = $alloc_amount;
                         }
-                        $apply_error = $this->_loan_repayment_save_error($loan_repayment_lid, $receipt_data['receipt_date'], $total_debit);
+                        $loan = $this->loan_model->loan_info($alloc_lid)->row();
+                        if (!$loan || (string) $loan->PIN !== (string) current_user()->PIN) {
+                            $this->data['warning'] = lang('cash_receipt_loan_not_found');
+                            break;
+                        }
+                        if ($alloc_amount <= 0) {
+                            $this->data['warning'] = lang('cash_receipt_loan_repayment_required');
+                            break;
+                        }
+                        $apply_error = $this->_loan_repayment_save_error(
+                            $alloc_lid,
+                            $receipt_data['receipt_date'],
+                            $alloc_amount,
+                            null,
+                            $this->_allocation_override_for_plan($loan_allocations[$idx])
+                        );
                         if ($apply_error !== '') {
                             $this->data['warning'] = $apply_error;
+                            break;
                         }
+                        $alloc_sum += $alloc_amount;
+                        $lid_labels[] = $alloc_lid;
                     }
+                    if (empty($this->data['warning']) && empty($receipt_data['description'])) {
+                        $receipt_data['description'] = 'Loan Repayment ' . implode(', ', $lid_labels);
+                    }
+                    unset($alloc_sum);
                 }
             }
             $receipt_data['total_amount'] = max($total_debit, $total_credit);
@@ -205,6 +238,11 @@ class Cash_receipt extends CI_Controller {
             $receipt_id = empty($this->data['warning']) ? $this->cash_receipt_model->create_cash_receipt($receipt_data, $line_items) : false;
 
             if ($receipt_id) {
+                if ($received_from_type === 'loan_repayment' && !empty($loan_allocations)) {
+                    $this->cash_receipt_model->replace_loan_allocations($receipt_id, $loan_allocations);
+                } else {
+                    $this->cash_receipt_model->replace_loan_allocations($receipt_id, array());
+                }
                 $this->session->set_flashdata('message', lang('cash_receipt_create_success'));
                 redirect(current_lang() . '/cash_receipt/cash_receipt_view/' . encode_id($receipt_id), 'refresh');
             } else if (empty($this->data['warning'])) {
@@ -216,6 +254,8 @@ class Cash_receipt extends CI_Controller {
         $this->data['account_list'] = $this->finance_model->account_chart_by_accounttype();
         $this->data['selected_received_from_type'] = set_value('received_from_type');
         $this->data['selected_loan_repayment_lid'] = set_value('loan_repayment_lid');
+        $this->data['selected_loan_allocations'] = $this->_parse_loan_repayment_allocations();
+        $this->data['selected_member_pid'] = set_value('member_pid');
 
         $this->data['content'] = 'cash_receipt/cash_receipt_form';
         $this->load->view('template', $this->data);
@@ -271,9 +311,18 @@ class Cash_receipt extends CI_Controller {
 
         if ($this->form_validation->run() == TRUE && !$gl_lock_block) {
             $received_from_type = $this->_normalize_received_from_type($this->input->post('received_from_type'));
+            $loan_allocations = array();
             $loan_repayment_lid = '';
             if ($received_from_type === 'loan_repayment') {
-                $loan_repayment_lid = trim((string) $this->input->post('loan_repayment_lid'));
+                $loan_allocations = $this->_parse_loan_repayment_allocations();
+                if (!empty($loan_allocations)) {
+                    $loan_repayment_lid = $loan_allocations[0]['LID'];
+                } else {
+                    $loan_repayment_lid = trim((string) $this->input->post('loan_repayment_lid'));
+                    if ($loan_repayment_lid !== '') {
+                        $loan_allocations = array(array('LID' => $loan_repayment_lid, 'amount' => 0));
+                    }
+                }
             }
 
             // Convert payment method ID to name
@@ -341,17 +390,36 @@ class Cash_receipt extends CI_Controller {
             $receipt_data['total_amount'] = max($total_debit, $total_credit);
 
             if (!$cancelled && $received_from_type === 'loan_repayment') {
-                if ($loan_repayment_lid === '') {
+                if (empty($loan_allocations)) {
                     $this->data['warning'] = lang('cash_receipt_loan_repayment_required');
                 } else {
                     $this->load->model('loan_model');
-                    $loan = $this->loan_model->loan_info($loan_repayment_lid)->row();
-                    if (!$loan || (string) $loan->PIN !== (string) current_user()->PIN) {
-                        $this->data['warning'] = lang('cash_receipt_loan_not_found');
-                    } else {
-                        $apply_error = $this->_loan_repayment_save_error($loan_repayment_lid, $receipt_data['receipt_date'], $total_debit, $id);
+                    foreach ($loan_allocations as $idx => $alloc) {
+                        $alloc_lid = $alloc['LID'];
+                        $alloc_amount = isset($alloc['amount']) ? round((float) $alloc['amount'], 2) : 0;
+                        if ($alloc_amount <= 0 && count($loan_allocations) === 1) {
+                            $alloc_amount = round((float) $total_debit, 2);
+                            $loan_allocations[$idx]['amount'] = $alloc_amount;
+                        }
+                        $loan = $this->loan_model->loan_info($alloc_lid)->row();
+                        if (!$loan || (string) $loan->PIN !== (string) current_user()->PIN) {
+                            $this->data['warning'] = lang('cash_receipt_loan_not_found');
+                            break;
+                        }
+                        if ($alloc_amount <= 0) {
+                            $this->data['warning'] = lang('cash_receipt_loan_repayment_required');
+                            break;
+                        }
+                        $apply_error = $this->_loan_repayment_save_error(
+                            $alloc_lid,
+                            $receipt_data['receipt_date'],
+                            $alloc_amount,
+                            $id,
+                            $this->_allocation_override_for_plan($loan_allocations[$idx])
+                        );
                         if ($apply_error !== '') {
                             $this->data['warning'] = $apply_error;
+                            break;
                         }
                     }
                 }
@@ -361,6 +429,11 @@ class Cash_receipt extends CI_Controller {
             $result = empty($this->data['warning']) ? $this->cash_receipt_model->update_cash_receipt($id, $receipt_data, $line_items) : false;
             
             if ($result) {
+                if ($received_from_type === 'loan_repayment' && !empty($loan_allocations)) {
+                    $this->cash_receipt_model->replace_loan_allocations($id, $loan_allocations);
+                } else {
+                    $this->cash_receipt_model->replace_loan_allocations($id, array());
+                }
                 $this->session->set_flashdata('message', lang('cash_receipt_update_success'));
                 redirect(current_lang() . '/cash_receipt/cash_receipt_view/' . encode_id($id), 'refresh');
             } else {
@@ -373,6 +446,41 @@ class Cash_receipt extends CI_Controller {
         $this->data['account_list'] = $this->finance_model->account_chart_by_accounttype();
         $this->data['selected_received_from_type'] = set_value('received_from_type', $this->_resolve_received_from_type($receipt));
         $this->data['selected_loan_repayment_lid'] = set_value('loan_repayment_lid', !empty($receipt->loan_repayment_lid) ? $receipt->loan_repayment_lid : '');
+        $posted_allocs = $this->_parse_loan_repayment_allocations();
+        if (!empty($posted_allocs)) {
+            $this->data['selected_loan_allocations'] = $posted_allocs;
+        } else {
+            $saved_allocs = $this->cash_receipt_model->get_loan_allocations($id);
+            $this->data['selected_loan_allocations'] = array();
+            foreach ($saved_allocs as $row) {
+                $alloc_row = array(
+                    'LID' => $row->LID,
+                    'amount' => round((float) $row->amount, 2),
+                );
+                if (!empty($row->override_enabled)) {
+                    $alloc_row['override_enabled'] = 1;
+                    $alloc_row['override_principal'] = round((float) $row->override_principal, 2);
+                    $alloc_row['override_interest'] = round((float) $row->override_interest, 2);
+                    $alloc_row['override_penalty'] = round((float) $row->override_penalty, 2);
+                    $alloc_row['override_note'] = isset($row->override_note) ? (string) $row->override_note : '';
+                }
+                $this->data['selected_loan_allocations'][] = $alloc_row;
+            }
+            if (empty($this->data['selected_loan_allocations']) && !empty($receipt->loan_repayment_lid)) {
+                $this->data['selected_loan_allocations'][] = array(
+                    'LID' => $receipt->loan_repayment_lid,
+                    'amount' => isset($receipt->total_amount) ? round((float) $receipt->total_amount, 2) : 0,
+                );
+            }
+        }
+        $this->data['selected_member_pid'] = set_value('member_pid');
+        if ($this->data['selected_member_pid'] === '' && !empty($this->data['selected_loan_repayment_lid'])) {
+            $this->load->model('loan_model');
+            $loan_for_pid = $this->loan_model->loan_info($this->data['selected_loan_repayment_lid'])->row();
+            if ($loan_for_pid && !empty($loan_for_pid->PID)) {
+                $this->data['selected_member_pid'] = $loan_for_pid->PID;
+            }
+        }
 
         // If saved payment method is not in the table (e.g. was removed from config), still show it so it can be selected
         if (!empty($receipt->payment_method)) {
@@ -420,6 +528,8 @@ class Cash_receipt extends CI_Controller {
         $journal_id = $this->cash_receipt_model->get_journal_entry_id_for_receipt($id);
         $receipt->journal_entry_id = $journal_id;
         $receipt->is_posted_to_gl = $journal_id ? $this->finance_model->is_journal_entry_posted_to_gl($journal_id) : false;
+        $receipt->can_link_loan_ledger = $this->cash_receipt_model->can_link_to_loan_ledger($id);
+        $receipt->loan_allocations = $this->cash_receipt_model->get_loan_allocations($id);
         $this->data['receipt'] = $receipt;
         $this->data['line_items'] = $this->cash_receipt_model->get_receipt_items($id);
         
@@ -435,6 +545,93 @@ class Cash_receipt extends CI_Controller {
         
         $this->data['content'] = 'cash_receipt/cash_receipt_view';
         $this->load->view('template', $this->data);
+    }
+
+    /**
+     * Retro-link a posted cash receipt to Loan Ledger (no second GL posting).
+     */
+    function link_loan_ledger($id) {
+        $encoded_id = $id;
+        $this->data['id'] = $encoded_id;
+        $id = decode_id($id);
+
+        $receipt = $this->cash_receipt_model->get_cash_receipt($id);
+        if (!$receipt) {
+            $this->session->set_flashdata('warning', lang('cash_receipt_not_found'));
+            redirect(current_lang() . '/cash_receipt/cash_receipt_list', 'refresh');
+            return;
+        }
+
+        if (!$this->cash_receipt_model->can_link_to_loan_ledger($id)) {
+            if (!empty($receipt->loan_repayment_applied)) {
+                $this->session->set_flashdata('message', lang('cash_receipt_link_loan_already'));
+            } else {
+                $this->session->set_flashdata('warning', lang('cash_receipt_link_loan_not_posted'));
+            }
+            redirect(current_lang() . '/cash_receipt/cash_receipt_view/' . $encoded_id, 'refresh');
+            return;
+        }
+
+        $this->data['title'] = lang('cash_receipt_link_loan_title');
+        $this->data['receipt'] = $receipt;
+
+        if (strtoupper($this->input->server('REQUEST_METHOD')) === 'POST') {
+            $allocations = $this->_parse_loan_repayment_allocations();
+            $received_from = trim((string) $this->input->post('received_from'));
+            if ($received_from === '') {
+                $received_from = isset($receipt->received_from) ? $receipt->received_from : null;
+            }
+            $result = $this->cash_receipt_model->link_to_loan_ledger($id, $allocations, $received_from);
+            if (!empty($result['success'])) {
+                $this->session->set_flashdata('message', $result['message']);
+                redirect(current_lang() . '/cash_receipt/cash_receipt_view/' . $encoded_id, 'refresh');
+                return;
+            }
+            $this->data['warning'] = !empty($result['message']) ? $result['message'] : lang('cash_receipt_link_loan_fail');
+            $this->data['selected_member_pid'] = trim((string) $this->input->post('member_pid'));
+            $this->data['selected_received_from'] = $received_from;
+            $this->data['posted_allocations'] = $allocations;
+        } else {
+            $this->data['selected_member_pid'] = '';
+            $this->data['selected_received_from'] = isset($receipt->received_from) ? $receipt->received_from : '';
+            $this->data['posted_allocations'] = array();
+            // Pre-select member from receipt "Received From" so loans load without a broken full-name search.
+            if ($this->data['selected_received_from'] !== '') {
+                $matched = $this->member_model->find_member_by_display_name($this->data['selected_received_from']);
+                if ($matched && !empty($matched->PID)) {
+                    $this->data['selected_member_pid'] = $matched->PID;
+                    $this->data['selected_received_from'] = trim(preg_replace(
+                        '/\s+/',
+                        ' ',
+                        $matched->firstname . ' ' . $matched->middlename . ' ' . $matched->lastname
+                    ));
+                }
+            }
+        }
+
+        $this->data['content'] = 'cash_receipt/link_loan_ledger';
+        $this->load->view('template', $this->data);
+    }
+
+    /**
+     * Undo Loan Ledger apply for a linked cash receipt (GL unchanged) so index amounts can be re-entered.
+     */
+    function unlink_loan_ledger($id) {
+        $encoded_id = $id;
+        $id = decode_id($id);
+        if (!has_role(6, 'Edit_cash_receipt')) {
+            $this->session->set_flashdata('warning', lang('cash_receipt_unlink_loan_fail'));
+            redirect(current_lang() . '/cash_receipt/cash_receipt_view/' . $encoded_id, 'refresh');
+            return;
+        }
+        $result = $this->cash_receipt_model->unlink_from_loan_ledger($id);
+        if (!empty($result['success'])) {
+            $this->session->set_flashdata('message', $result['message']);
+            redirect(current_lang() . '/cash_receipt/link_loan_ledger/' . $encoded_id, 'refresh');
+            return;
+        }
+        $this->session->set_flashdata('warning', !empty($result['message']) ? $result['message'] : lang('cash_receipt_unlink_loan_fail'));
+        redirect(current_lang() . '/cash_receipt/cash_receipt_view/' . $encoded_id, 'refresh');
     }
 
     /**
@@ -742,21 +939,22 @@ class Cash_receipt extends CI_Controller {
      * Returns JSON response with member data
      */
     function search_member() {
-        $key = trim($this->input->get('key'));
+        $key = trim(preg_replace('/\s+/', ' ', (string) $this->input->get('key')));
         $limit = 20;
-        $start = 0;
-        
         $status = array();
         
-        if (empty($key)) {
+        if ($key === '') {
             $status['success'] = 'N';
             $status['error'] = 'Please enter search keyword';
             echo json_encode($status);
             return;
         }
         
-        // Search members
-        $members = $this->member_model->search_member($key, 1, 1, $limit, $start); // status=1 (active), member=1 (members only)
+        // Full-name aware search (supports "EMMA JABAGAT", empty middlename, etc.)
+        $members = $this->member_model->suggest_members($key, 1, 1, $limit);
+        if (empty($members)) {
+            $members = $this->member_model->suggest_members($key, null, null, $limit);
+        }
         
         if (!empty($members)) {
             $status['success'] = 'Y';
@@ -766,7 +964,7 @@ class Cash_receipt extends CI_Controller {
                 $status['data'][] = array(
                     'PID' => $member->PID,
                     'member_id' => $member->member_id,
-                    'fullname' => trim($member->firstname . ' ' . $member->middlename . ' ' . $member->lastname),
+                    'fullname' => trim(preg_replace('/\s+/', ' ', $member->firstname . ' ' . $member->middlename . ' ' . $member->lastname)),
                     'firstname' => $member->firstname,
                     'middlename' => $member->middlename,
                     'lastname' => $member->lastname
@@ -821,6 +1019,16 @@ class Cash_receipt extends CI_Controller {
         $payment_method_id = (int) $this->input->get('payment_method');
         $receipt_date = trim((string) $this->input->get('receipt_date'));
         $amount = $this->input->get('amount');
+        $override = array();
+        if ($this->input->get('override_enabled')) {
+            $override = array(
+                'enabled' => 1,
+                'principal' => $this->input->get('override_principal'),
+                'interest' => $this->input->get('override_interest'),
+                'penalty' => $this->input->get('override_penalty'),
+                'note' => $this->input->get('override_note'),
+            );
+        }
         $paydate = date('Y-m-d');
         if ($receipt_date !== '') {
             $parts = explode('-', str_replace('/', '-', $receipt_date));
@@ -836,9 +1044,20 @@ class Cash_receipt extends CI_Controller {
             return;
         }
         $this->load->model('loan_model');
-        $sheet = $this->loan_model->get_cash_receipt_repayment_worksheet($lid, $payment_method_id, $paydate, $amount);
+        $sheet = $this->loan_model->get_cash_receipt_repayment_worksheet($lid, $payment_method_id, $paydate, $amount, array(), $override);
         if (!empty($sheet)) {
             $status = array('success' => 'Y', 'data' => $sheet);
+        } else if (!empty($override['enabled'])) {
+            // Surface planner validation (e.g. missing reason note) when override is on.
+            $norm = $this->loan_model->normalize_index_override($override);
+            if (is_array($norm)) {
+                $preview = $this->loan_model->preview_loan_repayment_application($lid, $norm['amount'], $paydate, array(), $norm);
+                if (empty($preview['success']) && !empty($preview['message'])) {
+                    $status['error'] = $preview['message'];
+                }
+            } else if ($norm === false) {
+                $status['error'] = 'Invalid index override amounts.';
+            }
         }
         echo json_encode($status);
     }
@@ -975,17 +1194,87 @@ class Cash_receipt extends CI_Controller {
         }
     }
 
-    private function _loan_repayment_save_error($lid, $paydate, $amount, $exclude_receipt_id = null) {
+    private function _loan_repayment_save_error($lid, $paydate, $amount, $exclude_receipt_id = null, $override = array()) {
         $this->load->model('loan_model');
         $pending = $this->cash_receipt_model->get_unposted_loan_repayment_for_loan($lid, $exclude_receipt_id);
         if ($pending) {
             return sprintf(lang('loan_repay_pending_cash_receipt'), $pending->receipt_no);
         }
-        $plan = $this->loan_model->plan_loan_repayment_applications($lid, $amount, $paydate);
+        $plan = $this->loan_model->plan_loan_repayment_applications($lid, $amount, $paydate, array(), $override);
         if (empty($plan['success'])) {
             return isset($plan['message']) ? $plan['message'] : lang('cash_receipt_loan_not_found');
         }
         return '';
+    }
+
+    /**
+     * Parse multi-loan allocation POST fields into list of LID + amount (+ optional index override).
+     * Expects loan_alloc_lid[] / loan_alloc_amount[] and parallel override fields.
+     */
+    private function _parse_loan_repayment_allocations() {
+        $lids = $this->input->post('loan_alloc_lid');
+        $amounts = $this->input->post('loan_alloc_amount');
+        $ov_enabled = $this->input->post('loan_override_enabled');
+        $ov_principal = $this->input->post('loan_override_principal');
+        $ov_interest = $this->input->post('loan_override_interest');
+        $ov_penalty = $this->input->post('loan_override_penalty');
+        $ov_note = $this->input->post('loan_override_note');
+        $out = array();
+        $seen = array();
+        if (is_array($lids)) {
+            foreach ($lids as $i => $lid) {
+                $lid = trim((string) $lid);
+                if ($lid === '' || isset($seen[$lid])) {
+                    continue;
+                }
+                $amount = 0;
+                if (is_array($amounts) && array_key_exists($i, $amounts)) {
+                    $amount = floatval(str_replace(',', '', (string) $amounts[$i]));
+                } elseif (is_array($amounts) && array_key_exists($lid, $amounts)) {
+                    $amount = floatval(str_replace(',', '', (string) $amounts[$lid]));
+                }
+                $amount = round($amount, 2);
+                $enabled = false;
+                if (is_array($ov_enabled) && !empty($ov_enabled[$i])) {
+                    $enabled = true;
+                } elseif (is_array($ov_enabled) && !empty($ov_enabled[$lid])) {
+                    $enabled = true;
+                }
+                $row = array('LID' => $lid, 'amount' => $amount);
+                if ($enabled) {
+                    $principal = is_array($ov_principal) && isset($ov_principal[$i]) ? floatval(str_replace(',', '', (string) $ov_principal[$i])) : 0;
+                    $interest = is_array($ov_interest) && isset($ov_interest[$i]) ? floatval(str_replace(',', '', (string) $ov_interest[$i])) : 0;
+                    $penalty = is_array($ov_penalty) && isset($ov_penalty[$i]) ? floatval(str_replace(',', '', (string) $ov_penalty[$i])) : 0;
+                    $note = is_array($ov_note) && isset($ov_note[$i]) ? trim((string) $ov_note[$i]) : '';
+                    $row['override_enabled'] = 1;
+                    $row['override_principal'] = round($principal, 2);
+                    $row['override_interest'] = round($interest, 2);
+                    $row['override_penalty'] = round($penalty, 2);
+                    $row['override_note'] = $note;
+                    $row['amount'] = round($principal + $interest + $penalty, 2);
+                    $amount = $row['amount'];
+                }
+                if ($amount <= 0) {
+                    continue;
+                }
+                $seen[$lid] = true;
+                $out[] = $row;
+            }
+        }
+        return $out;
+    }
+
+    private function _allocation_override_for_plan($alloc) {
+        if (empty($alloc['override_enabled'])) {
+            return array();
+        }
+        return array(
+            'enabled' => 1,
+            'principal' => isset($alloc['override_principal']) ? $alloc['override_principal'] : 0,
+            'interest' => isset($alloc['override_interest']) ? $alloc['override_interest'] : 0,
+            'penalty' => isset($alloc['override_penalty']) ? $alloc['override_penalty'] : 0,
+            'note' => isset($alloc['override_note']) ? $alloc['override_note'] : '',
+        );
     }
 
     private function _normalize_received_from_type($type) {

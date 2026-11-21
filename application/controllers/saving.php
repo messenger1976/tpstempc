@@ -901,13 +901,20 @@ class Saving extends CI_Controller {
         $trans_type = 'ALL';
         $account_type_filter = null;
         
-        if (isset($_POST['key']) && $_POST['key'] != '') {
-            $key = $_POST['key'];
-            if (strpos($key, ' - ') !== FALSE) {
-                $expl = explode(' - ', $key, 2);
-                $key = $expl[0];
+        // Empty Account # / Name means "ignore this filter" and keep date/type filters.
+        // On POST, blank must clear any prior session key (do not fall back to session).
+        if (isset($_POST['key'])) {
+            $key = trim((string) $_POST['key']);
+            if ($key !== '') {
+                if (strpos($key, ' - ') !== FALSE) {
+                    $expl = explode(' - ', $key, 2);
+                    $key = $expl[0];
+                }
+                $this->session->set_userdata('TRANS_SEARCH_KEY', $key);
+            } else {
+                $key = null;
+                $this->session->unset_userdata('TRANS_SEARCH_KEY');
             }
-            $this->session->set_userdata('TRANS_SEARCH_KEY', $key);
         } else if (isset($_GET['key']) && $_GET['key'] != '') {
             $key = $_GET['key'];
             $this->session->set_userdata('TRANS_SEARCH_KEY', $key);
@@ -1264,18 +1271,32 @@ class Saving extends CI_Controller {
 
         $pin = current_user()->PIN;
         $like = $this->db->escape_like_str($q);
+        // Match listing joins: PIN on both sides + members tablename only.
+        // Deduplicate in PHP — saving_account_type can multiply rows when account codes collide.
         $this->db->select('ma.account, ma.old_members_acct, m.firstname, m.middlename, m.lastname, m.member_id, sat.name as account_type_name, sat.description as account_type_desc, sat.account_setup');
         $this->db->from('members_account ma');
-        $this->db->join('members m', 'ma.RFID = m.PID', 'inner');
+        $this->db->join('members m', 'ma.RFID = m.PID AND m.PIN = ma.PIN', 'inner');
         $this->db->join('saving_account_type sat', 'ma.account_cat = sat.account AND sat.PIN = ma.PIN', 'left');
-        $this->db->where('m.PIN', $pin);
+        $this->db->where('ma.PIN', $pin);
+        $this->db->where('ma.tablename', 'members');
         $this->db->where("(ma.account LIKE '" . $like . "%' OR ma.old_members_acct LIKE '" . $like . "%' OR m.firstname LIKE '" . $like . "%' OR m.lastname LIKE '" . $like . "%' OR m.member_id LIKE '" . $like . "%')", NULL, FALSE);
+        $this->db->order_by('m.lastname', 'ASC');
+        $this->db->order_by('m.firstname', 'ASC');
         $this->db->order_by('ma.account', 'ASC');
-        $this->db->limit(15);
+        $this->db->limit(40);
         $rows = $this->db->get()->result();
 
         $out = array();
+        $seen = array();
         foreach ($rows as $row) {
+            $display_account = $row->old_members_acct ? $row->old_members_acct : $row->account;
+            // One suggestion per visible account # (join fan-out was showing duplicates).
+            $dedupe_key = strtolower(trim((string) $display_account));
+            if ($dedupe_key === '' || isset($seen[$dedupe_key])) {
+                continue;
+            }
+            $seen[$dedupe_key] = true;
+
             $type = $this->detect_member_account_type($row->account_type_name, $row->account_type_desc, $row->account_setup);
             $name = trim(preg_replace('/\s+/', ' ', $row->firstname . ' ' . $row->middlename . ' ' . $row->lastname));
             $type_label = '';
@@ -1291,8 +1312,11 @@ class Saving extends CI_Controller {
                 'name' => $name,
                 'type' => $type,
                 'type_label' => $type_label,
-                'display_account' => $row->old_members_acct ? $row->old_members_acct : $row->account,
+                'display_account' => $display_account,
             );
+            if (count($out) >= 15) {
+                break;
+            }
         }
         echo json_encode($out);
     }
@@ -1879,6 +1903,15 @@ class Saving extends CI_Controller {
         // Filter for beginning balance transactions only (system_comment contains 'BEGINNING BALANCE')
         $this->data['saving_accounts'] = $this->finance_model->search_saving_account_with_beginning_balance($key, $config["per_page"], $page, $account_type_filter, $status_filter);
         $this->data['total_savings_amount'] = $this->finance_model->get_total_savings_amount($key, $account_type_filter, $status_filter);
+
+        $bb_as_of = $this->input->get_post('bb_as_of');
+        if (!$bb_as_of) {
+            $bb_as_of = $this->finance_model->savings_bb_default_as_of_date();
+        } else {
+            $bb_as_of = date('Y-m-d', strtotime($bb_as_of));
+        }
+        $this->data['bb_as_of'] = $bb_as_of;
+        $this->data['bb_coa_summary'] = $this->finance_model->get_savings_bb_coa_summary($bb_as_of);
         
         // Load data for popup form
         $this->data['account_list'] = $this->finance_model->saving_account_list()->result();
@@ -1886,6 +1919,115 @@ class Saving extends CI_Controller {
         
         $this->data['content'] = 'saving/savings_beginning_balance_list';
         $this->load->view('template', $this->data);
+    }
+
+    /**
+     * Tag all savings transactions on the as-of date as BEGINNING BALANCE / ADJUSTMENT.
+     * Admin only. Default as-of: 2024-12-31.
+     */
+    function tag_savings_bb_as_of() {
+        if (!$this->ion_auth->logged_in() || !$this->ion_auth->is_admin()) {
+            $this->session->set_flashdata('warning', lang('access_denied'));
+            redirect('dashboard', 'refresh');
+            return;
+        }
+
+        $as_of = $this->input->post('bb_as_of');
+        if (!$as_of) {
+            $as_of = $this->finance_model->savings_bb_default_as_of_date();
+        }
+        $as_of = date('Y-m-d', strtotime($as_of));
+        $result = $this->finance_model->tag_savings_transactions_as_beginning_balance($as_of);
+
+        $msg = sprintf(
+            lang('savings_bb_tag_result'),
+            $as_of,
+            intval($result['total']),
+            intval($result['tagged']),
+            intval($result['already_bb']),
+            intval($result['skipped_void'])
+        );
+        if (!empty($result['errors'])) {
+            $msg .= ' ' . implode('; ', array_slice($result['errors'], 0, 5));
+            $this->session->set_flashdata('warning', $msg);
+        } else {
+            $this->session->set_flashdata('message', $msg);
+        }
+        redirect(current_lang() . '/saving/savings_beginning_balance_list?bb_as_of=' . urlencode($as_of), 'refresh');
+    }
+
+    /**
+     * Strip cash/equity offset GL lines from BB receipts on the as-of date (keep liability only).
+     * Admin only.
+     */
+    function strip_savings_bb_gl_offsets() {
+        if (!$this->ion_auth->logged_in() || !$this->ion_auth->is_admin()) {
+            $this->session->set_flashdata('warning', lang('access_denied'));
+            redirect('dashboard', 'refresh');
+            return;
+        }
+
+        $as_of = $this->input->post('bb_as_of');
+        if (!$as_of) {
+            $as_of = $this->finance_model->savings_bb_default_as_of_date();
+        }
+        $as_of = date('Y-m-d', strtotime($as_of));
+        $result = $this->finance_model->strip_savings_bb_gl_offset_sides($as_of);
+
+        $msg = sprintf(
+            lang('savings_bb_strip_result'),
+            $as_of,
+            intval($result['stripped_receipts']),
+            intval($result['lines_removed']),
+            intval($result['skipped'])
+        );
+        if (!empty($result['errors'])) {
+            $msg .= ' ' . implode('; ', array_slice($result['errors'], 0, 5));
+            $this->session->set_flashdata('warning', $msg);
+        } else {
+            $this->session->set_flashdata('message', $msg);
+        }
+        redirect(current_lang() . '/saving/savings_beginning_balance_list?bb_as_of=' . urlencode($as_of), 'refresh');
+    }
+
+    /**
+     * Post unposted BEGINNING BALANCE savings txs on the as-of date as liability-only GL.
+     * Admin only. Balancing side must come from Finance → Beginning Balances.
+     */
+    function post_savings_bb_to_gl() {
+        if (!$this->ion_auth->logged_in() || !$this->ion_auth->is_admin()) {
+            $this->session->set_flashdata('warning', lang('access_denied'));
+            redirect('dashboard', 'refresh');
+            return;
+        }
+
+        $as_of = $this->input->post('bb_as_of');
+        if (!$as_of) {
+            $as_of = $this->finance_model->savings_bb_default_as_of_date();
+        }
+        $as_of = date('Y-m-d', strtotime($as_of));
+        $result = $this->finance_model->post_unposted_beginning_balances_to_gl($as_of);
+
+        $coa_bits = array();
+        if (!empty($result['coa_totals']) && is_array($result['coa_totals'])) {
+            foreach ($result['coa_totals'] as $coa => $amt) {
+                $coa_bits[] = $coa . '=' . number_format(floatval($amt), 2, '.', ',');
+            }
+        }
+        $msg = sprintf(
+            lang('savings_bb_post_result'),
+            $as_of,
+            intval($result['posted']),
+            intval($result['failed']),
+            !empty($coa_bits) ? implode(', ', $coa_bits) : '-'
+        );
+        if (!empty($result['errors'])) {
+            $msg .= ' ' . implode('; ', array_slice($result['errors'], 0, 8));
+            $this->session->set_flashdata('warning', $msg);
+        } else {
+            $this->session->set_flashdata('message', $msg);
+        }
+        redirect(current_lang() . '/saving/savings_beginning_balance_list?bb_as_of=' . urlencode($as_of), 'refresh');
     }
 
     /**
@@ -1991,21 +2133,21 @@ class Saving extends CI_Controller {
     }
 
     /**
-     * Convert existing OPEN ACCOUNT records to BEGINNING BALANCE
-     * This method converts savings_transaction records with 'OPEN ACCOUNT, NORMAL DEPOSIT'
-     * to 'BEGINNING BALANCE' and updates GL entries to use adjustment account instead of cash
-     * 
+     * Convert existing OPEN ACCOUNT records to BEGINNING BALANCE.
+     * Tags the savings_transaction as BEGINNING BALANCE / ADJUSTMENT and removes
+     * non-liability GL offset lines (cash/equity). Liability line is kept (Journal 8).
+     * Balancing equity/cash belongs in Finance → Beginning Balances.
+     *
      * Access: Admin only
      * URL: /saving/convert_open_account_to_beginning_balance
      */
     function convert_open_account_to_beginning_balance() {
-        // Check if user is admin
         if (!$this->ion_auth->is_admin()) {
             $this->session->set_flashdata('warning', lang('access_denied'));
             redirect('dashboard', 'refresh');
             return;
         }
-        
+
         $pin = current_user()->PIN;
         $results = array(
             'total_found' => 0,
@@ -2016,103 +2158,22 @@ class Saving extends CI_Controller {
             'converted_receipts' => array(),
             'skipped_receipts' => array()
         );
-        
-        // Find adjustment/equity account for ADJUSTMENT payment method
-        $this->db->where('PIN', $pin);
-        $adjustment_names = array('Adjustment', 'Opening Balance', 'Beginning Balance', 'Equity', 'Retained Earnings');
-        $where_clause = "(";
-        foreach ($adjustment_names as $index => $name) {
-            if ($index > 0) {
-                $where_clause .= " OR ";
-            }
-            $escaped_name = $this->db->escape_like_str($name);
-            $where_clause .= "name LIKE '%" . $escaped_name . "%'";
-        }
-        $where_clause .= ")";
-        
-        $this->db->where($where_clause, NULL, FALSE);
-        $this->db->where_in('account_type', array(30, 40, 1)); // Equity (30, 40) or Asset (1)
-        $this->db->order_by('account', 'ASC');
-        $this->db->limit(1);
-        
-        $adjustment_account_obj = $this->db->get('account_chart')->row();
-        
-        if (!$adjustment_account_obj) {
-            // Fallback: try to find any equity account
-            $this->db->where('PIN', $pin);
-            $this->db->where_in('account_type', array(30, 40)); // Equity accounts
-            $this->db->order_by('account', 'ASC');
-            $this->db->limit(1);
-            $adjustment_account_obj = $this->db->get('account_chart')->row();
-        }
-        
-        if (!$adjustment_account_obj) {
-            $this->session->set_flashdata('warning', 'No adjustment/equity account found. Please create an adjustment or equity account in Chart of Accounts first.');
-            redirect('saving/savings_beginning_balance_list', 'refresh');
-            return;
-        }
-        
-        $adjustment_account = $adjustment_account_obj->account;
-        $adjustment_account_info = account_row_info($adjustment_account);
-        
-        if (!$adjustment_account_info) {
-            $this->session->set_flashdata('warning', 'Adjustment account not found in chart of accounts.');
-            redirect('saving/savings_beginning_balance_list', 'refresh');
-            return;
-        }
-        
-        // Find all savings_transaction records with 'OPEN ACCOUNT, NORMAL DEPOSIT'
+
         $this->db->where('PIN', $pin);
         $this->db->where('system_comment', 'OPEN ACCOUNT, NORMAL DEPOSIT');
         $transactions = $this->db->get('savings_transaction')->result();
-        
         $results['total_found'] = count($transactions);
-        
+
         if ($results['total_found'] == 0) {
             $this->session->set_flashdata('message', 'No OPEN ACCOUNT records found to convert.');
             redirect('saving/savings_beginning_balance_list', 'refresh');
             return;
         }
-        
-        // Process each transaction
+
         foreach ($transactions as $transaction) {
             $this->db->trans_start();
-            
             try {
                 $receipt = $transaction->receipt;
-                
-                // Find GL entries for this receipt
-                $this->db->where('refferenceID', $receipt);
-                $this->db->where('fromtable', 'savings_transaction');
-                $this->db->where('PIN', $pin);
-                $gl_entries = $this->db->get('general_ledger')->result();
-                
-                if (empty($gl_entries)) {
-                    // No GL entries found - skip this transaction
-                    $results['skipped']++;
-                    $results['skipped_receipts'][] = $receipt;
-                    $this->db->trans_complete();
-                    continue;
-                }
-                
-                // Find the debit entry (should have debit > 0)
-                $debit_entry = null;
-                foreach ($gl_entries as $entry) {
-                    if (floatval($entry->debit) > 0) {
-                        $debit_entry = $entry;
-                        break;
-                    }
-                }
-                
-                if (!$debit_entry) {
-                    // No debit entry found - skip
-                    $results['skipped']++;
-                    $results['skipped_receipts'][] = $receipt . ' (no debit entry)';
-                    $this->db->trans_complete();
-                    continue;
-                }
-                
-                // Get savings account info to get account_cat
                 $savings_account = $this->finance_model->saving_account_balance($transaction->account);
                 if (!$savings_account) {
                     $results['errors']++;
@@ -2120,8 +2181,7 @@ class Saving extends CI_Controller {
                     $this->db->trans_complete();
                     continue;
                 }
-                
-                // Get savings account type for liability account
+
                 $savings_account_type = $this->finance_model->saving_account_list(null, $savings_account->account_cat)->row();
                 if (!$savings_account_type || empty($savings_account_type->account_setup)) {
                     $results['errors']++;
@@ -2129,35 +2189,36 @@ class Saving extends CI_Controller {
                     $this->db->trans_complete();
                     continue;
                 }
-                
-                // Update GL debit entry: change account to adjustment account
-                $update_data = array(
-                    'account' => $adjustment_account,
-                    'account_type' => $adjustment_account_info->account_type,
-                    'sub_account_type' => isset($adjustment_account_info->sub_account_type) ? $adjustment_account_info->sub_account_type : null
-                );
-                
-                $this->db->where('id', $debit_entry->id);
-                $this->db->update('general_ledger', $update_data);
-                
-                // Update GL descriptions for all entries (both debit and credit)
-                $new_description = 'Savings Beginning Balance Adjustment - ' . ($transaction->customer_name ? $transaction->customer_name : 'Member ' . $transaction->member_id) . ' (Account: ' . $transaction->account . ', Receipt: ' . $receipt . ')';
-                
+                $liability_account = trim((string) $savings_account_type->account_setup);
+
                 $this->db->where('refferenceID', $receipt);
                 $this->db->where('fromtable', 'savings_transaction');
                 $this->db->where('PIN', $pin);
-                $this->db->update('general_ledger', array('description' => $new_description));
-                
-                // Update savings_transaction record
-                $transaction_update = array(
-                    'system_comment' => 'BEGINNING BALANCE',
-                    'paymenthod' => 'ADJUSTMENT'
-                );
-                
+                $gl_entries = $this->db->get('general_ledger')->result();
+
+                foreach ($gl_entries as $entry) {
+                    if (trim((string) $entry->account) === $liability_account) {
+                        $this->db->where('id', $entry->id);
+                        $this->db->update('general_ledger', array(
+                            'journalID' => 8,
+                            'description' => 'Savings Beginning Balance - '
+                                . ($transaction->customer_name ? $transaction->customer_name : 'Member ' . $transaction->member_id)
+                                . ' (Account: ' . $transaction->account . ', Receipt: ' . $receipt . ')'
+                        ));
+                    } else {
+                        $this->db->where('id', $entry->id);
+                        $this->db->where('PIN', $pin);
+                        $this->db->delete('general_ledger');
+                    }
+                }
+
                 $this->db->where('receipt', $receipt);
                 $this->db->where('PIN', $pin);
-                $this->db->update('savings_transaction', $transaction_update);
-                
+                $this->db->update('savings_transaction', array(
+                    'system_comment' => 'BEGINNING BALANCE',
+                    'paymethod' => 'ADJUSTMENT'
+                ));
+
                 if ($this->db->trans_status() === FALSE) {
                     $results['errors']++;
                     $results['error_messages'][] = "Receipt $receipt: Transaction failed";
@@ -2167,28 +2228,17 @@ class Saving extends CI_Controller {
                     $results['converted']++;
                     $results['converted_receipts'][] = $receipt;
                 }
-                
             } catch (Exception $e) {
                 $results['errors']++;
                 $results['error_messages'][] = "Receipt " . (isset($receipt) ? $receipt : 'unknown') . ": " . $e->getMessage();
                 $this->db->trans_complete();
             }
         }
-        
-        // Set flash message with results
-        $message = "Conversion completed. ";
-        $message .= "Total found: {$results['total_found']}, ";
-        $message .= "Converted: {$results['converted']}, ";
-        $message .= "Skipped: {$results['skipped']}, ";
-        $message .= "Errors: {$results['errors']}";
-        
+
+        $message = "Conversion completed. Total found: {$results['total_found']}, Converted: {$results['converted']}, Skipped: {$results['skipped']}, Errors: {$results['errors']}";
         if ($results['errors'] > 0 && count($results['error_messages']) > 0) {
             $message .= "<br>Errors: " . implode("<br>", array_slice($results['error_messages'], 0, 10));
-            if (count($results['error_messages']) > 10) {
-                $message .= "<br>... and " . (count($results['error_messages']) - 10) . " more errors";
-            }
         }
-        
         $this->session->set_flashdata('message', $message);
         redirect('saving/savings_beginning_balance_list', 'refresh');
     }

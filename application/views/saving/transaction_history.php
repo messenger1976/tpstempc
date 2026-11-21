@@ -759,9 +759,10 @@ $account_type_filter = isset($account_type_filter) && $account_type_filter !== '
             if (!item) {
                 return;
             }
-            input.value = item.account || item.display_account || '';
+            // Fill member ID only — listing runs when the user clicks Search (no auto-submit).
+            input.value = item.member_id || item.display_account || item.account || '';
             hideBox();
-            form.submit();
+            input.focus();
         }
 
         function render(list) {
@@ -777,8 +778,8 @@ $account_type_filter = isset($account_type_filter) && $account_type_filter !== '
             for (var i = 0; i < items.length; i++) {
                 var row = items[i];
                 html += '<button type="button" class="member-suggest-item' + (i === 0 ? ' active' : '') + '" data-index="' + i + '" role="option">' +
-                    '<span class="suggest-id">' + escapeHtml(row.display_account || row.account) + '</span>' +
                     '<span class="suggest-name">' + escapeHtml(row.name) + '</span>' +
+                    '<span class="suggest-id">' + escapeHtml(row.display_account || row.account) + '</span>' +
                     '<span class="suggest-status">' + escapeHtml(row.type_label || '') + '</span>' +
                     '</button>';
             }

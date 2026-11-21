@@ -1014,6 +1014,166 @@ class Contribution extends CI_Controller {
         echo json_encode($status);
     }
 
+    /**
+     * CBU Beginning Balances list + GL migration tools (admin).
+     */
+    function cbu_beginning_balance_list() {
+        $this->load->library('pagination');
+        $this->data['title'] = lang('cbu_beginning_balance_list');
+
+        if (!$this->ion_auth->is_admin()) {
+            $this->session->set_flashdata('warning', lang('access_denied'));
+            redirect('dashboard', 'refresh');
+            return;
+        }
+
+        if (isset($_GET['row_per_pg'])) {
+            $this->session->set_userdata('PER_PAGE', $_GET['row_per_pg']);
+        } else if (!$this->session->userdata('PER_PAGE')) {
+            $this->session->set_userdata('PER_PAGE', 40);
+        }
+
+        $key = null;
+        if (isset($_POST['key']) && $_POST['key'] != '') {
+            $explode = explode('-', $_POST['key']);
+            $key = trim($explode[0]);
+        } else if (isset($_GET['key']) && $_GET['key'] != '') {
+            $key = trim($_GET['key']);
+        }
+
+        $bb_as_of = $this->input->get_post('bb_as_of');
+        if (!$bb_as_of) {
+            $bb_as_of = $this->contribution_model->cbu_bb_default_as_of_date();
+        } else {
+            $bb_as_of = date('Y-m-d', strtotime($bb_as_of));
+        }
+
+        $config["per_page"] = $this->session->userdata('PER_PAGE');
+        $config["base_url"] = site_url(current_lang() . '/contribution/cbu_beginning_balance_list');
+        $config["total_rows"] = $this->contribution_model->count_cbu_with_beginning_balance($key);
+        $config["uri_segment"] = 4;
+        $config['full_tag_open'] = '<div class="pagination">';
+        $config['full_tag_close'] = '</div>';
+        $config['first_link'] = 'First';
+        $config['first_tag_open'] = '<div class="link-pagination">';
+        $config['first_tag_close'] = '</div>';
+        $config['last_link'] = 'Last';
+        $config['last_tag_open'] = '<div class="link-pagination">';
+        $config['last_tag_close'] = '</div>';
+        $config['next_link'] = 'Next';
+        $config['next_tag_open'] = '<div class="link-pagination">';
+        $config['next_tag_close'] = '</div>';
+        $config['prev_link'] = 'Previous';
+        $config['prev_tag_open'] = '<div class="link-pagination">';
+        $config['prev_tag_close'] = '</div>';
+        $config['cur_tag_open'] = '<div class="link-pagination current">';
+        $config['cur_tag_close'] = '</div>';
+        $config["num_links"] = 10;
+        $this->pagination->initialize($config);
+        $page = ($this->uri->segment(4) ? $this->uri->segment(4) : 0);
+
+        $this->data['links'] = $this->pagination->create_links();
+        $this->data['jxy'] = ($key !== null && $key !== '') ? array('key' => $key) : array();
+        $this->data['bb_as_of'] = $bb_as_of;
+        $this->data['bb_coa_summary'] = $this->contribution_model->get_cbu_bb_coa_summary($bb_as_of);
+        $this->data['cbu_accounts'] = $this->contribution_model->search_cbu_with_beginning_balance($key, $config["per_page"], $page);
+        $this->data['total_cbu_amount'] = $this->contribution_model->total_cbu_balance();
+        $this->data['content'] = 'contribution/cbu_beginning_balance_list';
+        $this->load->view('template', $this->data);
+    }
+
+    function tag_cbu_bb_as_of() {
+        if (!$this->ion_auth->is_admin()) {
+            $this->session->set_flashdata('warning', lang('access_denied'));
+            redirect('dashboard', 'refresh');
+            return;
+        }
+        $as_of = $this->input->post('bb_as_of');
+        if (!$as_of) {
+            $as_of = $this->contribution_model->cbu_bb_default_as_of_date();
+        }
+        $as_of = date('Y-m-d', strtotime($as_of));
+        $result = $this->contribution_model->tag_contribution_transactions_as_beginning_balance($as_of);
+        $msg = sprintf(
+            lang('cbu_bb_tag_result'),
+            $as_of,
+            intval($result['total']),
+            intval($result['tagged']),
+            intval($result['already_bb']),
+            intval($result['skipped_void']),
+            intval($result['skipped_journal'])
+        );
+        if (!empty($result['errors'])) {
+            $msg .= ' ' . implode('; ', array_slice($result['errors'], 0, 5));
+            $this->session->set_flashdata('warning', $msg);
+        } else {
+            $this->session->set_flashdata('message', $msg);
+        }
+        redirect(current_lang() . '/contribution/cbu_beginning_balance_list?bb_as_of=' . urlencode($as_of), 'refresh');
+    }
+
+    function strip_cbu_bb_gl_offsets() {
+        if (!$this->ion_auth->is_admin()) {
+            $this->session->set_flashdata('warning', lang('access_denied'));
+            redirect('dashboard', 'refresh');
+            return;
+        }
+        $as_of = $this->input->post('bb_as_of');
+        if (!$as_of) {
+            $as_of = $this->contribution_model->cbu_bb_default_as_of_date();
+        }
+        $as_of = date('Y-m-d', strtotime($as_of));
+        $result = $this->contribution_model->strip_cbu_bb_gl_offset_sides($as_of);
+        $msg = sprintf(
+            lang('cbu_bb_strip_result'),
+            $as_of,
+            intval($result['stripped_receipts']),
+            intval($result['lines_removed']),
+            intval($result['skipped'])
+        );
+        if (!empty($result['errors'])) {
+            $msg .= ' ' . implode('; ', array_slice($result['errors'], 0, 5));
+            $this->session->set_flashdata('warning', $msg);
+        } else {
+            $this->session->set_flashdata('message', $msg);
+        }
+        redirect(current_lang() . '/contribution/cbu_beginning_balance_list?bb_as_of=' . urlencode($as_of), 'refresh');
+    }
+
+    function post_cbu_bb_to_gl() {
+        if (!$this->ion_auth->is_admin()) {
+            $this->session->set_flashdata('warning', lang('access_denied'));
+            redirect('dashboard', 'refresh');
+            return;
+        }
+        $as_of = $this->input->post('bb_as_of');
+        if (!$as_of) {
+            $as_of = $this->contribution_model->cbu_bb_default_as_of_date();
+        }
+        $as_of = date('Y-m-d', strtotime($as_of));
+        $result = $this->contribution_model->post_unposted_cbu_beginning_balances_to_gl($as_of);
+        $coa_bits = array();
+        if (!empty($result['coa_totals']) && is_array($result['coa_totals'])) {
+            foreach ($result['coa_totals'] as $coa => $amt) {
+                $coa_bits[] = $coa . '=' . number_format(floatval($amt), 2, '.', ',');
+            }
+        }
+        $msg = sprintf(
+            lang('cbu_bb_post_result'),
+            $as_of,
+            intval($result['posted']),
+            intval($result['failed']),
+            !empty($coa_bits) ? implode(', ', $coa_bits) : '-'
+        );
+        if (!empty($result['errors'])) {
+            $msg .= ' ' . implode('; ', array_slice($result['errors'], 0, 8));
+            $this->session->set_flashdata('warning', $msg);
+        } else {
+            $this->session->set_flashdata('message', $msg);
+        }
+        redirect(current_lang() . '/contribution/cbu_beginning_balance_list?bb_as_of=' . urlencode($as_of), 'refresh');
+    }
+
 }
 
 ?>

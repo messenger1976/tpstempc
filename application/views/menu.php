@@ -117,6 +117,9 @@ $current_member_id = ($current_user_data && isset($current_user_data->member_id)
                         <?php if (has_role(2, 'Contribution_transaction')) { ?>
                             <li class="<?php echo ($activefunction == 'contribution_transaction' ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/contribution/contribution_transaction'); ?>"><?php echo lang('contribution_transaction'); ?></a></li>
                         <?php } ?>
+                        <?php if ($this->ion_auth->is_admin()) { ?>
+                            <li class="<?php echo (($activefunction == 'cbu_beginning_balance_list' || $activefunction == 'tag_cbu_bb_as_of' || $activefunction == 'post_cbu_bb_to_gl') ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/contribution/cbu_beginning_balance_list'); ?>"><?php echo lang('cbu_beginning_balance_list'); ?></a></li>
+                        <?php } ?>
                         <?php if (has_role(2, 'automatic_contribution_process')) { ?>
                            <!-- <li class="<?php echo ($activefunction == 'automatic_contribution_process' ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/contribution/automatic_contribution_process'); ?>"><?php echo 'Automatic Payment'; ?></a></li>-->
                         <?php } ?>
@@ -143,6 +146,9 @@ $current_member_id = ($current_user_data && isset($current_user_data->member_id)
                         <?php } ?>
                         <?php if (has_role(3, 'Interest_posting')) { ?>
                             <li class="<?php echo (($activefunction == 'interest_posting' || $activefunction == 'interest_posting_history') ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/saving/interest_posting'); ?>"><?php echo lang('interest_posting'); ?></a></li>
+                        <?php } ?>
+                        <?php if ($this->ion_auth->is_admin()) { ?>
+                            <li class="<?php echo (($activefunction == 'savings_beginning_balance_list' || $activefunction == 'create_savings_beginning_balance') ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/saving/savings_beginning_balance_list'); ?>"><?php echo lang('savings_beginning_balance_list'); ?></a></li>
                         <?php } ?>
                     </ul>
                 </li>

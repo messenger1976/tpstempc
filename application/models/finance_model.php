@@ -3288,6 +3288,24 @@ $pin=current_user()->PIN;
         $is_withdrawal = ($type_upper === 'DR' || strpos($sys_upper, 'NORMAL WITHDRAWAL') !== FALSE);
         $is_interest = ($type_upper === 'INT' || strpos($sys_upper, 'INTEREST') !== FALSE);
         $is_void_interest = (strpos($sys_upper, 'VOID TRANSACTION') !== FALSE && strpos($sys_upper, 'ORIG_TYPE:INT') !== FALSE);
+        $is_beginning_balance = (strpos($sys_upper, 'BEGINNING BALANCE') !== FALSE);
+
+        // Beginning balances: liability-only GL (Journal 8), same pattern as Finance chart BB.
+        // Offsetting cash/equity belongs in Finance → Beginning Balances so the trial balance stays correct.
+        if ($is_beginning_balance) {
+            return $this->post_savings_beginning_balance_liability_only(
+                $account,
+                $amount,
+                $receipt,
+                $trans_date,
+                $pid,
+                $member_id,
+                $customer_name,
+                $savings_liability_account,
+                $savings_account_info,
+                $is_withdrawal
+            );
+        }
         
         // For INTEREST: debit = interest expense account; for deposit/withdrawal: debit/credit = cash or liability
         if ($is_interest || $is_void_interest) {
@@ -3462,6 +3480,369 @@ $pin=current_user()->PIN;
         }
     }
 
+    /**
+     * Post a savings beginning-balance transaction as a one-sided liability GL line (Journal 8).
+     * Deposit/CR/INT style → Credit liability; Withdrawal/DR → Debit liability.
+     */
+    function post_savings_beginning_balance_liability_only($account, $amount, $receipt, $trans_date, $pid, $member_id, $customer_name, $savings_liability_account, $savings_account_info, $is_withdrawal = false) {
+        $pin = current_user()->PIN;
+        $amount = floatval($amount);
+        if ($amount == 0) {
+            return true;
+        }
+
+        if (function_exists('gl_reject_closed_date')) {
+            $lock_msg = gl_reject_closed_date($trans_date);
+            if ($lock_msg) {
+                log_message('error', 'Savings BB GL blocked by books close: ' . $lock_msg . ' (receipt ' . $receipt . ')');
+                $this->last_post_error = $lock_msg;
+                return false;
+            }
+        }
+
+        $this->db->trans_start();
+        try {
+            $ledger_entry = array(
+                'date' => $trans_date,
+                'PIN' => $pin
+            );
+            $this->db->insert('general_ledger_entry', $ledger_entry);
+            $ledger_entry_id = $this->db->insert_id();
+            if (!$ledger_entry_id) {
+                log_message('error', 'Failed to create general_ledger_entry for savings BB: ' . $account);
+                $this->db->trans_complete();
+                return false;
+            }
+
+            $description = 'Savings Beginning Balance - '
+                . ($customer_name ? $customer_name : 'Member ' . $member_id)
+                . ' (Account: ' . $account . ', Receipt: ' . $receipt . ')';
+
+            $ledger = array(
+                'journalID' => 8, // Beginning Balance journal (same as Finance chart BB)
+                'refferenceID' => $receipt,
+                'entryid' => $ledger_entry_id,
+                'date' => $trans_date,
+                'description' => $description,
+                'linkto' => 'savings_transaction.receipt',
+                'fromtable' => 'savings_transaction',
+                'PID' => $pid,
+                'member_id' => $member_id,
+                'PIN' => $pin,
+                'account' => $savings_liability_account,
+                'debit' => $is_withdrawal ? $amount : 0,
+                'credit' => $is_withdrawal ? 0 : $amount,
+                'account_type' => $savings_account_info->account_type,
+                'sub_account_type' => isset($savings_account_info->sub_account_type) ? $savings_account_info->sub_account_type : null,
+            );
+
+            $this->db->insert('general_ledger', $ledger);
+            if ($this->db->affected_rows() <= 0) {
+                log_message('error', 'Failed to insert savings BB liability GL line for receipt: ' . $receipt);
+                $this->db->trans_complete();
+                return false;
+            }
+
+            $this->db->trans_complete();
+            if ($this->db->trans_status() === FALSE) {
+                log_message('error', 'Transaction failed posting savings BB liability-only GL: ' . $receipt);
+                return false;
+            }
+
+            log_message('info', 'Savings BB liability-only posted: Account ' . $account . ', Receipt ' . $receipt
+                . ', COA ' . $savings_liability_account . ', '
+                . ($is_withdrawal ? 'Debit' : 'Credit') . ' ' . $amount);
+            return true;
+        } catch (Exception $e) {
+            log_message('error', 'Exception posting savings BB liability-only: ' . $e->getMessage());
+            $this->db->trans_complete();
+            return false;
+        }
+    }
+
+    /**
+     * Default migration as-of date for savings beginning balances.
+     */
+    function savings_bb_default_as_of_date() {
+        return '2024-12-31';
+    }
+
+    /**
+     * Tag savings_transaction rows on a given date as BEGINNING BALANCE / ADJUSTMENT.
+     * Skips void rows. Does not change amounts or member balances.
+     *
+     * @param string $as_of_date Y-m-d
+     * @return array tagged, already_bb, skipped_void, errors
+     */
+    function tag_savings_transactions_as_beginning_balance($as_of_date) {
+        $pin = current_user()->PIN;
+        $as_of_date = date('Y-m-d', strtotime($as_of_date));
+        $result = array(
+            'tagged' => 0,
+            'already_bb' => 0,
+            'skipped_void' => 0,
+            'total' => 0,
+            'errors' => array()
+        );
+
+        $this->db->where('PIN', $pin);
+        $this->db->where('DATE(trans_date) = ' . $this->db->escape($as_of_date), NULL, FALSE);
+        $rows = $this->db->get('savings_transaction')->result();
+        $result['total'] = count($rows);
+
+        foreach ($rows as $row) {
+            $sys = strtoupper(trim(isset($row->system_comment) ? $row->system_comment : ''));
+            if (strpos($sys, 'VOID') !== FALSE) {
+                $result['skipped_void']++;
+                continue;
+            }
+            if (strpos($sys, 'BEGINNING BALANCE') !== FALSE
+                && strtoupper(trim(isset($row->paymethod) ? $row->paymethod : '')) === 'ADJUSTMENT') {
+                $result['already_bb']++;
+                continue;
+            }
+
+            $this->db->where('id', $row->id);
+            $this->db->where('PIN', $pin);
+            $ok = $this->db->update('savings_transaction', array(
+                'system_comment' => 'BEGINNING BALANCE',
+                'paymethod' => 'ADJUSTMENT'
+            ));
+            if ($ok) {
+                $result['tagged']++;
+            } else {
+                $result['errors'][] = 'Failed tagging receipt ' . $row->receipt;
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * Summarise beginning-balance SL amounts by savings liability COA for an as-of date.
+     *
+     * @param string $as_of_date Y-m-d
+     * @return array list of {coa_account, coa_name, credit_total, debit_total, net_credit, tx_count, unposted_count}
+     */
+    function get_savings_bb_coa_summary($as_of_date) {
+        $pin = current_user()->PIN;
+        $as_of_date = date('Y-m-d', strtotime($as_of_date));
+        $pin_esc = $this->db->escape($pin);
+        $date_esc = $this->db->escape($as_of_date);
+
+        $sql = "SELECT
+                    sat.account_setup AS coa_account,
+                    COALESCE(MAX(ac.name), sat.account_setup) AS coa_name,
+                    SUM(CASE
+                        WHEN UPPER(TRIM(st.trans_type)) = 'DR' THEN 0
+                        ELSE CAST(st.amount AS DECIMAL(18,2))
+                    END) AS credit_total,
+                    SUM(CASE
+                        WHEN UPPER(TRIM(st.trans_type)) = 'DR' THEN CAST(st.amount AS DECIMAL(18,2))
+                        ELSE 0
+                    END) AS debit_total,
+                    COUNT(DISTINCT st.receipt) AS tx_count,
+                    SUM(CASE WHEN posted.receipt IS NULL THEN 1 ELSE 0 END) AS unposted_count
+                FROM savings_transaction st
+                INNER JOIN members_account ma
+                    ON ma.account = st.account AND ma.PIN = st.PIN
+                INNER JOIN saving_account_type sat
+                    ON sat.account = COALESCE(NULLIF(st.account_cat, ''), ma.account_cat) AND sat.PIN = st.PIN
+                LEFT JOIN account_chart ac
+                    ON ac.account = sat.account_setup AND ac.PIN = st.PIN
+                LEFT JOIN (
+                    SELECT DISTINCT refferenceID AS receipt, PIN
+                    FROM general_ledger
+                    WHERE fromtable = 'savings_transaction' AND PIN = {$pin_esc}
+                ) posted ON posted.receipt = st.receipt AND posted.PIN = st.PIN
+                WHERE st.PIN = {$pin_esc}
+                  AND DATE(st.trans_date) = {$date_esc}
+                  AND UPPER(COALESCE(st.system_comment, '')) LIKE '%BEGINNING BALANCE%'
+                  AND UPPER(COALESCE(st.system_comment, '')) NOT LIKE '%VOID%'
+                  AND sat.account_setup IS NOT NULL
+                  AND TRIM(sat.account_setup) != ''
+                GROUP BY sat.account_setup
+                ORDER BY sat.account_setup ASC";
+
+        $rows = $this->db->query($sql)->result();
+        foreach ($rows as $row) {
+            $row->credit_total = floatval($row->credit_total);
+            $row->debit_total = floatval($row->debit_total);
+            $row->net_credit = $row->credit_total - $row->debit_total;
+            $row->tx_count = intval($row->tx_count);
+            $row->unposted_count = intval($row->unposted_count);
+        }
+        return $rows;
+    }
+
+    /**
+     * Remove non-liability GL lines from beginning-balance savings receipts on an as-of date.
+     * Leaves the savings liability COA line(s) so TB offset can come from Finance chart BB.
+     *
+     * @param string $as_of_date Y-m-d
+     * @return array stripped_receipts, lines_removed, errors
+     */
+    function strip_savings_bb_gl_offset_sides($as_of_date) {
+        $pin = current_user()->PIN;
+        $as_of_date = date('Y-m-d', strtotime($as_of_date));
+        $result = array(
+            'stripped_receipts' => 0,
+            'lines_removed' => 0,
+            'skipped' => 0,
+            'errors' => array()
+        );
+
+        $pin_esc = $this->db->escape($pin);
+        $date_esc = $this->db->escape($as_of_date);
+        $sql = "SELECT st.receipt, st.account, st.trans_type, st.system_comment,
+                       sat.account_setup AS liability_account
+                FROM savings_transaction st
+                INNER JOIN members_account ma ON ma.account = st.account AND ma.PIN = st.PIN
+                INNER JOIN saving_account_type sat
+                    ON sat.account = COALESCE(NULLIF(st.account_cat, ''), ma.account_cat) AND sat.PIN = st.PIN
+                WHERE st.PIN = {$pin_esc}
+                  AND DATE(st.trans_date) = {$date_esc}
+                  AND UPPER(COALESCE(st.system_comment, '')) LIKE '%BEGINNING BALANCE%'
+                  AND UPPER(COALESCE(st.system_comment, '')) NOT LIKE '%VOID%'
+                  AND sat.account_setup IS NOT NULL
+                  AND TRIM(sat.account_setup) != ''";
+        $txs = $this->db->query($sql)->result();
+
+        foreach ($txs as $tx) {
+            if (function_exists('gl_reject_closed_date')) {
+                $lock_msg = gl_reject_closed_date($as_of_date);
+                if ($lock_msg) {
+                    $result['errors'][] = $lock_msg;
+                    return $result;
+                }
+            }
+
+            $this->db->where('refferenceID', $tx->receipt);
+            $this->db->where('fromtable', 'savings_transaction');
+            $this->db->where('PIN', $pin);
+            $gl_lines = $this->db->get('general_ledger')->result();
+            if (empty($gl_lines)) {
+                $result['skipped']++;
+                continue;
+            }
+
+            $removed = 0;
+            foreach ($gl_lines as $line) {
+                if (trim((string) $line->account) === trim((string) $tx->liability_account)) {
+                    // Keep liability line; normalise journal + description
+                    $this->db->where('id', $line->id);
+                    $this->db->update('general_ledger', array(
+                        'journalID' => 8,
+                        'description' => 'Savings Beginning Balance - Account ' . $tx->account . ', Receipt: ' . $tx->receipt
+                    ));
+                    continue;
+                }
+                $this->db->where('id', $line->id);
+                $this->db->where('PIN', $pin);
+                if ($this->db->delete('general_ledger')) {
+                    $removed++;
+                }
+            }
+
+            if ($removed > 0) {
+                $result['stripped_receipts']++;
+                $result['lines_removed'] += $removed;
+            } else {
+                $result['skipped']++;
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * Post all unposted BEGINNING BALANCE savings transactions for an as-of date (liability-only).
+     *
+     * @param string $as_of_date Y-m-d
+     * @return array posted, failed, errors, coa_totals
+     */
+    function post_unposted_beginning_balances_to_gl($as_of_date) {
+        $pin = current_user()->PIN;
+        $as_of_date = date('Y-m-d', strtotime($as_of_date));
+        $result = array(
+            'posted' => 0,
+            'failed' => 0,
+            'already' => 0,
+            'errors' => array(),
+            'coa_totals' => array()
+        );
+
+        $pin_esc = $this->db->escape($pin);
+        $date_esc = $this->db->escape($as_of_date);
+        $sql = "SELECT st.*
+                FROM savings_transaction st
+                LEFT JOIN (
+                    SELECT DISTINCT refferenceID AS receipt, PIN
+                    FROM general_ledger
+                    WHERE fromtable = 'savings_transaction' AND PIN = {$pin_esc}
+                ) posted ON posted.receipt = st.receipt AND posted.PIN = st.PIN
+                WHERE st.PIN = {$pin_esc}
+                  AND DATE(st.trans_date) = {$date_esc}
+                  AND UPPER(COALESCE(st.system_comment, '')) LIKE '%BEGINNING BALANCE%'
+                  AND UPPER(COALESCE(st.system_comment, '')) NOT LIKE '%VOID%'
+                  AND posted.receipt IS NULL
+                ORDER BY st.trans_date ASC, st.id ASC";
+        $unposted = $this->db->query($sql)->result();
+
+        foreach ($unposted as $st) {
+            $account_info = $this->saving_account_balance($st->account);
+            if (!$account_info) {
+                $result['failed']++;
+                $result['errors'][] = 'Receipt ' . $st->receipt . ': account not found';
+                continue;
+            }
+            $member_id = isset($account_info->member_id) ? $account_info->member_id : '';
+            $pid = isset($st->PID) ? $st->PID : (isset($account_info->RFID) ? $account_info->RFID : '');
+            $account_cat = !empty($st->account_cat) ? $st->account_cat : (isset($account_info->account_cat) ? $account_info->account_cat : '');
+            $trans_date = isset($st->trans_date) ? date('Y-m-d', strtotime($st->trans_date)) : $as_of_date;
+
+            $ok = $this->post_savings_to_gl(
+                $st->account,
+                floatval($st->amount),
+                isset($st->paymethod) ? $st->paymethod : 'ADJUSTMENT',
+                $account_cat,
+                $st->receipt,
+                $trans_date,
+                $pid,
+                $member_id,
+                isset($st->customer_name) ? $st->customer_name : '',
+                isset($st->system_comment) ? $st->system_comment : 'BEGINNING BALANCE',
+                isset($st->trans_type) ? $st->trans_type : 'CR'
+            );
+
+            if ($ok) {
+                if ($this->is_savings_receipt_posted_to_gl($st->receipt)) {
+                    $result['posted']++;
+                    $sat = $this->saving_account_list(null, $account_cat)->row();
+                    $coa = ($sat && !empty($sat->account_setup)) ? $sat->account_setup : 'UNKNOWN';
+                    if (!isset($result['coa_totals'][$coa])) {
+                        $result['coa_totals'][$coa] = 0;
+                    }
+                    $is_dr = (strtoupper(trim(isset($st->trans_type) ? $st->trans_type : '')) === 'DR');
+                    $result['coa_totals'][$coa] += $is_dr ? -floatval($st->amount) : floatval($st->amount);
+                } else {
+                    $result['failed']++;
+                    $result['errors'][] = 'Receipt ' . $st->receipt . ': post reported OK but no GL found'
+                        . (isset($this->last_post_error) && $this->last_post_error ? ' (' . $this->last_post_error . ')' : '');
+                }
+            } else {
+                $result['failed']++;
+                $err = 'Receipt ' . $st->receipt . ': post failed';
+                if (isset($this->last_post_error) && $this->last_post_error) {
+                    $err .= ' — ' . $this->last_post_error;
+                }
+                $result['errors'][] = $err;
+            }
+        }
+
+        return $result;
+    }
+
     function saving_account_balance_PID($pid, $member_id) {
         $this->db->where('RFID', $pid);
         $this->db->where('member_id', $member_id);
@@ -3503,16 +3884,17 @@ $pin=current_user()->PIN;
             }
         }
 
-        // Search by receipt number, account number, old account number, or member name
+        // Search by receipt, account #, old account #, member ID, or member name.
+        // CI2 puts LIKE in ar_like and joins them after WHERE with a single AND,
+        // so or_like() without parentheses ignores the date range — use one WHERE.
+        // Empty $key: skip this filter; date / type / account-type still apply.
         if (!is_null($key) && $key !== '') {
-            $this->db->group_start();
-            $this->db->like('st.receipt', $key);
-            $this->db->or_like('st.account', $key);
-            $this->db->or_like('ma.old_members_acct', $key);
-            $this->db->or_like('m.firstname', $key);
-            $this->db->or_like('m.middlename', $key);
-            $this->db->or_like('m.lastname', $key);
-            $this->db->group_end();
+            $key_escaped = $this->db->escape_like_str($key);
+            $this->db->where(
+                "(st.receipt LIKE '%{$key_escaped}%' OR st.account LIKE '%{$key_escaped}%' OR ma.old_members_acct LIKE '%{$key_escaped}%' OR m.member_id LIKE '%{$key_escaped}%' OR m.firstname LIKE '%{$key_escaped}%' OR m.middlename LIKE '%{$key_escaped}%' OR m.lastname LIKE '%{$key_escaped}%')",
+                NULL,
+                FALSE
+            );
         }
 
         return $this->db->count_all_results();
@@ -3560,16 +3942,17 @@ $pin=current_user()->PIN;
             }
         }
 
-        // Search by receipt number, account number, old account number, or member name
+        // Search by receipt, account #, old account #, member ID, or member name.
+        // CI2 puts LIKE in ar_like and joins them after WHERE with a single AND,
+        // so or_like() without parentheses ignores the date range — use one WHERE.
+        // Empty $key: skip this filter; date / type / account-type still apply.
         if (!is_null($key) && $key !== '') {
-            $this->db->group_start();
-            $this->db->like('st.receipt', $key);
-            $this->db->or_like('st.account', $key);
-            $this->db->or_like('ma.old_members_acct', $key);
-            $this->db->or_like('m.firstname', $key);
-            $this->db->or_like('m.middlename', $key);
-            $this->db->or_like('m.lastname', $key);
-            $this->db->group_end();
+            $key_escaped = $this->db->escape_like_str($key);
+            $this->db->where(
+                "(st.receipt LIKE '%{$key_escaped}%' OR st.account LIKE '%{$key_escaped}%' OR ma.old_members_acct LIKE '%{$key_escaped}%' OR m.member_id LIKE '%{$key_escaped}%' OR m.firstname LIKE '%{$key_escaped}%' OR m.middlename LIKE '%{$key_escaped}%' OR m.lastname LIKE '%{$key_escaped}%')",
+                NULL,
+                FALSE
+            );
         }
 
         $this->db->order_by('st.trans_date', 'DESC');

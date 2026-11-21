@@ -316,10 +316,12 @@ class Contribution_Model extends CI_Model {
         $is_void = "($c LIKE 'VOID%' OR $s LIKE 'VOID%')";
         $is_bb = "($c LIKE '%BEGINNING BALANCE%')";
         $is_mig = "($s LIKE '%CONTRIBUTION_MIGRATED%' OR $c LIKE '%CONTRIBUTION_MIGRATED%')";
-        $is_cr = "($p LIKE '%CASH RECEIPT%' OR $c LIKE '%CASH RECEIPT%' OR $c REGEXP '^(CV|OR|CR)[\\\\s#\\\\-/]')";
-        $is_cd = "($p LIKE '%CASH DISBURSEMENT%' OR $c LIKE '%CASH DISBURSEMENT%' OR $c REGEXP '^(CDS|CD)[\\\\s#\\\\-/]')";
-        $is_jv = "($p LIKE '%JOURNAL%' OR $c LIKE '%JOURNAL%' OR $c REGEXP '^JV[\\\\s#\\\\-/]')";
-        $is_loan = "($c LIKE '%LOAN%' OR $c REGEXP '^LN[\\\\s#\\\\-/]')";
+        // MySQL REGEXP: keep '-' at end of the class. '[\s#\-/]' becomes an invalid
+        // range (\ to /) and raises error 1139. Prefer POSIX [[:space:]] over \s.
+        $is_cr = "($p LIKE '%CASH RECEIPT%' OR $c LIKE '%CASH RECEIPT%' OR $c REGEXP '^(CV|OR|CR)[[:space:]#/-]')";
+        $is_cd = "($p LIKE '%CASH DISBURSEMENT%' OR $c LIKE '%CASH DISBURSEMENT%' OR $c REGEXP '^(CDS|CD)[[:space:]#/-]')";
+        $is_jv = "($p LIKE '%JOURNAL%' OR $c LIKE '%JOURNAL%' OR $c REGEXP '^JV[[:space:]#/-]')";
+        $is_loan = "($c LIKE '%LOAN%' OR $c REGEXP '^LN[[:space:]#/-]')";
         $is_auto = "(IFNULL(auto,0) = 1)";
 
         switch ($source) {

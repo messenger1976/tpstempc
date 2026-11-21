@@ -47,11 +47,7 @@ class Contribution_Model extends CI_Model {
 
     function debit($pid, $member_id, $paymethod, $amount, $comment='', $cheque_num='', $date='') {
         $pin = current_user()->PIN;
-        $current_balance = $this->contribution_balance($pid, $member_id);
-        if (!$current_balance) {
-            $this->db->insert('members_contribution', array('PID' => $pid, 'member_id' => $member_id));
-            $current_balance = $this->contribution_balance($pid, $member_id);
-        }
+        $current_balance = $this->ensure_members_contribution($pid, $member_id, $pin);
         $previous_balance = $current_balance ? $current_balance->balance : 0;
 
 
@@ -89,14 +85,8 @@ class Contribution_Model extends CI_Model {
 
     function credit($pid, $member_id, $paymethod, $amount, $comment, $cheque_num,$month,$auto=0,$date='') {
        $pin = current_user()->PIN;
-        $current_balance = $this->contribution_balance($pid, $member_id);
-        $previous_balance = 0;
-        if ($current_balance) {
-            $previous_balance = $current_balance->balance;
-        }else{
-            //insert for the first time
-            $this->db->insert('members_contribution',array('PID'=>$pid,'member_id'=>$member_id));   
-        }
+        $current_balance = $this->ensure_members_contribution($pid, $member_id, $pin);
+        $previous_balance = $current_balance ? $current_balance->balance : 0;
 
         //check if available
         $check1 = $this->db->get_where('contribution_transaction',array('month'=>$month,'PID'=>$pid))->row();
@@ -177,6 +167,164 @@ class Contribution_Model extends CI_Model {
         $this->db->where('PID', $pid);
         $this->db->where('member_id', $member_id);
         return $this->db->get('members_contribution')->row();
+    }
+
+    /**
+     * Ensure members_contribution exists and carries the organisation PIN.
+     * Legacy rows often have PIN=0 because credit/debit previously omitted it.
+     *
+     * @return object|null balance row
+     */
+    function ensure_members_contribution($pid, $member_id, $pin = null) {
+        if ($pin === null) {
+            $pin = current_user()->PIN;
+        }
+        $row = $this->contribution_balance($pid, $member_id);
+        if (!$row) {
+            $this->db->insert('members_contribution', array(
+                'PID' => $pid,
+                'member_id' => $member_id,
+                'balance' => 0,
+                'PIN' => $pin,
+            ));
+            return $this->contribution_balance($pid, $member_id);
+        }
+        if (!isset($row->PIN) || intval($row->PIN) === 0) {
+            $this->db->where('PID', $pid);
+            $this->db->where('member_id', $member_id);
+            $this->db->update('members_contribution', array('PIN' => $pin));
+            $row->PIN = $pin;
+        }
+        return $row;
+    }
+
+    /**
+     * Backfill members_contribution.PIN from members / contribution_settings.
+     *
+     * @return int rows updated
+     */
+    function backfill_members_contribution_pin() {
+        $sql = "UPDATE members_contribution mc
+                LEFT JOIN members m ON m.PID = mc.PID AND TRIM(m.member_id) = TRIM(mc.member_id)
+                LEFT JOIN contribution_settings cs ON cs.PID = mc.PID AND TRIM(cs.member_id) = TRIM(mc.member_id)
+                SET mc.PIN = COALESCE(NULLIF(m.PIN, 0), NULLIF(cs.PIN, 0), mc.PIN)
+                WHERE mc.PIN = 0 OR mc.PIN IS NULL";
+        $this->db->query($sql);
+        return $this->db->affected_rows();
+    }
+
+    /**
+     * Repair a posted CBU setting that has no BEGINNING BALANCE sub-ledger row
+     * and/or a mismatched Masterfile balance / GL amount.
+     *
+     * @param int $setting_id contribution_settings.id
+     * @return array {success, message, receipt}
+     */
+    function repair_posted_cbu_beginning_balance($setting_id) {
+        $pin = current_user()->PIN;
+        $setting = $this->search_contribution_setting_id($setting_id);
+        if (!$setting || (isset($setting->PIN) && intval($setting->PIN) !== intval($pin))) {
+            return array('success' => false, 'message' => 'CBU setting not found.');
+        }
+        if (empty($setting->posted)) {
+            return array('success' => false, 'message' => 'CBU setting is not posted.');
+        }
+
+        $pid = trim($setting->PID);
+        $member_id = trim($setting->member_id);
+        $amount = floatval($setting->amount);
+        $trans_date = !empty($setting->posting_date) ? date('Y-m-d', strtotime($setting->posting_date)) : date('Y-m-d');
+        if ($amount <= 0) {
+            return array('success' => false, 'message' => 'Invalid CBU setting amount.');
+        }
+
+        $this->ensure_members_contribution($pid, $member_id, $pin);
+
+        $pin_esc = $this->db->escape($pin);
+        $pid_esc = $this->db->escape($pid);
+        $mid_esc = $this->db->escape($member_id);
+        $bb_sql = "SELECT * FROM contribution_transaction
+                   WHERE PIN = {$pin_esc}
+                     AND PID = {$pid_esc}
+                     AND TRIM(member_id) = {$mid_esc}
+                     AND (
+                         UPPER(COALESCE(comment,'')) LIKE '%BEGINNING BALANCE%'
+                         OR UPPER(COALESCE(system_comment,'')) LIKE '%BEGINNING BALANCE%'
+                     )
+                     AND UPPER(COALESCE(comment,'')) NOT LIKE '%VOID%'
+                     AND UPPER(COALESCE(system_comment,'')) NOT LIKE '%VOID%'
+                     AND trans_type = 'CR'
+                   ORDER BY id ASC
+                   LIMIT 1";
+        $bb_tx = $this->db->query($bb_sql)->row();
+
+        $receipt = null;
+        $this->db->trans_start();
+
+        if (!$bb_tx) {
+            $balance_row = $this->contribution_balance($pid, $member_id);
+            $current_balance = $balance_row ? floatval($balance_row->balance) : 0;
+            // Set balance to the posted setting amount (orphan repair), then write the missing CR.
+            $this->db->where('PID', $pid);
+            $this->db->where('member_id', $member_id);
+            $this->db->update('members_contribution', array('balance' => $amount, 'PIN' => $pin));
+
+            $receipt = $this->receiptNo();
+            $this->db->insert('contribution_transaction', array(
+                'receipt' => $receipt,
+                'member_id' => $member_id,
+                'trans_type' => 'CR',
+                'paymethod' => 'ADJUSTMENT',
+                'cheque_num' => '',
+                'amount' => $amount,
+                'previous_balance' => $current_balance,
+                'PID' => $pid,
+                'comment' => 'BEGINNING BALANCE',
+                'system_comment' => 'BEGINNING BALANCE',
+                'month' => '',
+                'auto' => 0,
+                'PIN' => $pin,
+                'createdon' => $trans_date . ' 08:00:00',
+                'createdby' => $this->session->userdata('user_id'),
+            ));
+            if ($this->db->affected_rows() <= 0) {
+                $this->db->_trans_status = FALSE;
+                $this->db->trans_complete();
+                return array('success' => false, 'message' => 'Failed to create missing BEGINNING BALANCE transaction.');
+            }
+        } else {
+            $receipt = $bb_tx->receipt;
+            if (abs(floatval($bb_tx->amount) - $amount) > 0.009) {
+                $delta = $amount - floatval($bb_tx->amount);
+                $this->db->where('id', $bb_tx->id);
+                $this->db->update('contribution_transaction', array('amount' => $amount));
+                $this->db->where('PID', $pid);
+                $this->db->where('member_id', $member_id);
+                $this->db->set('balance', 'balance+' . $delta, FALSE);
+                $this->db->update('members_contribution');
+            }
+        }
+
+        // Sync GL CBU line to the setting amount (CBU-only Journal 8).
+        $gl_ok = $this->post_contribution_to_gl($setting_id, 1, $pid, $member_id, $amount, $trans_date);
+        if (!$gl_ok) {
+            $this->db->_trans_status = FALSE;
+            $this->db->trans_complete();
+            return array('success' => false, 'message' => 'Sub-ledger repaired but GL sync failed. Check Capital Build Up Account.');
+        }
+
+        $this->db->trans_complete();
+        if ($this->db->trans_status() === FALSE) {
+            return array('success' => false, 'message' => 'Repair failed.');
+        }
+
+        $balance_row = $this->contribution_balance($pid, $member_id);
+        return array(
+            'success' => true,
+            'message' => 'CBU beginning balance repaired. Masterfile balance is now '
+                . number_format($balance_row ? $balance_row->balance : $amount, 2),
+            'receipt' => $receipt,
+        );
     }
 
     /**
@@ -621,60 +769,83 @@ class Contribution_Model extends CI_Model {
         
         if ($posted == 1) {
             // Posting to GL - CBU side only (Journal 8). Offset belongs in Finance → Beginning Balances.
-            if (empty($existing_entry)) {
-                if (function_exists('gl_reject_closed_date')) {
-                    $lock_msg = gl_reject_closed_date($trans_date);
-                    if ($lock_msg) {
-                        log_message('error', 'CBU BB GL blocked by books close: ' . $lock_msg);
-                        return FALSE;
-                    }
-                }
+            $capital_account_info = account_row_info($capital_build_up_account);
+            if (!$capital_account_info) {
+                return FALSE;
+            }
 
-                $ledger_entry = array(
-                    'date' => $trans_date,
-                    'PIN' => $pin
-                );
-                $this->db->insert('general_ledger_entry', $ledger_entry);
-                $ledger_entry_id = $this->db->insert_id();
-                if (!$ledger_entry_id) {
-                    return FALSE;
-                }
-                
-                $capital_account_info = account_row_info($capital_build_up_account);
-                if (!$capital_account_info) {
-                    return FALSE;
-                }
+            $amount = floatval($amount);
+            $is_equity = $this->is_equity_account_type($capital_account_info->account_type);
+            $debit = $is_equity ? 0 : $amount;
+            $credit = $is_equity ? $amount : 0;
 
-                $amount = floatval($amount);
-                $is_equity = $this->is_equity_account_type($capital_account_info->account_type);
-                
-                $ledger = array(
-                    'journalID' => 8, // Beginning Balance journal (same as Savings/Finance BB)
-                    'refferenceID' => $id,
-                    'entryid' => $ledger_entry_id,
-                    'date' => $trans_date,
-                    'description' => 'CBU Beginning Balance - ' . $member_id,
-                    'linkto' => 'contribution_settings.id',
-                    'fromtable' => 'contribution_settings',
-                    'paid' => 0,
-                    'PID' => $pid,
-                    'member_id' => $member_id,
-                    'PIN' => $pin,
-                    'account' => $capital_build_up_account,
-                    // Equity CBU: credit increases capital. Legacy asset CBU: debit increases asset.
-                    'debit' => $is_equity ? 0 : $amount,
-                    'credit' => $is_equity ? $amount : 0,
-                    'account_type' => $capital_account_info->account_type,
-                    'sub_account_type' => isset($capital_account_info->sub_account_type) ? $capital_account_info->sub_account_type : null,
-                );
-                $this->db->insert('general_ledger', $ledger);
-                if ($this->db->affected_rows() <= 0) {
-                    return FALSE;
+            if (!empty($existing_entry)) {
+                // Keep one CBU line; sync amount if setting was corrected after a partial post.
+                $existing_amount = floatval($existing_entry->credit) + floatval($existing_entry->debit);
+                if (abs($existing_amount - $amount) > 0.009
+                    || trim((string) $existing_entry->account) !== trim((string) $capital_build_up_account)
+                    || intval($existing_entry->journalID) !== 8) {
+                    $this->db->where('id', $existing_entry->id);
+                    $this->db->where('PIN', $pin);
+                    $this->db->update('general_ledger', array(
+                        'journalID' => 8,
+                        'date' => $trans_date,
+                        'description' => 'CBU Beginning Balance - ' . $member_id,
+                        'account' => $capital_build_up_account,
+                        'debit' => $debit,
+                        'credit' => $credit,
+                        'account_type' => $capital_account_info->account_type,
+                        'sub_account_type' => isset($capital_account_info->sub_account_type) ? $capital_account_info->sub_account_type : null,
+                        'PID' => $pid,
+                        'member_id' => $member_id,
+                    ));
                 }
-                
                 return TRUE;
             }
-            return TRUE; // Already posted
+
+            if (function_exists('gl_reject_closed_date')) {
+                $lock_msg = gl_reject_closed_date($trans_date);
+                if ($lock_msg) {
+                    log_message('error', 'CBU BB GL blocked by books close: ' . $lock_msg);
+                    return FALSE;
+                }
+            }
+
+            $ledger_entry = array(
+                'date' => $trans_date,
+                'PIN' => $pin
+            );
+            $this->db->insert('general_ledger_entry', $ledger_entry);
+            $ledger_entry_id = $this->db->insert_id();
+            if (!$ledger_entry_id) {
+                return FALSE;
+            }
+
+            $ledger = array(
+                'journalID' => 8, // Beginning Balance journal (same as Savings/Finance BB)
+                'refferenceID' => $id,
+                'entryid' => $ledger_entry_id,
+                'date' => $trans_date,
+                'description' => 'CBU Beginning Balance - ' . $member_id,
+                'linkto' => 'contribution_settings.id',
+                'fromtable' => 'contribution_settings',
+                'paid' => 0,
+                'PID' => $pid,
+                'member_id' => $member_id,
+                'PIN' => $pin,
+                'account' => $capital_build_up_account,
+                // Equity CBU: credit increases capital. Legacy asset CBU: debit increases asset.
+                'debit' => $debit,
+                'credit' => $credit,
+                'account_type' => $capital_account_info->account_type,
+                'sub_account_type' => isset($capital_account_info->sub_account_type) ? $capital_account_info->sub_account_type : null,
+            );
+            $this->db->insert('general_ledger', $ledger);
+            if ($this->db->affected_rows() <= 0) {
+                return FALSE;
+            }
+
+            return TRUE;
         } else {
             // Unposting - reverse GL with reversing entry (keep original for audit)
             if (!empty($existing_entry)) {
@@ -971,11 +1142,38 @@ class Contribution_Model extends CI_Model {
         $member_id = $settings->member_id;
         $amount = floatval($settings->amount);
         $comment = 'VOID BEGINNING BALANCE' . ($reason !== '' ? (' — ' . $reason) : '');
-        $receipt = $this->contribution_transaction('DR', $pid, $member_id, $amount, 'JOURNAL', $comment, '', '', 0, date('Y-m-d H:i:s'));
-        if (!$receipt) {
-            $this->db->_trans_status = FALSE;
-            $this->db->trans_complete();
-            return array('success' => false, 'message' => 'Failed to reverse CBU sub-ledger balance.');
+
+        // Only reverse sub-ledger when a non-void BEGINNING BALANCE CR still exists
+        // (orphan Posted rows may have GL/flag without an SL credit).
+        $pin_esc = $this->db->escape($pin);
+        $pid_esc = $this->db->escape($pid);
+        $mid_esc = $this->db->escape(trim($member_id));
+        $bb_tx = $this->db->query(
+            "SELECT id FROM contribution_transaction
+             WHERE PIN = {$pin_esc}
+               AND PID = {$pid_esc}
+               AND TRIM(member_id) = {$mid_esc}
+               AND trans_type = 'CR'
+               AND (
+                   UPPER(COALESCE(comment,'')) LIKE '%BEGINNING BALANCE%'
+                   OR UPPER(COALESCE(system_comment,'')) LIKE '%BEGINNING BALANCE%'
+               )
+               AND UPPER(COALESCE(comment,'')) NOT LIKE '%VOID%'
+               AND UPPER(COALESCE(system_comment,'')) NOT LIKE '%VOID%'
+             LIMIT 1"
+        )->row();
+
+        $receipt = null;
+        if ($bb_tx) {
+            $receipt = $this->contribution_transaction('DR', $pid, $member_id, $amount, 'JOURNAL', $comment, '', '', 0, date('Y-m-d H:i:s'));
+            if (!$receipt) {
+                $this->db->_trans_status = FALSE;
+                $this->db->trans_complete();
+                return array('success' => false, 'message' => 'Failed to reverse CBU sub-ledger balance.');
+            }
+        } else {
+            // Orphan posted flag: ensure masterfile balance is not left negative.
+            $this->ensure_members_contribution($pid, $member_id, $pin);
         }
 
         $this->post_to_gl($id, 0);
@@ -1393,17 +1591,17 @@ class Contribution_Model extends CI_Model {
         $sql = "SELECT mc.PID, mc.member_id, mc.balance,
                        m.firstname, m.middlename, m.lastname,
                        (SELECT MAX(ct2.createdon) FROM contribution_transaction ct2
-                        WHERE ct2.PID = mc.PID AND ct2.member_id = mc.member_id AND ct2.PIN = mc.PIN
+                        WHERE ct2.PID = mc.PID AND TRIM(ct2.member_id) = TRIM(mc.member_id) AND ct2.PIN = {$pin_esc}
                           AND (UPPER(COALESCE(ct2.comment,'')) LIKE '%BEGINNING BALANCE%'
                                OR UPPER(COALESCE(ct2.system_comment,'')) LIKE '%BEGINNING BALANCE%')
                        ) AS bb_date
                 FROM members_contribution mc
                 INNER JOIN contribution_transaction ct
-                    ON ct.PID = mc.PID AND ct.member_id = mc.member_id AND ct.PIN = mc.PIN
+                    ON ct.PID = mc.PID AND TRIM(ct.member_id) = TRIM(mc.member_id) AND ct.PIN = {$pin_esc}
                     AND (UPPER(COALESCE(ct.comment,'')) LIKE '%BEGINNING BALANCE%'
                          OR UPPER(COALESCE(ct.system_comment,'')) LIKE '%BEGINNING BALANCE%')
-                LEFT JOIN members m ON m.PID = mc.PID AND m.PIN = mc.PIN
-                WHERE mc.PIN = {$pin_esc}";
+                LEFT JOIN members m ON m.PID = mc.PID AND m.PIN = {$pin_esc}
+                WHERE (mc.PIN = {$pin_esc} OR mc.PIN = 0 OR mc.PIN IS NULL)";
         if (!is_null($key) && $key !== '') {
             $key_esc = $this->db->escape_like_str($key);
             $sql .= " AND (mc.member_id LIKE '%{$key_esc}%' OR mc.PID LIKE '%{$key_esc}%'
@@ -1421,11 +1619,11 @@ class Contribution_Model extends CI_Model {
         $sql = "SELECT COUNT(DISTINCT CONCAT(mc.PID, '|', mc.member_id)) AS cnt
                 FROM members_contribution mc
                 INNER JOIN contribution_transaction ct
-                    ON ct.PID = mc.PID AND ct.member_id = mc.member_id AND ct.PIN = mc.PIN
+                    ON ct.PID = mc.PID AND TRIM(ct.member_id) = TRIM(mc.member_id) AND ct.PIN = {$pin_esc}
                     AND (UPPER(COALESCE(ct.comment,'')) LIKE '%BEGINNING BALANCE%'
                          OR UPPER(COALESCE(ct.system_comment,'')) LIKE '%BEGINNING BALANCE%')
-                LEFT JOIN members m ON m.PID = mc.PID AND m.PIN = mc.PIN
-                WHERE mc.PIN = {$pin_esc}";
+                LEFT JOIN members m ON m.PID = mc.PID AND m.PIN = {$pin_esc}
+                WHERE (mc.PIN = {$pin_esc} OR mc.PIN = 0 OR mc.PIN IS NULL)";
         if (!is_null($key) && $key !== '') {
             $key_esc = $this->db->escape_like_str($key);
             $sql .= " AND (mc.member_id LIKE '%{$key_esc}%' OR mc.PID LIKE '%{$key_esc}%'
@@ -1489,6 +1687,32 @@ class Contribution_Model extends CI_Model {
         $this->db->where('receipt', $receipt);
         $this->db->where('PIN', $pin);
         $this->db->delete('contribution_transaction');
+
+        // Deleting a BEGINNING BALANCE CR must clear the setting Posted flag
+        // (otherwise Masterfile stays Posted Yes with Balance 0.00).
+        $comment_u = strtoupper(trim(isset($transaction->comment) ? $transaction->comment : ''));
+        $system_u = strtoupper(trim(isset($transaction->system_comment) ? $transaction->system_comment : ''));
+        $is_bb_cr = ($trans_type === 'CR'
+            && (strpos($comment_u, 'BEGINNING BALANCE') !== FALSE || strpos($system_u, 'BEGINNING BALANCE') !== FALSE)
+            && strpos($comment_u, 'VOID') === FALSE
+            && strpos($system_u, 'VOID') === FALSE);
+        if ($is_bb_cr) {
+            $this->db->where('PID', $pid);
+            $this->db->where('member_id', $member_id);
+            $this->db->where('PIN', $pin);
+            $this->db->where('posted', 1);
+            $setting = $this->db->get('contribution_settings')->row();
+            if ($setting) {
+                $this->post_to_gl($setting->id, 0);
+                $this->load->model('finance_model');
+                $this->finance_model->void_gl_lines_with_reversal(
+                    'contribution_settings',
+                    $setting->id,
+                    'CBU BB transaction deleted',
+                    array('use_source_date' => true)
+                );
+            }
+        }
         
         // Complete transaction
         $this->db->trans_complete();

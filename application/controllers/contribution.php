@@ -951,6 +951,27 @@ class Contribution extends CI_Controller {
             return;
         }
 
+        // Repair orphan: Posted Yes but Masterfile Balance 0 / missing BB sub-ledger.
+        if ((string) $this->input->post('repair') === '1' || intval($this->input->post('repair')) === 1) {
+            if (!$this->ion_auth->is_admin() && !has_role(2, 'Contribution_setting')) {
+                echo json_encode(array(
+                    'id' => $id,
+                    'success' => 'N',
+                    'message' => lang('access_denied'),
+                    'posted' => 1,
+                ));
+                return;
+            }
+            $result = $this->contribution_model->repair_posted_cbu_beginning_balance($id);
+            echo json_encode(array(
+                'id' => $id,
+                'success' => !empty($result['success']) ? 'Y' : 'N',
+                'message' => !empty($result['message']) ? $result['message'] : 'Repair failed',
+                'posted' => 1,
+            ));
+            return;
+        }
+
         $resultset = $this->contribution_model->search_contribution_setting_id($id);
 
         $pid = trim($resultset->PID);

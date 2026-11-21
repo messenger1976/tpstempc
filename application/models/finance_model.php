@@ -4385,11 +4385,22 @@ $pin=current_user()->PIN;
         
         foreach ($posted_transactions as $trans) {
             try {
+                if (isset($this->gl_books_lock_error)) {
+                    unset($this->gl_books_lock_error);
+                }
+
                 // Delete from general_ledger
                 $this->db->where('refferenceID', $trans->receipt);
                 $this->db->where('fromtable', 'savings_transaction');
                 $this->db->where('PIN', $pin);
-                $this->db->delete('general_ledger');
+                $deleted = $this->db->delete('general_ledger');
+
+                if ($deleted === FALSE && !empty($this->gl_books_lock_error)) {
+                    $failed++;
+                    $errors[] = 'Receipt ' . $trans->receipt . ': ' . $this->gl_books_lock_error;
+                    log_message('error', 'Books close blocked void of savings receipt ' . $trans->receipt . ': ' . $this->gl_books_lock_error);
+                    continue;
+                }
                 
                 $affected = $this->db->affected_rows();
                 

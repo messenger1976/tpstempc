@@ -315,6 +315,7 @@ $lang['items_invoice'] = 'Sales/Purchase Invoice Items';
 $lang['tax_code_list'] = 'Tax Code';
 $lang['global_setting'] = 'Global Settings';
 $lang['loan_product_list'] = 'Loan Product';
+$lang['smtp_settings_menu'] = 'Email / SMTP';
 
 
 //loan

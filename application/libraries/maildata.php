@@ -14,6 +14,9 @@ class Maildata {
 
     //put your code here
 
+    /** Safe delivery error. Never contains the SMTP password or message body. */
+    public $last_error = '';
+
     function __construct() {
         
     }
@@ -40,28 +43,29 @@ Please your advised to change your password once you login for the first time</d
     }
 
     function send_email($subject, $message, $recipient=array(), $bcc=array(), $attachment=null) {
-    
+        $this->last_error = '';
         $this->load->library('email');
-      $this->email->from('info@helmatechnologies.com', 'VIKOBA PLUS');
-        $this->email->subject($subject);
-        $this->email->to($recipient);
-        
-        if($bcc){
-        $this->email->bcc($bcc);
+        $this->load->library('smtp_settings');
+        $this->load->model('smtp_settings_model');
+
+        $plan = $this->smtp_settings->transport_plan(
+            $this->smtp_settings_model->read_row(),
+            $this->smtp_settings->load_key()
+        );
+        $result = $this->smtp_settings->deliver(
+            $this->email,
+            $plan,
+            $subject,
+            $message,
+            $recipient,
+            $bcc,
+            $attachment
+        );
+        $this->last_error = (is_array($result) && isset($result['error'])) ? (string) $result['error'] : '';
+        if (empty($result['ok']) && is_array($plan) && isset($plan['mode']) && $plan['mode'] !== 'legacy') {
+            log_message('error', 'Outgoing mail was not sent. ' . $this->last_error);
         }
-        
-        if (!is_null($attachment)) {
-            $this->email->attach($attachment);
-        }
-        
-     
-        $this->email->message($message);
-        if ($this->email->send()) {
-           
-            return TRUE;
-        } else {
-            return FALSE;
-        }
+        return !empty($result['ok']);
     }
 
 }

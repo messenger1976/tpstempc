@@ -826,7 +826,43 @@ $suggested = $due && isset($due->suggested_amount) ? (float) $due->suggested_amo
                 $due_interest = round($due_interest, 2);
             }
             ?>
-            <div class="loan-repay-waiver" style="margin-top:18px; padding:14px; border:1px solid #f0d9a8; border-radius:8px; background:#fffbf2;">
+            <div class="loan-repay-index-override" style="margin-top:18px; padding:14px; border:1px solid #b8d4f0; border-radius:8px; background:#f5f9ff;">
+                <h5 style="margin-top:0; font-weight:700;">
+                    <i class="fa fa-book"></i> <?php echo lang('cash_receipt_loan_override_toggle'); ?>
+                </h5>
+                <p class="text-muted" style="margin-bottom:10px;">
+                    <?php echo lang('cash_receipt_loan_override_help'); ?>
+                </p>
+                <label style="font-weight:600;">
+                    <input type="checkbox" name="override_enabled" id="override_enabled" value="1"/>
+                    <?php echo lang('cash_receipt_loan_override_toggle'); ?>
+                </label>
+                <div id="indexOverrideFields" style="display:none;margin-top:10px;">
+                    <div class="row">
+                        <div class="col-md-3">
+                            <label><?php echo lang('cash_receipt_loan_override_principal'); ?></label>
+                            <input type="number" step="0.01" min="0" class="form-control" name="override_principal" id="override_principal" value="0.00"/>
+                        </div>
+                        <div class="col-md-3">
+                            <label><?php echo lang('cash_receipt_loan_override_interest'); ?></label>
+                            <input type="number" step="0.01" min="0" class="form-control" name="override_interest" id="override_interest" value="0.00"/>
+                        </div>
+                        <div class="col-md-3">
+                            <label><?php echo lang('cash_receipt_loan_override_penalty'); ?></label>
+                            <input type="number" step="0.01" min="0" class="form-control" name="override_penalty" id="override_penalty" value="0.00"/>
+                        </div>
+                        <div class="col-md-3">
+                            <label><?php echo lang('cash_receipt_loan_override_note'); ?> <span class="required">*</span></label>
+                            <input type="text" maxlength="255" class="form-control" name="override_note" id="override_note" value=""/>
+                        </div>
+                    </div>
+                    <p class="text-muted" style="margin:10px 0 0;">
+                        <i class="fa fa-info-circle"></i> Payment amount = Principal + Interest + Penalty. Waiver is disabled while override is on.
+                    </p>
+                </div>
+            </div>
+
+            <div class="loan-repay-waiver" id="loanRepayWaiverPanel" style="margin-top:18px; padding:14px; border:1px solid #f0d9a8; border-radius:8px; background:#fffbf2;">
                 <h5 style="margin-top:0; font-weight:700;">
                     <i class="fa fa-gavel"></i> <?php echo lang('loan_repay_waive_title'); ?>
                 </h5>
@@ -1041,27 +1077,67 @@ var loanRepayDueLabels = {
             }
 
             function collectRepaymentWaiver() {
+                if ($('#override_enabled').is(':checked')) {
+                    return { penalty: 0, interest: 0 };
+                }
                 return {
                     penalty: parseFloat($('#waive_penalty').val()) || 0,
                     interest: parseFloat($('#waive_interest').val()) || 0
                 };
             }
 
+            function collectIndexOverride() {
+                if (!$('#override_enabled').is(':checked')) {
+                    return null;
+                }
+                return {
+                    enabled: 1,
+                    principal: parseFloat(String($('#override_principal').val() || '').replace(/,/g, '')) || 0,
+                    interest: parseFloat(String($('#override_interest').val() || '').replace(/,/g, '')) || 0,
+                    penalty: parseFloat(String($('#override_penalty').val() || '').replace(/,/g, '')) || 0,
+                    note: $.trim($('#override_note').val() || '')
+                };
+            }
+
+            function indexOverrideTotal() {
+                var ov = collectIndexOverride();
+                if (!ov) { return null; }
+                return Math.round((ov.principal + ov.interest + ov.penalty) * 100) / 100;
+            }
+
             // Ask the server how the payment splits at this amount / date / payment
-            // method / waiver, then redraw the grid with those lines.
+            // method / waiver / index override, then redraw the grid with those lines.
             function refreshRepaymentLines(amount) {
                 if (!loanRepayDueUrl) { return; }
+                var ov = collectIndexOverride();
+                var ovTotal = indexOverrideTotal();
                 var params = {
                     repaydate: $('input[name="repaydate"]').val(),
                     payment_method: $('#payment_method').val(),
-                    amount: (amount === undefined || amount === null) ? currentRepaymentCashAmount() : amount
+                    amount: (ovTotal != null) ? ovTotal : ((amount === undefined || amount === null) ? currentRepaymentCashAmount() : amount)
                 };
-                var waiver = collectRepaymentWaiver();
-                if (waiver.penalty > 0) { params.waive_penalty = waiver.penalty.toFixed(2); }
-                if (waiver.interest > 0) { params.waive_interest = waiver.interest.toFixed(2); }
+                if (ov) {
+                    params.override_enabled = 1;
+                    params.override_principal = ov.principal;
+                    params.override_interest = ov.interest;
+                    params.override_penalty = ov.penalty;
+                    params.override_note = ov.note;
+                } else {
+                    var waiver = collectRepaymentWaiver();
+                    if (waiver.penalty > 0) { params.waive_penalty = waiver.penalty.toFixed(2); }
+                    if (waiver.interest > 0) { params.waive_interest = waiver.interest.toFixed(2); }
+                }
                 $.getJSON(loanRepayDueUrl, params).done(function(res){
                     if (res && res.success) {
                         renderRepaymentLines(res.lines, params.amount);
+                        if (res.preview_message) {
+                            if (!$('#indexOverridePreviewMsg').length) {
+                                $('#indexOverrideFields').append('<p class="text-danger" id="indexOverridePreviewMsg"></p>');
+                            }
+                            $('#indexOverridePreviewMsg').text(res.preview_message).toggle(!!res.preview_message && res.preview_ok === false);
+                        } else {
+                            $('#indexOverridePreviewMsg').hide().text('');
+                        }
                     }
                 });
             }
@@ -1178,21 +1254,37 @@ var loanRepayDueLabels = {
             function refreshRepaymentDue(autofill){
                 if (!loanRepayDueUrl) return;
                 var repaydate = $('input[name="repaydate"]').val();
+                var ov = collectIndexOverride();
+                var ovTotal = indexOverrideTotal();
                 var params = {
                     repaydate: repaydate,
                     payment_method: $('#payment_method').val()
                 };
-                if (!autofill) { params.amount = currentRepaymentCashAmount(); }
-                var waiver = collectRepaymentWaiver();
-                if (waiver.penalty > 0) { params.waive_penalty = waiver.penalty.toFixed(2); }
-                if (waiver.interest > 0) { params.waive_interest = waiver.interest.toFixed(2); }
+                if (ovTotal != null) {
+                    params.amount = ovTotal;
+                } else if (!autofill) {
+                    params.amount = currentRepaymentCashAmount();
+                }
+                if (ov) {
+                    params.override_enabled = 1;
+                    params.override_principal = ov.principal;
+                    params.override_interest = ov.interest;
+                    params.override_penalty = ov.penalty;
+                    params.override_note = ov.note;
+                } else {
+                    var waiver = collectRepaymentWaiver();
+                    if (waiver.penalty > 0) { params.waive_penalty = waiver.penalty.toFixed(2); }
+                    if (waiver.interest > 0) { params.waive_interest = waiver.interest.toFixed(2); }
+                }
                 if (dueRequest && dueRequest.abort) dueRequest.abort();
                 dueRequest = $.getJSON(loanRepayDueUrl, params)
                     .done(function(res){
                         if (res && res.success && res.due) {
                             renderDue(res.due);
                             if (autofill) {
-                                renderRepaymentLines(res.lines, res.due.suggested_amount);
+                                var lineAmount = (ovTotal != null) ? ovTotal : res.due.suggested_amount;
+                                if (res.payment_amount) { lineAmount = res.payment_amount; }
+                                renderRepaymentLines(res.lines, lineAmount);
                             }
                         }
                     });
@@ -1245,6 +1337,28 @@ var loanRepayDueLabels = {
             // waiver or the payment method re-derives principal / interest / penalty.
             $(document).on('change', '#lineItemsTable tbody tr[data-role="cash"] .debit-input', scheduleRepaymentLineRefresh);
             $(document).on('change', '#waive_penalty, #waive_interest', scheduleRepaymentLineRefresh);
+            $('#override_enabled').on('change', function(){
+                var on = $(this).is(':checked');
+                $('#indexOverrideFields').toggle(on);
+                $('#loanRepayWaiverPanel').toggle(!on);
+                if (on) {
+                    $('#waive_penalty, #waive_interest').val('0.00');
+                    var p = parseFloat($('#dueTotalPrinciple').text().replace(/,/g, '')) || 0;
+                    var i = parseFloat($('#dueTotalInterest').text().replace(/,/g, '')) || 0;
+                    var pen = parseFloat($('#dueTotalPenalty').text().replace(/,/g, '')) || 0;
+                    if (!$('#override_principal').val() || parseFloat($('#override_principal').val()) === 0) {
+                        $('#override_principal').val(p.toFixed(2));
+                    }
+                    if (!$('#override_interest').val() || parseFloat($('#override_interest').val()) === 0) {
+                        $('#override_interest').val(i.toFixed(2));
+                    }
+                    if (!$('#override_penalty').val() || parseFloat($('#override_penalty').val()) === 0) {
+                        $('#override_penalty').val(pen.toFixed(2));
+                    }
+                }
+                scheduleRepaymentLineRefresh();
+            });
+            $(document).on('change', '#override_principal, #override_interest, #override_penalty, #override_note', scheduleRepaymentLineRefresh);
 
             // When payment method changes, the cash/bank line follows that method's GL account
             $('#payment_method').on('change', function(){

@@ -362,6 +362,9 @@ $current_member_id = ($current_user_data && isset($current_user_data->member_id)
                         <?php if ($this->ion_auth->is_admin()) { ?>
                             <li class="<?php echo ($activefunction == 'fiscal_year_list' ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/setting/fiscal_year_list'); ?>"><?php echo lang('fiscal_year_list'); ?></a></li>
                         <?php } ?>
+                        <?php if ($this->ion_auth->is_admin()) { ?>
+                            <li class="<?php echo ($activefunction == 'smtp_settings' ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/setting/smtp_settings'); ?>"><i class="fa fa-envelope"></i> <?php echo lang('smtp_settings_menu'); ?></a></li>
+                        <?php } ?>
                         
                             <li class="<?php echo ($activefunction == 'mobile_notification' ? 'active' : ''); ?>"><a href="<?php echo site_url(current_lang() . '/setting/mobile_notification'); ?>"><?php echo 'Mobile Notification'; ?></a></li>
                         

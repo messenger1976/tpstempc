@@ -401,11 +401,14 @@ class Memberapp_model extends CI_Model {
                         'date' => $this->d($l->date),
                         'type' => $l->type,
                         'description' => (string) $l->description,
+                        // debit/credit/balance are principal outstanding (not full cash paid)
                         'debit' => round((float) $l->debit, 2),
                         'credit' => round((float) $l->credit, 2),
+                        'balance' => isset($l->balance) ? round((float) $l->balance, 2) : null,
                         'principal' => $l->principle !== null ? round((float) $l->principle, 2) : null,
                         'interest' => $l->interest !== null ? round((float) $l->interest, 2) : null,
                         'penalty' => $l->penalt !== null ? round((float) $l->penalt, 2) : null,
+                        'amount_paid' => isset($l->amount_paid) && $l->amount_paid !== null ? round((float) $l->amount_paid, 2) : null,
                         'receipt' => isset($l->receipt) ? (string) $l->receipt : '',
                     );
                 }

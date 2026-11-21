@@ -459,7 +459,10 @@ $print_disburse_title = $is_bb_journal ? lang('loan_beginning_balance_journal') 
             }
             ?>
             <div class="table-responsive">
-                <table class="table table-striped schedule-table">
+                <p class="help-block" style="margin-top:0;">
+                    Open installments can be corrected to match the member index card (Amount = Principal + Interest). Paid rows stay locked.
+                </p>
+                <table class="table table-striped schedule-table" id="repaymentScheduleEditTable">
                     <thead>
                         <tr>
                             <th><?php echo lang('sno'); ?></th>
@@ -468,6 +471,8 @@ $print_disburse_title = $is_bb_journal ? lang('loan_beginning_balance_journal') 
                             <th style="text-align:right;">Interest</th>
                             <th style="text-align:right;">Principle</th>
                             <th style="text-align:right;"><?php echo lang('balance'); ?></th>
+                            <th style="text-align:center;">Status</th>
+                            <th style="width:90px;"></th>
                         </tr>
                     </thead>
                     <tbody>
@@ -478,22 +483,47 @@ $print_disburse_title = $is_bb_journal ? lang('loan_beginning_balance_journal') 
                             <td class="amount-cell">&mdash;</td>
                             <td class="amount-cell">&mdash;</td>
                             <td class="amount-cell"><?php echo number_format($loaninfo->basic_amount, 2); ?></td>
+                            <td></td>
+                            <td></td>
                         </tr>
                         <?php if (count($schedule) > 0) {
                             $s = 1;
-                            foreach ($schedule as $value) { ?>
-                                <tr>
+                            foreach ($schedule as $value) {
+                                $is_open = !isset($value->status) || (int) $value->status === 0;
+                                $status_label = $is_open ? 'Open' : ((int) $value->status === 1 ? 'Paid' : 'Closed');
+                                ?>
+                                <tr class="schedule-row" data-schedule-id="<?php echo (int) $value->id; ?>" data-open="<?php echo $is_open ? '1' : '0'; ?>">
                                     <td><?php echo $s++; ?></td>
                                     <td style="text-align:center;"><?php echo date('d M, Y', strtotime($value->repaydate)); ?></td>
+                                    <?php if ($is_open) { ?>
+                                    <td class="amount-cell">
+                                        <input type="number" step="0.01" min="0" class="form-control input-sm text-right sched-repayamount" value="<?php echo number_format((float) $value->repayamount, 2, '.', ''); ?>"/>
+                                    </td>
+                                    <td class="amount-cell">
+                                        <input type="number" step="0.01" min="0" class="form-control input-sm text-right sched-interest" value="<?php echo number_format((float) $value->interest, 2, '.', ''); ?>"/>
+                                    </td>
+                                    <td class="amount-cell">
+                                        <input type="number" step="0.01" min="0" class="form-control input-sm text-right sched-principle" value="<?php echo number_format((float) $value->principle, 2, '.', ''); ?>"/>
+                                    </td>
+                                    <?php } else { ?>
                                     <td class="amount-cell"><?php echo number_format($value->repayamount, 2); ?></td>
                                     <td class="amount-cell"><?php echo number_format($value->interest, 2); ?></td>
                                     <td class="amount-cell"><?php echo number_format($value->principle, 2); ?></td>
+                                    <?php } ?>
                                     <td class="amount-cell"><?php echo number_format($value->balance, 2); ?></td>
+                                    <td style="text-align:center;"><?php echo htmlspecialchars($status_label); ?></td>
+                                    <td style="text-align:center;">
+                                        <?php if ($is_open) { ?>
+                                        <button type="button" class="btn btn-xs btn-primary btn-save-schedule-row" title="Save index correction">
+                                            <i class="fa fa-save"></i>
+                                        </button>
+                                        <?php } ?>
+                                    </td>
                                 </tr>
                             <?php }
                         } else { ?>
                             <tr>
-                                <td colspan="6"><div class="empty-note"><?php echo lang('no_records_found'); ?></div></td>
+                                <td colspan="8"><div class="empty-note"><?php echo lang('no_records_found'); ?></div></td>
                             </tr>
                         <?php } ?>
                     </tbody>
@@ -719,6 +749,50 @@ $print_disburse_title = $is_bb_journal ? lang('loan_beginning_balance_journal') 
                 window.openDisbursementPdf();
             });
         }
+
+        var scheduleEditUrl = <?php echo json_encode(isset($schedule_edit_url) ? $schedule_edit_url : ''); ?>;
+        document.querySelectorAll('.btn-save-schedule-row').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                if (!scheduleEditUrl) { return; }
+                var tr = btn.closest('tr');
+                if (!tr) { return; }
+                var scheduleId = tr.getAttribute('data-schedule-id');
+                var repayamount = tr.querySelector('.sched-repayamount');
+                var interest = tr.querySelector('.sched-interest');
+                var principle = tr.querySelector('.sched-principle');
+                if (!repayamount || !interest || !principle) { return; }
+                var reason = window.prompt('Reason for index-card schedule correction (required):', '');
+                if (reason === null) { return; }
+                reason = String(reason).trim();
+                if (!reason) {
+                    alert('A reason is required.');
+                    return;
+                }
+                var body = new URLSearchParams();
+                body.append('schedule_id', scheduleId);
+                body.append('repayamount', repayamount.value);
+                body.append('interest', interest.value);
+                body.append('principle', principle.value);
+                body.append('reason', reason);
+                btn.disabled = true;
+                fetch(scheduleEditUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8', 'X-Requested-With': 'XMLHttpRequest' },
+                    body: body.toString(),
+                    credentials: 'same-origin'
+                }).then(function (r) { return r.json(); }).then(function (res) {
+                    btn.disabled = false;
+                    if (res && res.success) {
+                        alert(res.message || 'Saved.');
+                    } else {
+                        alert((res && res.message) ? res.message : 'Save failed.');
+                    }
+                }).catch(function () {
+                    btn.disabled = false;
+                    alert('Save failed. Please try again.');
+                });
+            });
+        });
     });
 })();
 </script>

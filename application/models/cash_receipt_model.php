@@ -26,6 +26,151 @@ class Cash_receipt_model extends CI_Model {
                 $this->db->query("ALTER TABLE cash_receipts ADD COLUMN `$col` $definition");
             }
         }
+        $this->ensure_loan_allocation_table();
+    }
+
+    /**
+     * Per-loan payment rows for a multi-loan Cash Receipt.
+     */
+    function ensure_loan_allocation_table() {
+        if (!$this->db->table_exists('cash_receipt_loan_allocations')) {
+            $this->db->query(
+                "CREATE TABLE IF NOT EXISTS `cash_receipt_loan_allocations` (
+                    `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+                    `receipt_id` INT UNSIGNED NOT NULL,
+                    `LID` VARCHAR(50) NOT NULL,
+                    `amount` DECIMAL(18,2) NOT NULL DEFAULT 0.00,
+                    `applied_receipt` VARCHAR(50) NULL DEFAULT NULL,
+                    `override_enabled` TINYINT(1) NOT NULL DEFAULT 0,
+                    `override_principal` DECIMAL(18,2) NOT NULL DEFAULT 0.00,
+                    `override_interest` DECIMAL(18,2) NOT NULL DEFAULT 0.00,
+                    `override_penalty` DECIMAL(18,2) NOT NULL DEFAULT 0.00,
+                    `override_note` VARCHAR(255) NULL DEFAULT NULL,
+                    `PIN` VARCHAR(50) NOT NULL,
+                    PRIMARY KEY (`id`),
+                    KEY `idx_cr_loan_alloc_receipt` (`receipt_id`),
+                    KEY `idx_cr_loan_alloc_lid` (`LID`),
+                    KEY `idx_cr_loan_alloc_applied` (`applied_receipt`)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8"
+            );
+        }
+        if (!$this->db->table_exists('cash_receipt_loan_allocations')) {
+            return;
+        }
+        $extra = array(
+            'override_enabled' => "TINYINT(1) NOT NULL DEFAULT 0",
+            'override_principal' => "DECIMAL(18,2) NOT NULL DEFAULT 0.00",
+            'override_interest' => "DECIMAL(18,2) NOT NULL DEFAULT 0.00",
+            'override_penalty' => "DECIMAL(18,2) NOT NULL DEFAULT 0.00",
+            'override_note' => "VARCHAR(255) NULL DEFAULT NULL",
+        );
+        foreach ($extra as $col => $definition) {
+            if (!$this->db->query("SHOW COLUMNS FROM cash_receipt_loan_allocations LIKE '" . $this->db->escape_str($col) . "'")->row()) {
+                $this->db->query("ALTER TABLE cash_receipt_loan_allocations ADD COLUMN `$col` $definition");
+            }
+        }
+    }
+
+    function get_loan_allocations($receipt_id) {
+        $this->ensure_loan_allocation_table();
+        $receipt_id = (int) $receipt_id;
+        // Resolve PIN before any Active Record where() — current_user() queries
+        // users and would inherit leftover wheres (e.g. receipt_id).
+        $pin = current_user()->PIN;
+        if ($receipt_id <= 0 || !$this->db->table_exists('cash_receipt_loan_allocations')) {
+            return array();
+        }
+        $this->db->where('receipt_id', $receipt_id);
+        $this->db->where('PIN', $pin);
+        $this->db->order_by('id', 'ASC');
+        return $this->db->get('cash_receipt_loan_allocations')->result();
+    }
+
+    /**
+     * @param int   $receipt_id
+     * @param array $allocations list of array('LID' => string, 'amount' => float)
+     */
+    function replace_loan_allocations($receipt_id, $allocations) {
+        $this->ensure_loan_allocation_table();
+        $receipt_id = (int) $receipt_id;
+        $pin = current_user()->PIN;
+        if ($receipt_id <= 0 || !$this->db->table_exists('cash_receipt_loan_allocations')) {
+            return false;
+        }
+        $this->db->where('receipt_id', $receipt_id);
+        $this->db->where('PIN', $pin);
+        $this->db->delete('cash_receipt_loan_allocations');
+
+        if (empty($allocations) || !is_array($allocations)) {
+            return true;
+        }
+        foreach ($allocations as $row) {
+            $lid = isset($row['LID']) ? trim((string) $row['LID']) : '';
+            $amount = isset($row['amount']) ? round((float) $row['amount'], 2) : 0;
+            if ($lid === '' || $amount <= 0) {
+                continue;
+            }
+            $override_enabled = !empty($row['override_enabled']) ? 1 : 0;
+            $insert = array(
+                'receipt_id' => $receipt_id,
+                'LID' => $lid,
+                'amount' => $amount,
+                'applied_receipt' => null,
+                'override_enabled' => $override_enabled,
+                'override_principal' => $override_enabled ? round((float) (isset($row['override_principal']) ? $row['override_principal'] : 0), 2) : 0,
+                'override_interest' => $override_enabled ? round((float) (isset($row['override_interest']) ? $row['override_interest'] : 0), 2) : 0,
+                'override_penalty' => $override_enabled ? round((float) (isset($row['override_penalty']) ? $row['override_penalty'] : 0), 2) : 0,
+                'override_note' => $override_enabled && isset($row['override_note']) ? substr(trim((string) $row['override_note']), 0, 255) : null,
+                'PIN' => $pin,
+            );
+            $this->db->insert('cash_receipt_loan_allocations', $insert);
+        }
+        return true;
+    }
+
+    function set_allocation_applied_receipt($allocation_id, $applied_receipt) {
+        $this->ensure_loan_allocation_table();
+        $allocation_id = (int) $allocation_id;
+        $pin = current_user()->PIN;
+        if ($allocation_id <= 0 || !$this->db->table_exists('cash_receipt_loan_allocations')) {
+            return false;
+        }
+        $this->db->where('id', $allocation_id);
+        $this->db->where('PIN', $pin);
+        return $this->db->update('cash_receipt_loan_allocations', array(
+            'applied_receipt' => $applied_receipt !== null && $applied_receipt !== '' ? (string) $applied_receipt : null,
+        ));
+    }
+
+    function clear_allocation_applied_receipts($receipt_id) {
+        $this->ensure_loan_allocation_table();
+        $receipt_id = (int) $receipt_id;
+        $pin = current_user()->PIN;
+        if ($receipt_id <= 0 || !$this->db->table_exists('cash_receipt_loan_allocations')) {
+            return false;
+        }
+        $this->db->where('receipt_id', $receipt_id);
+        $this->db->where('PIN', $pin);
+        return $this->db->update('cash_receipt_loan_allocations', array('applied_receipt' => null));
+    }
+
+    /**
+     * Internal loan_repayment_receipt keys linked to this cash receipt (header + allocations).
+     */
+    function get_loan_repayment_applied_receipts($receipt_id) {
+        $this->ensure_received_from_columns();
+        $receipt_id = (int) $receipt_id;
+        $out = array();
+        $receipt = $this->get_cash_receipt($receipt_id);
+        if ($receipt && !empty($receipt->loan_repayment_receipt)) {
+            $out[] = trim((string) $receipt->loan_repayment_receipt);
+        }
+        foreach ($this->get_loan_allocations($receipt_id) as $row) {
+            if (!empty($row->applied_receipt)) {
+                $out[] = trim((string) $row->applied_receipt);
+            }
+        }
+        return array_values(array_unique(array_filter($out)));
     }
 
     /**
@@ -50,24 +195,62 @@ class Cash_receipt_model extends CI_Model {
         }
         $this->db->order_by('id', 'DESC');
         $this->db->limit(1);
-        return $this->db->get('cash_receipts')->row();
+        $row = $this->db->get('cash_receipts')->row();
+        if ($row) {
+            return $row;
+        }
+
+        if (!$this->db->table_exists('cash_receipt_loan_allocations')) {
+            return null;
+        }
+        $sql = "SELECT cr.*
+                FROM cash_receipt_loan_allocations a
+                INNER JOIN cash_receipts cr ON cr.id = a.receipt_id AND cr.PIN = a.PIN
+                WHERE a.LID = ?
+                  AND a.PIN = ?
+                  AND cr.received_from_type = 'loan_repayment'
+                  AND (cr.cancelled IS NULL OR cr.cancelled = 0)
+                  AND (cr.loan_repayment_applied IS NULL OR cr.loan_repayment_applied = 0)";
+        $params = array($lid, $pin);
+        if ($exclude_id) {
+            $sql .= " AND cr.id != ?";
+            $params[] = (int) $exclude_id;
+        }
+        $sql .= " ORDER BY cr.id DESC LIMIT 1";
+        return $this->db->query($sql, $params)->row();
     }
 
     function get_cash_receipt_by_loan_repayment_receipt($internal_receipt) {
         $this->ensure_received_from_columns();
         $internal_receipt = trim((string) $internal_receipt);
-        if ($internal_receipt === '' || !$this->db->query("SHOW COLUMNS FROM cash_receipts LIKE 'loan_repayment_receipt'")->row()) {
+        if ($internal_receipt === '') {
             return null;
         }
-        $this->db->where('PIN', current_user()->PIN);
-        $this->db->where('loan_repayment_receipt', $internal_receipt);
-        $this->db->limit(1);
-        return $this->db->get('cash_receipts')->row();
+        $pin = current_user()->PIN;
+        if ($this->db->query("SHOW COLUMNS FROM cash_receipts LIKE 'loan_repayment_receipt'")->row()) {
+            $this->db->where('PIN', $pin);
+            $this->db->where('loan_repayment_receipt', $internal_receipt);
+            $this->db->limit(1);
+            $row = $this->db->get('cash_receipts')->row();
+            if ($row) {
+                return $row;
+            }
+        }
+        if (!$this->db->table_exists('cash_receipt_loan_allocations')) {
+            return null;
+        }
+        $sql = "SELECT cr.*
+                FROM cash_receipt_loan_allocations a
+                INNER JOIN cash_receipts cr ON cr.id = a.receipt_id AND cr.PIN = a.PIN
+                WHERE a.applied_receipt = ? AND a.PIN = ?
+                LIMIT 1";
+        return $this->db->query($sql, array($internal_receipt, $pin))->row();
     }
 
     function mark_loan_repayment_applied($cash_receipt_id, $internal_receipt) {
         $this->ensure_received_from_columns();
         $cash_receipt_id = (int) $cash_receipt_id;
+        $pin = current_user()->PIN;
         if ($cash_receipt_id <= 0) {
             return false;
         }
@@ -82,13 +265,14 @@ class Cash_receipt_model extends CI_Model {
             return true;
         }
         $this->db->where('id', $cash_receipt_id);
-        $this->db->where('PIN', current_user()->PIN);
+        $this->db->where('PIN', $pin);
         return $this->db->update('cash_receipts', $data);
     }
 
     function clear_loan_repayment_applied($cash_receipt_id) {
         $this->ensure_received_from_columns();
         $cash_receipt_id = (int) $cash_receipt_id;
+        $pin = current_user()->PIN;
         if ($cash_receipt_id <= 0) {
             return false;
         }
@@ -99,12 +283,210 @@ class Cash_receipt_model extends CI_Model {
         if ($this->db->query("SHOW COLUMNS FROM cash_receipts LIKE 'loan_repayment_receipt'")->row()) {
             $data['loan_repayment_receipt'] = null;
         }
-        if (empty($data)) {
-            return true;
+        if (!empty($data)) {
+            $this->db->where('id', $cash_receipt_id);
+            $this->db->where('PIN', $pin);
+            $this->db->update('cash_receipts', $data);
         }
-        $this->db->where('id', $cash_receipt_id);
-        $this->db->where('PIN', current_user()->PIN);
-        return $this->db->update('cash_receipts', $data);
+        $this->clear_allocation_applied_receipts($cash_receipt_id);
+        return true;
+    }
+
+    /**
+     * Whether a posted cash receipt can still be linked to Loan Ledger
+     * (schedule / sub-ledger only — GL is already posted).
+     */
+    function can_link_to_loan_ledger($receipt_id) {
+        $this->ensure_received_from_columns();
+        $receipt_id = (int) $receipt_id;
+        $receipt = $this->get_cash_receipt($receipt_id);
+        if (!$receipt || !empty($receipt->cancelled)) {
+            return false;
+        }
+        if (!empty($receipt->loan_repayment_applied)) {
+            return false;
+        }
+        if (!$this->is_receipt_posted_to_gl($receipt_id)) {
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * Tag a posted cash receipt as Loan Repayment and apply schedule rows
+     * without posting GL again (GL already exists on the receipt journal).
+     *
+     * @param int   $receipt_id
+     * @param array $allocations list of LID + amount (+ optional override)
+     * @param string|null $received_from optional member display name refresh
+     * @return array success, message
+     */
+    function link_to_loan_ledger($receipt_id, $allocations, $received_from = null) {
+        $this->ensure_received_from_columns();
+        $this->load->model('loan_model');
+        $receipt_id = (int) $receipt_id;
+        $receipt = $this->get_cash_receipt($receipt_id);
+        if (!$receipt) {
+            return array('success' => false, 'message' => lang('cash_receipt_not_found'));
+        }
+        if (!empty($receipt->cancelled)) {
+            return array('success' => false, 'message' => lang('cash_receipt_link_loan_cancelled'));
+        }
+        if (!empty($receipt->loan_repayment_applied)) {
+            return array('success' => false, 'message' => lang('cash_receipt_link_loan_already'));
+        }
+        if (!$this->is_receipt_posted_to_gl($receipt_id)) {
+            return array('success' => false, 'message' => lang('cash_receipt_link_loan_not_posted'));
+        }
+        if (empty($allocations) || !is_array($allocations)) {
+            return array('success' => false, 'message' => lang('cash_receipt_loan_repayment_required'));
+        }
+
+        $alloc_total = 0.0;
+        $clean = array();
+        $seen = array();
+        foreach ($allocations as $row) {
+            $lid = isset($row['LID']) ? trim((string) $row['LID']) : '';
+            if ($lid === '' || isset($seen[$lid])) {
+                continue;
+            }
+            $amount = isset($row['amount']) ? round((float) $row['amount'], 2) : 0;
+            if (!empty($row['override_enabled'])) {
+                $p = isset($row['override_principal']) ? round((float) $row['override_principal'], 2) : 0;
+                $i = isset($row['override_interest']) ? round((float) $row['override_interest'], 2) : 0;
+                $pen = isset($row['override_penalty']) ? round((float) $row['override_penalty'], 2) : 0;
+                $amount = round($p + $i + $pen, 2);
+                $row['override_principal'] = $p;
+                $row['override_interest'] = $i;
+                $row['override_penalty'] = $pen;
+                $row['amount'] = $amount;
+            }
+            if ($amount <= 0) {
+                continue;
+            }
+            $paydate = !empty($receipt->receipt_date) ? $receipt->receipt_date : date('Y-m-d');
+            $override = array();
+            if (!empty($row['override_enabled'])) {
+                $override = array(
+                    'enabled' => 1,
+                    'principal' => $row['override_principal'],
+                    'interest' => $row['override_interest'],
+                    'penalty' => $row['override_penalty'],
+                    'note' => isset($row['override_note']) ? (string) $row['override_note'] : '',
+                );
+            }
+            $plan = $this->loan_model->plan_loan_repayment_applications($lid, $amount, $paydate, array(), $override);
+            if (empty($plan['success'])) {
+                $msg = !empty($plan['message']) ? $plan['message'] : lang('cash_receipt_loan_not_found');
+                return array('success' => false, 'message' => $lid . ': ' . $msg);
+            }
+            $seen[$lid] = true;
+            $alloc_total += $amount;
+            $clean[] = $row;
+        }
+        if (empty($clean)) {
+            return array('success' => false, 'message' => lang('cash_receipt_loan_repayment_required'));
+        }
+        $receipt_total = isset($receipt->total_amount) ? round((float) $receipt->total_amount, 2) : 0;
+        $alloc_total = round($alloc_total, 2);
+        if (abs($alloc_total - $receipt_total) > 0.009) {
+            return array(
+                'success' => false,
+                'message' => sprintf(
+                    lang('cash_receipt_link_loan_amount_mismatch'),
+                    number_format($alloc_total, 2),
+                    number_format($receipt_total, 2)
+                ),
+            );
+        }
+
+        $pin = current_user()->PIN;
+        $first_lid = $clean[0]['LID'];
+        $update = array(
+            'received_from_type' => 'loan_repayment',
+            'loan_repayment_lid' => $first_lid,
+            'updated_at' => date('Y-m-d H:i:s'),
+        );
+        if ($received_from !== null && trim((string) $received_from) !== '') {
+            $update['received_from'] = trim((string) $received_from);
+        }
+
+        $this->db->trans_start();
+        $this->db->where('id', $receipt_id);
+        $this->db->where('PIN', $pin);
+        $this->db->update('cash_receipts', $update);
+        $this->replace_loan_allocations($receipt_id, $clean);
+
+        $finalized = $this->loan_model->finalize_loan_repayment_by_cash_receipt($receipt_id);
+        if (empty($finalized['success'])) {
+            $this->db->trans_rollback();
+            return array(
+                'success' => false,
+                'message' => !empty($finalized['message'])
+                    ? $finalized['message']
+                    : lang('cash_receipt_link_loan_fail'),
+            );
+        }
+        $this->db->trans_complete();
+        if ($this->db->trans_status() === FALSE) {
+            return array('success' => false, 'message' => lang('cash_receipt_link_loan_fail'));
+        }
+
+        return array(
+            'success' => true,
+            'message' => lang('cash_receipt_link_loan_success'),
+            'receipt' => isset($finalized['receipt']) ? $finalized['receipt'] : null,
+        );
+    }
+
+    /**
+     * Undo Loan Ledger / schedule apply for a cash receipt without reversing GL.
+     * Use when index override (P/I/Penalty) was wrong but the receipt journal is correct.
+     */
+    function unlink_from_loan_ledger($receipt_id) {
+        $this->ensure_received_from_columns();
+        $this->load->model('loan_model');
+        $receipt_id = (int) $receipt_id;
+        $receipt = $this->get_cash_receipt($receipt_id);
+        if (!$receipt) {
+            return array('success' => false, 'message' => lang('cash_receipt_not_found'));
+        }
+        if (empty($receipt->loan_repayment_applied)) {
+            return array('success' => false, 'message' => lang('cash_receipt_unlink_loan_not_linked'));
+        }
+
+        $linked_receipts = $this->get_loan_repayment_applied_receipts($receipt_id);
+        if (empty($linked_receipts) && !empty($receipt->loan_repayment_receipt)) {
+            $linked_receipts = array(trim((string) $receipt->loan_repayment_receipt));
+        }
+        if (empty($linked_receipts)) {
+            $this->clear_loan_repayment_applied($receipt_id);
+            return array('success' => true, 'message' => lang('cash_receipt_unlink_loan_success'));
+        }
+
+        $this->db->trans_start();
+        foreach ($linked_receipts as $linked_receipt) {
+            $void_loan = $this->loan_model->void_loan_repayment_receipt(
+                $linked_receipt,
+                'Unlink cash receipt from loan ledger (correct index amounts)',
+                array('reverse_gl' => false, 'from_cash_receipt_void' => true)
+            );
+            if (empty($void_loan['success'])) {
+                $this->db->trans_rollback();
+                return array(
+                    'success' => false,
+                    'message' => !empty($void_loan['message'])
+                        ? $void_loan['message']
+                        : lang('cash_receipt_unlink_loan_fail'),
+                );
+            }
+        }
+        $this->clear_loan_repayment_applied($receipt_id);
+        $this->db->trans_complete();
+        if ($this->db->trans_status() === FALSE) {
+            return array('success' => false, 'message' => lang('cash_receipt_unlink_loan_fail'));
+        }
+        return array('success' => true, 'message' => lang('cash_receipt_unlink_loan_success'));
     }
 
     /**
@@ -323,6 +705,11 @@ class Cash_receipt_model extends CI_Model {
 
         // Delete receipt line items (direct query to avoid builder state)
         $this->db->query('DELETE FROM cash_receipt_items WHERE receipt_id = ?', array($id));
+
+        $this->ensure_loan_allocation_table();
+        if ($this->db->table_exists('cash_receipt_loan_allocations')) {
+            $this->db->query('DELETE FROM cash_receipt_loan_allocations WHERE receipt_id = ? AND PIN = ?', array($id, $pin));
+        }
 
         // Delete receipt header (direct query so builder state from earlier deletes cannot affect it)
         $this->db->query('DELETE FROM cash_receipts WHERE id = ? AND PIN = ?', array($id, $pin));

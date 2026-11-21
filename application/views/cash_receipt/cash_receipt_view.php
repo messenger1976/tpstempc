@@ -274,9 +274,21 @@ $je_balanced = abs($je_total_debit - $je_total_credit) <= 0.001;
                         <i class="fa fa-arrow-left"></i> <?php echo lang('back'); ?>
                     </a>
                 <?php } ?>
-                <?php if ($receipt && has_role(6, 'Edit_cash_receipt')) { ?>
+                <?php if ($receipt && has_role(6, 'Edit_cash_receipt') && empty($receipt->is_posted_to_gl)) { ?>
                     <a href="<?php echo site_url(current_lang() . '/cash_receipt/cash_receipt_edit/' . $id); ?>" class="btn btn-warning btn-sm"<?php echo $is_popup ? ' target="_top"' : ''; ?>>
                         <i class="fa fa-edit"></i> <?php echo lang('edit'); ?>
+                    </a>
+                <?php } ?>
+                <?php if ($receipt && !empty($receipt->can_link_loan_ledger) && has_role(6, 'Edit_cash_receipt')) { ?>
+                    <a href="<?php echo site_url(current_lang() . '/cash_receipt/link_loan_ledger/' . $id); ?>" class="btn btn-primary btn-sm"<?php echo $is_popup ? ' target="_top"' : ''; ?>>
+                        <i class="fa fa-link"></i> <?php echo lang('cash_receipt_link_loan_ledger'); ?>
+                    </a>
+                <?php } ?>
+                <?php if ($receipt && !empty($receipt->loan_repayment_applied) && empty($receipt->cancelled) && has_role(6, 'Edit_cash_receipt')) { ?>
+                    <a href="<?php echo site_url(current_lang() . '/cash_receipt/unlink_loan_ledger/' . $id); ?>"
+                       class="btn btn-warning btn-sm"<?php echo $is_popup ? ' target="_top"' : ''; ?>
+                       onclick="return confirm(<?php echo htmlspecialchars(json_encode(lang('cash_receipt_unlink_loan_confirm')), ENT_QUOTES, 'UTF-8'); ?>);">
+                        <i class="fa fa-unlink"></i> <?php echo lang('cash_receipt_unlink_loan_ledger'); ?>
                     </a>
                 <?php } ?>
                 <?php if ($receipt) { ?>
@@ -301,8 +313,30 @@ $je_balanced = abs($je_total_debit - $je_total_credit) <= 0.001;
                             <div class="info-row"><span class="lbl"><?php echo lang('cash_receipt_no'); ?></span><span class="val"><?php echo htmlspecialchars($receipt->receipt_no, ENT_QUOTES, 'UTF-8'); ?></span></div>
                             <div class="info-row"><span class="lbl"><?php echo lang('cash_receipt_date'); ?></span><span class="val"><?php echo htmlspecialchars(date('d-m-Y', strtotime($receipt->receipt_date)), ENT_QUOTES, 'UTF-8'); ?></span></div>
                             <div class="info-row"><span class="lbl"><?php echo lang('cash_receipt_received_from'); ?></span><span class="val"><?php echo htmlspecialchars($receipt->received_from, ENT_QUOTES, 'UTF-8'); ?></span></div>
-                            <?php if (!empty($receipt->loan_repayment_lid)) { ?>
-                                <div class="info-row"><span class="lbl"><?php echo lang('loan_repayment'); ?></span><span class="val"><?php echo htmlspecialchars($receipt->loan_repayment_lid, ENT_QUOTES, 'UTF-8'); ?></span></div>
+                            <?php if (!empty($receipt->loan_repayment_applied)) { ?>
+                                <div class="info-row"><span class="lbl"><?php echo lang('cash_receipt_link_loan_linked'); ?></span><span class="val"><span class="status-pill posted"><?php echo lang('yes'); ?></span></span></div>
+                            <?php } ?>
+                            <?php
+                            $linked_lids = array();
+                            if (!empty($receipt->loan_allocations)) {
+                                foreach ($receipt->loan_allocations as $alloc_row) {
+                                    if (!empty($alloc_row->LID)) {
+                                        $linked_lids[] = $alloc_row->LID;
+                                    }
+                                }
+                            }
+                            if (empty($linked_lids) && !empty($receipt->loan_repayment_lid)) {
+                                $linked_lids[] = $receipt->loan_repayment_lid;
+                            }
+                            $linked_lids = array_values(array_unique($linked_lids));
+                            if (!empty($linked_lids)) { ?>
+                                <div class="info-row"><span class="lbl"><?php echo lang('loan_repayment'); ?></span><span class="val"><?php
+                                    $ledger_links = array();
+                                    foreach ($linked_lids as $linked_lid) {
+                                        $ledger_links[] = '<a href="' . site_url(current_lang() . '/loan/loan_ledger/' . encode_id($linked_lid)) . '">' . htmlspecialchars($linked_lid, ENT_QUOTES, 'UTF-8') . '</a>';
+                                    }
+                                    echo implode(', ', $ledger_links);
+                                ?></span></div>
                             <?php } ?>
                             <div class="info-row"><span class="lbl"><?php echo lang('cash_receipt_payment_method'); ?></span><span class="val"><?php echo htmlspecialchars($payment_method_display, ENT_QUOTES, 'UTF-8'); ?></span></div>
                             <?php if ($show_cheque) { ?>

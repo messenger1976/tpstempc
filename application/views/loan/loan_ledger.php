@@ -43,6 +43,7 @@ $sum_penalt = 0;
 $total_debit = 0;
 $total_credit = 0;
 foreach ($ledger_transactions as $r) {
+    // Debit/credit are principal only; Balance = principal outstanding.
     $total_debit += (float) $r->debit;
     $total_credit += (float) $r->credit;
     if (isset($r->type) && $r->type === 'repayment') {
@@ -55,6 +56,13 @@ foreach ($ledger_transactions as $r) {
     }
 }
 $closing_balance = $total_credit - $total_debit;
+if (!empty($ledger_transactions)) {
+    $last_ledger = end($ledger_transactions);
+    if (isset($last_ledger->balance)) {
+        $closing_balance = (float) $last_ledger->balance;
+    }
+    reset($ledger_transactions);
+}
 ?>
 
 <style type="text/css">
@@ -486,9 +494,11 @@ $closing_balance = $total_credit - $total_debit;
                         </thead>
                         <tbody>
                             <?php
-                            $running_balance = 0;
                             foreach ($ledger_transactions as $row) {
-                                $running_balance += (float) $row->credit - (float) $row->debit;
+                                // Principal outstanding after this row (from get_loan_ledger_transactions).
+                                $running_balance = isset($row->balance)
+                                    ? (float) $row->balance
+                                    : ((isset($running_balance) ? $running_balance : 0) + (float) $row->credit - (float) $row->debit);
                                 $is_repayment = isset($row->type) && $row->type === 'repayment';
                                 $is_disbursement = isset($row->type) && $row->type === 'disbursement';
                                 $desc = isset($row->description) ? $row->description : '';

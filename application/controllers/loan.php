@@ -2403,6 +2403,22 @@ $pin = current_user()->PIN;
         $this->data['per_page'] = (int) $config["per_page"];
 
         $this->data['loan_list'] = $this->loan_model->search_loan($key, $config["per_page"], $page, $status_filter, $product_id, $date_from, $date_to);
+        // Fix Closed loans that still have principal on the list page.
+        if (!empty($this->data['loan_list'])) {
+            foreach ($this->data['loan_list'] as $loan_row) {
+                if (isset($loan_row->status) && (int) $loan_row->status === 5 && !empty($loan_row->LID)) {
+                    $reopen = $this->loan_model->reopen_loan_if_unsettled($loan_row->LID);
+                    if (!empty($reopen['reopened'])) {
+                        $loan_row->status = 4;
+                        if (function_exists('loan_status')) {
+                            $loan_row->status_name = loan_status(4);
+                        } else if (isset($loan_row->name)) {
+                            $loan_row->name = 'Released';
+                        }
+                    }
+                }
+            }
+        }
         $this->data['search_key'] = $key;
 
         $this->data['status_filter'] = $status_filter;
@@ -2499,6 +2515,12 @@ $pin = current_user()->PIN;
             $this->session->set_flashdata('warning', lang('loan_evaluation_error'));
             redirect(current_lang() . '/loan/loan_repayment', 'refresh');
             return;
+        }
+        // Closed with ledger balance still due (e.g. interest-only index override) → reopen.
+        $reopen = $this->loan_model->reopen_loan_if_unsettled($loaninfo->LID);
+        if (!empty($reopen['reopened'])) {
+            $loaninfo = $this->loan_model->loan_info($loaninfo->LID)->row();
+            $this->session->set_flashdata('message', $reopen['message']);
         }
         $this->data['loanid'] = encode_id($loaninfo->LID);
         $this->data['loaninfo'] = $loaninfo;
@@ -2813,7 +2835,18 @@ $pin = current_user()->PIN;
         if ($waiver['penalty'] <= 0 && $waiver['interest'] <= 0) {
             $waiver = array();
         }
-        $worksheet = $this->loan_model->get_cash_receipt_repayment_worksheet($LID, $payment_method, $paydate, $amount, $waiver);
+        $override = array();
+        if ($this->input->get_post('override_enabled')) {
+            $override = array(
+                'enabled' => 1,
+                'principal' => round((float) str_replace(',', '', (string) $this->input->get_post('override_principal')), 2),
+                'interest' => round((float) str_replace(',', '', (string) $this->input->get_post('override_interest')), 2),
+                'penalty' => round((float) str_replace(',', '', (string) $this->input->get_post('override_penalty')), 2),
+                'note' => trim((string) $this->input->get_post('override_note')),
+            );
+            $waiver = array(); // override is authoritative
+        }
+        $worksheet = $this->loan_model->get_cash_receipt_repayment_worksheet($LID, $payment_method, $paydate, $amount, $waiver, $override);
 
         $this->output->set_output(json_encode(array(
             'success' => true,
@@ -2821,6 +2854,10 @@ $pin = current_user()->PIN;
             'lines' => (!empty($worksheet['line_items'])) ? $worksheet['line_items'] : array(),
             'cash_account' => !empty($worksheet['cash_account']) ? $worksheet['cash_account'] : '',
             'payment_amount' => !empty($worksheet['payment_amount']) ? round((float) $worksheet['payment_amount'], 2) : 0,
+            'index_override' => !empty($worksheet['index_override']),
+            'system_suggested' => !empty($worksheet['system_suggested']) ? $worksheet['system_suggested'] : null,
+            'preview_ok' => !empty($worksheet['preview_ok']),
+            'preview_message' => !empty($worksheet['preview_message']) ? $worksheet['preview_message'] : '',
             'labels' => array(
                 'installment' => lang('loan_installment'),
                 'due_date' => lang('due_date'),
@@ -2973,25 +3010,47 @@ $pin = current_user()->PIN;
             return;
         }
 
+        // Index-card override: Principal / Interest / Penalty from the manual record.
+        $override = array();
+        if ($this->input->post('override_enabled')) {
+            $override = array(
+                'enabled' => 1,
+                'principal' => round((float) str_replace(',', '', (string) $this->input->post('override_principal')), 2),
+                'interest' => round((float) str_replace(',', '', (string) $this->input->post('override_interest')), 2),
+                'penalty' => round((float) str_replace(',', '', (string) $this->input->post('override_penalty')), 2),
+                'note' => trim((string) $this->input->post('override_note')),
+            );
+            $norm = $this->loan_model->normalize_index_override($override);
+            if ($norm === false || !is_array($norm)) {
+                $this->session->set_flashdata('warning', 'Invalid index override amounts. Principal, interest, and penalty must total more than zero.');
+                redirect($redirect_back, 'refresh');
+                return;
+            }
+            $override = $norm;
+        }
+
         // Optional penalty / interest waiver. A reason is mandatory and the
         // request is queued for Manager/Treasurer approval.
-        $waiver = $this->input->post('waive_penalty') !== null || $this->input->post('waive_interest') !== null
-            ? array(
+        // When index override is on, waiver is ignored (override is authoritative).
+        $waiver = array();
+        if (empty($override['enabled']) && ($this->input->post('waive_penalty') !== null || $this->input->post('waive_interest') !== null)) {
+            $waiver = array(
                 'penalty' => round((float) str_replace(',', '', (string) $this->input->post('waive_penalty')), 2),
                 'interest' => round((float) str_replace(',', '', (string) $this->input->post('waive_interest')), 2),
                 'reason_code' => trim((string) $this->input->post('waiver_reason_code')),
                 'reason_note' => trim((string) $this->input->post('waiver_reason_note')),
                 'require_approval' => true,
-            )
-            : array();
-        if ((!empty($waiver['penalty']) || !empty($waiver['interest'])) && $waiver['reason_code'] === '') {
-            $this->session->set_flashdata('warning', sprintf(lang('loan_waiver_reason_required'), $LID));
-            redirect($redirect_back, 'refresh');
-            return;
+            );
+            if ((!empty($waiver['penalty']) || !empty($waiver['interest'])) && $waiver['reason_code'] === '') {
+                $this->session->set_flashdata('warning', sprintf(lang('loan_waiver_reason_required'), $LID));
+                redirect($redirect_back, 'refresh');
+                return;
+            }
         }
 
         $applied = $this->loan_model->apply_loan_repayment_with_lines($LID, $posted_lines, $paydate, $receipt_no, array(
             'waiver' => $waiver,
+            'override' => $override,
             'description' => 'Loan Repayment ' . $LID,
         ));
         if (empty($applied['success'])) {
@@ -3228,8 +3287,40 @@ $pin = current_user()->PIN;
             $this->data['basicinfo'] = $this->member_model->member_basic_info(null, $this->data['loaninfo']->PID, $this->data['loaninfo']->member_id)->row();
             $this->data['contactinfo'] = $this->member_model->member_contact($this->data['loaninfo']->PID);
         }
+        $this->data['schedule_edit_url'] = site_url(current_lang() . '/loan/update_repayment_schedule_row/' . $loanid);
         $this->data['content'] = 'loan/loan_repayment_schedule';
         $this->load->view('template', $this->data);
+    }
+
+    /**
+     * Edit an open schedule row to match index-card installment / interest / principle.
+     */
+    function update_repayment_schedule_row($loanid) {
+        $this->output->set_content_type('application/json');
+        if (strtoupper($this->input->server('REQUEST_METHOD')) !== 'POST') {
+            $this->output->set_output(json_encode(array('success' => false, 'message' => 'Invalid request.')));
+            return;
+        }
+        $LID = decode_id($loanid);
+        $loaninfo = $this->loan_model->loan_info($LID)->row();
+        if (!$loaninfo || (string) $loaninfo->PIN !== (string) current_user()->PIN) {
+            $this->output->set_output(json_encode(array('success' => false, 'message' => 'Loan not found.')));
+            return;
+        }
+        $schedule_id = (int) $this->input->post('schedule_id');
+        $row = $this->db->where('id', $schedule_id)->get('loan_contract_repayment_schedule')->row();
+        if (!$row || (string) $row->LID !== (string) $LID) {
+            $this->output->set_output(json_encode(array('success' => false, 'message' => 'Schedule row does not belong to this loan.')));
+            return;
+        }
+        $result = $this->loan_model->update_open_schedule_row(
+            $schedule_id,
+            $this->input->post('repayamount'),
+            $this->input->post('interest'),
+            $this->input->post('principle'),
+            $this->input->post('reason')
+        );
+        $this->output->set_output(json_encode($result));
     }
 
     /**

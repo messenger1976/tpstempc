@@ -28,6 +28,7 @@
 
     <link href="<?php echo base_url(); ?>media/css/animate.css" rel="stylesheet">
     <link href="<?php echo base_url(); ?>media/css/style.css" rel="stylesheet">
+    <link href="<?php echo base_url(); ?>media/css/plugins/datapicker/datepicker3.css?v=20260801" rel="stylesheet">
     <link href="<?php echo base_url(); ?>media/css/app-shell.css?v=20260813" rel="stylesheet">
     <!-- Leaflet / OpenStreetMap -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
@@ -99,7 +100,50 @@
             color: #1ab394;
             background: #e8f8f5;
             border-radius: 8px;
-            padding: 8px 12px;
+            padding: 6px 10px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .dash-home .dash-intro .intro-date form {
+            margin: 0;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .dash-home .dash-intro .intro-date label {
+            margin: 0;
+            font-weight: 600;
+            color: #1ab394;
+            white-space: nowrap;
+        }
+        .dash-home .dash-intro .intro-date .input-group.date {
+            width: 150px;
+        }
+        .dash-home .dash-intro .intro-date .input-group.date .form-control {
+            height: 28px;
+            padding: 4px 8px;
+            font-size: 13px;
+            font-weight: 600;
+            color: #2f4050;
+            border-color: #b8e6da;
+            background: #fff;
+        }
+        .dash-home .dash-intro .intro-date .input-group.date .input-group-addon {
+            padding: 4px 8px;
+            background: #fff;
+            border-color: #b8e6da;
+            color: #1ab394;
+            cursor: pointer;
+        }
+        .dash-home .dash-intro .intro-date .btn-asof {
+            background: #1ab394;
+            border-color: #1ab394;
+            color: #fff;
+            font-weight: 600;
+            padding: 4px 10px;
+            height: 28px;
+            line-height: 1.2;
         }
 
         .dash-home .kpi-card {
@@ -505,7 +549,19 @@
                         </div>
                     </div>
                     <div class="intro-date">
-                        <i class="fa fa-calendar"></i> <?php echo date('F d, Y'); ?>
+                        <form method="get" action="<?php echo site_url(current_lang() . '/dashboard'); ?>" id="dashboardAsOfForm" class="form-inline">
+                            <label for="dashboard_as_of">As of</label>
+                            <div class="input-group date" id="dashboard_as_of_picker">
+                                <input type="text" id="dashboard_as_of" name="as_of"
+                                       class="form-control"
+                                       placeholder="<?php echo lang('hint_date'); ?>"
+                                       value="<?php echo htmlspecialchars(isset($as_of) ? format_date($as_of, false) : date('d-m-Y'), ENT_QUOTES, 'UTF-8'); ?>"
+                                       data-date-format="DD-MM-YYYY"
+                                       autocomplete="off"/>
+                                <span class="input-group-addon"><span class="fa fa-calendar"></span></span>
+                            </div>
+                            <button type="submit" class="btn btn-xs btn-asof" id="dashboardAsOfBtn">Apply</button>
+                        </form>
                     </div>
                 </div>
 
@@ -589,7 +645,7 @@
                             <div class="kpi-body">
                                 <h1 class="kpi-value"><?php echo isset($total_collections) ? number_format($total_collections, 2) : '0.00'; ?></h1>
                                 <span class="kpi-sub">Monthly Collections</span>
-                                <span class="kpi-tag"><i class="fa fa-arrow-circle-down"></i> This Month</span>
+                                <span class="kpi-tag"><i class="fa fa-arrow-circle-down"></i> <?php echo htmlspecialchars(isset($collections_month_label) ? $collections_month_label : 'This Month', ENT_QUOTES, 'UTF-8'); ?></span>
                             </div>
                         </div>
                     </div>
@@ -615,7 +671,7 @@
                             <div class="kpi-body">
                                 <h1 class="kpi-value"><?php echo isset($net_assets) ? number_format($net_assets, 2) : '0.00'; ?></h1>
                                 <span class="kpi-sub">Cooperative Net Worth</span>
-                                <span class="kpi-tag"><i class="fa fa-check-circle"></i> Total Assets</span>
+                                <span class="kpi-tag"><i class="fa fa-check-circle"></i> Assets &minus; Liabilities</span>
                             </div>
                         </div>
                     </div>
@@ -672,7 +728,7 @@
                     <div class="col-lg-12">
                         <div class="ibox float-e-margins">
                             <div class="ibox-title">
-                                <h5><i class="fa fa-exclamation-triangle"></i> Loan Aging Summary (As of <?php echo date('F d, Y'); ?>)</h5>
+                                <h5><i class="fa fa-exclamation-triangle"></i> Loan Aging Summary (As of <?php echo htmlspecialchars(isset($as_of_label) ? $as_of_label : date('F d, Y'), ENT_QUOTES, 'UTF-8'); ?>)</h5>
                             </div>
                             <div class="ibox-content">
                                 <div class="row">
@@ -687,7 +743,11 @@
                                     foreach ($aging_buckets as $key => $bucket_info) {
                                         $bucket = isset($loan_aging_data[$key]) ? $loan_aging_data[$key] : null;
                                         $total_balance = $bucket ? $bucket['total_balance'] : 0;
-                                        $loan_count = $bucket ? count($bucket['loans']) : 0;
+                                        if ($bucket && isset($bucket['loan_count'])) {
+                                            $loan_count = intval($bucket['loan_count']);
+                                        } else {
+                                            $loan_count = ($bucket && isset($bucket['loans'])) ? count($bucket['loans']) : 0;
+                                        }
                                     ?>
                                     <div class="col-lg-2 col-md-4 col-sm-6">
                                         <div class="aging-tile" style="border-left-color: <?php echo $bucket_info['color']; ?>;">
@@ -1119,8 +1179,28 @@
     <!-- Mainly scripts -->
     <script src="<?php echo base_url(); ?>media/js/jquery-1.10.2.js"></script>
     <script src="<?php echo base_url(); ?>media/js/bootstrap.min.js"></script>
+    <script src="<?php echo base_url(); ?>media/js/script/moment.js"></script>
+    <script src="<?php echo base_url(); ?>media/js/plugins/datapicker/bootstrap-datepicker.js"></script>
     <script src="<?php echo base_url(); ?>media/js/plugins/metisMenu/jquery.metisMenu.js"></script>
     <script src="<?php echo base_url(); ?>media/js/plugins/slimscroll/jquery.slimscroll.min.js"></script>
+    <script>
+    (function ($) {
+        $(function () {
+            var $picker = $('#dashboard_as_of_picker');
+            if ($picker.length && typeof $.fn.datetimepicker !== 'undefined' && !$picker.data('DateTimePicker')) {
+                $picker.datetimepicker({
+                    pickTime: false,
+                    format: 'DD-MM-YYYY',
+                    maxDate: moment().endOf('day')
+                });
+            }
+            $('#dashboardAsOfForm').on('submit', function () {
+                var $btn = $('#dashboardAsOfBtn');
+                $btn.prop('disabled', true).text('Loading…');
+            });
+        });
+    })(jQuery);
+    </script>
 
     <!-- Flot -->
     <script src="<?php echo base_url(); ?>media/js/plugins/flot/jquery.flot.js"></script>

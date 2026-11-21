@@ -25,6 +25,7 @@ application/logs/*
 .settings/org.eclipse.php.core.prefs
 .settings/org.eclipse.wst.common.project.facet.core.xml
 application/config/database.php
+application/config/smtp.key
 /application/cache
 .git-ftp.log
 .htaccess

@@ -50,6 +50,7 @@ class MY_DB_mysqli_driver extends CI_DB_mysqli_driver {
         }
 
         if ($this->_gl_books_lock_blocks($actual_table, $set, 'insert')) {
+            $this->_reset_write();
             return FALSE;
         }
         
@@ -70,6 +71,7 @@ class MY_DB_mysqli_driver extends CI_DB_mysqli_driver {
      */
     public function update($table = '', $set = NULL, $where = NULL, $limit = NULL) {
         if ($this->_gl_books_lock_blocks($table, $set, 'update')) {
+            $this->_reset_write();
             return FALSE;
         }
         $result = parent::update($table, $set, $where, $limit);
@@ -159,6 +161,9 @@ class MY_DB_mysqli_driver extends CI_DB_mysqli_driver {
         }
         
         if ($this->_gl_books_lock_blocks($table, null, 'delete')) {
+            // Parent delete never ran, so AR WHERE clauses would otherwise leak into
+            // the next Active Record call (e.g. current_user() → users).
+            $this->_reset_write();
             $this->_logging_enabled = true;
             return FALSE;
         }
@@ -517,8 +522,11 @@ class MY_DB_mysqli_driver extends CI_DB_mysqli_driver {
             }
         }
 
+        // Prefer PIN already on the queued WHERE / payload so books-close helpers
+        // do not need current_user() while Active Record still holds GL filters.
+        $pin = $this->_gl_pin_from_context($set);
         foreach ($dates as $date) {
-            $err = gl_reject_closed_date($date);
+            $err = gl_reject_closed_date($date, $pin);
             if ($err) {
                 if (function_exists('log_message')) {
                     log_message('error', 'GL books close blocked ' . $operation . ' on ' . $table . ': ' . $err);
@@ -533,6 +541,39 @@ class MY_DB_mysqli_driver extends CI_DB_mysqli_driver {
             }
         }
         return false;
+    }
+
+    /**
+     * Best-effort PIN from insert/update payload or queued WHERE clauses.
+     */
+    private function _gl_pin_from_context($set) {
+        if (is_array($set) && isset($set['PIN']) && $set['PIN'] !== '' && $set['PIN'] !== null) {
+            return $set['PIN'];
+        }
+        if (!empty($this->ar_set) && is_array($this->ar_set)) {
+            foreach ($this->ar_set as $k => $v) {
+                $clean = strtolower(trim($k, " `"));
+                if ($clean === 'pin') {
+                    if (is_string($v) && strlen($v) >= 2 && ($v[0] === "'" || $v[0] === '"')) {
+                        $v = substr($v, 1, -1);
+                    }
+                    if ($v !== '' && $v !== null) {
+                        return $v;
+                    }
+                }
+            }
+        }
+        if (!empty($this->ar_where) && is_array($this->ar_where)) {
+            foreach ($this->ar_where as $clause) {
+                if (preg_match("/[`']?PIN[`']?\s*=\s*'([^']+)'/i", $clause, $m)) {
+                    return $m[1];
+                }
+                if (preg_match("/[`']?PIN[`']?\s*=\s*([0-9]+)/i", $clause, $m)) {
+                    return $m[1];
+                }
+            }
+        }
+        return null;
     }
 
     private function _gl_payload_date($set) {

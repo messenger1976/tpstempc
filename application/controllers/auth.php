@@ -143,6 +143,9 @@ class Auth extends CI_Controller {
                 $this->load->helper('activity_log');
                 $user = $this->ion_auth->user()->row();
                 log_login($user->id, $user->username);
+                // Dashboard as-of date is session-only; always start at today after login.
+                $this->session->unset_userdata('dashboard_as_of');
+                $this->session->unset_userdata('dashboard_kpi_cache');
                 
                 //redirect them back to the home page
                 $this->session->set_flashdata('message', $this->ion_auth->messages());
@@ -190,6 +193,10 @@ class Auth extends CI_Controller {
             $user = $this->ion_auth->user()->row();
             log_logout($user->id, $user->username);
         }
+
+        // Clear dashboard as-of before session destroy so next login uses today.
+        $this->session->unset_userdata('dashboard_as_of');
+        $this->session->unset_userdata('dashboard_kpi_cache');
 
         //log the user out
         $logout = $this->ion_auth->logout();

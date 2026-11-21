@@ -30,7 +30,8 @@ if (!function_exists('is_resseller')) {
     function is_resseller($id = null) {
         $CI = &get_instance();
         $id | $id = $CI->session->userdata('user_id');
-        $user = $CI->db->get_where('users', array('id' => $id))->row();
+        // Raw query: get_where merges leftover Active Record WHEREs from in-progress writes.
+        $user = $CI->db->query('SELECT * FROM users WHERE id = ? LIMIT 1', array($id))->row();
         if ($user) {
             if ($user->reseller == 1) {
                 return TRUE;
@@ -47,7 +48,8 @@ if (!function_exists('is_super_user')) {
     function is_super_user($id = null) {
         $CI = &get_instance();
         $id | $id = $CI->session->userdata('user_id');
-        $user = $CI->db->get_where('users', array('id' => $id))->row();
+        // Raw query: get_where merges leftover Active Record WHEREs from in-progress writes.
+        $user = $CI->db->query('SELECT * FROM users WHERE id = ? LIMIT 1', array($id))->row();
         if ($user) {
             if ($user->super_user == 1) {
                 return TRUE;
@@ -322,7 +324,11 @@ if (!function_exists('current_user')) {
     function current_user($id = null) {
         $CI = &get_instance();
         $id | $id = $CI->session->userdata('user_id');
-        $user = $CI->db->get_where('users', array('id' => $id))->row();
+        // Raw query only. get_where() / where()+get() reuse any Active Record WHERE
+        // clauses already queued (e.g. mid-delete on general_ledger while books-close
+        // checks call current_user). That produced:
+        // SELECT * FROM users WHERE refferenceID=... AND fromtable=... AND PIN=... AND id=...
+        $user = $CI->db->query('SELECT * FROM users WHERE id = ? LIMIT 1', array($id))->row();
         return $user;
     }
 

@@ -380,17 +380,29 @@ class Member_Model extends CI_Model {
 
     function suggest_members($q, $searchstatus = null, $searchmember = null, $limit = 15) {
         $pin = current_user()->PIN;
-        $q = trim((string) $q);
+        $q = trim(preg_replace('/\s+/', ' ', (string) $q));
         if ($q === '') {
             return array();
         }
 
         $like = $this->db->escape_like_str($q);
+        // Collapse empty middlename double-spaces so "EMMA JABAGAT" matches "EMMA  JABAGAT".
+        $full_name_sql = "TRIM(REPLACE(REPLACE(CONCAT(IFNULL(firstname,''),' ',IFNULL(middlename,''),' ',IFNULL(lastname,'')), '  ', ' '), '  ', ' '))";
+        $where = "(PID LIKE '%" . $like . "%' ESCAPE '!' OR member_id LIKE '%" . $like . "%' ESCAPE '!' OR firstname LIKE '%" . $like . "%' ESCAPE '!' OR middlename LIKE '%" . $like . "%' ESCAPE '!' OR lastname LIKE '%" . $like . "%' ESCAPE '!' OR " . $full_name_sql . " LIKE '%" . $like . "%' ESCAPE '!')";
+
+        // Multi-word name: also require first token in firstname and last token in lastname.
+        $parts = preg_split('/\s+/', $q);
+        if (count($parts) >= 2) {
+            $first = $this->db->escape_like_str($parts[0]);
+            $last = $this->db->escape_like_str($parts[count($parts) - 1]);
+            $where = "(" . $where . " OR (firstname LIKE '%" . $first . "%' ESCAPE '!' AND lastname LIKE '%" . $last . "%' ESCAPE '!'))";
+        }
+
         $this->db->select('id, PID, member_id, firstname, middlename, lastname, status, none_member');
         $this->db->from('members');
         $this->db->where('PIN', $pin);
         $this->db->where('status !=', 2);
-        $this->db->where("(PID LIKE '%" . $like . "%' ESCAPE '!' OR member_id LIKE '%" . $like . "%' ESCAPE '!' OR firstname LIKE '%" . $like . "%' ESCAPE '!' OR middlename LIKE '%" . $like . "%' ESCAPE '!' OR lastname LIKE '%" . $like . "%' ESCAPE '!' OR CONCAT(IFNULL(firstname,''),' ',IFNULL(middlename,''),' ',IFNULL(lastname,'')) LIKE '%" . $like . "%' ESCAPE '!')", null, false);
+        $this->db->where($where, null, false);
 
         if (!is_null($searchstatus) && $searchstatus !== '') {
             $this->db->where('status', (int) $searchstatus);
@@ -403,6 +415,43 @@ class Member_Model extends CI_Model {
         $this->db->order_by('member_id', 'asc');
         $this->db->limit((int) $limit);
         return $this->db->get()->result();
+    }
+
+    /**
+     * Resolve a display name (e.g. receipt "Received From") to a member row.
+     */
+    function find_member_by_display_name($name, $active_only = true) {
+        $name = trim(preg_replace('/\s+/', ' ', (string) $name));
+        if ($name === '') {
+            return null;
+        }
+        $rows = $this->suggest_members($name, $active_only ? 1 : null, 1, 10);
+        if (empty($rows)) {
+            // Retry without active/member-only filters (inactive payers still appear on old receipts).
+            $rows = $this->suggest_members($name, null, null, 10);
+        }
+        if (empty($rows)) {
+            return null;
+        }
+        $needle = strtoupper($name);
+        foreach ($rows as $row) {
+            $full = trim(preg_replace('/\s+/', ' ', $row->firstname . ' ' . $row->middlename . ' ' . $row->lastname));
+            if (strtoupper($full) === $needle) {
+                return $row;
+            }
+        }
+        // Prefer first+last exact when middlename is empty on either side.
+        $parts = preg_split('/\s+/', $name);
+        if (count($parts) >= 2) {
+            $first = strtoupper($parts[0]);
+            $last = strtoupper($parts[count($parts) - 1]);
+            foreach ($rows as $row) {
+                if (strtoupper(trim($row->firstname)) === $first && strtoupper(trim($row->lastname)) === $last) {
+                    return $row;
+                }
+            }
+        }
+        return $rows[0];
     }
 
     function soft_delete_member($id) {

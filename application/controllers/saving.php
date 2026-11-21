@@ -582,7 +582,11 @@ class Saving extends CI_Controller {
             }
             $this->session->set_flashdata('message', $msg);
         } elseif ($total_failed > 0) {
-            $this->session->set_flashdata('warning', lang('saving_account_void_gl_fail'));
+            $warn = lang('saving_account_void_gl_fail');
+            if (!empty($errors)) {
+                $warn .= ' ' . $errors[0];
+            }
+            $this->session->set_flashdata('warning', $warn);
         } else {
             $this->session->set_flashdata('message', lang('saving_account_void_gl_nothing_to_void'));
         }

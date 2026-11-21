@@ -1311,6 +1311,71 @@ class Setting extends CI_Controller {
         return TRUE;
     }
 
+    /**
+     * Administrator-only SMTP settings for the shared mailer.
+     * GET and POST both require ion_auth administrator. The menu hide is not the check.
+     */
+    function smtp_settings() {
+        $this->load->library('smtp_settings');
+        if (!$this->smtp_settings->allows($this->ion_auth->logged_in(), $this->ion_auth->is_admin())) {
+            $this->session->set_flashdata('warning', lang('access_denied'));
+            redirect('dashboard', 'refresh');
+            return;
+        }
+
+        $this->load->model('smtp_settings_model');
+        $this->smtp_settings_model->ensure_schema();
+
+        if (strtoupper((string) $this->input->server('REQUEST_METHOD')) !== 'POST') {
+            $this->session->set_userdata('smtp_settings_csrf', $this->smtp_settings->new_csrf_token());
+        }
+
+        $actor = current_user();
+        $result = $this->smtp_settings->handle(array(
+            'is_logged_in' => $this->ion_auth->logged_in(),
+            'is_admin' => $this->ion_auth->is_admin(),
+            'method' => $this->input->server('REQUEST_METHOD'),
+            'post' => array(
+                'smtp_host' => $this->input->post('smtp_host'),
+                'smtp_port' => $this->input->post('smtp_port'),
+                'smtp_user' => $this->input->post('smtp_user'),
+                'smtp_pass' => $this->input->post('smtp_pass'),
+                'smtp_crypto' => $this->input->post('smtp_crypto'),
+                'smtp_timeout' => $this->input->post('smtp_timeout'),
+                'from_email' => $this->input->post('from_email'),
+                'from_name' => $this->input->post('from_name'),
+                'is_active' => $this->input->post('is_active'),
+                'clear_password' => $this->input->post('clear_password'),
+            ),
+            'csrf_expected' => (string) $this->session->userdata('smtp_settings_csrf'),
+            'csrf_posted' => (string) $this->input->post('smtp_token'),
+            'actor_id' => ($actor && isset($actor->id)) ? (int) $actor->id : 0,
+            'key' => $this->smtp_settings->load_key(),
+        ), $this->smtp_settings_model);
+
+        if (!is_array($result) || $result['action'] === 'deny') {
+            $this->session->set_flashdata('warning', lang('access_denied'));
+            redirect('dashboard', 'refresh');
+            return;
+        }
+        if ($result['action'] === 'saved') {
+            $this->session->set_flashdata('message', 'Email/SMTP settings saved.');
+            $this->session->unset_userdata('smtp_settings_csrf');
+            redirect(current_lang() . '/setting/smtp_settings', 'refresh');
+            return;
+        }
+        if ($result['action'] === 'csrf' || $result['action'] === 'invalid') {
+            $this->session->set_userdata('smtp_settings_csrf', $this->smtp_settings->new_csrf_token());
+        }
+
+        $this->data['title'] = lang('smtp_settings_title');
+        $this->data['smtp'] = $result['view'];
+        $this->data['smtp_errors'] = isset($result['errors']) ? $result['errors'] : array();
+        $this->data['csrf_token'] = (string) $this->session->userdata('smtp_settings_csrf');
+        $this->data['content'] = 'setting/smtp_settings';
+        $this->load->view('template', $this->data);
+    }
+
 }
 
 ?>

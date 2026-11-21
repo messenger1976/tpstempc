@@ -310,7 +310,10 @@ $lang['myclients_list']='Client List';
 $lang['account_no']='Account#';
 
 // Cash Receipt — loan panel terms
-$lang['cash_receipt_loan_panel'] = 'Loan';
+$lang['cash_receipt_loan_repayment_required'] = 'Please select at least one member loan and enter a payment amount.';
+$lang['cash_receipt_loan_list_hint'] = 'Check one or more loans and enter a payment amount for each.';
+$lang['cash_receipt_loan_multi_hint'] = 'Check each loan to include on this receipt and enter the payment amount. Line items update automatically.';
+$lang['cash_receipt_loan_panel'] = 'Loans';
 $lang['cash_receipt_loan_terms'] = 'Loan Terms';
 $lang['cash_receipt_loan_term'] = 'Term';
 $lang['cash_receipt_loan_amount'] = 'Loan Amount';
@@ -318,5 +321,29 @@ $lang['cash_receipt_loan_interest_rate'] = 'Interest Rate';
 $lang['cash_receipt_loan_monthly_installment'] = 'Monthly Installment';
 $lang['cash_receipt_loan_first_installment'] = 'First Installment';
 $lang['cash_receipt_loan_total_obligation'] = 'Total Loan Obligation';
+$lang['cash_receipt_loan_payment_amount'] = 'Payment amount';
+$lang['cash_receipt_loan_selected_total'] = 'Selected total';
+$lang['cash_receipt_loan_override_toggle'] = 'Override from index';
+$lang['cash_receipt_loan_override_help'] = 'Enter Principal, Interest, and Penalty from the member index card. The payment amount becomes their sum.';
+$lang['cash_receipt_loan_override_note'] = 'Override reason';
+$lang['cash_receipt_loan_override_principal'] = 'Principal';
+$lang['cash_receipt_loan_override_interest'] = 'Interest';
+$lang['cash_receipt_loan_override_penalty'] = 'Penalty';
+$lang['cash_receipt_link_loan_ledger'] = 'Link to Loan Ledger';
+$lang['cash_receipt_link_loan_title'] = 'Link Cash Receipt to Loan Ledger';
+$lang['cash_receipt_link_loan_help'] = 'This receipt is already posted to GL. Tag the member loan(s) below to create Loan Ledger / schedule repayments without posting GL again. Use Override from index when the receipt split Principal / Interest / Penalty across products.';
+$lang['cash_receipt_link_loan_success'] = 'Cash receipt linked to Loan Ledger successfully. GL was not changed.';
+$lang['cash_receipt_link_loan_fail'] = 'Failed to link cash receipt to Loan Ledger.';
+$lang['cash_receipt_link_loan_cancelled'] = 'Cancelled receipts cannot be linked to Loan Ledger.';
+$lang['cash_receipt_link_loan_already'] = 'This cash receipt is already linked to Loan Ledger.';
+$lang['cash_receipt_link_loan_not_posted'] = 'Only receipts posted to GL can use this link tool. For drafts, set Received From Type to Loan Repayment before posting.';
+$lang['cash_receipt_link_loan_amount_mismatch'] = 'Allocated loan total (%s) must equal the receipt total (%s).';
+$lang['cash_receipt_link_loan_linked'] = 'Linked to Loan Ledger';
+$lang['cash_receipt_link_loan_confirm'] = 'Link this receipt to the selected loan(s)? GL will not be posted again.';
+$lang['cash_receipt_unlink_loan_ledger'] = 'Unlink from Loan Ledger';
+$lang['cash_receipt_unlink_loan_confirm'] = 'Unlink this receipt from Loan Ledger? Schedule repayments will be reversed. GL will NOT be changed. You can then Link again with the correct index amounts.';
+$lang['cash_receipt_unlink_loan_success'] = 'Cash receipt unlinked from Loan Ledger. GL was not changed. You can link again with the correct amounts.';
+$lang['cash_receipt_unlink_loan_fail'] = 'Failed to unlink cash receipt from Loan Ledger.';
+$lang['cash_receipt_unlink_loan_not_linked'] = 'This cash receipt is not linked to Loan Ledger.';
 
 ?>

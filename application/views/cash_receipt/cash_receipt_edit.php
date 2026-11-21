@@ -131,6 +131,8 @@
 
 <?php
 $selected_loan_repayment_lid = isset($selected_loan_repayment_lid) ? $selected_loan_repayment_lid : set_value('loan_repayment_lid');
+$selected_loan_allocations = isset($selected_loan_allocations) && is_array($selected_loan_allocations) ? $selected_loan_allocations : array();
+$selected_member_pid = isset($selected_member_pid) ? $selected_member_pid : set_value('member_pid');
 $selected_received_from_type = isset($selected_received_from_type) ? $selected_received_from_type : set_value('received_from_type', 'miscellaneous');
 $received_from_value = set_value('received_from', isset($receipt->received_from) ? $receipt->received_from : '');
 $received_from_types = array(
@@ -239,7 +241,7 @@ if (isset($message) && !empty($message)) {
                                         </div>
                                     </div>
                                     <input type="hidden" name="received_from" id="received_from" value="<?php echo htmlspecialchars($received_from_value, ENT_QUOTES, 'UTF-8'); ?>"/>
-                                    <input type="hidden" name="member_pid" id="member_pid" value=""/>
+                                    <input type="hidden" name="member_pid" id="member_pid" value="<?php echo htmlspecialchars(isset($selected_member_pid) ? $selected_member_pid : set_value('member_pid'), ENT_QUOTES, 'UTF-8'); ?>"/>
                                     <input type="hidden" name="member_id" id="member_id" value=""/>
                                     <input type="hidden" name="loan_repayment_lid" id="loan_repayment_lid" value="<?php echo htmlspecialchars((string) $selected_loan_repayment_lid, ENT_QUOTES, 'UTF-8'); ?>"/>
                                     <?php echo form_error('received_from'); ?>
@@ -284,7 +286,9 @@ if (isset($message) && !empty($message)) {
                         <div class="col-md-12">
                             <div class="loan-repayment-box" id="loanRepaymentPanel">
                                 <strong><?php echo lang('cash_receipt_loan_panel'); ?></strong>
+                                <p class="help-block" style="margin:6px 0 0;"><?php echo lang('cash_receipt_loan_multi_hint'); ?></p>
                                 <div id="loanRepaymentPanelBody" style="margin-top:8px;"></div>
+                                <div id="loanAllocHiddenInputs"></div>
                                 <div id="loanRepaymentDueWrap" style="display:none;margin-top:12px;">
                                     <p class="help-block" id="loanRepaymentDueExplanation" style="margin-bottom:8px;"></p>
                                     <div class="table-responsive">
@@ -323,8 +327,6 @@ if (isset($message) && !empty($message)) {
                                         </table>
                                     </div>
                                     <div style="margin-top:8px;">
-                                        <label for="loan_repayment_amount"><?php echo lang('cash_receipt_loan_payment_amount'); ?></label>
-                                        <input type="number" step="0.01" min="0" id="loan_repayment_amount" class="form-control" style="max-width:180px;display:inline-block;margin:0 8px;"/>
                                         <button type="button" class="btn btn-white btn-sm" id="btnUseSuggestedLoanAmount">
                                             <i class="fa fa-magic"></i> <?php echo lang('loan_repay_use_suggested'); ?>
                                         </button>
@@ -579,13 +581,13 @@ if (isset($message) && !empty($message)) {
             $('#payment_method').on('change', function(){
                 var $opt = $('#payment_method option:selected');
                 var txt = ($opt.text() || '').toLowerCase();
-                if ($opt.data('is-cheque') == 1 || txt.indexOf('cheque') >= 0 || txt.indexOf('check') >= 0) {
+                if ($opt.data('is-cheque') == 1 || $opt.data('is-cheque') === '1' || txt.indexOf('cheque') >= 0 || txt.indexOf('check') >= 0) {
                     $('#cheque_details').show();
                 } else {
                     $('#cheque_details').hide();
                 }
-                if ($('#received_from_type').val() === 'loan_repayment' && $('#loan_repayment_lid').val()) {
-                    loadLoanWorksheet($('#loan_repayment_lid').val());
+                if ($('#received_from_type').val() === 'loan_repayment' && getSelectedLoanAllocations().length) {
+                    rebuildMergedLoanWorksheets();
                 } else {
                     syncPaymentMethodAccount();
                 }
@@ -636,16 +638,11 @@ if (isset($message) && !empty($message)) {
                     e.preventDefault();
                     return false;
                 }
-                if (type === 'loan_repayment' && !$.trim($('#loan_repayment_lid').val() || '')) {
-                    alert(i18n.loanRequired);
-                    e.preventDefault();
-                    return false;
-                }
-                if (type === 'loan_repayment' && loanDueState.minimum > 0) {
-                    var cashDebit = 0;
-                    $('.debit-input').each(function(){ cashDebit += parseFloat($(this).val()) || 0; });
-                    if (cashDebit + 0.00001 < loanDueState.minimum) {
-                        alert((i18n.minApply || '').replace('%s', (loanDueState.minimum).toFixed(2)));
+                if (type === 'loan_repayment') {
+                    syncLoanAllocationHiddenInputs();
+                    var selectedAllocs = getSelectedLoanAllocations();
+                    if (!selectedAllocs.length) {
+                        alert(i18n.loanRequired);
                         e.preventDefault();
                         return false;
                     }
@@ -686,6 +683,10 @@ if (isset($message) && !empty($message)) {
             var loanCache = {};
             var selectedMemberName = '';
             var linesFromLoan = false;
+            var focusedLoanId = '';
+            var loanWorksheetSeq = 0;
+            var initialLoanAllocations = <?php echo json_encode(array_values($selected_loan_allocations)); ?>;
+            var receiptExcludeId = <?php echo isset($receipt->id) ? (int) $receipt->id : 0; ?>;
 
             var i18n = {
                 searchLoan: <?php echo json_encode(lang('cash_receipt_search_loan_repayment')); ?>,
@@ -704,6 +705,15 @@ if (isset($message) && !empty($message)) {
                 noCustomers: <?php echo json_encode(lang('cash_receipt_no_customers_found')); ?>,
                 noLoans: <?php echo json_encode(lang('cash_receipt_no_repayable_loans')); ?>,
                 loanHint: <?php echo json_encode(lang('cash_receipt_loan_list_hint')); ?>,
+                selectedTotal: <?php echo json_encode(lang('cash_receipt_loan_selected_total')); ?>,
+                paymentAmount: <?php echo json_encode(lang('cash_receipt_loan_payment_amount')); ?>,
+                overrideToggle: <?php echo json_encode(lang('cash_receipt_loan_override_toggle')); ?>,
+                overrideHelp: <?php echo json_encode(lang('cash_receipt_loan_override_help')); ?>,
+                overrideNote: <?php echo json_encode(lang('cash_receipt_loan_override_note')); ?>,
+                overridePrincipal: <?php echo json_encode(lang('cash_receipt_loan_override_principal')); ?>,
+                overrideInterest: <?php echo json_encode(lang('cash_receipt_loan_override_interest')); ?>,
+                overridePenalty: <?php echo json_encode(lang('cash_receipt_loan_override_penalty')); ?>,
+                dueTitle: <?php echo json_encode(lang('loan_repay_due_title')); ?>,
                 statusDue: <?php echo json_encode(lang('loan_repay_status_due')); ?>,
                 statusOverdue: <?php echo json_encode(lang('loan_repay_status_overdue')); ?>,
                 nothingDue: <?php echo json_encode(lang('loan_repay_nothing_due')); ?>,
@@ -718,7 +728,6 @@ if (isset($message) && !empty($message)) {
                 loanTotalObligation: <?php echo json_encode(lang('cash_receipt_loan_total_obligation')); ?>
             };
             var loanDueState = { suggested: 0, minimum: 0 };
-            var currentReceiptId = <?php echo isset($receipt->id) ? (int) $receipt->id : 0; ?>;
 
             function clearPayerSelection(keepMiscText) {
                 $('#received_from').val('');
@@ -727,13 +736,17 @@ if (isset($message) && !empty($message)) {
                 $('#loan_repayment_lid').val('');
                 selectedMemberName = '';
                 loanCache = {};
+                focusedLoanId = '';
+                $('#loanRepaymentPanelBody').html('');
+                $('#loanAllocHiddenInputs').empty();
+                $('#loanRepaymentPanel').hide();
+                $('#loanRepaymentDueWrap').hide();
                 $('#receivedFromSelected').hide().text('');
                 $('#receivedFromSearchResults').html('');
                 $('#receivedFromSearchKey').val('');
                 if (!keepMiscText) {
                     $('#received_from_name').val('');
                 }
-                renderLinkedLoan(null);
                 if (linesFromLoan) {
                     resetLineItems();
                     linesFromLoan = false;
@@ -895,38 +908,389 @@ if (isset($message) && !empty($message)) {
                 $('#receivedFromSearchResults').html(html);
             }
 
-            function loadMemberLoans(pid) {
-                $('#receivedFromSearchResults').html('<p class="text-center"><i class="fa fa-spinner fa-spin"></i> Loading loans...</p>');
+            function initialAmountForLid(lid) {
+                var amt = null;
+                $.each(initialLoanAllocations || [], function(_, row){
+                    if (String(row.LID) === String(lid)) {
+                        amt = parseFloat(row.amount);
+                        return false;
+                    }
+                });
+                return amt;
+            }
+
+            function initialOverrideForLid(lid) {
+                var found = null;
+                $.each(initialLoanAllocations || [], function(_, row){
+                    if (String(row.LID) === String(lid) && row.override_enabled) {
+                        found = {
+                            enabled: true,
+                            principal: parseFloat(row.override_principal) || 0,
+                            interest: parseFloat(row.override_interest) || 0,
+                            penalty: parseFloat(row.override_penalty) || 0,
+                            note: row.override_note || ''
+                        };
+                        return false;
+                    }
+                });
+                return found;
+            }
+
+            function getRowOverride($row) {
+                if (!$row || !$row.length) {
+                    return null;
+                }
+                if (!$row.find('.loan-override-enabled').is(':checked')) {
+                    return null;
+                }
+                return {
+                    enabled: true,
+                    principal: parseFloat(String($row.find('.loan-override-principal').val() || '').replace(/,/g, '')) || 0,
+                    interest: parseFloat(String($row.find('.loan-override-interest').val() || '').replace(/,/g, '')) || 0,
+                    penalty: parseFloat(String($row.find('.loan-override-penalty').val() || '').replace(/,/g, '')) || 0,
+                    note: $.trim($row.find('.loan-override-note').val() || '')
+                };
+            }
+
+            function syncOverrideAmountFromComponents($row) {
+                var ov = getRowOverride($row);
+                if (!ov) {
+                    return;
+                }
+                var sum = roundMoney(ov.principal + ov.interest + ov.penalty);
+                $row.find('.loan-alloc-amount').val(formatMoney(sum));
+            }
+
+            function roundMoney(n) {
+                return Math.round((parseFloat(n) || 0) * 100) / 100;
+            }
+
+            function loadMemberLoans(pid, preselect) {
+                $('#receivedFromSearchResults').html('');
+                $('#loanRepaymentPanelBody').html('<p class="text-center"><i class="fa fa-spinner fa-spin"></i> Loading loans...</p>');
+                $('#loanRepaymentPanel').show();
                 $.ajax({
                     url: memberLoansUrl,
                     type: 'GET',
-                    data: { pid: pid, exclude_id: currentReceiptId || 0 },
+                    data: { pid: pid, exclude_id: receiptExcludeId || 0 },
                     dataType: 'json',
                     success: function(response){
                         if (response.success === 'Y' && response.data && response.data.length > 0) {
-                            renderLoanSearchResults(response.data);
+                            renderLoanAllocationTable(response.data, preselect || {});
                         } else {
-                            $('#receivedFromSearchResults').html('<p class="text-danger text-center">' + (response.error || i18n.noLoans) + '</p>');
+                            $('#loanRepaymentPanelBody').html('<p class="text-danger">' + (response.error || i18n.noLoans) + '</p>');
+                            $('#loanRepaymentDueWrap').hide();
+                            syncLoanAllocationHiddenInputs();
                         }
                     },
                     error: function(){
-                        $('#receivedFromSearchResults').html('<p class="text-danger text-center">Error loading loans. Please try again.</p>');
+                        $('#loanRepaymentPanelBody').html('<p class="text-danger">Error loading loans. Please try again.</p>');
                     }
                 });
             }
 
-            function renderLoanSearchResults(rows) {
-                var html = '<p class="help-block" style="margin-top:0;">' + i18n.loanHint + '</p>';
-                html += '<table class="table table-bordered table-hover"><thead><tr><th>Loan</th><th>Product</th><th>Status</th><th>Outstanding</th><th>Amount Due</th><th></th></tr></thead><tbody>';
+            function renderLoanAllocationTable(rows, preselect) {
+                preselect = preselect || {};
+                var html = '<div class="table-responsive"><table class="table table-bordered table-condensed" id="loanAllocTable" style="margin-bottom:8px;background:#fff;">';
+                html += '<thead><tr><th style="width:36px;"></th><th>Loan</th><th>Product</th><th>Status</th>';
+                html += '<th class="text-right">Outstanding</th><th class="text-right">Amount Due</th>';
+                html += '<th class="text-right" style="min-width:120px;">' + i18n.paymentAmount + '</th></tr></thead><tbody>';
                 $.each(rows || [], function(i, row){
                     loanCache[row.LID] = row;
+                    var lid = row.LID || '';
+                    var due = parseFloat(row.amount_due || 0) || 0;
+                    var checked = !!preselect[lid] || (initialAmountForLid(lid) != null);
+                    var amountVal = preselect[lid] != null ? preselect[lid] : initialAmountForLid(lid);
+                    var initOv = initialOverrideForLid(lid);
+                    if (initOv) {
+                        amountVal = initOv.principal + initOv.interest + initOv.penalty;
+                        checked = true;
+                    }
+                    if (amountVal == null || isNaN(amountVal)) {
+                        amountVal = due > 0 ? due : '';
+                    } else {
+                        amountVal = formatMoney(amountVal);
+                    }
                     var overdue = parseInt(row.has_overdue, 10) === 1 ? ' <span class="label label-danger">overdue</span>' : '';
-                    html += '<tr><td>' + (row.LID || '') + '</td><td>' + (row.product_name || '') + '</td><td>' + (row.status_name || '') + overdue + '</td>';
-                    html += '<td>' + (parseFloat(row.outstanding || 0).toFixed(2)) + '</td><td>' + (parseFloat(row.amount_due || 0).toFixed(2)) + '</td>';
-                    html += '<td><button type="button" class="btn btn-sm btn-primary select-member-loan" data-loan-id="' + (row.LID || '') + '"><i class="fa fa-check"></i> Select</button></td></tr>';
+                    html += '<tr class="loan-alloc-row' + (checked ? ' success' : '') + '" data-loan-id="' + lid + '">';
+                    html += '<td class="text-center"><input type="checkbox" class="loan-alloc-cb"' + (checked ? ' checked="checked"' : '') + ' /></td>';
+                    html += '<td>' + lid + '</td><td>' + (row.product_name || '') + '</td><td>' + (row.status_name || '') + overdue + '</td>';
+                    html += '<td class="text-right">' + formatMoney(row.outstanding) + '</td>';
+                    html += '<td class="text-right">' + formatMoney(due) + '</td>';
+                    html += '<td><input type="number" step="0.01" min="0" class="form-control input-sm text-right loan-alloc-amount" value="' + amountVal + '" ' + (checked ? '' : 'disabled="disabled"') + (initOv ? ' readonly="readonly"' : '') + '/></td>';
+                    html += '</tr>';
+                    html += '<tr class="loan-override-row" data-loan-id="' + lid + '" style="' + (checked ? '' : 'display:none;') + '">';
+                    html += '<td></td><td colspan="6" style="background:#fffdf5;">';
+                    html += '<label style="font-weight:600;margin-right:10px;"><input type="checkbox" class="loan-override-enabled"' + (initOv ? ' checked="checked"' : '') + '/> ' + i18n.overrideToggle + '</label>';
+                    html += '<span class="text-muted" style="font-size:12px;">' + i18n.overrideHelp + '</span>';
+                    html += '<div class="loan-override-fields" style="margin-top:8px;' + (initOv ? '' : 'display:none;') + '">';
+                    html += '<div class="row">';
+                    html += '<div class="col-sm-3"><label>' + i18n.overridePrincipal + '</label><input type="number" step="0.01" min="0" class="form-control input-sm loan-override-principal" value="' + (initOv ? formatMoney(initOv.principal) : '') + '"/></div>';
+                    html += '<div class="col-sm-3"><label>' + i18n.overrideInterest + '</label><input type="number" step="0.01" min="0" class="form-control input-sm loan-override-interest" value="' + (initOv ? formatMoney(initOv.interest) : '') + '"/></div>';
+                    html += '<div class="col-sm-3"><label>' + i18n.overridePenalty + '</label><input type="number" step="0.01" min="0" class="form-control input-sm loan-override-penalty" value="' + (initOv ? formatMoney(initOv.penalty) : '') + '"/></div>';
+                    html += '<div class="col-sm-3"><label>' + i18n.overrideNote + '</label><input type="text" maxlength="255" class="form-control input-sm loan-override-note" value="' + (initOv && initOv.note ? String(initOv.note).replace(/"/g, '&quot;') : '') + '"/></div>';
+                    html += '</div></div></td></tr>';
                 });
-                html += '</tbody></table>';
-                $('#receivedFromSearchResults').html(html);
+                html += '</tbody><tfoot><tr><th colspan="6" class="text-right">' + i18n.selectedTotal + '</th>';
+                html += '<th class="text-right" id="loanAllocSelectedTotal">0.00</th></tr></tfoot></table></div>';
+                html += '<div id="loanAllocFocusMeta"></div>';
+                $('#loanRepaymentPanelBody').html(html);
+                $('#loanRepaymentPanel').show();
+                $('#receivedFromSearchResults').html('');
+                updateLoanAllocationSummary();
+                syncLoanAllocationHiddenInputs();
+                var firstChecked = $('#loanAllocTable .loan-alloc-cb:checked').first().closest('tr').data('loanId');
+                if (firstChecked) {
+                    focusLoanAllocation(firstChecked, true);
+                } else {
+                    $('#loanRepaymentDueWrap').hide();
+                }
+                rebuildMergedLoanWorksheets();
+            }
+
+            function getSelectedLoanAllocations() {
+                var out = [];
+                $('#loanAllocTable tbody tr.loan-alloc-row').each(function(){
+                    var $row = $(this);
+                    if (!$row.find('.loan-alloc-cb').is(':checked')) {
+                        return;
+                    }
+                    var lid = String($row.data('loanId') || '');
+                    var $ovRow = $('#loanAllocTable tr.loan-override-row[data-loan-id="' + lid + '"]');
+                    var override = getRowOverride($ovRow);
+                    if (override) {
+                        var ovAmount = roundMoney(override.principal + override.interest + override.penalty);
+                        $row.find('.loan-alloc-amount').val(formatMoney(ovAmount));
+                        out.push({ LID: lid, amount: ovAmount, override: override });
+                        return;
+                    }
+                    var amount = parseFloat(String($row.find('.loan-alloc-amount').val() || '').replace(/,/g, '')) || 0;
+                    if (lid && amount > 0) {
+                        out.push({ LID: lid, amount: amount });
+                    }
+                });
+                return out;
+            }
+
+            function syncLoanAllocationHiddenInputs() {
+                var allocs = getSelectedLoanAllocations();
+                var html = '';
+                $.each(allocs, function(_, row){
+                    html += '<input type="hidden" name="loan_alloc_lid[]" value="' + String(row.LID).replace(/"/g, '&quot;') + '"/>';
+                    html += '<input type="hidden" name="loan_alloc_amount[]" value="' + formatMoney(row.amount) + '"/>';
+                    if (row.override && row.override.enabled) {
+                        html += '<input type="hidden" name="loan_override_enabled[]" value="1"/>';
+                        html += '<input type="hidden" name="loan_override_principal[]" value="' + formatMoney(row.override.principal) + '"/>';
+                        html += '<input type="hidden" name="loan_override_interest[]" value="' + formatMoney(row.override.interest) + '"/>';
+                        html += '<input type="hidden" name="loan_override_penalty[]" value="' + formatMoney(row.override.penalty) + '"/>';
+                        html += '<input type="hidden" name="loan_override_note[]" value="' + String(row.override.note || '').replace(/"/g, '&quot;') + '"/>';
+                    } else {
+                        html += '<input type="hidden" name="loan_override_enabled[]" value="0"/>';
+                        html += '<input type="hidden" name="loan_override_principal[]" value="0"/>';
+                        html += '<input type="hidden" name="loan_override_interest[]" value="0"/>';
+                        html += '<input type="hidden" name="loan_override_penalty[]" value="0"/>';
+                        html += '<input type="hidden" name="loan_override_note[]" value=""/>';
+                    }
+                });
+                $('#loanAllocHiddenInputs').html(html);
+                $('#loan_repayment_lid').val(allocs.length ? allocs[0].LID : '');
+                var total = 0;
+                $.each(allocs, function(_, row){ total += row.amount; });
+                $('#loanAllocSelectedTotal').text(formatMoney(total));
+                var lids = $.map(allocs, function(r){ return r.LID; });
+                var label = selectedMemberName || $('#received_from').val() || '';
+                if (lids.length === 1) {
+                    label = (label ? label + ' — ' : '') + 'Loan ' + lids[0];
+                } else if (lids.length > 1) {
+                    label = (label ? label + ' — ' : '') + lids.length + ' loans';
+                }
+                if (label) {
+                    setSelectedPayerLabel(label);
+                }
+                var desc = $('textarea[name="description"]').val() || '';
+                if (!desc || desc.indexOf('Loan Repayment') === 0) {
+                    if (lids.length) {
+                        $('textarea[name="description"]').val('Loan Repayment ' + lids.join(', '));
+                    }
+                }
+                return allocs;
+            }
+
+            function updateLoanAllocationSummary() {
+                var total = 0;
+                $('#loanAllocTable tbody tr.loan-alloc-row').each(function(){
+                    var $row = $(this);
+                    if ($row.find('.loan-alloc-cb').is(':checked')) {
+                        total += parseFloat(String($row.find('.loan-alloc-amount').val() || '').replace(/,/g, '')) || 0;
+                    }
+                });
+                $('#loanAllocSelectedTotal').text(formatMoney(total));
+            }
+
+            function focusLoanAllocation(lid, loadDue) {
+                focusedLoanId = lid || '';
+                var loan = loanCache[lid];
+                if (!loan) {
+                    $('#loanAllocFocusMeta').html('');
+                    $('#loanRepaymentDueWrap').hide();
+                    return;
+                }
+                var html = '<div class="loan-repayment-meta">';
+                html += '<div><strong>Loan #:</strong> ' + (loan.LID || '') + '</div>';
+                html += '<div><strong>Member:</strong> ' + ($('#received_from').val() || selectedMemberName || '') + '</div>';
+                html += '<div><strong>Product:</strong> ' + (loan.product_name || '') + '</div>';
+                html += '<div><strong>Status:</strong> ' + (loan.status_name || '') + '</div>';
+                html += '<div><strong>Outstanding:</strong> ' + formatMoney(loan.outstanding) + '</div>';
+                html += '<div><strong>Amount Due:</strong> ' + formatMoney(loan.amount_due || loan.suggested_amount) + '</div>';
+                html += '</div>';
+                html += loanTermsHtml(loan);
+                $('#loanAllocFocusMeta').html(html);
+                if (loadDue) {
+                    loadFocusedLoanDue(lid);
+                }
+            }
+
+            function loadFocusedLoanDue(lid) {
+                var $row = $('#loanAllocTable tbody tr.loan-alloc-row').filter(function(){
+                    return String($(this).data('loanId')) === String(lid);
+                });
+                var amount = $row.find('.loan-alloc-amount').val() || '';
+                $.ajax({
+                    url: loanWorksheetUrl,
+                    type: 'GET',
+                    dataType: 'json',
+                    data: {
+                        lid: lid,
+                        payment_method: $('#payment_method').val() || '',
+                        receipt_date: $('input[name="receipt_date"]').val() || '',
+                        amount: amount
+                    },
+                    success: function(response){
+                        if (response.success === 'Y' && response.data) {
+                            if (response.data.due) {
+                                renderDuePanel(response.data.due, response.data);
+                            }
+                            if (loanCache[lid]) {
+                                $.extend(loanCache[lid], response.data);
+                            }
+                            focusLoanAllocation(lid, false);
+                        }
+                    }
+                });
+            }
+
+            function rebuildMergedLoanWorksheets() {
+                var allocs = syncLoanAllocationHiddenInputs();
+                if (!allocs.length) {
+                    if (linesFromLoan) {
+                        resetLineItems();
+                        linesFromLoan = false;
+                    }
+                    return;
+                }
+                var seq = ++loanWorksheetSeq;
+                var pending = allocs.length;
+                var sheets = [];
+                $.each(allocs, function(i, alloc){
+                    var data = {
+                        lid: alloc.LID,
+                        payment_method: $('#payment_method').val() || '',
+                        receipt_date: $('input[name="receipt_date"]').val() || '',
+                        amount: alloc.amount
+                    };
+                    if (alloc.override && alloc.override.enabled) {
+                        data.override_enabled = 1;
+                        data.override_principal = alloc.override.principal;
+                        data.override_interest = alloc.override.interest;
+                        data.override_penalty = alloc.override.penalty;
+                        data.override_note = alloc.override.note || '';
+                    }
+                    $.ajax({
+                        url: loanWorksheetUrl,
+                        type: 'GET',
+                        dataType: 'json',
+                        data: data,
+                        success: function(response){
+                            if (seq !== loanWorksheetSeq) {
+                                return;
+                            }
+                            if (response.success === 'Y' && response.data && response.data.line_items) {
+                                sheets[i] = response.data.line_items;
+                                if (loanCache[alloc.LID]) {
+                                    $.extend(loanCache[alloc.LID], response.data);
+                                }
+                            } else {
+                                sheets[i] = [];
+                                if (response.error) {
+                                    $('#loanRepaymentPreviewMsg').text(response.error).show();
+                                }
+                            }
+                        },
+                        complete: function(){
+                            if (seq !== loanWorksheetSeq) {
+                                return;
+                            }
+                            pending -= 1;
+                            if (pending <= 0) {
+                                populateLoanLines(mergeLoanWorksheetLines(sheets));
+                                linesFromLoan = true;
+                                if (focusedLoanId) {
+                                    loadFocusedLoanDue(focusedLoanId);
+                                } else if (allocs[0]) {
+                                    focusLoanAllocation(allocs[0].LID, true);
+                                }
+                            }
+                        }
+                    });
+                });
+            }
+
+            function mergeLoanWorksheetLines(sheets) {
+                var cashAccount = '';
+                var cashDebit = 0;
+                var cashDescParts = [];
+                var credits = [];
+                $.each(sheets || [], function(_, items){
+                    $.each(items || [], function(_, item){
+                        var role = item.role || '';
+                        var debit = parseFloat(item.debit) || 0;
+                        var credit = parseFloat(item.credit) || 0;
+                        if (role === 'cash' || (debit > 0 && credit <= 0 && !cashAccount)) {
+                            if (!cashAccount && item.account) {
+                                cashAccount = item.account;
+                            }
+                            cashDebit += debit;
+                            if (item.description) {
+                                cashDescParts.push(item.description);
+                            }
+                        } else if (credit > 0 || role === 'principal' || role === 'interest' || role === 'penalty') {
+                            credits.push({
+                                account: item.account || '',
+                                debit: '',
+                                credit: credit > 0 ? credit : (item.credit || ''),
+                                description: item.description || '',
+                                role: role || ''
+                            });
+                        } else if (debit > 0) {
+                            cashDebit += debit;
+                            if (!cashAccount && item.account) {
+                                cashAccount = item.account;
+                            }
+                        }
+                    });
+                });
+                var merged = [];
+                if (cashAccount || cashDebit > 0) {
+                    var lids = $.map(getSelectedLoanAllocations(), function(r){ return r.LID; });
+                    merged.push({
+                        account: cashAccount,
+                        debit: cashDebit > 0 ? formatMoney(cashDebit) : '',
+                        credit: '',
+                        description: lids.length ? ('Loan Repayment ' + lids.join(', ')) : 'Loan Repayment',
+                        role: 'cash'
+                    });
+                }
+                return merged.concat(credits);
             }
 
             $(document).on('click', '.select-payer-member', function(){
@@ -935,7 +1299,9 @@ if (isset($message) && !empty($message)) {
                 $('#member_pid').val($(this).data('pid') || '');
                 $('#member_id').val($(this).data('member-id') || '');
                 $('#loan_repayment_lid').val('');
-                renderLinkedLoan(null);
+                focusedLoanId = '';
+                $('#loanRepaymentPanel').hide();
+                $('#loanRepaymentDueWrap').hide();
                 setSelectedPayerLabel(name);
                 $('#receivedFromSearchResults').html('');
             });
@@ -946,11 +1312,11 @@ if (isset($message) && !empty($message)) {
                 selectedMemberName = name;
                 $('#member_pid').val(pid);
                 $('#member_id').val($(this).data('member-id') || '');
-                $('#received_from').val('');
+                $('#received_from').val(name);
                 $('#loan_repayment_lid').val('');
-                renderLinkedLoan(null);
+                focusedLoanId = '';
                 setSelectedPayerLabel(name);
-                loadMemberLoans(pid);
+                loadMemberLoans(pid, {});
             });
 
             $(document).on('click', '.select-payer-name', function(){
@@ -960,7 +1326,9 @@ if (isset($message) && !empty($message)) {
                 $('#member_pid').val('');
                 $('#member_id').val('');
                 $('#loan_repayment_lid').val('');
-                renderLinkedLoan(null);
+                focusedLoanId = '';
+                $('#loanRepaymentPanel').hide();
+                $('#loanRepaymentDueWrap').hide();
                 setSelectedPayerLabel(name);
                 $('#receivedFromSearchResults').html('');
                 if (kind === 'customer') {
@@ -970,21 +1338,102 @@ if (isset($message) && !empty($message)) {
                 }
             });
 
-            $(document).on('click', '.select-member-loan', function(){
-                var loan = loanCache[$(this).data('loanId')];
-                if (!loan) return;
-                $('#loan_repayment_lid').val(loan.LID || '');
-                $('#loan_repayment_amount').val('');
-                $('#received_from').val(selectedMemberName || $('#received_from').val());
-                if (loan.PID) $('#member_pid').val(loan.PID);
-                if (loan.member_id) $('#member_id').val(loan.member_id);
-                setSelectedPayerLabel(($('#received_from').val() || '') + ' — Loan ' + (loan.LID || ''));
-                $('#receivedFromSearchResults').html('');
-                if (!$('textarea[name="description"]').val()) {
-                    $('textarea[name="description"]').val('Loan Repayment ' + (loan.LID || ''));
+            $(document).on('change', '.loan-alloc-cb', function(){
+                var $row = $(this).closest('tr');
+                var lid = $row.data('loanId');
+                var checked = $(this).is(':checked');
+                $row.toggleClass('success', checked);
+                $row.find('.loan-alloc-amount').prop('disabled', !checked);
+                var $ovRow = $('#loanAllocTable tr.loan-override-row[data-loan-id="' + lid + '"]');
+                $ovRow.toggle(checked);
+                if (!checked) {
+                    $ovRow.find('.loan-override-enabled').prop('checked', false);
+                    $ovRow.find('.loan-override-fields').hide();
+                    $row.find('.loan-alloc-amount').prop('readonly', false);
                 }
-                renderLinkedLoan(loan);
-                loadLoanWorksheet(loan.LID);
+                if (checked) {
+                    var amt = parseFloat(String($row.find('.loan-alloc-amount').val() || '').replace(/,/g, '')) || 0;
+                    if (amt <= 0 && loanCache[lid] && loanCache[lid].amount_due > 0) {
+                        $row.find('.loan-alloc-amount').val(formatMoney(loanCache[lid].amount_due));
+                    }
+                    focusLoanAllocation(lid, true);
+                } else if (focusedLoanId === lid) {
+                    var next = $('#loanAllocTable .loan-alloc-cb:checked').first().closest('tr').data('loanId');
+                    if (next) {
+                        focusLoanAllocation(next, true);
+                    } else {
+                        focusedLoanId = '';
+                        $('#loanAllocFocusMeta').html('');
+                        $('#loanRepaymentDueWrap').hide();
+                    }
+                }
+                updateLoanAllocationSummary();
+                rebuildMergedLoanWorksheets();
+            });
+
+            $(document).on('change', '.loan-alloc-amount', function(){
+                var $row = $(this).closest('tr');
+                if ($row.find('.loan-alloc-cb').is(':checked')) {
+                    focusLoanAllocation($row.data('loanId'), true);
+                    updateLoanAllocationSummary();
+                    rebuildMergedLoanWorksheets();
+                }
+            });
+
+            $(document).on('change', '.loan-override-enabled', function(){
+                var $ovRow = $(this).closest('tr');
+                var lid = $ovRow.data('loanId');
+                var $row = $('#loanAllocTable tr.loan-alloc-row[data-loan-id="' + lid + '"]');
+                var on = $(this).is(':checked');
+                $ovRow.find('.loan-override-fields').toggle(on);
+                $row.find('.loan-alloc-amount').prop('readonly', on);
+                if (on) {
+                    var loan = loanCache[lid] || {};
+                    var sys = loan.system_suggested || {};
+                    if (!$ovRow.find('.loan-override-principal').val()) {
+                        $ovRow.find('.loan-override-principal').val(formatMoney(sys.principal != null ? sys.principal : (loan.due && loan.due.total_principle) || 0));
+                    }
+                    if (!$ovRow.find('.loan-override-interest').val()) {
+                        $ovRow.find('.loan-override-interest').val(formatMoney(sys.interest != null ? sys.interest : (loan.due && loan.due.total_interest) || 0));
+                    }
+                    if (!$ovRow.find('.loan-override-penalty').val()) {
+                        $ovRow.find('.loan-override-penalty').val(formatMoney(sys.penalty != null ? sys.penalty : (loan.due && loan.due.total_penalty) || 0));
+                    }
+                    syncOverrideAmountFromComponents($ovRow);
+                    $row.find('.loan-alloc-amount').val(formatMoney(
+                        (parseFloat($ovRow.find('.loan-override-principal').val()) || 0) +
+                        (parseFloat($ovRow.find('.loan-override-interest').val()) || 0) +
+                        (parseFloat($ovRow.find('.loan-override-penalty').val()) || 0)
+                    ));
+                }
+                updateLoanAllocationSummary();
+                rebuildMergedLoanWorksheets();
+            });
+
+            $(document).on('change', '.loan-override-principal, .loan-override-interest, .loan-override-penalty, .loan-override-note', function(){
+                var $ovRow = $(this).closest('tr');
+                var lid = $ovRow.data('loanId');
+                var $row = $('#loanAllocTable tr.loan-alloc-row[data-loan-id="' + lid + '"]');
+                if ($ovRow.find('.loan-override-enabled').is(':checked')) {
+                    var sum = roundMoney(
+                        (parseFloat(String($ovRow.find('.loan-override-principal').val() || '').replace(/,/g, '')) || 0) +
+                        (parseFloat(String($ovRow.find('.loan-override-interest').val() || '').replace(/,/g, '')) || 0) +
+                        (parseFloat(String($ovRow.find('.loan-override-penalty').val() || '').replace(/,/g, '')) || 0)
+                    );
+                    $row.find('.loan-alloc-amount').val(formatMoney(sum));
+                    updateLoanAllocationSummary();
+                    rebuildMergedLoanWorksheets();
+                }
+            });
+
+            $(document).on('click', '#loanAllocTable tbody tr.loan-alloc-row', function(e){
+                if ($(e.target).is('input') || $(e.target).closest('input').length) {
+                    return;
+                }
+                var lid = $(this).data('loanId');
+                if (lid) {
+                    focusLoanAllocation(lid, true);
+                }
             });
 
             function formatMoney(n) {
@@ -1065,15 +1514,6 @@ if (isset($message) && !empty($message)) {
                 } else {
                     $('#crDueMinHint').text('');
                 }
-                var amt = parseFloat($('#loan_repayment_amount').val() || 0);
-                if (!amt && loanDueState.suggested > 0) {
-                    $('#loan_repayment_amount').val(formatMoney(loanDueState.suggested));
-                } else if (extra.payment_amount != null && extra.payment_amount !== '') {
-                    var pay = parseFloat(extra.payment_amount);
-                    if (!isNaN(pay) && Math.abs(pay - amt) > 0.009) {
-                        $('#loan_repayment_amount').val(formatMoney(pay));
-                    }
-                }
                 if (extra.preview_ok === false && extra.preview_message) {
                     $('#loanRepaymentPreviewMsg').text(extra.preview_message).show();
                 } else {
@@ -1104,22 +1544,10 @@ if (isset($message) && !empty($message)) {
 
             function renderLinkedLoan(loan){
                 if (!loan) {
-                    $('#loanRepaymentPanel').hide();
-                    $('#loanRepaymentPanelBody').html('');
                     $('#loanRepaymentDueWrap').hide();
                     return;
                 }
-                var html = '<div class="loan-repayment-meta">';
-                html += '<div><strong>Loan #:</strong> ' + (loan.LID || '') + '</div>';
-                html += '<div><strong>Member:</strong> ' + ($('#received_from').val() || '') + '</div>';
-                html += '<div><strong>Product:</strong> ' + (loan.product_name || '') + '</div>';
-                html += '<div><strong>Status:</strong> ' + (loan.status_name || '') + '</div>';
-                html += '<div><strong>Outstanding:</strong> ' + formatMoney(loan.outstanding) + '</div>';
-                html += '<div><strong>Amount Due:</strong> ' + formatMoney(loan.amount_due || loan.suggested_amount) + '</div>';
-                html += '</div>';
-                html += loanTermsHtml(loan);
-                $('#loanRepaymentPanelBody').html(html);
-                $('#loanRepaymentPanel').show();
+                focusLoanAllocation(loan.LID || focusedLoanId, false);
                 if (loan.due) {
                     renderDuePanel(loan.due, loan);
                 }
@@ -1182,7 +1610,12 @@ if (isset($message) && !empty($message)) {
             }
 
             function populateLoanLines(items) {
-                if (!items || !items.length) return;
+                if (!items || !items.length) {
+                    if (linesFromLoan) {
+                        resetLineItems();
+                    }
+                    return;
+                }
                 var $first = $('.line-item:first');
                 $('.line-item').not($first).each(function(){
                     destroyAccountSelect($(this).find('.account-select'));
@@ -1197,32 +1630,12 @@ if (isset($message) && !empty($message)) {
                 calculateTotals();
             }
 
-            function loadLoanWorksheet(lid) {
-                if (!lid) return;
-                $.ajax({
-                    url: loanWorksheetUrl,
-                    type: 'GET',
-                    dataType: 'json',
-                    data: {
-                        lid: lid,
-                        payment_method: $('#payment_method').val() || '',
-                        receipt_date: $('input[name="receipt_date"]').val() || '',
-                        amount: $('#loan_repayment_amount').val() || ''
-                    },
-                    success: function(response){
-                        if (response.success === 'Y' && response.data) {
-                            if (response.data.line_items && response.data.line_items.length) {
-                                populateLoanLines(response.data.line_items);
-                                linesFromLoan = true;
-                            }
-                            renderLinkedLoan(response.data);
-                        }
-                    }
-                });
-            }
-
             function syncPaymentMethodAccount() {
                 if ($('#received_from_type').val() !== 'loan_repayment') {
+                    return;
+                }
+                if (getSelectedLoanAllocations().length) {
+                    rebuildMergedLoanWorksheets();
                     return;
                 }
                 var pmId = $('#payment_method').val();
@@ -1241,44 +1654,38 @@ if (isset($message) && !empty($message)) {
                         var $cash = $('#lineItemsTable tbody tr.line-item[data-line-role="cash"]');
                         if ($cash.length) {
                             setRowAccount($cash, response.account);
-                            return;
-                        }
-                        if ($('#loan_repayment_lid').val()) {
-                            var $row = cloneLineItem(response.account, 'Loan Repayment ' + $('#loan_repayment_lid').val());
-                            $row.attr('data-line-role', 'cash');
-                            $('#lineItemsTable tbody').prepend($row);
-                            updateRemoveButtons();
-                            calculateTotals();
-                            linesFromLoan = true;
                         }
                     }
                 });
             }
 
             $('#btnUseSuggestedLoanAmount').on('click', function(){
-                if (loanDueState.suggested > 0) {
-                    $('#loan_repayment_amount').val(formatMoney(loanDueState.suggested));
-                    if ($('#loan_repayment_lid').val()) {
-                        loadLoanWorksheet($('#loan_repayment_lid').val());
-                    }
+                if (!focusedLoanId || loanDueState.suggested <= 0) {
+                    return;
                 }
-            });
-            $('#loan_repayment_amount').on('change', function(){
-                if ($('#loan_repayment_lid').val()) {
-                    loadLoanWorksheet($('#loan_repayment_lid').val());
+                var $row = $('#loanAllocTable tbody tr.loan-alloc-row').filter(function(){
+                    return String($(this).data('loanId')) === String(focusedLoanId);
+                });
+                if (!$row.length) {
+                    return;
                 }
+                if (!$row.find('.loan-alloc-cb').is(':checked')) {
+                    $row.find('.loan-alloc-cb').prop('checked', true).trigger('change');
+                }
+                $row.find('.loan-alloc-amount').prop('disabled', false).val(formatMoney(loanDueState.suggested));
+                updateLoanAllocationSummary();
+                rebuildMergedLoanWorksheets();
             });
+
             // The date field is driven by bootstrap-datepicker, which fires only
             // changeDate (on the #datetimepicker wrapper) and never 'change' on the
             // input, so picking a date used to leave the loan line items stale.
-            // Bind the picker event as well as change/blur (debounced, because blur
-            // fires together with change when the value was typed).
             var loanWorksheetDateTimer = null;
             function refreshLoanWorksheetForDate() {
                 if ($('#received_from_type').val() !== 'loan_repayment') {
                     return;
                 }
-                if (!$('#loan_repayment_lid').val()) {
+                if (!getSelectedLoanAllocations().length) {
                     return;
                 }
                 if (loanWorksheetDateTimer) {
@@ -1286,24 +1693,27 @@ if (isset($message) && !empty($message)) {
                 }
                 loanWorksheetDateTimer = setTimeout(function(){
                     loanWorksheetDateTimer = null;
-                    // Follow the new date: when the amount is still the suggested one (or
-                    // empty), let the worksheet re-derive it - otherwise a stale amount
-                    // kept the line items looking unchanged. A typed amount is kept.
-                    var typed = parseFloat(String($('#loan_repayment_amount').val() || '').replace(/,/g, '')) || 0;
-                    if (typed <= 0 || Math.abs(typed - (parseFloat(loanDueState.suggested) || 0)) < 0.005) {
-                        $('#loan_repayment_amount').val('');
-                    }
-                    loadLoanWorksheet($('#loan_repayment_lid').val());
+                    rebuildMergedLoanWorksheets();
                 }, 120);
             }
             $('input[name="receipt_date"]').on('change blur', refreshLoanWorksheetForDate);
             $('#datetimepicker').on('changeDate', refreshLoanWorksheetForDate);
 
             updateReceivedFromUI(false);
-            if ($('#received_from_type').val() === 'loan_repayment' && $('#loan_repayment_lid').val()) {
+            if ($('#received_from_type').val() === 'loan_repayment') {
                 selectedMemberName = $('#received_from').val() || '';
-                loadLoanWorksheet($('#loan_repayment_lid').val());
-                setSelectedPayerLabel(($('#received_from').val() || '') + ' — Loan ' + $('#loan_repayment_lid').val());
+                var pid = $('#member_pid').val() || '';
+                if (pid) {
+                    var preselect = {};
+                    $.each(initialLoanAllocations || [], function(_, row){
+                        if (row.LID) {
+                            preselect[row.LID] = parseFloat(row.amount) || 0;
+                        }
+                    });
+                    loadMemberLoans(pid, preselect);
+                } else if ($('#loan_repayment_lid').val()) {
+                    setSelectedPayerLabel(($('#received_from').val() || '') + ' — Loan ' + $('#loan_repayment_lid').val());
+                }
             }
         }
         $(boot);

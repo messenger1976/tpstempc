@@ -482,16 +482,88 @@ class Report_Model extends CI_Model {
                     }
                     break;
                 case 'savings_transaction':
-                    $st = $this->db->query('SELECT account FROM savings_transaction WHERE receipt = ? AND PIN = ? LIMIT 1', array($ref, $pin))->row();
-                    if ($st && !empty($st->account)) {
-                        $ma = $this->db->query('SELECT account, RFID FROM members_account WHERE account = ? AND PIN = ? LIMIT 1', array($st->account, $pin))->row();
-                        if ($ma && !empty($ma->RFID)) {
-                            $m = $this->db->query('SELECT CONCAT(firstname, " ", middlename, " ", lastname) AS name, member_id FROM members WHERE PID = ? AND PIN = ? LIMIT 1', array($ma->RFID, $pin))->row();
-                            if ($m) {
-                                $name = trim($m->name);
-                                $party_id = !empty($m->member_id) ? $m->member_id : '';
-                                $url = current_lang() . '/saving/receipt_view/' . $ref;
+                    // st.account is ambiguous in live data: some rows store members_account.id,
+                    // others store members_account.account. Joining only one way shifts Person
+                    // to the neighbouring member (MSO id-join vs Special account-col join).
+                    $st = $this->db->query(
+                        'SELECT account, customer_name FROM savings_transaction WHERE receipt = ? AND PIN = ? LIMIT 1',
+                        array($ref, $pin)
+                    )->row();
+                    if ($st && $st->account !== '' && $st->account !== null) {
+                        $candidates = array();
+                        $by_id = $this->db->query(
+                            'SELECT id, account, RFID, member_id FROM members_account WHERE id = ? AND PIN = ? LIMIT 1',
+                            array($st->account, $pin)
+                        )->row();
+                        $by_acct = $this->db->query(
+                            'SELECT id, account, RFID, member_id FROM members_account WHERE account = ? AND PIN = ? LIMIT 1',
+                            array($st->account, $pin)
+                        )->row();
+                        if ($by_id) {
+                            $candidates[] = $by_id;
+                        }
+                        if ($by_acct && (!$by_id || (int) $by_acct->id !== (int) $by_id->id)) {
+                            $candidates[] = $by_acct;
+                        }
+
+                        $cn = strtoupper(preg_replace('/\s+/', ' ', trim(isset($st->customer_name) ? $st->customer_name : '')));
+                        $gl_mid = isset($row->member_id) ? trim($row->member_id) : '';
+                        $best_m = null;
+                        $best_score = -1;
+                        foreach ($candidates as $ma) {
+                            $m = null;
+                            if (!empty($ma->member_id)) {
+                                $m = $this->db->query(
+                                    'SELECT CONCAT(firstname, " ", middlename, " ", lastname) AS name, member_id FROM members WHERE member_id = ? AND PIN = ? LIMIT 1',
+                                    array($ma->member_id, $pin)
+                                )->row();
                             }
+                            if (!$m && !empty($ma->RFID)) {
+                                $m = $this->db->query(
+                                    'SELECT CONCAT(firstname, " ", middlename, " ", lastname) AS name, member_id FROM members WHERE PID = ? AND PIN = ? LIMIT 1',
+                                    array($ma->RFID, $pin)
+                                )->row();
+                            }
+                            if (!$m) {
+                                continue;
+                            }
+                            $score = 0;
+                            $mn = strtoupper(preg_replace('/\s+/', ' ', trim($m->name)));
+                            if ($gl_mid !== '' && !empty($m->member_id) && $m->member_id === $gl_mid) {
+                                $score += 5;
+                            }
+                            if ($cn !== '' && $mn !== '') {
+                                if ($cn === $mn || strpos($cn, $mn) !== false || strpos($mn, $cn) !== false) {
+                                    $score += 3;
+                                } else {
+                                    $parts = preg_split('/\s+/', $cn);
+                                    $last = end($parts);
+                                    if ($last && strpos($mn, $last) !== false) {
+                                        $score += 2;
+                                    }
+                                }
+                            }
+                            // Prefer id-key when scores tie (MSO BB import style).
+                            if ((int) $ma->id === (int) $st->account) {
+                                $score += 1;
+                            }
+                            if ($score > $best_score) {
+                                $best_score = $score;
+                                $best_m = $m;
+                            }
+                        }
+
+                        $url = current_lang() . '/saving/receipt_view/' . $ref;
+                        // Person label follows the receipt when present.
+                        if ($cn !== '') {
+                            $name = trim($st->customer_name);
+                        } elseif ($best_m) {
+                            $name = trim($best_m->name);
+                        }
+                        if ($best_m && !empty($best_m->member_id)) {
+                            $party_id = $best_m->member_id;
+                        } elseif ($gl_mid !== '') {
+                            $party_id = $gl_mid;
                         }
                     }
                     break;
